@@ -1,0 +1,48 @@
+from __future__ import annotations
+
+from typing import Final
+
+from PySide6.QtCore import QSettings
+
+from stream_cheremsha.actions.models import RuleV1, ruleset_from_json_text, ruleset_to_json_text
+
+DEFAULT_SETTINGS_ORG: Final[str] = 'stream-cheremsha'
+DEFAULT_SETTINGS_APP: Final[str] = 'cheremsha'
+
+
+def _validate_key_part(name: str, value: str) -> str:
+    v = (value or '').strip()
+    if not v:
+        raise ValueError(f'{name} must be non-empty')
+    return v
+
+
+def _rules_key(platform: str, account_key: str) -> str:
+    p2 = _validate_key_part('platform', platform)
+    a2 = _validate_key_part('account_key', account_key)
+    return f'actions/{p2}/{a2}/rules_json'
+
+
+def _get_settings(settings: QSettings | None, *, org: str, app: str) -> QSettings:
+    if settings is not None:
+        return settings
+    return QSettings(org, app)
+
+
+def load_rules(platform: str, account_key: str, *, settings: QSettings | None = None, org: str = DEFAULT_SETTINGS_ORG, app: str = DEFAULT_SETTINGS_APP) -> list[RuleV1]:
+    key = _rules_key(platform, account_key)
+    s = _get_settings(settings, org=org, app=app)
+    text = s.value(key, None, str)
+    if text is None:
+        return []
+    text = (text or '').strip()
+    if not text:
+        return []
+    return ruleset_from_json_text(text)
+
+
+def save_rules(platform: str, account_key: str, rules: list[RuleV1], *, settings: QSettings | None = None, org: str = DEFAULT_SETTINGS_ORG, app: str = DEFAULT_SETTINGS_APP) -> None:
+    key = _rules_key(platform, account_key)
+    s = _get_settings(settings, org=org, app=app)
+    s.setValue(key, ruleset_to_json_text(rules))
+    s.sync()
