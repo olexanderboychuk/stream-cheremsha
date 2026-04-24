@@ -103,10 +103,16 @@ Item {
         }
     }
 
-    Component.onCompleted: {
+    function _tryInit() {
+        // QML Component.onCompleted can run before MainWindow sets platform/accountKey.
+        if (!platform || !accountKey) return;
         _load()
         _reloadGifts()
     }
+
+    Component.onCompleted: _tryInit()
+    onPlatformChanged: _tryInit()
+    onAccountKeyChanged: _tryInit()
     onSelectedIdxChanged: _syncSelected()
     onRulesModelChanged: _syncSelected()
     onSelectedRuleChanged: {
