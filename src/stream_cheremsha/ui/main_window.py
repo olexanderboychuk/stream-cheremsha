@@ -26,6 +26,7 @@ from PySide6.QtCore import (
     Slot,
 )
 from PySide6.QtGui import QCloseEvent, QColor, QFont, QIcon, QTextCursor
+from PySide6.QtQuick import QQuickView
 from PySide6.QtQuickWidgets import QQuickWidget
 from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtWidgets import (
@@ -62,6 +63,10 @@ from stream_cheremsha import l10n
 from stream_cheremsha.audio.qt_sink import QtAudioSink
 from stream_cheremsha.chat import twitch_credentials, twitch_oauth_device
 from stream_cheremsha.chat.tiktok_source import TikTokChatSource
+from stream_cheremsha.actions.engine import PlatformActionsEngine
+from stream_cheremsha.actions.events import ChatMessageEvent, GiftReceivedEvent
+from stream_cheremsha.actions.store import load_rules
+from stream_cheremsha.ui.actions_qml_api import ActionsQmlApi
 from stream_cheremsha.chat.twitch_source import TwitchSource
 from stream_cheremsha.chat.youtube_source import (
     YouTubeChatSource,
@@ -117,6 +122,7 @@ def _footer_richtext_img(name: str, px: int) -> str:
         return ""
     url = QUrl.fromLocalFile(str(path.resolve())).toString()
     return f"<img width='{px}' height='{px}' src={quoteattr(url)} /> "
+
 
 _MAX_LOG_DOCUMENT_BLOCKS = 3500
 _MAX_CHAT_DOCUMENT_BLOCKS = 450
@@ -272,9 +278,13 @@ class MainWindow(QWidget):
         self._tiktok = TikTokChatSource(
             self._coordinator,
             on_status=self._on_user_status,
+            on_gift=self._on_tiktok_gift,
             get_locale=self._get_locale,
         )
         self._tiktok_username = QLineEdit()
+        self._actions_qml_api = ActionsQmlApi(self)
+        self._qml_actions: QQuickView | None = None
+        self._actions_engines: dict[tuple[str, str], PlatformActionsEngine] = {}
         self._chat_ic_tw: str | None = None
         self._chat_ic_yt: str | None = None
         self._chat_ic_tk: str | None = None
@@ -365,6 +375,8 @@ class MainWindow(QWidget):
             logger.error("QML not found: %s", qml_p)
         self._qml_conn.engine().rootContext().setContextProperty("api", self._qml_api)
         self._qml_conn.setSource(QUrl.fromLocalFile(str(qml_p)))
+
+        # Actions editor window (created lazily).
 
         self._donations_qml_api = DonationsQmlApi(self)
         self._qml_donations = QQuickWidget(self)
@@ -2080,7 +2092,7 @@ class MainWindow(QWidget):
                 "YouTube:",
             ):
                 if msg.startswith(prefix):
-                    self._status_youtube = msg[len(prefix) :].strip(" :") or msg
+                    self._status_youtube = msg[len(prefix):].strip(" :") or msg
                     return
             self._status_youtube = msg.removeprefix("YouTube:").strip() or msg
             return
@@ -2228,6 +2240,96 @@ class MainWindow(QWidget):
         self._chat_message_history.append(message)
         fragment = self._format_chat_message_fragment(message)
         self._bridge.append_chat.emit(fragment)
+        self._dispatch_actions_for_chat(message)
+
+    def _actions_scope_key(self, platform: str, account_key: str) -> tuple[str, str]:
+        return (platform.strip().lower(), account_key.strip())
+
+    def _actions_account_key_for_platform(self, platform: ChatPlatform) -> str | None:
+        if platform == ChatPlatform.TIKTOK:
+            v = (self._tiktok_username.text() or "").strip().lstrip("@").strip()
+            return v or None
+        if platform == ChatPlatform.TWITCH:
+            v = (self._twitch_channel.text() or "").strip()
+            return v or None
+        if platform == ChatPlatform.YOUTUBE:
+            v = (self._yt_video.text() or "").strip()
+            return v or None
+        return None
+
+    def _get_actions_engine(self, platform: str, account_key: str) -> PlatformActionsEngine:
+        k = self._actions_scope_key(platform, account_key)
+        eng = self._actions_engines.get(k)
+        if eng is None:
+            eng = PlatformActionsEngine(
+                self._sink,
+                load_rules(k[0], k[1]),
+                status_callback=self._on_user_status,
+            )
+            self._actions_engines[k] = eng
+        return eng
+
+    def _actions_reload_scope(self, platform: str, account_key: str) -> None:
+        k = self._actions_scope_key(platform, account_key)
+        eng = self._actions_engines.get(k)
+        if eng is not None:
+            eng.set_rules(load_rules(k[0], k[1]))
+
+    def _dispatch_actions_for_chat(self, message: ChatMessage) -> None:
+        ak = self._actions_account_key_for_platform(message.platform)
+        if not ak:
+            return
+        eng = self._get_actions_engine(message.platform.value, ak)
+        ev = ChatMessageEvent(
+            platform=message.platform,
+            author=message.author,
+            text=message.text,
+            received_at=message.received_at,
+        )
+        asyncio.ensure_future(eng.on_chat_message(ev))
+
+    def _on_tiktok_gift(self, sender: str, gift_id: str, gift_name: str, count: int) -> None:
+        ak = self._actions_account_key_for_platform(ChatPlatform.TIKTOK)
+        if not ak:
+            return
+        eng = self._get_actions_engine(ChatPlatform.TIKTOK.value, ak)
+        ev = GiftReceivedEvent(
+            platform=ChatPlatform.TIKTOK,
+            sender=sender,
+            gift_id=gift_id,
+            gift_name=gift_name,
+            count=count,
+            received_at=datetime.now(UTC),
+        )
+        asyncio.ensure_future(eng.on_gift_received(ev))
+
+    def _ensure_actions_window(self) -> QQuickView:
+        if self._qml_actions is not None:
+            return self._qml_actions
+        view = QQuickView()
+        view.setResizeMode(QQuickView.ResizeMode.SizeViewToRootObject)
+        ctx = view.engine().rootContext()
+        # Reuse main API for localization.
+        ctx.setContextProperty("api", self._qml_api)
+        ctx.setContextProperty("actApi", self._actions_qml_api)
+        qml_p = _qml_path("ActionsView.qml")
+        view.setSource(QUrl.fromLocalFile(str(qml_p)))
+        self._qml_actions = view
+        return view
+
+    def _open_tiktok_actions(self) -> None:
+        user = (self._tiktok_username.text() or "").strip().lstrip("@").strip()
+        if not user:
+            QMessageBox.information(self, self._tr("dlg.tiktok"), self._tr("dlg.tiktok_need_username"))
+            return
+        v = self._ensure_actions_window()
+        root = v.rootObject()
+        if root is not None:
+            root.setProperty("platform", "tiktok")
+            root.setProperty("accountKey", user)
+        v.setTitle(self._tr("actions.window_title"))
+        v.show()
+        v.raise_()
 
     @Slot()
     def _save_twitch_keys(self) -> None:

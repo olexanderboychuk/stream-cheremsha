@@ -335,3 +335,9 @@ class StreamCheremshaQmlApi(QObject):
             keyring_store.set_password(constants.KEY_TIKTOK_USERNAME, vv)
         else:
             keyring_store.delete_password(constants.KEY_TIKTOK_USERNAME)
+
+    @Slot()
+    def openTikTokActions(self) -> None:
+        w = self._win()
+        if w is not None:
+            w._open_tiktok_actions()  # noqa: SLF001

@@ -38,10 +38,12 @@ class TikTokChatSource:
         self,
         coordinator: StreamCoordinator,
         on_status: Callable[[str], None],
+        on_gift: Callable[[str, str, str, int], None] | None = None,
         get_locale: Callable[[], str] | None = None,
     ) -> None:
         self._coordinator = coordinator
         self._on_status = on_status
+        self._on_gift = on_gift
         self._get_locale = get_locale or (lambda: l10n.DEFAULT_LOCALE)
         self._task: asyncio.Task[None] | None = None
         self._running = False
@@ -130,9 +132,41 @@ class TikTokChatSource:
                 )
                 await self._coordinator.enqueue_chat(msg)
 
+            # Gifts support (optional in library builds).
+            gift_event = None
+            try:
+                from TikTokLive.events import GiftEvent as _GiftEvent  # type: ignore
+
+                gift_event = _GiftEvent
+            except ImportError:
+                gift_event = None
+
+            if gift_event is not None:
+
+                @client.on(gift_event)  # type: ignore[misc]
+                async def _on_gift(event: object) -> None:  # noqa: ANN001
+                    cb = self._on_gift
+                    if cb is None:
+                        return
+                    # Best-effort extraction (TikTokLive differs between versions).
+                    user = getattr(getattr(event, "user", None), "nickname", None) or getattr(
+                        getattr(event, "user", None),
+                        "unique_id",
+                        None,
+                    )
+                    gift = getattr(event, "gift", None)
+                    gift_id = getattr(gift, "id", None) or getattr(gift, "gift_id", None) or ""
+                    gift_name = getattr(gift, "name", None) or getattr(gift, "gift_name", None) or ""
+                    count = getattr(event, "repeat_count", None) or getattr(event, "count", None) or 1
+                    try:
+                        count_i = int(count)
+                    except (TypeError, ValueError):
+                        count_i = 1
+                    cb(str(user or "unknown"), str(gift_id or ""), str(gift_name or ""), count_i)
+
             try:
                 # Non-blocking: returns a task which completes when disconnected.
-                t = await client.start(fetch_room_info=False, fetch_gift_info=False)
+                t = await client.start(fetch_room_info=False, fetch_gift_info=True)
                 await t
             except asyncio.CancelledError:
                 raise
@@ -169,5 +203,9 @@ class TikTokChatSource:
                 await asyncio.sleep(backoff)
             except asyncio.CancelledError:
                 raise
-        logger.info("TikTok supervisor exited (running=%s task_done=%s)", self._running, self._task.done() if self._task else None)
+        logger.info(
+            "TikTok supervisor exited (running=%s task_done=%s)",
+            self._running,
+            self._task.done() if self._task else None,
+        )
         self._on_status("TikTok: debug: supervisor exited")

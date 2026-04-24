@@ -373,6 +373,25 @@ Item {
                         Layout.fillWidth: true
                     }
 
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        ConnPillButton {
+                            visible: {
+                                if (!api) return false;
+                                api.refreshCounter;
+                                return (api.tiktokUsernameGet() || "").trim().length > 0;
+                            }
+                            text: { if (!api) return ""; api.refreshCounter; return api.loc("actions.btn") }
+                            onClicked: { if (api) api.openTikTokActions() }
+                            pillFontSize: 12
+                            colRest: "#1a2232"
+                            colHover: "#232c40"
+                            colPress: "#2d384e"
+                        }
+                        Item { Layout.fillWidth: true }
+                    }
+
                     Column {
                         Layout.fillWidth: true
                         spacing: 6
