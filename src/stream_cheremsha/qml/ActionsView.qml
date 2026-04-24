@@ -312,7 +312,6 @@ Item {
                             textRole: "name"
                             valueRole: "id"
                             editable: true
-                            inputMethodComposing: false
                             onActivated: function (idx) {
                                 if (selectedRule === null) return;
                                 var r = selectedRule;
