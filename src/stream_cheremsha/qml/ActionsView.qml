@@ -22,6 +22,50 @@ Item {
 
     property var rulesModel: []
     property int selectedIdx: -1
+    property var selectedRule: null
+
+    component ConnPillButton: Button {
+        id: pillCtl
+        property int pillFontSize: 13
+        property color colRest: "#1c2434"
+        property color colHover: "#263246"
+        property color colPress: "#303a50"
+        property color borRest: root.cardEdge
+        property color borHover: "#3b4458"
+        hoverEnabled: true
+        font.pixelSize: pillFontSize
+        contentItem: Text {
+            text: pillCtl.text
+            color: root.ink
+            font.pixelSize: pillCtl.pillFontSize
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+        }
+        background: Rectangle {
+            radius: 8
+            color: pillCtl.pressed ? pillCtl.colPress : (pillCtl.hovered ? pillCtl.colHover : pillCtl.colRest)
+            border.width: 1
+            border.color: pillCtl.hovered ? pillCtl.borHover : pillCtl.borRest
+            Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
+            Behavior on border.color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
+        }
+    }
+
+    function _syncSelected() {
+        if (selectedIdx < 0 || selectedIdx >= rulesModel.length) {
+            selectedRule = null;
+            selectedIdx = -1;
+            return;
+        }
+        selectedRule = rulesModel[selectedIdx];
+    }
+
+    function _setRule(idx, ruleObj) {
+        var copy = rulesModel.slice();
+        copy[idx] = ruleObj;
+        rulesModel = copy;
+        _syncSelected();
+    }
 
     function _defaultRule() {
         return {
@@ -50,6 +94,12 @@ Item {
     }
 
     Component.onCompleted: _load()
+    onSelectedIdxChanged: _syncSelected()
+    onRulesModelChanged: _syncSelected()
+    onSelectedRuleChanged: {
+        if (selectedRule === null) return;
+        eventTypeCombo.currentIndex = selectedRule.event.type === "gift_received" ? 1 : 0;
+    }
 
     RowLayout {
         anchors.fill: parent
@@ -78,10 +128,12 @@ Item {
                     wrapMode: Text.Wrap
                 }
 
-                Button {
+                ConnPillButton {
                     text: api ? api.loc("actions.add_rule") : "Add rule"
                     onClicked: {
-                        rulesModel = rulesModel.concat([_defaultRule()]);
+                        var copy = rulesModel.slice();
+                        copy.push(_defaultRule());
+                        rulesModel = copy;
                         selectedIdx = rulesModel.length - 1;
                         _save();
                     }
@@ -108,8 +160,9 @@ Item {
                             Switch {
                                 checked: modelData.enabled
                                 onClicked: {
-                                    modelData.enabled = checked;
-                                    rulesModel[index] = modelData;
+                                    var r = modelData;
+                                    r.enabled = checked;
+                                    _setRule(index, r);
                                     _save();
                                 }
                             }
@@ -140,7 +193,7 @@ Item {
                                 }
                             }
 
-                            Button {
+                            ConnPillButton {
                                 text: api ? api.loc("actions.delete") : "Delete"
                                 onClicked: {
                                     var copy = rulesModel.slice();
@@ -191,6 +244,7 @@ Item {
                     spacing: 10
 
                     ComboBox {
+                        id: eventTypeCombo
                         Layout.fillWidth: true
                         model: [
                             { text: api ? api.loc("actions.event.chat_keyword") : "Chat keyword", value: "chat_keyword" },
@@ -198,21 +252,22 @@ Item {
                         ]
                         textRole: "text"
                         valueRole: "value"
-                        Component.onCompleted: currentIndex = rulesModel[selectedIdx].event.type === "gift_received" ? 1 : 0
-                        onActivated: {
-                            var r = rulesModel[selectedIdx];
-                            r.event.type = currentValue;
-                            r.event.params = (currentValue === "gift_received")
+                        onActivated: function (idx) {
+                            if (selectedRule === null) return;
+                            var val = model[idx].value;
+                            var r = selectedRule;
+                            r.event.type = val;
+                            r.event.params = (val === "gift_received")
                                 ? { gift_name: "", min_count: 1 }
                                 : { text: "", match: "contains", case_sensitive: false };
-                            rulesModel[selectedIdx] = r;
+                            _setRule(selectedIdx, r);
                             _save();
                         }
                     }
 
                     // Chat keyword editor
                     ColumnLayout {
-                        visible: rulesModel[selectedIdx].event.type === "chat_keyword"
+                        visible: selectedRule !== null && selectedRule.event.type === "chat_keyword"
                         Layout.fillWidth: true
                         spacing: 6
                         Text { text: api ? api.loc("actions.keyword") : "Keyword"; color: muted; font.pixelSize: 12 }
@@ -221,12 +276,13 @@ Item {
                             color: ink
                             placeholderTextColor: muted
                             placeholderText: api ? api.loc("actions.keyword_ph") : "word..."
-                            text: rulesModel[selectedIdx].event.params.text || ""
+                            text: selectedRule !== null ? (selectedRule.event.params.text || "") : ""
                             background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
                             onEditingFinished: {
-                                var r = rulesModel[selectedIdx];
+                                if (selectedRule === null) return;
+                                var r = selectedRule;
                                 r.event.params.text = text;
-                                rulesModel[selectedIdx] = r;
+                                _setRule(selectedIdx, r);
                                 _save();
                             }
                         }
@@ -234,7 +290,7 @@ Item {
 
                     // Gift editor
                     ColumnLayout {
-                        visible: rulesModel[selectedIdx].event.type === "gift_received"
+                        visible: selectedRule !== null && selectedRule.event.type === "gift_received"
                         Layout.fillWidth: true
                         spacing: 6
                         Text { text: api ? api.loc("actions.gift_name") : "Gift name"; color: muted; font.pixelSize: 12 }
@@ -243,12 +299,13 @@ Item {
                             color: ink
                             placeholderTextColor: muted
                             placeholderText: api ? api.loc("actions.gift_name_ph") : "Rose..."
-                            text: rulesModel[selectedIdx].event.params.gift_name || ""
+                            text: selectedRule !== null ? (selectedRule.event.params.gift_name || "") : ""
                             background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
                             onEditingFinished: {
-                                var r = rulesModel[selectedIdx];
+                                if (selectedRule === null) return;
+                                var r = selectedRule;
                                 r.event.params.gift_name = text;
-                                rulesModel[selectedIdx] = r;
+                                _setRule(selectedIdx, r);
                                 _save();
                             }
                         }
@@ -256,11 +313,12 @@ Item {
                         SpinBox {
                             from: 1
                             to: 999
-                            value: rulesModel[selectedIdx].event.params.min_count || 1
+                            value: selectedRule !== null ? (selectedRule.event.params.min_count || 1) : 1
                             onValueModified: {
-                                var r = rulesModel[selectedIdx];
+                                if (selectedRule === null) return;
+                                var r = selectedRule;
                                 r.event.params.min_count = value;
-                                rulesModel[selectedIdx] = r;
+                                _setRule(selectedIdx, r);
                                 _save();
                             }
                         }
@@ -278,28 +336,34 @@ Item {
                             color: ink
                             placeholderTextColor: muted
                             placeholderText: api ? api.loc("actions.pick_mp3") : "Pick .mp3..."
-                            text: (rulesModel[selectedIdx].actions[0].params.file_path || "")
+                            text: (selectedRule && selectedRule.actions && selectedRule.actions.length)
+                                  ? (selectedRule.actions[0].params.file_path || "")
+                                  : ""
                             background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
                             readOnly: true
                         }
-                        Button {
+                        ConnPillButton {
                             text: api ? api.loc("actions.browse") : "Browse…"
                             onClicked: {
+                                if (selectedRule === null) return;
                                 var p = actApi.pickSoundFile();
                                 if (!p) return;
-                                var r = rulesModel[selectedIdx];
+                                var r = selectedRule;
                                 r.actions = [ { type: "play_sound", params: { file_path: p } } ];
-                                rulesModel[selectedIdx] = r;
+                                _setRule(selectedIdx, r);
                                 _save();
                             }
                         }
-                        Button {
+                        ConnPillButton {
                             text: api ? api.loc("actions.clear") : "Clear"
                             onClicked: {
-                                var r = rulesModel[selectedIdx];
-                                r.actions[0].params.file_path = "";
-                                rulesModel[selectedIdx] = r;
-                                _save();
+                                if (selectedRule === null) return;
+                                var r = selectedRule;
+                                if (r.actions && r.actions.length) {
+                                    r.actions[0].params.file_path = "";
+                                    _setRule(selectedIdx, r);
+                                    _save();
+                                }
                             }
                         }
                     }
