@@ -354,24 +354,51 @@ Item {
 
                     Rectangle { Layout.fillWidth: true; height: 1; color: cardEdge; opacity: 0.6 }
                     Text { text: api ? api.loc("actions.actions") : "Actions"; color: ink; font.pixelSize: 14; font.bold: true }
+
+                    readonly property var actionTypeModel: [
+                        { text: api ? api.loc("actions.play_sound") : "Play sound", value: "play_sound" }
+                    ]
+
                     Repeater {
                         model: (selectedRule && selectedRule.actions) ? selectedRule.actions.length : 0
                         delegate: RowLayout {
                             width: parent.width
                             spacing: 8
                             readonly property int aIdx: index
-                            Text { text: api ? api.loc("actions.play_sound") : "Play sound"; color: muted; width: 120 }
+                            ComboBox {
+                                id: actionTypeCombo
+                                Layout.preferredWidth: 170
+                                model: actionTypeModel
+                                textRole: "text"
+                                valueRole: "value"
+                                Component.onCompleted: {
+                                    var t = selectedRule.actions[aIdx].type || "play_sound";
+                                    currentIndex = (t === "play_sound") ? 0 : 0;
+                                }
+                                onActivated: function (idx) {
+                                    if (selectedRule === null) return;
+                                    var r = selectedRule;
+                                    var t = model[idx].value;
+                                    r.actions[aIdx].type = t;
+                                    // Reset params per action type
+                                    if (t === "play_sound") r.actions[aIdx].params = { file_path: "" };
+                                    _setRule(selectedIdx, r);
+                                    _save();
+                                }
+                            }
                             TextField {
                                 Layout.fillWidth: true
                                 color: ink
                                 placeholderTextColor: muted
                                 placeholderText: api ? api.loc("actions.pick_mp3") : "Pick .mp3..."
-                                text: selectedRule.actions[aIdx].params.file_path || ""
+                                visible: (selectedRule.actions[aIdx].type || "play_sound") === "play_sound"
+                                text: (selectedRule.actions[aIdx].params && selectedRule.actions[aIdx].params.file_path) ? selectedRule.actions[aIdx].params.file_path : ""
                                 background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
                                 readOnly: true
                             }
                             ConnPillButton {
                                 text: api ? api.loc("actions.browse") : "Browse…"
+                                visible: (selectedRule.actions[aIdx].type || "play_sound") === "play_sound"
                                 onClicked: {
                                     if (selectedRule === null) return;
                                     var p = actApi.pickSoundFile();
@@ -389,7 +416,6 @@ Item {
                                     var r = selectedRule;
                                     var aa = r.actions.slice();
                                     aa.splice(aIdx, 1);
-                                    if (aa.length === 0) aa = [ { type: "play_sound", params: { file_path: "" } } ];
                                     r.actions = aa;
                                     _setRule(selectedIdx, r);
                                     _save();
