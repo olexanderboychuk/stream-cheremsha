@@ -4,11 +4,14 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
+.worktrees/
 dist/
 build/
 *.mp3
+*.json
+*.xml
 # Piper voice files added at release build (keep out of git / use CI artifact)
 src/stream_cheremsha/data/piper/*.onnx
 src/stream_cheremsha/data/piper/*.onnx.json
 
-rpc_models
+rvc_models
