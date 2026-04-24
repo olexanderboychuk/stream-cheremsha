@@ -8,6 +8,7 @@ from enum import StrEnum
 class ChatPlatform(StrEnum):
     TWITCH = "twitch"
     YOUTUBE = "youtube"
+    TIKTOK = "tiktok"
 
 
 @dataclass(slots=True)

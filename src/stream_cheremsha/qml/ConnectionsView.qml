@@ -18,24 +18,31 @@ Item {
     readonly property color twHi: "#a78bfa"
     readonly property color ytBar: "#dc2626"
     readonly property color ytHi: "#f87171"
+    readonly property color tkBar: "#0ea5e9"
+    readonly property color tkHi: "#7dd3fc"
     Rectangle { anchors.fill: parent; color: base }
 
     component ConnPillButton: Button {
         id: pillCtl
         property int pillFontSize: 13
         property color colRest: "#1c2434"
-        property color colHover: "#263246"
-        property color colPress: "#303a50"
+        property color colHover: "#2a3750"
+        property color colPress: "#34425c"
         property color borRest: root.cardEdge
-        property color borHover: "#3b4458"
+        property color borHover: "#56627a"
         hoverEnabled: true
+        focusPolicy: Qt.NoFocus
         font.pixelSize: pillFontSize
+        transformOrigin: Item.Center
+        scale: pillCtl.hovered ? 1.02 : 1.0
+        Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
         contentItem: Text {
             text: pillCtl.text
-            color: root.ink
+            color: pillCtl.hovered ? "#f2f4f7" : root.ink
             font.pixelSize: pillCtl.pillFontSize
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
+            Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
         }
         background: Rectangle {
             radius: 8
@@ -51,10 +58,11 @@ Item {
         id: linkCtl
         flat: true
         hoverEnabled: true
+        focusPolicy: Qt.NoFocus
         padding: 0
         contentItem: Text {
             text: linkCtl.text
-            color: linkCtl.pressed ? "#b8c0ce" : (linkCtl.hovered ? root.ink : root.muted)
+            color: linkCtl.pressed ? "#cdd5e1" : (linkCtl.hovered ? "#f2f4f7" : root.muted)
             font.underline: true
             font.pixelSize: 12
             horizontalAlignment: Text.AlignHCenter
@@ -124,8 +132,18 @@ Item {
                     spacing: 14
 
                     RowLayout {
-                        Layout.fillWidth: true; spacing: 8
-                        Rectangle { width: 3; height: 24; radius: 1; color: twBar; Layout.alignment: Qt.AlignVCenter }
+                        Layout.fillWidth: true; spacing: 10
+                        Rectangle { width: 3; height: 26; radius: 1; color: twBar; Layout.alignment: Qt.AlignVCenter }
+                        Image {
+                            source: Qt.resolvedUrl("../assets/twitch.svg")
+                            sourceSize: Qt.size(64, 64)
+                            width: 28
+                            height: 28
+                            fillMode: Image.PreserveAspectFit
+                            smooth: true
+                            asynchronous: true
+                            Layout.alignment: Qt.AlignVCenter
+                        }
                         Text {
                             text: { if (!api) return ""; api.refreshCounter; return api.loc("ui.twitch_head") }
                             color: twHi; font.pixelSize: 22; font.bold: true; font.letterSpacing: 0.2
@@ -133,32 +151,6 @@ Item {
                         }
                     }
 
-                    Text { visible: { if (!api) return false; api.refreshCounter; return !api.twitchKeyringSession() } text: { if (!api) return ""; api.refreshCounter; return api.twitchAppsHelpHtml() } textFormat: Text.RichText; color: muted; font.pixelSize: 11; wrapMode: Text.Wrap; Layout.fillWidth: true; onLinkActivated: l => api.openUrl(l) }
-
-                    TextField {
-                        id: twCid
-                        visible: { if (!api) return false; api.refreshCounter; return !api.twitchKeyringSession() }
-                        color: ink; leftPadding: 10; rightPadding: 10; topPadding: 8; bottomPadding: 8
-                        placeholderText: { if (!api) return ""; api.refreshCounter; return api.loc("tw.client_id") }
-                        font.pixelSize: 13; selectionColor: twBar; selectedTextColor: "#fff"
-                        onTextChanged: if (activeFocus) api.setTwitchClientIdText(text)
-                        background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                        Layout.fillWidth: true
-                        Connections { target: api; function onRefreshCounterChanged() { if (!twCid.activeFocus) twCid.text = api.twitchClientIdGet() } }
-                        Component.onCompleted: text = api.twitchClientIdGet()
-                    }
-                    TextField {
-                        id: twSec
-                        visible: { if (!api) return false; api.refreshCounter; return !api.twitchKeyringSession() }
-                        color: ink; leftPadding: 10; rightPadding: 10; topPadding: 8; bottomPadding: 8
-                        echoMode: TextInput.Password; placeholderText: { if (!api) return ""; api.refreshCounter; return api.loc("tw.client_secret") }
-                        font.pixelSize: 13
-                        onTextChanged: if (activeFocus) api.setTwitchSecretText(text)
-                        background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                        Layout.fillWidth: true
-                        Connections { target: api; function onRefreshCounterChanged() { if (!twSec.activeFocus) twSec.text = api.twitchSecretGet() } }
-                        Component.onCompleted: text = api.twitchSecretGet()
-                    }
                     RowLayout {
                         visible: { if (!api) return false; api.refreshCounter; return !api.twitchKeyringSession() }
                         Layout.fillWidth: true; spacing: 8
@@ -169,27 +161,21 @@ Item {
                         }
                         Item { Layout.fillWidth: true }
                     }
-                    TextField {
-                        id: twTok
-                        visible: { if (!api) return false; api.refreshCounter; return !api.twitchKeyringSession() }
-                        color: ink; leftPadding: 10; rightPadding: 10; topPadding: 8; bottomPadding: 8; echoMode: TextInput.Password
-                        placeholderText: { if (!api) return ""; api.refreshCounter; return api.loc("tw.token_manual") }
-                        font.pixelSize: 13
-                        onTextChanged: if (activeFocus) api.setTwitchTokenText(text)
-                        background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                        Layout.fillWidth: true
-                        Connections { target: api; function onRefreshCounterChanged() { if (!twTok.activeFocus) twTok.text = api.twitchTokenGet() } }
-                        Component.onCompleted: text = api.twitchTokenGet()
-                    }
-                    ConnPillButton {
-                        visible: { if (!api) return false; api.refreshCounter; return !api.twitchKeyringSession() }
-                        text: { if (!api) return ""; api.refreshCounter; return api.loc("tw.save_app") }
-                        onClicked: api.twitchSaveAppKeys()
-                        colRest: "#1a2232"
-                        colHover: "#232c40"
-                        colPress: "#2d384e"
-                        borRest: "#384154"
-                        borHover: "#4a5568"
+                    Text {
+                        visible: {
+                            if (!api) return false;
+                            api.refreshCounter;
+                            return !api.twitchKeyringSession() && !api.twitchClientConfigured();
+                        }
+                        text: {
+                            if (!api) return "";
+                            api.refreshCounter;
+                            return api.loc("tw.client_id_env_required").replace("{env}", api.twitchClientIdEnvName());
+                        }
+                        textFormat: Text.RichText
+                        color: muted
+                        font.pixelSize: 11
+                        wrapMode: Text.Wrap
                         Layout.fillWidth: true
                     }
 
@@ -217,8 +203,10 @@ Item {
                         Text { text: { if (!api) return ""; api.refreshCounter; return api.loc("tw.channel") } color: muted; font.pixelSize: 12; font.weight: Font.Medium; font.letterSpacing: 0.2 }
                         TextField {
                             id: twCh; width: parent.width; color: ink; leftPadding: 12; rightPadding: 12; topPadding: 10; bottomPadding: 10; font.pixelSize: 14
+                            placeholderTextColor: muted
                             placeholderText: { if (!api) return ""; api.refreshCounter; return api.loc("tw.channel_ph") }
                             onTextChanged: if (activeFocus) api.setTwitchChannelText(text)
+                            onEditingFinished: if (api) api.twitchChannelCommit(text)
                             background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
                             Component.onCompleted: { if (api) twCh.text = api.twitchChannelGet() }
                             Connections { target: api; function onRefreshCounterChanged() { if (!twCh.activeFocus) twCh.text = api.twitchChannelGet() } }
@@ -264,8 +252,18 @@ Item {
                     width: parent.width - 40
                     spacing: 14
                     RowLayout {
-                        Layout.fillWidth: true; spacing: 8
-                        Rectangle { width: 3; height: 24; radius: 1; color: ytBar; Layout.alignment: Qt.AlignVCenter }
+                        Layout.fillWidth: true; spacing: 10
+                        Rectangle { width: 3; height: 26; radius: 1; color: ytBar; Layout.alignment: Qt.AlignVCenter }
+                        Image {
+                            source: Qt.resolvedUrl("../assets/youtube.svg")
+                            sourceSize: Qt.size(64, 64)
+                            width: 28
+                            height: 28
+                            fillMode: Image.PreserveAspectFit
+                            smooth: true
+                            asynchronous: true
+                            Layout.alignment: Qt.AlignVCenter
+                        }
                         Text {
                             text: { if (!api) return ""; api.refreshCounter; return api.loc("ui.youtube_head") }
                             color: ytHi; font.pixelSize: 22; font.bold: true; Layout.alignment: Qt.AlignVCenter; Layout.fillWidth: true
@@ -302,6 +300,7 @@ Item {
                     Text { visible: { if (!api) return false; api.refreshCounter; return api.googleLinked() } text: { if (!api) return ""; api.refreshCounter; return api.loc("yt.video_label") } color: muted; font.pixelSize: 12; font.weight: Font.Medium; Layout.fillWidth: true }
                     TextField {
                         id: ytV; visible: { if (!api) return false; api.refreshCounter; return api.googleLinked() } color: ink; leftPadding: 12; rightPadding: 12; topPadding: 10; bottomPadding: 10; font.pixelSize: 13
+                        placeholderTextColor: muted
                         placeholderText: { if (!api) return ""; api.refreshCounter; return api.loc("yt.video_ph") }
                         onTextChanged: if (activeFocus) api.setYoutubeVideoText(text)
                         background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
@@ -324,6 +323,88 @@ Item {
                             checked: { if (!api) return false; api.refreshCounter; return api.youtubeRunning() }
                             onToggled: { if (api) api.youtubeTransport() }
                             scale: ytSw.hovered ? 1.08 : 1.0
+                            Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                        }
+                    }
+                }
+            }
+
+            // -------- TikTok card --------
+            Item {
+                id: tkCard
+                Layout.fillWidth: true
+                implicitHeight: tkCol.implicitHeight + 40
+
+                Rectangle {
+                    anchors.fill: parent
+                    z: 0
+                    color: cardBase; radius: 16; border.width: 1; border.color: cardEdge
+                    Rectangle { anchors { left: parent.left; right: parent.right; top: parent.top; margins: 1 } height: 1; color: "#103044"; opacity: 0.35 }
+                }
+
+                ColumnLayout {
+                    id: tkCol
+                    x: 20; y: 20
+                    width: parent.width - 40
+                    spacing: 14
+
+                    RowLayout {
+                        Layout.fillWidth: true; spacing: 10
+                        Rectangle { width: 3; height: 26; radius: 1; color: tkBar; Layout.alignment: Qt.AlignVCenter }
+                        Image {
+                            source: Qt.resolvedUrl("../assets/tiktok.svg")
+                            sourceSize: Qt.size(64, 64)
+                            width: 28
+                            height: 28
+                            fillMode: Image.PreserveAspectFit
+                            smooth: true
+                            asynchronous: true
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+                        Text {
+                            text: { if (!api) return ""; api.refreshCounter; return api.loc("ui.tiktok_head") }
+                            color: tkHi; font.pixelSize: 22; font.bold: true; Layout.alignment: Qt.AlignVCenter; Layout.fillWidth: true
+                        }
+                    }
+
+                    Text {
+                        text: { if (!api) return ""; api.refreshCounter; return api.tiktokConnectedTextGet() }
+                        color: ink; font.pixelSize: 14; font.weight: Font.DemiBold; wrapMode: Text.Wrap
+                        Layout.fillWidth: true
+                    }
+
+                    Column {
+                        Layout.fillWidth: true
+                        spacing: 6
+                        Text { text: { if (!api) return ""; api.refreshCounter; return api.loc("tk.username") } color: muted; font.pixelSize: 12; font.weight: Font.Medium; font.letterSpacing: 0.2 }
+                        TextField {
+                            id: tkUser; width: parent.width; color: ink; leftPadding: 12; rightPadding: 12; topPadding: 10; bottomPadding: 10; font.pixelSize: 14
+                            placeholderTextColor: muted
+                            placeholderText: { if (!api) return ""; api.refreshCounter; return api.loc("tk.username_ph") }
+                            onTextChanged: if (activeFocus) api.setTiktokUsernameText(text)
+                            onEditingFinished: if (api) api.tiktokUsernameCommit(text)
+                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                            Component.onCompleted: { if (api) tkUser.text = api.tiktokUsernameGet() }
+                            Connections { target: api; function onRefreshCounterChanged() { if (!tkUser.activeFocus) tkUser.text = api.tiktokUsernameGet() } }
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.topMargin: 4
+                        Item { height: 1; Layout.fillWidth: true; Layout.alignment: Qt.AlignVCenter }
+                        Switch {
+                            id: tkSw
+                            padding: 0
+                            focusPolicy: Qt.NoFocus
+                            hoverEnabled: true
+                            transformOrigin: Item.Center
+                            Layout.alignment: Qt.AlignVCenter
+                            checked: { if (!api) return false; api.refreshCounter; return api.tiktokEnabled() }
+                            // Avoid feeding Switch's internal checked state back into backend.
+                            // Binding-controlled checked + user interaction can cause double flips.
+                            onClicked: { if (api) api.tiktokSetEnabled(!api.tiktokEnabled()) }
+                            scale: tkSw.hovered ? 1.08 : 1.0
                             Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
                         }
                     }

@@ -12,17 +12,58 @@ SETTINGS_UI_LOCALE: Final[str] = "ui/locale"
 DEFAULT_LOCALE: Final[AppLocale] = "uk"
 
 _TABLE: dict[str, dict[AppLocale, str]] = {
-    "app.window_title": {"uk": "", "en": ""},
+    "app.window_title": {"uk": "Stream Cheremsha", "en": "Stream Cheremsha"},
     # Tabs
     "tab.connections": {"uk": "Зв'язки", "en": "Connections"},
     "tab.settings": {"uk": "Налаштування", "en": "Settings"},
     "tab.chat": {"uk": "Чат", "en": "Chat"},
+    "chat.font": {"uk": "Шрифт", "en": "Font"},
+    "chat.font_size": {"uk": "Розмір", "en": "Size"},
+    "chat.clear": {"uk": "Очистити чат", "en": "Clear chat"},
+    "chat.clear_hint": {"uk": "Видалити всі повідомлення з вікна чату", "en": "Remove all messages from the chat pane"},
+    "chat.test_message": {"uk": "Тестове повідомлення", "en": "Test chat message"},
+    "chat.test_hint": {
+        "uk": "Показати приклади повідомлень Twitch і YouTube — лише для перевірки вигляду (не йдуть у стрім)",
+        "en": "Show sample Twitch and YouTube lines to preview appearance (not sent to the stream)",
+    },
+    "chat.test_author": {"uk": "Cheremsha", "en": "Cheremsha"},
+    "chat.test_body_twitch": {
+        "uk": "Вітаю з Twitch! Перевірка відображення чату 😀",
+        "en": "Hello from Twitch! Chat display check 😀",
+    },
+    "chat.test_body_youtube": {
+        "uk": "Вітаю з YouTube! Перевірка відображення чату 🎬",
+        "en": "Hello from YouTube! Chat display check 🎬",
+    },
+    "chat.open_popout": {
+        "uk": "В окремому вікні",
+        "en": "Open in separate window",
+    },
+    "chat.open_popout_hint": {
+        "uk": "Той самий чат у новому вікні: прозорий лише фон, текст лишається чітким; можна поверх сцени",
+        "en": "Same chat in a new window: background opacity only, text stays sharp; for overlaying the scene",
+    },
+    "chat.popout_title": {
+        "uk": "Чат — Stream Cheremsha",
+        "en": "Chat — Stream Cheremsha",
+    },
+    "chat.popout_opacity": {"uk": "Прозорість", "en": "Opacity"},
+    "chat.popout_minimize": {"uk": "Згорнути", "en": "Minimize"},
+    "chat.popout_show_controls": {
+        "uk": "Показати панель керування",
+        "en": "Show control bar",
+    },
+    "chat.popout_hide_controls": {
+        "uk": "Сховати панель керування",
+        "en": "Hide control bar",
+    },
     "tab.audio": {"uk": "Аудіо", "en": "Audio"},
     "tab.logs": {"uk": "Логи", "en": "Logs"},
     # App chrome (QML + shell)
-    "ui.app_header_title": {"uk": "stream-cheremsha", "en": "stream-cheremsha"},
+    "ui.app_header_title": {"uk": "Stream Cheremsha", "en": "Stream Cheremsha"},
     "ui.twitch_head": {"uk": "Twitch", "en": "Twitch"},
     "ui.youtube_head": {"uk": "YouTube", "en": "YouTube"},
+    "ui.tiktok_head": {"uk": "TikTok", "en": "TikTok"},
     "ui.nav_chat": {"uk": "Чат", "en": "Chat"},
     "ui.nav_tts": {"uk": "TTS", "en": "TTS"},
     "ui.nav_chat_hint": {"uk": "Відкрити чат", "en": "Open chat"},
@@ -36,6 +77,98 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "ui.nav_home_hint": {
         "uk": "Повернутися на екран підключення Twitch / YouTube",
         "en": "Back to Twitch / YouTube connections",
+    },
+    "ui.nav_donations": {"uk": "Донати", "en": "Donations"},
+    "ui.nav_donations_hint": {
+        "uk": "Донати з Donatik та інших сервісів",
+        "en": "Donations from Donatik and other services",
+    },
+    # Donations tab (Donatik)
+    "donations.title_pick": {"uk": "Ваші донати", "en": "Your donations"},
+    "donations.title_donatik": {"uk": "Donatik", "en": "Donatik"},
+    "donations.title_donatello": {"uk": "Donatello", "en": "Donatello"},
+    "donations.card_donatello_hint": {
+        "uk": "Донати через API Donatello (токен у заголовку X-Token).",
+        "en": "Donations via Donatello API (X-Token header).",
+    },
+    "donations.setup_intro_donatello_html": {
+        "uk": "Токен з кабінету Donatello: "
+        '<a href="https://donatello.to">donatello.to</a> — зберігається локально в сховищі ОС.',
+        "en": "Token from your Donatello dashboard: "
+        '<a href="https://donatello.to">donatello.to</a> — stored locally in the OS keyring.',
+    },
+    "donations.donatello_summary": {
+        "uk": "Усього: {n} · стор. {p}/{pc}",
+        "en": "Total: {n} · page {p}/{pc}",
+    },
+    "donations.err_no_token_donatello": {
+        "uk": "Немає токена Donatello.",
+        "en": "No Donatello token saved.",
+    },
+    "donations.err_http_donatello": {
+        "uk": "Donatello HTTP {code}: {detail}",
+        "en": "Donatello HTTP {code}: {detail}",
+    },
+    "donations.err_network_donatello": {
+        "uk": "Мережа / Donatello: {detail}",
+        "en": "Network / Donatello: {detail}",
+    },
+    "donations.err_bad_response_donatello": {
+        "uk": "Некоректна відповідь Donatello: {detail}",
+        "en": "Invalid Donatello response: {detail}",
+    },
+    "donations.donatello_published": {"uk": "На сайті", "en": "Published"},
+    "donations.donatello_draft": {"uk": "Чернетка", "en": "Draft"},
+    "donations.subtitle_pick": {
+        "uk": "Оберіть сервіс. Пізніше з’являться й інші платформи.",
+        "en": "Pick a provider. More platforms will appear later.",
+    },
+    "donations.card_donatik_hint": {
+        "uk": "Перегляд донатів через API Donatik (токен з кабінету).",
+        "en": "View donations via Donatik API (token from your dashboard).",
+    },
+    "donations.tap_to_open": {"uk": "Натисніть, щоб відкрити", "en": "Tap to open"},
+    "donations.more_soon": {"uk": "Інші сервіси — незабаром", "en": "More providers coming soon"},
+    "donations.back_services": {"uk": "Сервіси", "en": "Services"},
+    "donations.setup_intro_html": {
+        "uk": "Створіть API-токен у кабінеті Donatik: "
+        '<a href="https://donatik.io">donatik.io</a> — він зберігається локально в сховищі ОС.',
+        "en": "Create an API token in your Donatik dashboard: "
+        '<a href="https://donatik.io">donatik.io</a> — it is stored locally in the OS keyring.',
+    },
+    "donations.api_token": {"uk": "API токен", "en": "API token"},
+    "donations.token_ph": {"uk": "Вставте токен", "en": "Paste token"},
+    "donations.save_token": {"uk": "Зберегти й завантажити", "en": "Save & load"},
+    "donations.from": {"uk": "Від", "en": "From"},
+    "donations.to": {"uk": "До", "en": "To"},
+    "donations.refresh": {"uk": "Оновити", "en": "Refresh"},
+    "donations.live_poll": {"uk": "Оновлення кожні 5 с", "en": "Live refresh (5s)"},
+    "donations.tts_new": {"uk": "Озвучувати нові", "en": "TTS for new"},
+    "donations.tts_announce": {
+        "uk": "Новий донат від {author}: {amount} {currency}. Текст: {message}",
+        "en": "New donation from {author}: {amount} {currency}. Message: {message}",
+    },
+    "donations.card_live_abbr": {"uk": "Live", "en": "Live"},
+    "donations.card_tts_abbr": {"uk": "TTS", "en": "TTS"},
+    "donations.forget_token": {"uk": "Видалити токен", "en": "Remove token"},
+    "donations.summary": {
+        "uk": "Усього: {n} · стор. {p}/{pc}",
+        "en": "Total: {n} · page {p}/{pc}",
+    },
+    "donations.prev": {"uk": "Назад", "en": "Prev"},
+    "donations.next": {"uk": "Далі", "en": "Next"},
+    "donations.err_no_token": {"uk": "Немає токена Donatik.", "en": "No Donatik token saved."},
+    "donations.err_http": {
+        "uk": "Donatik HTTP {code}: {detail}",
+        "en": "Donatik HTTP {code}: {detail}",
+    },
+    "donations.err_network": {
+        "uk": "Мережа / Donatik: {detail}",
+        "en": "Network / Donatik: {detail}",
+    },
+    "donations.err_bad_response": {
+        "uk": "Некоректна відповідь Donatik: {detail}",
+        "en": "Invalid Donatik response: {detail}",
     },
     # Settings
     "settings.lang_label": {"uk": "Мова інтерфейсу", "en": "Interface language"},
@@ -55,6 +188,42 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Автозапуск YouTube при старті додатку (потрібен вхід у Google)",
         "en": "Auto-start YouTube on launch (requires Google sign-in)",
     },
+    # Connections — TikTok
+    "tk.username": {"uk": "Юзернейм", "en": "Username"},
+    "tk.username_ph": {"uk": "нікнейм без @", "en": "username without @"},
+    # TikTok source
+    "tk.connecting": {"uk": "TikTok: підключення до @{user}…", "en": "TikTok: connecting to @{user}…"},
+    "tk.connected": {"uk": "TikTok: підключено (@{user})", "en": "TikTok: connected (@{user})"},
+    "tk.disconnected_retry": {
+        "uk": "TikTok: роз'єднано — повтор через {sec:.0f}s…",
+        "en": "TikTok: disconnected — retry in {sec:.0f}s…",
+    },
+    "tk.live_ended_retry": {
+        "uk": "TikTok: ефір завершено — перевірка знову через {sec:.0f}s…",
+        "en": "TikTok: live ended — checking again in {sec:.0f}s…",
+    },
+    "tk.user_offline": {
+        "uk": "TikTok: @{user} офлайн — повтор через {sec:.0f}s…",
+        "en": "TikTok: @{user} is offline — retry in {sec:.0f}s…",
+    },
+    "tk.user_not_found": {
+        "uk": "TikTok: не знайдено @{user} — повтор через {sec:.0f}s…",
+        "en": "TikTok: user @{user} not found — retry in {sec:.0f}s…",
+    },
+    "tk.age_restricted": {
+        "uk": "TikTok: ефір @{user} віковий (18+) — повтор через {sec:.0f}s…",
+        "en": "TikTok: @{user} is age restricted — retry in {sec:.0f}s…",
+    },
+    "tk.rate_limited": {
+        "uk": "TikTok: ліміт підключень — пауза {sec:.0f}s…",
+        "en": "TikTok: rate limited — pausing {sec:.0f}s…",
+    },
+    "tk.error_retry": {
+        "uk": "TikTok error: {err} — повтор через {sec:.0f}s…",
+        "en": "TikTok error: {err} — retry in {sec:.0f}s…",
+    },
+    "tk.stopped": {"uk": "TikTok: зупинено", "en": "TikTok: stopped"},
+    "tk.bad_username": {"uk": "TikTok: введіть юзернейм (нік) стрімера", "en": "TikTok: enter the streamer username"},
     # Connections — Twitch
     "tw.group": {"uk": "Twitch", "en": "Twitch"},
     "tw.apps_help": {
@@ -70,6 +239,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "tw.token_placeholder": {"uk": "Або вставте access token вручну", "en": "Or paste an access token manually"},
     "tw.token_manual": {"uk": "Токен вручну", "en": "Manual token"},
     "tw.save_app": {"uk": "Зберегти дані застосунку", "en": "Save application credentials"},
+    "tw.client_id_env_required": {
+        "uk": "Ця збірка очікує Client ID через змінну середовища: <code>{env}</code>",
+        "en": "This build expects Client ID via environment variable: <code>{env}</code>",
+    },
     "tw.logout": {"uk": "Вийти з Twitch", "en": "Sign out of Twitch"},
     "tw.channel": {"uk": "Канал чату", "en": "Chat channel"},
     "tw.channel_ph": {"uk": "логін каналу без #", "en": "channel login without #"},
@@ -128,12 +301,21 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "audio.piper_voice_group": {"uk": "Piper — голос (.onnx)", "en": "Piper — voice (.onnx)"},
     "audio.piper_path_short": {"uk": "Файл", "en": "File"},
     "audio.piper_voice_intro": {
-        "uk": "Потрібен файл голосу. Оберіть один із варіантів (можна комбінувати: спочатку завантажити, потім за потреби змінити шлях).",
-        "en": "You need a voice file. Pick one approach (you can combine: download first, then adjust the path if needed).",
+        "uk": (
+            "Потрібен файл голосу. Оберіть один із варіантів (можна комбінувати: спочатку завантажити, "
+            "потім за потреби змінити шлях)."
+        ),
+        "en": (
+            "You need a voice file. Pick one approach (you can combine: download first, then adjust the path if "
+            "needed)."
+        ),
     },
     "audio.piper_option_download": {
         "uk": "1) Завантажити з інтернету — для мови з поля «Мова озвучення (TTS)» вище. Потрібен інтернет.",
-        "en": "1) Download from the Internet — uses the “Speech language (TTS)” field above. Internet access is required.",
+        "en": (
+            "1) Download from the Internet — uses the “Speech language (TTS)” field above. Internet access is "
+            "required."
+        ),
     },
     "audio.piper_option_file": {
         "uk": "2) Або вкажіть локальний файл .onnx (і зазвичай .onnx.json поруч), якщо модель уже є на диску:",
@@ -163,8 +345,11 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "RVC (Retrieval-based Voice Conversion) застосовується до вже синтезованого звуку (Google чи Piper) "
         "і змінює тембр (мем, клон). У venv: `cheremsha-bootstrap-rvc` (див. README). "
         "Для Google TTS звук тимчасово перетворюється в WAV (ffmpeg) перед RVC.",
-        "en": "RVC (Retrieval-based Voice Conversion) runs on synthesized audio (Google or Piper) to change timbre. "
-        "Run `cheremsha-bootstrap-rvc` in the venv (see README). Google TTS (MP3) is decoded to WAV via ffmpeg before RVC.",
+        "en": (
+            "RVC (Retrieval-based Voice Conversion) runs on synthesized audio (Google or Piper) to change timbre. "
+            "Run `cheremsha-bootstrap-rvc` in the venv (see README). Google TTS (MP3) is decoded to WAV via ffmpeg "
+            "before RVC."
+        ),
     },
     "audio.rvc_enable": {
         "uk": "Увімкнути RVC (після будь-якого TTS)",
@@ -226,6 +411,7 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "footer.pipeline": {"uk": "Пайплайн", "en": "Pipeline"},
     "footer.twitch": {"uk": "Twitch", "en": "Twitch"},
     "footer.youtube": {"uk": "YouTube", "en": "YouTube"},
+    "footer.tiktok": {"uk": "TikTok", "en": "TikTok"},
     "footer.queues": {"uk": "Черги", "en": "Queues"},
     "footer.on": {"uk": "увімк", "en": "on"},
     "footer.off": {"uk": "вимк", "en": "off"},
@@ -248,15 +434,24 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "Ready — connect Twitch and/or YouTube",
     },
     "status.app_idle": {"uk": "Готово", "en": "Ready"},
-    "status.piper_download_start": {"uk": "Piper: завантаження голосу {voice}…", "en": "Piper: downloading voice {voice}…"},
+    "status.piper_download_start": {
+        "uk": "Piper: завантаження голосу {voice}…",
+        "en": "Piper: downloading voice {voice}…",
+    },
     "status.piper_download_ok": {"uk": "Piper: модель збережено — {path}", "en": "Piper: model saved — {path}"},
     "audio.piper_downloading": {"uk": "Завантаження голосу…", "en": "Downloading voice…"},
     "status.piper_need_model": {
-        "uk": "Piper: немає .onnx — натисніть «Завантажити голос» або «Огляд…»; до цього використовується Google TTS.",
+        "uk": (
+            "Piper: немає .onnx — натисніть «Завантажити голос» або «Огляд…»; "
+            "до цього використовується Google TTS."
+        ),
         "en": "Piper: no .onnx yet — use “Download voice” or “Browse…”; Google TTS is used until a model is set.",
     },
     # Coordinator
-    "coord.chat_queue_full": {"uk": "Черга чату переповнена — повідомлення відкинуто", "en": "Chat queue full — dropping message"},
+    "coord.chat_queue_full": {
+        "uk": "Черга чату переповнена — повідомлення відкинуто",
+        "en": "Chat queue full — dropping message",
+    },
     "coord.tts_queue_full": {
         "uk": "Черга TTS переповнена — подальші частини цього повідомлення відкинуто",
         "en": "TTS queue full — dropping further chunks for this message",
@@ -266,8 +461,14 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "coord.tts_error": {"uk": "Помилка TTS: {err}", "en": "TTS error: {err}"},
     # Twitch IRC / lifecycle
     "twitch.connecting": {"uk": "Twitch: підключення…", "en": "Twitch: connecting…"},
-    "twitch.irc_ready": {"uk": "Twitch: у IRC (@{nick}), чат #{channel}", "en": "Twitch: in IRC (@{nick}), chat #{channel}"},
-    "twitch.error_retry": {"uk": "Twitch error: {err} — повтор через {sec:.0f}s…", "en": "Twitch error: {err} — retry in {sec:.0f}s…"},
+    "twitch.irc_ready": {
+        "uk": "Twitch: у IRC (@{nick}), чат #{channel}",
+        "en": "Twitch: in IRC (@{nick}), chat #{channel}",
+    },
+    "twitch.error_retry": {
+        "uk": "Twitch error: {err} — повтор через {sec:.0f}s…",
+        "en": "Twitch error: {err} — retry in {sec:.0f}s…",
+    },
     "twitch.closed_retry": {
         "uk": "Twitch: з'єднання закрито — повторне підключення через {sec:.0f}s…",
         "en": "Twitch: connection closed — reconnecting in {sec:.0f}s…",
@@ -292,13 +493,25 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "yt.oauth_browser": {"uk": "YouTube: відкриваємо браузер для OAuth…", "en": "YouTube: opening browser for OAuth…"},
     "yt.oauth_saved": {"uk": "YouTube: токен OAuth збережено", "en": "YouTube: OAuth token saved"},
     "yt.run_oauth_first": {"uk": "YouTube: спочатку виконайте OAuth", "en": "YouTube: run OAuth first"},
-    "yt.token_expired": {"uk": "YouTube: токен прострочено — знову OAuth", "en": "YouTube: token expired — run OAuth again"},
+    "yt.token_expired": {
+        "uk": "YouTube: токен прострочено — знову OAuth",
+        "en": "YouTube: token expired — run OAuth again",
+    },
     "yt.stopped": {"uk": "YouTube: зупинено", "en": "YouTube: stopped"},
     "yt.bad_url": {"uk": "YouTube: некоректний URL або ID відео", "en": "YouTube: invalid video URL or ID"},
-    "yt.token_missing": {"uk": "YouTube: немає токена OAuth — увійдіть знову", "en": "YouTube: OAuth token missing — run login again"},
-    "yt.api_init_retry": {"uk": "YouTube API init error: {err} — повтор через {sec:.0f}s…", "en": "YouTube API init error: {err} — retry in {sec:.0f}s…"},
+    "yt.token_missing": {
+        "uk": "YouTube: немає токена OAuth — увійдіть знову",
+        "en": "YouTube: OAuth token missing — run login again",
+    },
+    "yt.api_init_retry": {
+        "uk": "YouTube API init error: {err} — повтор через {sec:.0f}s…",
+        "en": "YouTube API init error: {err} — retry in {sec:.0f}s…",
+    },
     "yt.retry": {"uk": "YouTube: {err} — повтор через {sec:.0f}s…", "en": "YouTube: {err} — retry in {sec:.0f}s…"},
-    "yt.wait_live": {"uk": "YouTube: {err} — очікування live ({sec:.0f}s)…", "en": "YouTube: {err} — waiting for live ({sec:.0f}s)…"},
+    "yt.wait_live": {
+        "uk": "YouTube: {err} — очікування live ({sec:.0f}s)…",
+        "en": "YouTube: {err} — waiting for live ({sec:.0f}s)…",
+    },
     "yt.no_live_retry": {
         "uk": "YouTube: немає активного ефіру — перевірка знову через {sec:.0f}s…",
         "en": "YouTube: no active stream — checking again in {sec:.0f}s…",
@@ -309,8 +522,12 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     },
     "yt.polling": {"uk": "YouTube: опитування чату…", "en": "YouTube: polling chat…"},
     "yt.multi_streams": {
-        "uk": "YouTube: знайдено {n} ефірів — паралельне опитування чатів…",
-        "en": "YouTube: found {n} streams — polling chats in parallel…",
+        "uk": "YouTube: знайдено {n} ефірів — чати по черзі (менше витрата квоти)…",
+        "en": "YouTube: found {n} streams — rotating chats (lower API quota use)…",
+    },
+    "yt.quota_backoff": {
+        "uk": "YouTube: квота API вичерпана — пауза ~{min:.0f} хв без запитів…",
+        "en": "YouTube: API quota exhausted — pausing ~{min:.0f} min without requests…",
     },
     "yt.api_init": {"uk": "YouTube API init error: {err}", "en": "YouTube API init error: {err}"},
     "yt.http_error": {"uk": "YouTube HTTP error: {err}", "en": "YouTube HTTP error: {err}"},
@@ -329,23 +546,42 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "No token: sign in via browser, save app credentials, or paste a token.",
     },
     "dlg.youtube": {"uk": "YouTube", "en": "YouTube"},
+    "dlg.tiktok": {"uk": "TikTok", "en": "TikTok"},
+    "dlg.tiktok_need_username": {"uk": "Потрібен юзернейм (нік) стрімера.", "en": "Streamer username is required."},
     "dlg.youtube_next_json": {
         "uk": "Наступний вхід через Google знову запропонує обрати JSON клієнта.",
         "en": "The next Google sign-in will ask you to pick the client JSON again.",
     },
-    "dlg.google_json_title": {"uk": "Оберіть JSON OAuth-клієнта Google (один раз)", "en": "Select Google OAuth client JSON (one-time)"},
+    "dlg.google_json_title": {
+        "uk": "Оберіть JSON OAuth-клієнта Google (один раз)",
+        "en": "Select Google OAuth client JSON (one-time)",
+    },
     "dlg.tts": {"uk": "TTS", "en": "TTS"},
     "dlg.piper_not_installed": {
-        "uk": "Рушій Piper у цій збірці недоступний. Спробуйте перевстановити додаток або зверніться до автора збірки.",
+        "uk": (
+            "Рушій Piper у цій збірці недоступний. Спробуйте перевстановити додаток або зверніться до автора збірки."
+        ),
         "en": "The bundled Piper engine is not available. Try reinstalling the app or contact the packager.",
     },
     "dlg.rvc_missing": {
-        "uk": "RVC: стек не зібрано. У venv виконайте `cheremsha-bootstrap-rvc` (див. README), перезапустіть додаток. GPU — PyTorch (CUDA).",
-        "en": "RVC stack is not available. In the same venv run `cheremsha-bootstrap-rvc` (see README), then restart. For GPU use a CUDA PyTorch build.",
+        "uk": (
+            "RVC: стек не зібрано. У venv виконайте `cheremsha-bootstrap-rvc` (див. README), перезапустіть додаток. "
+            "GPU — PyTorch (CUDA)."
+        ),
+        "en": (
+            "RVC stack is not available. In the same venv run `cheremsha-bootstrap-rvc` (see README), then restart. "
+            "For GPU use a CUDA PyTorch build."
+        ),
     },
     "dlg.rvc_missing_detail": {
-        "uk": "RVC: стек не зібрано. Деталі:\n{detail}\n\nУ venv виконайте `cheremsha-bootstrap-rvc` (див. README), перезапустіть додаток.",
-        "en": "RVC stack is not available. Details:\n{detail}\n\nIn the same venv run `cheremsha-bootstrap-rvc` (see README), then restart.",
+        "uk": (
+            "RVC: стек не зібрано. Деталі:\n{detail}\n\nУ venv виконайте `cheremsha-bootstrap-rvc` (див. README), "
+            "перезапустіть додаток."
+        ),
+        "en": (
+            "RVC stack is not available. Details:\n{detail}\n\nIn the same venv run `cheremsha-bootstrap-rvc` "
+            "(see README), then restart."
+        ),
     },
     "dlg.rvc_toggle_failed": {
         "uk": "Помилка RVC:\n{detail}",
@@ -380,7 +616,8 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
             "<h3>Вимоги до ПК</h3>"
             "<ul>"
             "<li><b>CPU</b>: голоси «medium» зазвичай нормально на сучасному 4+ ядерному CPU; «x_low» легші.</li>"
-            "<li><b>GPU</b>: з CUDA менше навантаження на CPU; потрібна підтримувана відеокарта NVIDIA у цьому режимі.</li>"
+            "<li><b>GPU</b>: з CUDA менше навантаження на CPU; потрібна підтримувана відеокарта NVIDIA у цьому "
+            "режимі.</li>"
             "<li><b>Диск</b>: одна модель — порядку десятків–сотень МБ.</li>"
             "</ul>"
             "<p>Документація: "

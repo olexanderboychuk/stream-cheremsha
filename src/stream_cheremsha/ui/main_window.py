@@ -5,9 +5,14 @@ import html
 import json
 import logging
 import os
+import threading
+from collections import deque
+from datetime import UTC, datetime
 from pathlib import Path
+from xml.sax.saxutils import quoteattr
 
 import httpx
+import shiboken6
 from PySide6.QtCore import (
     QEvent,
     QObject,
@@ -20,7 +25,7 @@ from PySide6.QtCore import (
     Signal,
     Slot,
 )
-from PySide6.QtGui import QCloseEvent, QColor, QIcon, QTextCursor
+from PySide6.QtGui import QCloseEvent, QColor, QFont, QIcon, QTextCursor
 from PySide6.QtQuickWidgets import QQuickWidget
 from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtWidgets import (
@@ -30,6 +35,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFileDialog,
+    QFontComboBox,
     QFormLayout,
     QFrame,
     QGridLayout,
@@ -55,6 +61,7 @@ from PySide6.QtWidgets import (
 from stream_cheremsha import l10n
 from stream_cheremsha.audio.qt_sink import QtAudioSink
 from stream_cheremsha.chat import twitch_credentials, twitch_oauth_device
+from stream_cheremsha.chat.tiktok_source import TikTokChatSource
 from stream_cheremsha.chat.twitch_source import TwitchSource
 from stream_cheremsha.chat.youtube_source import (
     YouTubeChatSource,
@@ -63,7 +70,7 @@ from stream_cheremsha.chat.youtube_source import (
     parse_google_desktop_client_json,
 )
 from stream_cheremsha.config import constants, keyring_store
-from stream_cheremsha.domain.models import ChatMessage
+from stream_cheremsha.domain.models import ChatMessage, ChatPlatform
 from stream_cheremsha.domain.protocols import TextToSpeech
 from stream_cheremsha.pipeline.coordinator import StreamCoordinator
 from stream_cheremsha.tts.google_translate_tts import GoogleTranslateTts
@@ -75,7 +82,21 @@ from stream_cheremsha.tts.rvc_wav import (
     rvc_runtime_queue_size,
     rvc_runtime_stop_dispatcher,
 )
+from stream_cheremsha.ui.chat_formatting import (
+    CHAT_DEFAULT_FONT_FAMILY,
+    chat_font_stack_css,
+    format_chat_message_html,
+    load_platform_icon_data_uris,
+)
+from stream_cheremsha.ui.chat_popout import ChatPopoutWindow
+from stream_cheremsha.ui.donations_qml_api import DonationsQmlApi
 from stream_cheremsha.ui.qml_api import StreamCheremshaQmlApi
+from stream_cheremsha.ui.window_geometry import (
+    KEY_MAIN_WINDOW,
+    KEY_PIPER_HELP_DIALOG,
+    restore_window_geometry,
+    save_window_geometry,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +110,18 @@ def _qml_path(name: str) -> Path:
 def _asset_path(name: str) -> Path:
     return _STREAM_ROOT / "assets" / name
 
+
+def _footer_richtext_img(name: str, px: int) -> str:
+    path = _asset_path(name)
+    if not path.is_file():
+        return ""
+    url = QUrl.fromLocalFile(str(path.resolve())).toString()
+    return f"<img width='{px}' height='{px}' src={quoteattr(url)} /> "
+
 _MAX_LOG_DOCUMENT_BLOCKS = 3500
+_MAX_CHAT_DOCUMENT_BLOCKS = 450
+_SETTINGS_CHAT_FONT_PT = "ui/chat_font_pt"
+_SETTINGS_CHAT_FONT_FAMILY = "ui/chat_font_family"
 
 _TWITCH_APPS_URL = "https://dev.twitch.tv/console/apps"
 _GOOGLE_CREDS_URL = "https://console.cloud.google.com/apis/credentials"
@@ -141,12 +173,15 @@ class QtLogHandler(logging.Handler):
 class MainWindow(QWidget):
     """MVP: stacked panes (connections, settings, chat, audio, logs) + status."""
 
+    startup_finished = Signal()
+
     # QStackedWidget indices (order must match _build_ui addWidget sequence).
     _IX_CONN = 0
     _IX_SETTINGS = 1
     _IX_CHAT = 2
     _IX_AUDIO = 3
     _IX_LOGS = 4
+    _IX_DONATIONS = 5
 
     @staticmethod
     def _external_link_label(html: str) -> QLabel:
@@ -192,15 +227,22 @@ class MainWindow(QWidget):
         self.resize(init_w, init_h)
 
         self._settings = QSettings("stream-cheremsha", "cheremsha")
+        restore_window_geometry(KEY_MAIN_WINDOW, self)
         self._locale = l10n.normalize_locale(
             self._settings.value(l10n.SETTINGS_UI_LOCALE, l10n.DEFAULT_LOCALE, str),
         )
         self.setWindowTitle(l10n.tr(self._locale, "app.window_title"))
+        app_ico = _asset_path("icon.png")
+        if app_ico.is_file():
+            self.setWindowIcon(QIcon(str(app_ico)))
         self._closing = False
         self._rvc_toggle_busy = False
+        self._tiktok_toggle_busy = False
+        self._tiktok_enabled = False
         self._status_app = l10n.tr(self._locale, "status.app_idle")
         self._status_twitch = "—"
         self._status_youtube = "—"
+        self._status_tiktok = "—"
 
         self._bridge = UiBridge(self)
         self._bridge.append_chat.connect(self._append_chat)
@@ -227,8 +269,23 @@ class MainWindow(QWidget):
             on_status=self._on_user_status,
             get_locale=self._get_locale,
         )
+        self._tiktok = TikTokChatSource(
+            self._coordinator,
+            on_status=self._on_user_status,
+            get_locale=self._get_locale,
+        )
+        self._tiktok_username = QLineEdit()
+        self._chat_ic_tw: str | None = None
+        self._chat_ic_yt: str | None = None
+        self._chat_ic_tk: str | None = None
+        # Hard cap: no unbounded growth; eviction matches QTextDocument line trim below.
+        self._chat_message_history: deque[ChatMessage] = deque(
+            maxlen=_MAX_CHAT_DOCUMENT_BLOCKS,
+        )
+        self._chat_popout: ChatPopoutWindow | None = None
 
         self._build_ui()
+        self._warm_chat_icons()
         self._bridge.append_log.connect(self._append_log_line)
         self._install_log_handler()
         self._load_settings_fields()
@@ -309,6 +366,18 @@ class MainWindow(QWidget):
         self._qml_conn.engine().rootContext().setContextProperty("api", self._qml_api)
         self._qml_conn.setSource(QUrl.fromLocalFile(str(qml_p)))
 
+        self._donations_qml_api = DonationsQmlApi(self)
+        self._qml_donations = QQuickWidget(self)
+        self._qml_donations.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
+        self._qml_donations.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self._qml_donations.setClearColor(QColor(10, 11, 14))
+        qml_don = _qml_path("DonationsView.qml")
+        if not qml_don.is_file():
+            logger.error("QML not found: %s", qml_don)
+        don_ctx = self._qml_donations.engine().rootContext()
+        don_ctx.setContextProperty("donApi", self._donations_qml_api)
+        self._qml_donations.setSource(QUrl.fromLocalFile(str(qml_don)))
+
         root = QVBoxLayout(self)
         root.setSpacing(0)
         root.setContentsMargins(0, 0, 0, 0)
@@ -322,6 +391,7 @@ class MainWindow(QWidget):
         self._stack.addWidget(self._build_chat_tab())
         self._stack.addWidget(self._build_audio_tab())
         self._stack.addWidget(self._build_logs_tab())
+        self._stack.addWidget(self._qml_donations)
 
         self._footer_frame = QFrame()
         self._footer_frame.setObjectName("appFooter")
@@ -360,8 +430,28 @@ class MainWindow(QWidget):
         self._btn_footer_home.clicked.connect(
             lambda: self._set_main_page(self._IX_CONN),
         )
+        self._btn_footer_donations = QToolButton()
+        self._btn_footer_donations.setObjectName("footerNav")
+        self._btn_footer_donations.setProperty("navId", "navDonations")
+        self._btn_footer_donations.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton),
+        )
+        self._btn_footer_donations.setIconSize(QSize(18, 18))
+        self._btn_footer_donations.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextBesideIcon,
+        )
+        self._btn_footer_donations.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._btn_footer_donations.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_footer_donations.clicked.connect(
+            lambda: self._set_main_page(self._IX_DONATIONS),
+        )
         _foot.addWidget(
             self._btn_footer_home,
+            0,
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+        )
+        _foot.addWidget(
+            self._btn_footer_donations,
             0,
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
         )
@@ -433,8 +523,10 @@ class MainWindow(QWidget):
         on_chat = self._stack.currentIndex() == self._IX_CHAT
         on_tts = self._stack.currentIndex() == self._IX_AUDIO
         on_logs = self._stack.currentIndex() == self._IX_LOGS
+        on_don = self._stack.currentIndex() == self._IX_DONATIONS
         for b, active in (
             (getattr(self, "_btn_footer_home", None), on_conn),
+            (getattr(self, "_btn_footer_donations", None), on_don),
             (getattr(self, "_btn_footer_logs", None), on_logs),
             (self._btn_footer_chat, on_chat),
             (self._btn_footer_tts, on_tts),
@@ -464,6 +556,11 @@ class MainWindow(QWidget):
             self._btn_footer_logs.setText(tl)
             self._btn_footer_logs.setToolTip(self._tr("ui.nav_logs_hint"))
             self._btn_footer_logs.setAccessibleName(tl)
+        if hasattr(self, "_btn_footer_donations"):
+            td = self._tr("ui.nav_donations")
+            self._btn_footer_donations.setText(td)
+            self._btn_footer_donations.setToolTip(self._tr("ui.nav_donations_hint"))
+            self._btn_footer_donations.setAccessibleName(td)
 
     def _apply_dark_chrome(self) -> None:
         self.setStyleSheet(
@@ -511,9 +608,16 @@ class MainWindow(QWidget):
             "QLineEdit, QComboBox, QSpinBox, QTextEdit, QPlainTextEdit {"
             " background: #10141c; color: #e6e6e6; border: 1px solid #2a3142; "
             "border-radius: 8px; padding: 6px; }"
-            "QPushButton { background: #1a2130; color: #e6e6e6; border: 1px solid #2f3a4d; "
-            "border-radius: 8px; padding: 8px 14px; }"
-            "QPushButton:hover { background: #242d3d; }"
+            "QTextEdit#chatMessageView { background-color: #070910; color: #e2e8f0; "
+            "border: none; border-radius: 0; padding: 6px 8px; "
+            "selection-background-color: #1e3a5f; selection-color: #f8fafc; }"
+            "QWidget#chatToolbar { background-color: #0a0b0e; border-bottom: 1px solid #1e2430; "
+            "padding: 6px 10px; }"
+            "QPushButton { background-color: #1a2130; color: #e6e6e6; "
+            "border: 1px solid #2f3a4d; border-radius: 8px; padding: 8px 14px; }"
+            "QPushButton:hover { background-color: #202a3a; border-color: #3b4458; }"
+            "QPushButton:pressed { background-color: #2a3446; border-color: #4a5568; }"
+            "QPushButton:focus { outline: none; }"
             "QCheckBox { color: #eef2f6; spacing: 10px; font-size: 13px; }"
             "QCheckBox:disabled { color: #9aa5b8; }"
             "QCheckBox::indicator { width: 20px; height: 20px; border-radius: 5px; "
@@ -761,9 +865,14 @@ class MainWindow(QWidget):
         self._apply_connections_tab_texts()
         self._apply_audio_tab_texts()
         self._apply_logs_tab_texts()
+        self._apply_chat_tab_texts()
         self._apply_in_app_chrome_texts()
         if hasattr(self, "_qml_api"):
             self._qml_api.refresh()
+        if hasattr(self, "_donations_qml_api"):
+            self._donations_qml_api.refreshUi()
+        if self._chat_popout is not None:
+            self._chat_popout.apply_texts()
 
     def _refresh_connection_panels(self) -> None:
         tw_in = twitch_credentials.twitch_keyring_has_session()
@@ -813,10 +922,13 @@ class MainWindow(QWidget):
         self._refresh_connection_panels()
 
     def _twitch_client_id_resolved(self) -> str:
-        t = self._twitch_client_id.text().strip()
-        if t:
-            return t
-        return keyring_store.get_password(constants.KEY_TWITCH_CLIENT_ID) or ""
+        env_cid = os.environ.get(constants.ENV_TWITCH_CLIENT_ID, "").strip()
+        if env_cid:
+            return env_cid
+        cid = keyring_store.get_password(constants.KEY_TWITCH_CLIENT_ID) or ""
+        if cid.strip():
+            return cid.strip()
+        return self._twitch_client_id.text().strip()
 
     def _twitch_client_secret_resolved(self) -> str:
         t = self._twitch_client_secret.text().strip()
@@ -827,13 +939,61 @@ class MainWindow(QWidget):
     def _build_chat_tab(self) -> QWidget:
         w = QWidget()
         lay = QVBoxLayout(w)
+        lay.setSpacing(0)
+        lay.setContentsMargins(0, 0, 0, 0)
+
+        bar = QWidget()
+        bar.setObjectName("chatToolbar")
+        bar_lay = QHBoxLayout(bar)
+        bar_lay.setContentsMargins(8, 6, 8, 6)
+        bar_lay.setSpacing(10)
+
+        self._lbl_chat_font = QLabel()
+        self._font_combo_chat = QFontComboBox()
+        self._font_combo_chat.setMaxVisibleItems(14)
+        self._font_combo_chat.setEditable(False)
+        self._font_combo_chat.currentFontChanged.connect(self._persist_chat_appearance)
+
+        self._lbl_chat_size = QLabel()
+        self._spin_chat_font_pt = QSpinBox()
+        self._spin_chat_font_pt.setRange(10, 28)
+        self._spin_chat_font_pt.setValue(14)
+        self._spin_chat_font_pt.setSuffix(" pt")
+        self._spin_chat_font_pt.valueChanged.connect(self._persist_chat_appearance)
+
+        self._btn_chat_test = QPushButton()
+        self._btn_chat_test.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._btn_chat_test.clicked.connect(self._on_test_chat_message_clicked)
+
+        self._btn_chat_clear = QPushButton()
+        self._btn_chat_clear.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._btn_chat_clear.clicked.connect(self._clear_chat_view)
+
+        self._btn_chat_popout = QPushButton()
+        self._btn_chat_popout.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._btn_chat_popout.clicked.connect(self._open_or_raise_chat_popout)
+
+        bar_lay.addWidget(self._lbl_chat_font)
+        bar_lay.addWidget(self._font_combo_chat, stretch=1)
+        bar_lay.addWidget(self._lbl_chat_size)
+        bar_lay.addWidget(self._spin_chat_font_pt)
+        bar_lay.addStretch(1)
+        bar_lay.addWidget(self._btn_chat_popout)
+        bar_lay.addWidget(self._btn_chat_test)
+        bar_lay.addWidget(self._btn_chat_clear)
+
         self._chat_view = QTextEdit()
+        self._chat_view.setObjectName("chatMessageView")
         self._chat_view.setReadOnly(True)
-        self._chat_view.setAcceptRichText(False)
-        font = self._chat_view.font()
-        font.setFamily("monospace")
-        self._chat_view.setFont(font)
-        lay.addWidget(self._chat_view)
+        self._chat_view.setAcceptRichText(True)
+        self._chat_view.setUndoRedoEnabled(False)
+        self._chat_view.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        self._chat_view.document().setDefaultStyleSheet(
+            "body { margin: 0; } a { color: #38bdf8; }",
+        )
+        lay.addWidget(bar)
+        lay.addWidget(self._chat_view, stretch=1)
+        self._apply_chat_tab_texts()
         return w
 
     def _build_logs_tab(self) -> QWidget:
@@ -862,6 +1022,128 @@ class MainWindow(QWidget):
     def _apply_logs_tab_texts(self) -> None:
         self._logs_hint.setText(self._tr("logs.hint"))
         self._btn_logs_clear.setText(self._tr("logs.clear"))
+
+    def _apply_chat_tab_texts(self) -> None:
+        if not hasattr(self, "_lbl_chat_font"):
+            return
+        self._lbl_chat_font.setText(self._tr("chat.font"))
+        self._lbl_chat_size.setText(self._tr("chat.font_size"))
+        if hasattr(self, "_btn_chat_popout"):
+            self._btn_chat_popout.setText(self._tr("chat.open_popout"))
+            self._btn_chat_popout.setToolTip(self._tr("chat.open_popout_hint"))
+        self._btn_chat_clear.setText(self._tr("chat.clear"))
+        self._btn_chat_clear.setToolTip(self._tr("chat.clear_hint"))
+        self._btn_chat_test.setText(self._tr("chat.test_message"))
+        self._btn_chat_test.setToolTip(self._tr("chat.test_hint"))
+
+    def _warm_chat_icons(self) -> None:
+        tw, yt, tk = load_platform_icon_data_uris(_STREAM_ROOT / "assets")
+        self._chat_ic_tw = tw
+        self._chat_ic_yt = yt
+        self._chat_ic_tk = tk
+
+    def _load_chat_font_from_settings(self) -> None:
+        if not hasattr(self, "_spin_chat_font_pt"):
+            return
+        pt = int(self._settings.value(_SETTINGS_CHAT_FONT_PT, 14, int))
+        pt = max(10, min(28, pt))
+        fam = str(self._settings.value(_SETTINGS_CHAT_FONT_FAMILY, "", str)).strip()
+        self._spin_chat_font_pt.blockSignals(True)
+        self._spin_chat_font_pt.setValue(pt)
+        self._spin_chat_font_pt.blockSignals(False)
+        self._font_combo_chat.blockSignals(True)
+        if fam:
+            self._font_combo_chat.setCurrentFont(QFont(fam))
+        else:
+            self._font_combo_chat.setCurrentFont(QFont(CHAT_DEFAULT_FONT_FAMILY))
+        self._font_combo_chat.blockSignals(False)
+
+    def _persist_chat_appearance(self) -> None:
+        if not hasattr(self, "_spin_chat_font_pt"):
+            return
+        self._settings.setValue(
+            _SETTINGS_CHAT_FONT_FAMILY,
+            self._font_combo_chat.currentFont().family(),
+        )
+        self._settings.setValue(_SETTINGS_CHAT_FONT_PT, self._spin_chat_font_pt.value())
+        self._rebuild_chat_from_history()
+        if self._chat_popout is not None:
+            self._chat_popout.sync_from_main()
+
+    def _open_or_raise_chat_popout(self) -> None:
+        w = self._chat_popout
+        if w is not None and shiboken6.isValid(w):
+            w.show()
+            w.raise_()
+            w.activateWindow()
+            return
+        self._chat_popout = None
+        pop = ChatPopoutWindow(self)
+        pop.destroyed.connect(self._clear_chat_popout_ref)
+        self._chat_popout = pop
+        pop.show()
+
+    @Slot()
+    def _clear_chat_popout_ref(self) -> None:
+        self._chat_popout = None
+
+    def _format_chat_message_fragment(self, message: ChatMessage) -> str:
+        pt = self._spin_chat_font_pt.value() if hasattr(self, "_spin_chat_font_pt") else 14
+        fam = (
+            self._font_combo_chat.currentFont().family()
+            if hasattr(self, "_font_combo_chat")
+            else ""
+        )
+        stack = chat_font_stack_css(fam)
+        return format_chat_message_html(
+            message,
+            font_pt=pt,
+            font_stack_css=stack,
+            twitch_icon_uri=self._chat_ic_tw,
+            youtube_icon_uri=self._chat_ic_yt,
+            tiktok_icon_uri=self._chat_ic_tk,
+        )
+
+    def _rebuild_chat_from_history(self) -> None:
+        if not hasattr(self, "_chat_view"):
+            return
+        self._chat_view.clear()
+        for message in self._chat_message_history:
+            fr = self._format_chat_message_fragment(message)
+            doc = self._chat_view.document()
+            cur = self._chat_view.textCursor()
+            cur.movePosition(QTextCursor.MoveOperation.End)
+            if not doc.isEmpty():
+                cur.insertBlock()
+            cur.insertHtml(fr)
+        self._chat_view.setTextCursor(cur)
+        sb = self._chat_view.verticalScrollBar()
+        sb.setValue(sb.maximum())
+
+    def _clear_chat_view(self) -> None:
+        self._chat_view.clear()
+        self._chat_message_history.clear()
+
+    def _on_test_chat_message_clicked(self) -> None:
+        """Preview-only samples (not sent to stream chat or TTS)."""
+        author = self._tr("chat.test_author")
+        now = datetime.now(UTC)
+        self._on_chat_message(
+            ChatMessage(
+                author=author,
+                text=self._tr("chat.test_body_twitch"),
+                platform=ChatPlatform.TWITCH,
+                received_at=now,
+            ),
+        )
+        self._on_chat_message(
+            ChatMessage(
+                author=author,
+                text=self._tr("chat.test_body_youtube"),
+                platform=ChatPlatform.YOUTUBE,
+                received_at=now,
+            ),
+        )
 
     def _install_log_handler(self) -> None:
         root = logging.getLogger("stream_cheremsha")
@@ -1537,7 +1819,13 @@ class MainWindow(QWidget):
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         buttons.accepted.connect(dlg.accept)
         layout.addWidget(buttons)
-        dlg.resize(560, 440)
+        if not restore_window_geometry(KEY_PIPER_HELP_DIALOG, dlg):
+            dlg.resize(560, 440)
+
+        def _save_piper_help_geometry() -> None:
+            save_window_geometry(KEY_PIPER_HELP_DIALOG, dlg)
+
+        dlg.finished.connect(_save_piper_help_geometry)
         dlg.exec()
 
     @Slot()
@@ -1656,15 +1944,19 @@ class MainWindow(QWidget):
         await old.aclose()
 
     def _load_settings_fields(self) -> None:
-        cid = keyring_store.get_password(constants.KEY_TWITCH_CLIENT_ID)
-        if cid:
-            self._twitch_client_id.setText(cid)
+        env_cid = os.environ.get(constants.ENV_TWITCH_CLIENT_ID, "").strip()
+        cid = env_cid or (keyring_store.get_password(constants.KEY_TWITCH_CLIENT_ID) or "")
+        if cid.strip():
+            self._twitch_client_id.setText(cid.strip())
         sec = keyring_store.get_password(constants.KEY_TWITCH_CLIENT_SECRET)
         if sec:
             self._twitch_client_secret.setText(sec)
         ch = keyring_store.get_password(constants.KEY_TWITCH_CHANNEL)
         if ch:
             self._twitch_channel.setText(ch)
+        tk = keyring_store.get_password(constants.KEY_TIKTOK_USERNAME)
+        if tk:
+            self._tiktok_username.setText(tk.strip())
         tok = keyring_store.get_password(constants.KEY_TWITCH_TOKEN)
         if tok:
             self._twitch_token.setText(tok)
@@ -1739,6 +2031,7 @@ class MainWindow(QWidget):
             self._cb_rvc_cuda.setChecked(rvc_cuda)
             self._cb_rvc_cuda.blockSignals(False)
             self._update_rvc_field_enabled()
+        self._load_chat_font_from_settings()
         self._rebuild_rvc_chain()
 
     @Slot(int)
@@ -1791,6 +2084,16 @@ class MainWindow(QWidget):
                     return
             self._status_youtube = msg.removeprefix("YouTube:").strip() or msg
             return
+        if msg.startswith(("TikTok:", "TikTok error")):
+            rest = (
+                msg.removeprefix("TikTok:")
+                .removeprefix("TikTok error")
+                .strip()
+                .lstrip(":")
+                .strip()
+            )
+            self._status_tiktok = rest if rest else msg
+            return
         if msg in l10n.all_locale_strings_many("status.logout_twitch", "status.twitch_keys_saved"):
             self._status_twitch = msg
             return
@@ -1818,11 +2121,14 @@ class MainWindow(QWidget):
         e = html.escape
         tw_on = self._tr("footer.on") if self._twitch.running else self._tr("footer.off")
         yt_on = self._tr("footer.on") if self._youtube.running else self._tr("footer.off")
+        tk_on = self._tr("footer.on") if self._tiktok.running else self._tr("footer.off")
         tw_c = "#34d399" if self._twitch.running else "#fb923c"
         yt_c = "#34d399" if self._youtube.running else "#fb923c"
+        tk_c = "#34d399" if self._tiktok.running else "#fb923c"
         pl = e(self._tr("footer.pipeline"))
         ftw = e(self._tr("footer.twitch"))
         fyt = e(self._tr("footer.youtube"))
+        ftk = e(self._tr("footer.tiktok"))
         fq = e(self._tr("footer.queues"))
         fchat = e(self._tr("footer.chat"))
         ftts = e(self._tr("footer.tts"))
@@ -1831,27 +2137,57 @@ class MainWindow(QWidget):
             f'<span style="color:#4ade80">●</span> <span style="color:#cbd5e1;">{pl}:'
             f'</span> <span style="color:#f1f5f9;">{e(self._status_app)}</span>'
         )
+        tw_ico = _footer_richtext_img("twitch.svg", 15)
+        yt_ico = _footer_richtext_img("youtube.svg", 15)
+        tk_ico = _footer_richtext_img("tiktok.svg", 15)
         h2 = (
-            f'<span style="color:{tw_c}">●</span> <span style="color:#cbd5e1;">{ftw}'
+            f'{tw_ico}<span style="color:{tw_c}">●</span> <span style="color:#cbd5e1;">{ftw}'
             f'</span> <span style="color:#94a3b8;">({e(tw_on)}):</span> '
             f'<span style="color:#e2e8f0;">{e(self._status_twitch)}</span>'
         )
         h3 = (
-            f'<span style="color:{yt_c}">●</span> <span style="color:#cbd5e1;">{fyt}'
+            f'{yt_ico}<span style="color:{yt_c}">●</span> <span style="color:#cbd5e1;">{fyt}'
             f'</span> <span style="color:#94a3b8;">({e(yt_on)}):</span> '
             f'<span style="color:#e2e8f0;">{e(self._status_youtube)}</span>'
         )
         h4 = (
+            f'{tk_ico}<span style="color:{tk_c}">●</span> <span style="color:#cbd5e1;">{ftk}'
+            f'</span> <span style="color:#94a3b8;">({e(tk_on)}):</span> '
+            f'<span style="color:#e2e8f0;">{e(self._status_tiktok)}</span>'
+        )
+        h5 = (
             f'<span style="color:#94a3b8;">{fq}: {fchat}={cq} &nbsp; {ftts}={tq}'
             f" &nbsp; {frvc}={rq}</span>"
         )
-        self._status_label.setText(f"{h1}<br/>{h2}<br/>{h3}<br/>{h4}")
+        self._status_label.setText(f"{h1}<br/>{h2}<br/>{h3}<br/>{h4}<br/>{h5}")
         tw_btn = "tw.transport_stop" if self._twitch.running else "tw.transport_start"
         yt_btn = "yt.transport_stop" if self._youtube.running else "yt.transport_start"
         self._btn_twitch_transport.setText(self._tr(tw_btn))
         self._btn_youtube_transport.setText(self._tr(yt_btn))
         if hasattr(self, "_qml_api"):
             self._qml_api.refresh()
+
+    @Slot()
+    def _on_tiktok_transport_clicked(self) -> None:
+        asyncio.ensure_future(self._async_set_tiktok_enabled(not self._tiktok_enabled))
+
+    def _request_tiktok_enabled(self, enabled: bool) -> None:
+        asyncio.ensure_future(self._async_set_tiktok_enabled(bool(enabled)))
+
+    async def _async_set_tiktok_enabled(self, enabled: bool) -> None:
+        if self._tiktok_toggle_busy:
+            return
+        if bool(enabled) == bool(self._tiktok_enabled):
+            return
+        self._tiktok_toggle_busy = True
+        try:
+            self._tiktok_enabled = bool(enabled)
+            if self._tiktok_enabled:
+                await self._start_tiktok()
+            else:
+                await self._tiktok.stop()
+        finally:
+            self._tiktok_toggle_busy = False
 
     @Slot()
     def _on_twitch_transport_clicked(self) -> None:
@@ -1868,15 +2204,30 @@ class MainWindow(QWidget):
             asyncio.ensure_future(self._start_youtube())
 
     @Slot(str)
-    def _append_chat(self, line: str) -> None:
-        self._chat_view.append(line)
+    def _append_chat(self, html_fragment: str) -> None:
+        doc = self._chat_view.document()
+        cursor = self._chat_view.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        # insertHtml+several <p> in separate calls often merges into one line in QTextEdit.
+        if not doc.isEmpty():
+            cursor.insertBlock()
+        cursor.insertHtml(html_fragment)
+        self._chat_view.setTextCursor(cursor)
+        sb = self._chat_view.verticalScrollBar()
+        sb.setValue(sb.maximum())
+        doc = self._chat_view.document()
+        while doc.blockCount() > _MAX_CHAT_DOCUMENT_BLOCKS:
+            c = QTextCursor(doc)
+            c.movePosition(QTextCursor.MoveOperation.Start)
+            c.select(QTextCursor.SelectionType.BlockUnderCursor)
+            c.removeSelectedText()
+            c.deleteChar()
+            # Deque popleft happens in _on_chat_message on append; matches this doc trim.
 
     def _on_chat_message(self, message: ChatMessage) -> None:
-        line = (
-            f"[{message.received_at:%H:%M:%S}] "
-            f"{message.platform.value} {message.author}: {message.text}"
-        )
-        self._bridge.append_chat.emit(line)
+        self._chat_message_history.append(message)
+        fragment = self._format_chat_message_fragment(message)
+        self._bridge.append_chat.emit(fragment)
 
     @Slot()
     def _save_twitch_keys(self) -> None:
@@ -1902,7 +2253,7 @@ class MainWindow(QWidget):
         self._refresh_connection_panels()
 
     async def _twitch_browser_login(self) -> None:
-        client_id = self._twitch_client_id.text().strip()
+        client_id = self._twitch_client_id_resolved()
         if not client_id:
             QMessageBox.warning(self, self._tr("dlg.twitch"), self._tr("dlg.twitch_need_client_id"))
             return
@@ -2021,6 +2372,14 @@ class MainWindow(QWidget):
         url = self._yt_video.text().strip()
         await self._youtube.start(url if url else None)
 
+    async def _start_tiktok(self) -> None:
+        user = self._tiktok_username.text().strip()
+        if not user:
+            QMessageBox.warning(self, self._tr("dlg.tiktok"), self._tr("dlg.tiktok_need_username"))
+            self._tiktok_enabled = False
+            return
+        await self._tiktok.start(user)
+
     @Slot()
     def _refresh_audio_devices(self) -> None:
         from PySide6.QtMultimedia import QMediaDevices
@@ -2047,6 +2406,22 @@ class MainWindow(QWidget):
         self._sink.set_volume(value / 100.0)
         self._settings.setValue("audio/volume", value)
 
+    async def announce_donation_tts(self, line: str) -> None:
+        """Speak one donation line (used by Donations live TTS). Errors are logged, not modal."""
+        text = (line or "").strip()
+        if not text:
+            return
+        self._apply_audio_device_selection()
+        try:
+            audio = await self._tts.synthesize(text)
+            try:
+                audio = await apply_rvc_if_active(self._rvc_runtime, audio, priority=0)
+            except (OSError, ValueError, RuntimeError) as e:
+                logger.warning("RVC donation TTS: %s", e)
+            await self._sink.play_mp3(audio)
+        except (OSError, ValueError) as e:
+            logger.warning("Donation TTS: %s", e)
+
     async def _test_tts(self) -> None:
         text = self._test_phrase.text().strip()
         if not text:
@@ -2063,14 +2438,17 @@ class MainWindow(QWidget):
             QMessageBox.warning(self, self._tr("dlg.tts"), str(e))
 
     async def run_startup(self) -> None:
-        self._on_user_status(self._tr("startup.workers"))
-        await self._swap_tts_backend()
-        await self._coordinator.start_workers()
-        vol = int(self._settings.value("audio/volume", 100))
-        self._sink.set_volume(vol / 100.0)
-        self._apply_audio_device_selection()
-        self._on_user_status(self._tr("startup.ready"))
-        await self._maybe_auto_start_platforms()
+        try:
+            self._on_user_status(self._tr("startup.workers"))
+            await self._swap_tts_backend()
+            await self._coordinator.start_workers()
+            vol = int(self._settings.value("audio/volume", 100))
+            self._sink.set_volume(vol / 100.0)
+            self._apply_audio_device_selection()
+            self._on_user_status(self._tr("startup.ready"))
+            await self._maybe_auto_start_platforms()
+        finally:
+            self.startup_finished.emit()
 
     async def _maybe_auto_start_platforms(self) -> None:
         if (
@@ -2090,6 +2468,7 @@ class MainWindow(QWidget):
         if self._closing:
             event.accept()
             return
+        save_window_geometry(KEY_MAIN_WINDOW, self)
         self._closing = True
         event.ignore()
         asyncio.ensure_future(self._async_shutdown())
@@ -2109,18 +2488,53 @@ class MainWindow(QWidget):
     async def _async_shutdown(self) -> None:
         """Tear down chat, workers, TTS, audio, GPU; always quit Qt even on errors."""
         app = QApplication.instance()
+        watchdog = threading.Timer(6.0, os._exit, args=(0,))
+        watchdog.daemon = True
+        watchdog.start()
         try:
-            self._queue_timer.stop()
-            self._uninstall_log_handler()
-            await self._twitch.stop()
-            await self._youtube.stop()
-            await self._coordinator.stop_workers()
-            await self._tts.aclose()
-            await rvc_runtime_stop_dispatcher(self._rvc_runtime)
-            self._release_rvc_gpu()
-            self._sink.shutdown()
-        except Exception:
-            logger.exception("Shutdown failed")
+            try:
+                self._queue_timer.stop()
+            except RuntimeError:
+                logger.debug("Shutdown: queue timer already stopped")
+
+            try:
+                self._uninstall_log_handler()
+            except RuntimeError:
+                logger.debug("Shutdown: log handler already uninstalled")
+
+            for name, coro in (
+                ("twitch.stop", self._twitch.stop()),
+                ("youtube.stop", self._youtube.stop()),
+                ("tiktok.stop", self._tiktok.stop()),
+                ("coordinator.stop_workers", self._coordinator.stop_workers()),
+                ("tts.aclose", self._tts.aclose()),
+                ("rvc.stop_dispatcher", rvc_runtime_stop_dispatcher(self._rvc_runtime)),
+            ):
+                try:
+                    await coro
+                except (OSError, RuntimeError, ValueError, TypeError) as e:
+                    logger.exception("Shutdown step failed (%s): %s", name, e)
+                except asyncio.CancelledError:
+                    raise
+
+            try:
+                self._release_rvc_gpu()
+            except (OSError, RuntimeError, ValueError, TypeError) as e:
+                logger.exception("Shutdown step failed (rvc.release): %s", e)
+
+            try:
+                self._sink.shutdown()
+            except (OSError, RuntimeError, ValueError, TypeError) as e:
+                logger.exception("Shutdown step failed (audio.shutdown): %s", e)
+
+            loop = asyncio.get_running_loop()
+            shutdown_exec = getattr(loop, "shutdown_default_executor", None)
+            if callable(shutdown_exec):
+                try:
+                    await shutdown_exec()
+                except (OSError, RuntimeError) as e:
+                    logger.debug("Shutdown: default executor did not shut down cleanly: %s", e)
         finally:
+            watchdog.cancel()
             if app is not None:
                 app.quit()
