@@ -103,15 +103,16 @@ Item {
         }
     }
 
-    Component.onCompleted: _load()
+    Component.onCompleted: {
+        _load()
+        _reloadGifts()
+    }
     onSelectedIdxChanged: _syncSelected()
     onRulesModelChanged: _syncSelected()
     onSelectedRuleChanged: {
         if (selectedRule === null) return;
         eventTypeCombo.currentIndex = selectedRule.event.type === "gift_received" ? 1 : 0;
     }
-    Component.onCompleted: _reloadGifts()
-
     RowLayout {
         anchors.fill: parent
         anchors.margins: 16
