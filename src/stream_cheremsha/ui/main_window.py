@@ -2320,8 +2320,14 @@ class MainWindow(QWidget):
             self._actions_qml_api.refreshUiRequested.emit()
 
     def _ensure_actions_window(self) -> QQuickView:
+        # Re-create on each open so QML reloads cleanly (avoids stale bindings during development,
+        # and simplifies ensuring fresh model state per platform/account_key).
         if self._qml_actions is not None:
-            return self._qml_actions
+            try:
+                self._qml_actions.close()
+            except RuntimeError:
+                pass
+            self._qml_actions = None
         view = QQuickView()
         view.setResizeMode(QQuickView.ResizeMode.SizeViewToRootObject)
         ctx = view.engine().rootContext()
