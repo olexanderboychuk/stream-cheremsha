@@ -3,9 +3,11 @@
 from collections.abc import Callable
 from typing import Any
 
+from stream_cheremsha.actions.actions_play_sound import play_sound_from_file
 from stream_cheremsha.actions.events import ChatMessageEvent
 from stream_cheremsha.actions.models import RuleV1
 from stream_cheremsha.actions.registry import match_chat_keyword
+from stream_cheremsha.domain.protocols import AudioSink
 
 
 StatusCallback = Callable[[str], None]
@@ -14,10 +16,12 @@ StatusCallback = Callable[[str], None]
 class PlatformActionsEngine:
     def __init__(
         self,
+        sink: AudioSink,
         rules: list[RuleV1] | None = None,
         *,
         status_callback: StatusCallback | None = None,
     ) -> None:
+        self._sink = sink
         self._rules: list[RuleV1] = list(rules or [])
         self._status_callback: StatusCallback = status_callback or (lambda _msg: None)
 
@@ -31,15 +35,20 @@ class PlatformActionsEngine:
             if rule.event["type"] != "chat_keyword":
                 continue
 
-            params: Any = rule.event.get("params", {})
+            params: Any = rule.event.get("params")
             if not isinstance(params, dict):
+                self._status_callback(f"Rule {rule.id}: event.params must be an object")
                 continue
 
-            keyword = params.get("keyword")
-            if not isinstance(keyword, str) or not keyword:
+            # Preferred schema keys (spec): text + match + case_sensitive.
+            # Back-compat with early drafts/tests: keyword + mode.
+            keyword = params.get("text", params.get("keyword"))
+            if not isinstance(keyword, str) or not keyword.strip():
+                self._status_callback(f"Rule {rule.id}: chat keyword is required")
                 continue
+            keyword = keyword.strip()
 
-            mode = params.get("mode", "contains")
+            mode = params.get("match", params.get("mode", "contains"))
             case_sensitive = bool(params.get("case_sensitive", False))
 
             try:
@@ -50,16 +59,39 @@ class PlatformActionsEngine:
                     case_sensitive=case_sensitive,
                 )
             except ValueError as e:
-                self._status_callback(f"Rule {rule.id} has invalid chat_keyword params: {e}")
+                self._status_callback(f"Rule {rule.id}: invalid chat_keyword params: {e}")
                 continue
 
             if matched:
                 await self._dispatch_actions(rule, ev)
 
     async def _dispatch_actions(self, rule: RuleV1, ev: ChatMessageEvent) -> None:
-        """Placeholder hook; implemented in Task 5."""
+        _ = ev
+        for i, action in enumerate(rule.actions):
+            if not isinstance(action, dict):
+                self._status_callback(f"Rule {rule.id}: actions[{i}] must be an object")
+                continue
+            t = action.get("type")
+            if not isinstance(t, str) or not t.strip():
+                self._status_callback(f"Rule {rule.id}: actions[{i}].type is required")
+                continue
+            params = action.get("params")
+            if not isinstance(params, dict):
+                self._status_callback(f"Rule {rule.id}: actions[{i}].params must be an object")
+                continue
 
-        _ = (rule, ev)
-        self._status_callback(
-            f"Matched rule {rule.id} but action execution is not implemented yet"
-        )
+            if t == "play_sound":
+                file_path = params.get("file_path")
+                if not isinstance(file_path, str) or not file_path.strip():
+                    self._status_callback(f"Rule {rule.id}: actions[{i}].file_path is required")
+                    continue
+                try:
+                    await play_sound_from_file(file_path, sink=self._sink)
+                except FileNotFoundError:
+                    self._status_callback(f"Rule {rule.id}: sound file not found: {file_path}")
+                except (OSError, ValueError) as e:
+                    self._status_callback(f"Rule {rule.id}: play_sound failed: {e}")
+                continue
+
+            # Unknown action types are ignored in v1 (future extensibility).
+            self._status_callback(f"Rule {rule.id}: unknown action type: {t}")
