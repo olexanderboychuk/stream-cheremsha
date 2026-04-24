@@ -14,6 +14,8 @@ def _validate_key_part(name: str, value: str) -> str:
     v = (value or '').strip()
     if not v:
         raise ValueError(f'{name} must be non-empty')
+    if '/' in v or '\\' in v:
+        raise ValueError(f'{name} must not contain path separators')
     return v
 
 
