@@ -1,29 +1,32 @@
 ﻿import json
 
-from stream_cheremsha.actions.models import RuleV1
+import pytest
+
+from stream_cheremsha.actions.models import RuleV1, rule_to_json_obj, ruleset_from_json_text, ruleset_to_json_text
 
 
-def test_rule_v1_roundtrip_json_text_includes_schema_version_1():
+def test_ruleset_roundtrip_v1_includes_schema_version_1() -> None:
     rule = RuleV1(
-        id='rule-1',
+        id="rule-1",
         enabled=True,
-        event={
-            'type': 'chat_message',
-            'params': {'platform': 'youtube'},
-        },
-        actions=[
-            {
-                'type': 'tts',
-                'params': {'voice': 'uk-UA', 'text': 'hello'},
-            }
-        ],
+        event={"type": "chat_keyword", "params": {"text": "hello", "match": "contains", "case_sensitive": False}},
+        actions=[{"type": "play_sound", "params": {"file_path": r"C:\tmp\a.mp3"}}],
     )
 
-    text = rule.to_json_text()
+    text = ruleset_to_json_text([rule])
 
-    # JSON should be valid and include schema_version=1
     payload = json.loads(text)
-    assert payload['schema_version'] == 1
+    assert payload["schema_version"] == 1
 
-    rule2 = RuleV1.from_json_text(text)
-    assert rule2 == rule
+    out = ruleset_from_json_text(text)
+    assert [rule_to_json_obj(r) for r in out] == [rule_to_json_obj(rule)]
+
+
+def test_ruleset_rejects_unsupported_schema_version() -> None:
+    with pytest.raises(ValueError, match="schema_version"):
+        ruleset_from_json_text('{"schema_version":2,"rules":[]}')
+
+
+def test_ruleset_rejects_non_object_json() -> None:
+    with pytest.raises(ValueError, match="Ruleset JSON must be an object"):
+        ruleset_from_json_text("[]")

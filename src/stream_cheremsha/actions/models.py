@@ -2,51 +2,90 @@
 
 import json
 from dataclasses import dataclass
-from typing import Any, Mapping, Self
+from typing import Any, Mapping, TypedDict
+
+
+class TypedBlob(TypedDict):
+    type: str
+    params: dict[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
 class RuleV1:
-    """Schema v1 rule for mapping events -> actions.
-
-    Minimal and extensible container with JSON round-trip utilities.
-    """
+    """Schema v1 rule for mapping events -> actions (no wrapper metadata)."""
 
     id: str
     enabled: bool
-    event: Mapping[str, Any]
-    actions: list[Mapping[str, Any]]
+    event: TypedBlob
+    actions: list[TypedBlob]
 
-    schema_version: int = 1
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "schema_version": self.schema_version,
-            "id": self.id,
-            "enabled": self.enabled,
-            "event": dict(self.event),
-            "actions": [dict(a) for a in self.actions],
-        }
+def rule_to_json_obj(rule: RuleV1) -> dict[str, Any]:
+    return {
+        "id": rule.id,
+        "enabled": rule.enabled,
+        "event": {"type": rule.event["type"], "params": dict(rule.event.get("params") or {})},
+        "actions": [
+            {"type": a["type"], "params": dict(a.get("params") or {})}
+            for a in (rule.actions or [])
+        ],
+    }
 
-    def to_json_text(self) -> str:
-        return json.dumps(self.to_dict(), ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
-    @classmethod
-    def from_dict(cls, payload: Mapping[str, Any]) -> Self:
-        schema_version = payload.get("schema_version")
-        if schema_version != 1:
-            raise ValueError(f"Unsupported schema_version: {schema_version}")
+def rule_from_json_obj(obj: Mapping[str, Any]) -> RuleV1:
+    if not isinstance(obj, Mapping):
+        raise ValueError("Rule must be an object")
 
-        return cls(
-            id=str(payload["id"]),
-            enabled=bool(payload["enabled"]),
-            event=payload["event"],
-            actions=list(payload["actions"]),
-        )
+    rid = obj.get("id")
+    if not isinstance(rid, str) or not rid.strip():
+        raise ValueError("Rule id is required")
 
-    @classmethod
-    def from_json_text(cls, text: str) -> Self:
-        payload = json.loads(text)
-        if not isinstance(payload, dict):
-            raise TypeError("Rule JSON must decode to an object")
-        return cls.from_dict(payload)
+    enabled = obj.get("enabled", True)
+    if not isinstance(enabled, bool):
+        raise ValueError("Rule enabled must be boolean")
+
+    ev = obj.get("event")
+    if not isinstance(ev, Mapping):
+        raise ValueError("Rule event must be an object")
+    ev_t = ev.get("type")
+    if not isinstance(ev_t, str) or not ev_t.strip():
+        raise ValueError("Rule event.type is required")
+    ev_p = ev.get("params", {})
+    if not isinstance(ev_p, Mapping):
+        raise ValueError("Rule event.params must be an object")
+    event: TypedBlob = {"type": ev_t, "params": dict(ev_p)}
+
+    acts = obj.get("actions")
+    if not isinstance(acts, list) or not acts:
+        raise ValueError("Rule actions must be a non-empty list")
+    actions: list[TypedBlob] = []
+    for a in acts:
+        if not isinstance(a, Mapping):
+            raise ValueError("Action must be an object")
+        a_t = a.get("type")
+        if not isinstance(a_t, str) or not a_t.strip():
+            raise ValueError("Action type is required")
+        a_p = a.get("params", {})
+        if not isinstance(a_p, Mapping):
+            raise ValueError("Action params must be an object")
+        actions.append({"type": a_t, "params": dict(a_p)})
+
+    return RuleV1(id=rid.strip(), enabled=enabled, event=event, actions=actions)
+
+
+def ruleset_to_json_text(rules: list[RuleV1]) -> str:
+    payload = {"schema_version": 1, "rules": [rule_to_json_obj(r) for r in rules]}
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+def ruleset_from_json_text(text: str) -> list[RuleV1]:
+    raw = json.loads(text)
+    if not isinstance(raw, Mapping):
+        raise ValueError("Ruleset JSON must be an object")
+    sv = raw.get("schema_version")
+    if sv != 1:
+        raise ValueError(f"Unsupported schema_version: {sv}")
+    rr = raw.get("rules")
+    if not isinstance(rr, list):
+        raise ValueError("Ruleset rules must be a list")
+    return [rule_from_json_obj(r) for r in rr]
