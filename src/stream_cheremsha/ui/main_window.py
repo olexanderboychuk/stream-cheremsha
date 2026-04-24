@@ -279,14 +279,12 @@ class MainWindow(QWidget):
             self._coordinator,
             on_status=self._on_user_status,
             on_gift=self._on_tiktok_gift,
-            on_gifts_loaded=self._on_tiktok_gifts_loaded,
             get_locale=self._get_locale,
         )
         self._tiktok_username = QLineEdit()
         self._actions_qml_api = ActionsQmlApi(self)
         self._qml_actions: QQuickView | None = None
         self._actions_engines: dict[tuple[str, str], PlatformActionsEngine] = {}
-        self._tiktok_gift_catalog: list[dict[str, str]] = []
         self._chat_ic_tw: str | None = None
         self._chat_ic_yt: str | None = None
         self._chat_ic_tk: str | None = None
@@ -2304,21 +2302,6 @@ class MainWindow(QWidget):
             received_at=datetime.now(UTC),
         )
         asyncio.ensure_future(eng.on_gift_received(ev))
-
-    def _on_tiktok_gifts_loaded(self, gifts: list[dict[str, object]]) -> None:
-        # Normalize to a small list for QML (id + name).
-        out: list[dict[str, str]] = []
-        for g in gifts:
-            gid = str(g.get("id") or "").strip()
-            name = str(g.get("name") or "").strip()
-            if gid or name:
-                out.append({"id": gid, "name": name})
-        if out:
-            # Sort by name for stable UX.
-            out.sort(key=lambda x: (x.get("name") or "").casefold())
-            self._tiktok_gift_catalog = out
-            self._actions_qml_api.refreshUiRequested.emit()
-
     def _ensure_actions_window(self) -> QQuickView:
         # Re-create on each open so QML reloads cleanly (avoids stale bindings during development,
         # and simplifies ensuring fresh model state per platform/account_key).

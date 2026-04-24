@@ -110,10 +110,7 @@ Item {
         if (selectedRule === null) return;
         eventTypeCombo.currentIndex = selectedRule.event.type === "gift_received" ? 1 : 0;
     }
-    Connections {
-        target: actApi
-        function onRefreshUiRequested() { _reloadGifts() }
-    }
+    Component.onCompleted: _reloadGifts()
 
     RowLayout {
         anchors.fill: parent
@@ -313,13 +310,23 @@ Item {
                             model: giftOptions
                             textRole: "name"
                             valueRole: "id"
-                            Component.onCompleted: _reloadGifts()
+                            editable: true
+                            inputMethodComposing: false
                             onActivated: function (idx) {
                                 if (selectedRule === null) return;
                                 var r = selectedRule;
                                 var g = model[idx];
                                 r.event.params.gift_id = g.id || "";
                                 r.event.params.gift_name = g.name || "";
+                                _setRule(selectedIdx, r);
+                                _save();
+                            }
+                            onAccepted: {
+                                // Manual entry fallback: store as gift_name.
+                                if (selectedRule === null) return;
+                                var r = selectedRule;
+                                r.event.params.gift_id = "";
+                                r.event.params.gift_name = editText || "";
                                 _setRule(selectedIdx, r);
                                 _save();
                             }

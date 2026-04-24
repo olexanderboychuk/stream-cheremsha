@@ -5,8 +5,6 @@ import logging
 import traceback
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any
-
 from TikTokLive import TikTokLiveClient
 from TikTokLive.client.errors import (
     AgeRestrictedError,
@@ -40,13 +38,11 @@ class TikTokChatSource:
         coordinator: StreamCoordinator,
         on_status: Callable[[str], None],
         on_gift: Callable[[str, str, str, int], None] | None = None,
-        on_gifts_loaded: Callable[[list[dict[str, Any]]], None] | None = None,
         get_locale: Callable[[], str] | None = None,
     ) -> None:
         self._coordinator = coordinator
         self._on_status = on_status
         self._on_gift = on_gift
-        self._on_gifts_loaded = on_gifts_loaded
         self._get_locale = get_locale or (lambda: l10n.DEFAULT_LOCALE)
         self._task: asyncio.Task[None] | None = None
         self._running = False
@@ -109,36 +105,9 @@ class TikTokChatSource:
             client = TikTokLiveClient(unique_id=uid)
             self._client = client
 
-            async def _emit_gifts_catalog_best_effort() -> None:
-                cb = self._on_gifts_loaded
-                if cb is None:
-                    return
-                # Gift catalog can appear slightly after connect; poll briefly.
-                for _ in range(8):
-                    gi = getattr(client, "gift_info", None)
-                    if gi:
-                        gifts: list[dict[str, Any]] = []
-                        if isinstance(gi, dict) and isinstance(gi.get("gifts"), list):
-                            gifts = [g for g in gi.get("gifts") if isinstance(g, dict)]
-                        elif isinstance(gi, dict):
-                            # Sometimes a dict of id->gift
-                            gifts = [g for g in gi.values() if isinstance(g, dict)]
-                        if gifts:
-                            out: list[dict[str, Any]] = []
-                            for g in gifts:
-                                gid = g.get("id") or g.get("gift_id") or ""
-                                name = g.get("name") or g.get("gift_name") or ""
-                                if gid or name:
-                                    out.append({"id": str(gid), "name": str(name)})
-                            if out:
-                                cb(out)
-                            return
-                    await asyncio.sleep(0.25)
-
             @client.on(ConnectEvent)
             async def _on_connect(event: ConnectEvent) -> None:  # noqa: ANN001
                 self._on_status(l10n.tr(self._get_locale(), "tk.connected", user=event.unique_id))
-                asyncio.create_task(_emit_gifts_catalog_best_effort())
 
             @client.on(DisconnectEvent)
             async def _on_disconnect(_event: DisconnectEvent) -> None:  # noqa: ANN001
@@ -197,8 +166,6 @@ class TikTokChatSource:
             try:
                 # Non-blocking: returns a task which completes when disconnected.
                 t = await client.start(fetch_room_info=False, fetch_gift_info=True)
-                # Also try once right after start.
-                asyncio.create_task(_emit_gifts_catalog_best_effort())
                 await t
             except asyncio.CancelledError:
                 raise

@@ -75,5 +75,7 @@ class ActionsQmlApi(QObject):
         if p == "tiktok":
             import json  # noqa: PLC0415
 
-            return json.dumps(getattr(w, "_tiktok_gift_catalog", []) or [], ensure_ascii=False)
+            from stream_cheremsha.actions.tiktok_gifts import TIKTOK_GIFTS  # noqa: PLC0415
+
+            return json.dumps(TIKTOK_GIFTS, ensure_ascii=False)
         return "[]"
