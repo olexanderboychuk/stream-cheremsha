@@ -63,3 +63,17 @@ class ActionsQmlApi(QObject):
             "MP3 (*.mp3);;All files (*)",
         )
         return str(path or "")
+
+    @Slot(str, str, result=str)
+    def giftOptionsJson(self, platform: str, accountKey: str) -> str:
+        """Return JSON array of gift options for this platform scope."""
+        w = self._win()
+        if w is None:
+            return "[]"
+        p = (platform or "").strip().lower()
+        _ = (accountKey or "").strip()
+        if p == "tiktok":
+            import json  # noqa: PLC0415
+
+            return json.dumps(getattr(w, "_tiktok_gift_catalog", []) or [], ensure_ascii=False)
+        return "[]"

@@ -23,6 +23,7 @@ Item {
     property var rulesModel: []
     property int selectedIdx: -1
     property var selectedRule: null
+    property var giftOptions: []
 
     component ConnPillButton: Button {
         id: pillCtl
@@ -93,12 +94,25 @@ Item {
         actApi.saveRulesJson(platform, accountKey, JSON.stringify(payload));
     }
 
+    function _reloadGifts() {
+        if (!actApi) { giftOptions = []; return; }
+        try {
+            giftOptions = JSON.parse(actApi.giftOptionsJson(platform, accountKey));
+        } catch (e) {
+            giftOptions = [];
+        }
+    }
+
     Component.onCompleted: _load()
     onSelectedIdxChanged: _syncSelected()
     onRulesModelChanged: _syncSelected()
     onSelectedRuleChanged: {
         if (selectedRule === null) return;
         eventTypeCombo.currentIndex = selectedRule.event.type === "gift_received" ? 1 : 0;
+    }
+    Connections {
+        target: actApi
+        function onRefreshUiRequested() { _reloadGifts() }
     }
 
     RowLayout {
@@ -293,18 +307,19 @@ Item {
                         visible: selectedRule !== null && selectedRule.event.type === "gift_received"
                         Layout.fillWidth: true
                         spacing: 6
-                        Text { text: api ? api.loc("actions.gift_name") : "Gift name"; color: muted; font.pixelSize: 12 }
-                        TextField {
+                        Text { text: api ? api.loc("actions.gift_pick") : "Gift"; color: muted; font.pixelSize: 12 }
+                        ComboBox {
                             Layout.fillWidth: true
-                            color: ink
-                            placeholderTextColor: muted
-                            placeholderText: api ? api.loc("actions.gift_name_ph") : "Rose..."
-                            text: selectedRule !== null ? (selectedRule.event.params.gift_name || "") : ""
-                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                            onEditingFinished: {
+                            model: giftOptions
+                            textRole: "name"
+                            valueRole: "id"
+                            Component.onCompleted: _reloadGifts()
+                            onActivated: function (idx) {
                                 if (selectedRule === null) return;
                                 var r = selectedRule;
-                                r.event.params.gift_name = text;
+                                var g = model[idx];
+                                r.event.params.gift_id = g.id || "";
+                                r.event.params.gift_name = g.name || "";
                                 _setRule(selectedIdx, r);
                                 _save();
                             }
@@ -326,45 +341,61 @@ Item {
 
                     Rectangle { Layout.fillWidth: true; height: 1; color: cardEdge; opacity: 0.6 }
                     Text { text: api ? api.loc("actions.actions") : "Actions"; color: ink; font.pixelSize: 14; font.bold: true }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-                        Text { text: api ? api.loc("actions.play_sound") : "Play sound"; color: muted; width: 120 }
-                        TextField {
-                            Layout.fillWidth: true
-                            color: ink
-                            placeholderTextColor: muted
-                            placeholderText: api ? api.loc("actions.pick_mp3") : "Pick .mp3..."
-                            text: (selectedRule && selectedRule.actions && selectedRule.actions.length)
-                                  ? (selectedRule.actions[0].params.file_path || "")
-                                  : ""
-                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                            readOnly: true
-                        }
-                        ConnPillButton {
-                            text: api ? api.loc("actions.browse") : "Browse…"
-                            onClicked: {
-                                if (selectedRule === null) return;
-                                var p = actApi.pickSoundFile();
-                                if (!p) return;
-                                var r = selectedRule;
-                                r.actions = [ { type: "play_sound", params: { file_path: p } } ];
-                                _setRule(selectedIdx, r);
-                                _save();
+                    Repeater {
+                        model: (selectedRule && selectedRule.actions) ? selectedRule.actions.length : 0
+                        delegate: RowLayout {
+                            width: parent.width
+                            spacing: 8
+                            readonly property int aIdx: index
+                            Text { text: api ? api.loc("actions.play_sound") : "Play sound"; color: muted; width: 120 }
+                            TextField {
+                                Layout.fillWidth: true
+                                color: ink
+                                placeholderTextColor: muted
+                                placeholderText: api ? api.loc("actions.pick_mp3") : "Pick .mp3..."
+                                text: selectedRule.actions[aIdx].params.file_path || ""
+                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                readOnly: true
                             }
-                        }
-                        ConnPillButton {
-                            text: api ? api.loc("actions.clear") : "Clear"
-                            onClicked: {
-                                if (selectedRule === null) return;
-                                var r = selectedRule;
-                                if (r.actions && r.actions.length) {
-                                    r.actions[0].params.file_path = "";
+                            ConnPillButton {
+                                text: api ? api.loc("actions.browse") : "Browse…"
+                                onClicked: {
+                                    if (selectedRule === null) return;
+                                    var p = actApi.pickSoundFile();
+                                    if (!p) return;
+                                    var r = selectedRule;
+                                    r.actions[aIdx].params.file_path = p;
                                     _setRule(selectedIdx, r);
                                     _save();
                                 }
                             }
+                            ConnPillButton {
+                                text: api ? api.loc("actions.delete") : "Delete"
+                                onClicked: {
+                                    if (selectedRule === null) return;
+                                    var r = selectedRule;
+                                    var aa = r.actions.slice();
+                                    aa.splice(aIdx, 1);
+                                    if (aa.length === 0) aa = [ { type: "play_sound", params: { file_path: "" } } ];
+                                    r.actions = aa;
+                                    _setRule(selectedIdx, r);
+                                    _save();
+                                }
+                            }
+                        }
+                    }
+
+                    ConnPillButton {
+                        text: api ? api.loc("actions.add_action") : "+ Add action"
+                        pillFontSize: 12
+                        onClicked: {
+                            if (selectedRule === null) return;
+                            var r = selectedRule;
+                            var aa = (r.actions || []).slice();
+                            aa.push({ type: "play_sound", params: { file_path: "" } });
+                            r.actions = aa;
+                            _setRule(selectedIdx, r);
+                            _save();
                         }
                     }
 
