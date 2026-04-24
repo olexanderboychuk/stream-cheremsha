@@ -28,6 +28,8 @@ class ActionsQmlApi(QObject):
     @Slot(str, str, result=str)
     def loadRulesJson(self, platform: str, accountKey: str) -> str:
         """Return ruleset JSON (wrapper: schema_version + rules list)."""
+        if not (platform or "").strip() or not (accountKey or "").strip():
+            return '{"schema_version":1,"rules":[]}'
         rules = load_rules(platform, accountKey)
         # Reuse canonical serializer to keep stable formatting.
         from stream_cheremsha.actions.models import ruleset_to_json_text  # noqa: PLC0415
@@ -37,6 +39,8 @@ class ActionsQmlApi(QObject):
     @Slot(str, str, str)
     def saveRulesJson(self, platform: str, accountKey: str, rulesJson: str) -> None:
         """Validate & persist ruleset JSON. Also refresh in-memory engines."""
+        if not (platform or "").strip() or not (accountKey or "").strip():
+            return
         txt = (rulesJson or "").strip()
         if not txt:
             save_rules(platform, accountKey, [])

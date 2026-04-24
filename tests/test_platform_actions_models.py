@@ -42,3 +42,8 @@ def test_rule_validation_mentions_action_index() -> None:
     with pytest.raises(ValueError, match=r"Rule actions\[0\]\.type is required"):
         ruleset_from_json_text('{"schema_version":1,"rules":[{"id":"r1","enabled":true,"event":{"type":"x","params":{}},"actions":[{"type":"","params":{}}]}]}')
 
+
+def test_rule_allows_empty_actions_list() -> None:
+    out = ruleset_from_json_text('{"schema_version":1,"rules":[{"id":"r1","enabled":true,"event":{"type":"x","params":{}},"actions":[]}]}')
+    assert out[0].actions == []
+

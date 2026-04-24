@@ -73,7 +73,7 @@ Item {
             id: ("" + Math.random()).slice(2),
             enabled: true,
             event: { type: "chat_keyword", params: { text: "", match: "contains", case_sensitive: false } },
-            actions: [ { type: "play_sound", params: { file_path: "" } } ]
+            actions: []
         }
     }
 

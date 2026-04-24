@@ -102,6 +102,10 @@ class PlatformActionsEngine:
 
     async def _dispatch_actions(self, rule: RuleV1, ev: object) -> None:
         _ = ev
+        if not rule.actions:
+            self._status_callback(f"Rule {rule.id}: no actions configured")
+            return
+
         for i, action in enumerate(rule.actions):
             if not isinstance(action, dict):
                 self._status_callback(f"Rule {rule.id}: actions[{i}] must be an object")

@@ -56,8 +56,10 @@ def rule_from_json_obj(obj: Mapping[str, Any]) -> RuleV1:
     event: TypedBlob = {"type": ev_t, "params": dict(ev_p)}
 
     acts = obj.get("actions")
-    if not isinstance(acts, list) or not acts:
-        raise ValueError("Rule actions must be a non-empty list")
+    if acts is None:
+        acts = []
+    if not isinstance(acts, list):
+        raise ValueError("Rule actions must be a list")
     actions: list[TypedBlob] = []
     for i, a in enumerate(acts):
         if not isinstance(a, Mapping):
