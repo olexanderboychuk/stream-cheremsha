@@ -24,10 +24,10 @@ def rule_to_json_obj(rule: RuleV1) -> dict[str, Any]:
     return {
         "id": rule.id,
         "enabled": rule.enabled,
-        "event": {"type": rule.event["type"], "params": dict(rule.event.get("params") or {})},
+        "event": {"type": rule.event["type"], "params": dict(rule.event["params"])},
         "actions": [
-            {"type": a["type"], "params": dict(a.get("params") or {})}
-            for a in (rule.actions or [])
+            {"type": a["type"], "params": dict(a["params"])}
+            for a in rule.actions
         ],
     }
 
@@ -59,15 +59,15 @@ def rule_from_json_obj(obj: Mapping[str, Any]) -> RuleV1:
     if not isinstance(acts, list) or not acts:
         raise ValueError("Rule actions must be a non-empty list")
     actions: list[TypedBlob] = []
-    for a in acts:
+    for i, a in enumerate(acts):
         if not isinstance(a, Mapping):
-            raise ValueError("Action must be an object")
+            raise ValueError(f"Rule actions[{i}] must be an object")
         a_t = a.get("type")
         if not isinstance(a_t, str) or not a_t.strip():
-            raise ValueError("Action type is required")
+            raise ValueError(f"Rule actions[{i}].type is required")
         a_p = a.get("params", {})
         if not isinstance(a_p, Mapping):
-            raise ValueError("Action params must be an object")
+            raise ValueError(f"Rule actions[{i}].params must be an object")
         actions.append({"type": a_t, "params": dict(a_p)})
 
     return RuleV1(id=rid.strip(), enabled=enabled, event=event, actions=actions)
@@ -79,7 +79,10 @@ def ruleset_to_json_text(rules: list[RuleV1]) -> str:
 
 
 def ruleset_from_json_text(text: str) -> list[RuleV1]:
-    raw = json.loads(text)
+    try:
+        raw = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Ruleset JSON is invalid: {e.msg}") from e
     if not isinstance(raw, Mapping):
         raise ValueError("Ruleset JSON must be an object")
     sv = raw.get("schema_version")

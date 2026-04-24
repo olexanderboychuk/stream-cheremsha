@@ -1,4 +1,4 @@
-﻿import json
+import json
 
 import pytest
 
@@ -17,6 +17,7 @@ def test_ruleset_roundtrip_v1_includes_schema_version_1() -> None:
 
     payload = json.loads(text)
     assert payload["schema_version"] == 1
+    assert "schema_version" not in payload["rules"][0]
 
     out = ruleset_from_json_text(text)
     assert [rule_to_json_obj(r) for r in out] == [rule_to_json_obj(rule)]
@@ -30,3 +31,14 @@ def test_ruleset_rejects_unsupported_schema_version() -> None:
 def test_ruleset_rejects_non_object_json() -> None:
     with pytest.raises(ValueError, match="Ruleset JSON must be an object"):
         ruleset_from_json_text("[]")
+
+
+def test_ruleset_rejects_invalid_json_text() -> None:
+    with pytest.raises(ValueError, match="Ruleset JSON is invalid"):
+        ruleset_from_json_text("{")
+
+
+def test_rule_validation_mentions_action_index() -> None:
+    with pytest.raises(ValueError, match=r"Rule actions\[0\]\.type is required"):
+        ruleset_from_json_text('{"schema_version":1,"rules":[{"id":"r1","enabled":true,"event":{"type":"x","params":{}},"actions":[{"type":"","params":{}}]}]}')
+
