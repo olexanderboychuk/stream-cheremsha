@@ -3,7 +3,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 from stream_cheremsha.actions.engine import PlatformActionsEngine
-from stream_cheremsha.actions.events import ChatMessageEvent
+from stream_cheremsha.actions.events import ChatMessageEvent, GiftReceivedEvent
 from stream_cheremsha.actions.models import RuleV1
 from stream_cheremsha.domain.models import ChatPlatform
 
@@ -116,3 +116,28 @@ def test_engine_missing_sound_file_reports_status(tmp_path: Path) -> None:
     asyncio.run(engine.on_chat_message(ev))
     assert sink.mp3_calls == []
     assert any("not found" in m for m in st)
+
+
+def test_engine_matches_gift_received_and_executes_action(tmp_path: Path) -> None:
+    p = tmp_path / "gift.mp3"
+    p.write_bytes(b"gift-mp3")
+    sink = FakeSink()
+    rules = [
+        RuleV1(
+            id="r1",
+            enabled=True,
+            event={"type": "gift_received", "params": {"gift_name": "Rose", "min_count": 2}},
+            actions=[{"type": "play_sound", "params": {"file_path": str(p)}}],
+        ),
+    ]
+    engine = PlatformActionsEngine(sink, rules)
+    ev = GiftReceivedEvent(
+        platform=ChatPlatform.TWITCH,
+        sender="bob",
+        gift_id="",
+        gift_name="rose",
+        count=2,
+        received_at=datetime.now(tz=timezone.utc),
+    )
+    asyncio.run(engine.on_gift_received(ev))
+    assert sink.mp3_calls == [b"gift-mp3"]

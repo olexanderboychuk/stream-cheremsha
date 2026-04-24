@@ -4,7 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 from stream_cheremsha.actions.actions_play_sound import play_sound_from_file
-from stream_cheremsha.actions.events import ChatMessageEvent
+from stream_cheremsha.actions.events import ChatMessageEvent, GiftReceivedEvent
 from stream_cheremsha.actions.models import RuleV1
 from stream_cheremsha.actions.registry import match_chat_keyword
 from stream_cheremsha.domain.protocols import AudioSink
@@ -65,7 +65,42 @@ class PlatformActionsEngine:
             if matched:
                 await self._dispatch_actions(rule, ev)
 
-    async def _dispatch_actions(self, rule: RuleV1, ev: ChatMessageEvent) -> None:
+    async def on_gift_received(self, ev: GiftReceivedEvent) -> None:
+        for rule in self._rules:
+            if not rule.enabled:
+                continue
+            if rule.event["type"] != "gift_received":
+                continue
+
+            params: Any = rule.event.get("params")
+            if not isinstance(params, dict):
+                self._status_callback(f"Rule {rule.id}: event.params must be an object")
+                continue
+
+            min_count_raw = params.get("min_count", 1)
+            try:
+                min_count = int(min_count_raw)
+            except (TypeError, ValueError):
+                self._status_callback(f"Rule {rule.id}: min_count must be an integer")
+                continue
+            if min_count < 1:
+                min_count = 1
+
+            gift_id = params.get("gift_id")
+            gift_name = params.get("gift_name")
+            match_ok = False
+            if isinstance(gift_id, str) and gift_id.strip():
+                match_ok = ev.gift_id.strip() == gift_id.strip()
+            elif isinstance(gift_name, str) and gift_name.strip():
+                match_ok = ev.gift_name.strip().casefold() == gift_name.strip().casefold()
+            else:
+                self._status_callback(f"Rule {rule.id}: gift_id or gift_name is required")
+                continue
+
+            if match_ok and int(ev.count) >= min_count:
+                await self._dispatch_actions(rule, ev)
+
+    async def _dispatch_actions(self, rule: RuleV1, ev: object) -> None:
         _ = ev
         for i, action in enumerate(rule.actions):
             if not isinstance(action, dict):

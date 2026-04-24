@@ -18,6 +18,7 @@ class ChatMessageEvent:
 class GiftReceivedEvent:
     platform: ChatPlatform
     sender: str
+    gift_id: str
     gift_name: str
-    quantity: int
+    count: int
     received_at: datetime
