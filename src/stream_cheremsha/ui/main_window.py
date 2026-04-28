@@ -81,6 +81,8 @@ from stream_cheremsha.chat.youtube_source import (
 from stream_cheremsha.config import constants, keyring_store
 from stream_cheremsha.domain.models import ChatMessage, ChatPlatform
 from stream_cheremsha.domain.protocols import TextToSpeech
+from stream_cheremsha.overlays.registry import OverlayRegistry
+from stream_cheremsha.overlays.server import OverlayServer
 from stream_cheremsha.pipeline.coordinator import StreamCoordinator
 from stream_cheremsha.tts.google_translate_tts import GoogleTranslateTts
 from stream_cheremsha.tts.piper_voices import TTS_LANG_OPTIONS
@@ -125,7 +127,9 @@ def _should_activate_window() -> bool:
     Avoid stealing focus on Windows when the user is working in another app.
     We only explicitly activate/raise when our app is already active.
     """
-    return QApplication.instance() is not None and QApplication.applicationState() == Qt.ApplicationState.ApplicationActive
+    return QApplication.instance() is not None and (
+        QApplication.applicationState() == Qt.ApplicationState.ApplicationActive
+    )
 
 
 def _footer_richtext_img(name: str, px: int) -> str:
@@ -261,6 +265,8 @@ class MainWindow(QWidget):
         self._rvc_toggle_busy = False
         self._tiktok_toggle_busy = False
         self._tiktok_enabled = False
+        self._overlay_registry = OverlayRegistry()
+        self._overlay_server = OverlayServer(registry=self._overlay_registry, host="127.0.0.1", port=17171)
         self._status_app = l10n.tr(self._locale, "status.app_idle")
         self._status_twitch = "—"
         self._status_youtube = "—"
@@ -2728,6 +2734,8 @@ class MainWindow(QWidget):
     async def run_startup(self) -> None:
         try:
             self._on_user_status(self._tr("startup.workers"))
+            await self._overlay_server.start()
+            logger.info("Overlay server: %s", self._overlay_server.base_url())
             await self._swap_tts_backend()
             await self._coordinator.start_workers()
             vol = int(self._settings.value("audio/volume", 100))
@@ -2791,6 +2799,7 @@ class MainWindow(QWidget):
                 logger.debug("Shutdown: log handler already uninstalled")
 
             for name, coro in (
+                ("overlay_server.stop", self._overlay_server.stop()),
                 ("twitch.stop", self._twitch.stop()),
                 ("youtube.stop", self._youtube.stop()),
                 ("tiktok.stop", self._tiktok.stop()),
