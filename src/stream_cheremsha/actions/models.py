@@ -10,6 +10,9 @@ class TypedBlob(TypedDict):
     params: dict[str, Any]
 
 
+_RULE_NAME_MAX_LEN = 200
+
+
 @dataclass(frozen=True, slots=True)
 class RuleV1:
     """Schema v1 rule for mapping events -> actions (no wrapper metadata)."""
@@ -18,10 +21,11 @@ class RuleV1:
     enabled: bool
     event: TypedBlob
     actions: list[TypedBlob]
+    name: str = ""
 
 
 def rule_to_json_obj(rule: RuleV1) -> dict[str, Any]:
-    return {
+    out: dict[str, Any] = {
         "id": rule.id,
         "enabled": rule.enabled,
         "event": {"type": rule.event["type"], "params": dict(rule.event["params"])},
@@ -30,6 +34,9 @@ def rule_to_json_obj(rule: RuleV1) -> dict[str, Any]:
             for a in rule.actions
         ],
     }
+    if rule.name.strip():
+        out["name"] = rule.name.strip()
+    return out
 
 
 def rule_from_json_obj(obj: Mapping[str, Any]) -> RuleV1:
@@ -72,7 +79,12 @@ def rule_from_json_obj(obj: Mapping[str, Any]) -> RuleV1:
             raise ValueError(f"Rule actions[{i}].params must be an object")
         actions.append({"type": a_t, "params": dict(a_p)})
 
-    return RuleV1(id=rid.strip(), enabled=enabled, event=event, actions=actions)
+    name_raw = obj.get("name", "")
+    if not isinstance(name_raw, str):
+        name_raw = ""
+    name = name_raw.strip()[:_RULE_NAME_MAX_LEN]
+
+    return RuleV1(id=rid.strip(), enabled=enabled, event=event, actions=actions, name=name)
 
 
 def ruleset_to_json_text(rules: list[RuleV1]) -> str:

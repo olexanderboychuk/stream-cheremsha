@@ -10,6 +10,7 @@ from PySide6.QtGui import QDesktopServices
 
 from stream_cheremsha.config import constants
 from stream_cheremsha.config import keyring_store
+from stream_cheremsha.domain.models import ChatPlatform
 
 if typing.TYPE_CHECKING:
     from stream_cheremsha.ui.main_window import MainWindow
@@ -173,6 +174,42 @@ class StreamCheremshaQmlApi(QObject):
     def youtubeRunning(self) -> bool:
         w = self._win()
         return w._youtube.running if w is not None else False  # noqa: SLF001
+
+    @Slot(result=bool)
+    def twitchChatTtsEnabled(self) -> bool:
+        w = self._win()
+        return bool(w._chat_tts_enabled(ChatPlatform.TWITCH)) if w is not None else True  # noqa: SLF001
+
+    @Slot(bool)
+    def twitchSetChatTtsEnabled(self, enabled: bool) -> None:
+        w = self._win()
+        if w is not None:
+            w._set_chat_tts_enabled(ChatPlatform.TWITCH, bool(enabled))  # noqa: SLF001
+        self.refresh()
+
+    @Slot(result=bool)
+    def youtubeChatTtsEnabled(self) -> bool:
+        w = self._win()
+        return bool(w._chat_tts_enabled(ChatPlatform.YOUTUBE)) if w is not None else True  # noqa: SLF001
+
+    @Slot(bool)
+    def youtubeSetChatTtsEnabled(self, enabled: bool) -> None:
+        w = self._win()
+        if w is not None:
+            w._set_chat_tts_enabled(ChatPlatform.YOUTUBE, bool(enabled))  # noqa: SLF001
+        self.refresh()
+
+    @Slot(result=bool)
+    def tiktokChatTtsEnabled(self) -> bool:
+        w = self._win()
+        return bool(w._chat_tts_enabled(ChatPlatform.TIKTOK)) if w is not None else True  # noqa: SLF001
+
+    @Slot(bool)
+    def tiktokSetChatTtsEnabled(self, enabled: bool) -> None:
+        w = self._win()
+        if w is not None:
+            w._set_chat_tts_enabled(ChatPlatform.TIKTOK, bool(enabled))  # noqa: SLF001
+        self.refresh()
 
     @Slot(result=bool)
     def tiktokRunning(self) -> bool:

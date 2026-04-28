@@ -25,6 +25,33 @@ If `keyring` reports **No recommended backend** (common in minimal containers), 
 
 Install **devel** headers first on Linux (see **Requirements** above) so `pyworld` can compile.
 
+On **Windows**, the `[rvc]` extra installs `fairseq-fixed`, which **builds native extensions** and therefore requires a working MSVC toolchain + Windows SDK. Install **Visual Studio Build Tools** (or full Visual Studio) with:
+
+- **Workload**: Desktop development with C++
+- **Components**: MSVC (v143 or newer) and Windows 10/11 SDK
+
+#### CUDA (NVIDIA)
+
+If you have an NVIDIA GPU and want RVC to run on **CUDA**, you must install a **CUDA-enabled** PyTorch wheel. If `torch` prints `+cpu` (for example `2.11.0+cpu`) then RVC will fall back to CPU.
+
+Prereqs:
+
+- NVIDIA driver (verify in terminal: `nvidia-smi`)
+- Windows only (recommended): Microsoft Visual C++ Redistributable 2015–2022 (x64) — helps avoid DLL load errors like `c10_cuda.dll` / `WinError 126`
+
+Install CUDA PyTorch into the active venv (Linux/Windows example: CUDA 12.8 wheels):
+
+```bash
+pip uninstall -y torch torchaudio
+pip install --index-url https://download.pytorch.org/whl/cu128 torch torchaudio
+```
+
+Verify:
+
+```bash
+python -c "import torch; print(torch.__version__); print('cuda', torch.version.cuda, 'available', torch.cuda.is_available())"
+```
+
 The `[rvc]` extra uses **[fairseq-fixed](https://pypi.org/project/fairseq-fixed/)** (same `import fairseq` as the original) because **fairseq 0.12.2** from PyPI **crashes on Python 3.11** (`dataclasses` / mutable defaults). If you previously installed the old `fairseq` package, remove it first: `pip uninstall -y fairseq`.
 
 `rvc-python` on PyPI still conflicts with this app’s `numpy` pins, so it is installed **with `--no-deps`** after the rest. Install the project in editable mode so the helper script exists (e.g. `pip install -e ".[dev]"`), then:
@@ -61,7 +88,7 @@ Register a Twitch Developer application and note the **Client ID** (and **Client
 1. In [Google Cloud Console](https://console.cloud.google.com/), enable **YouTube Data API v3** and create an OAuth client of type **Desktop**; download the JSON (it contains an `"installed"` block).
 2. In the app: **Sign in with Google (browser)** — the **first** time only, a file picker asks for that JSON; it is stored in the OS keyring. Later, login is just the button and the browser (same idea as many desktop apps that ship or cache OAuth client metadata).
 3. Optional: set env **`GOOGLE_OAUTH_CLIENT_JSON`** to the full JSON string to skip the file picker (e.g. CI or advanced setups).
-4. **Start YouTube** with the field **empty** to auto-detect every **active** live broadcast on the signed-in channel (via `liveBroadcasts.list`, with a `search`+`videos` fallback), or paste one **live** / VOD URL (or 11-character video ID) to pin a single stream. If nothing is live yet, the app **re-checks about every 15 seconds** until a live chat exists or you press Stop. Multiple simultaneous lives are polled in parallel (higher API quota use). Uses `liveChatMessages.list` with the API’s poll interval — see [YouTube Data API](https://developers.google.com/youtube/v3/getting-started).
+4. **Start YouTube** with the field **empty** to auto-detect every **active** live broadcast on the signed-in channel (via `liveBroadcasts.list`, with a `search`+`videos` fallback), or paste one **live** / VOD URL (or 11-character video ID) to pin a single stream. If nothing is live yet, the app **re-checks about every 45 seconds** until a live chat exists or you press Stop. Several simultaneous lives **share one poll cadence** (round-robin) so quota use stays closer to a single chat. `liveChatMessages.list` uses `maxResults=2000`, a **minimum 5 s** gap between calls, and the API’s `pollingIntervalMillis` when higher — see [YouTube Data API](https://developers.google.com/youtube/v3/getting-started).
 
 ## TTS disclaimer
 
@@ -92,6 +119,14 @@ cheremsha-build
 Artifacts will be placed under `dist/nuitka/`.
 
 Notes:
+
+- **CUDA build (NVIDIA)**: the Nuitka build will bundle whichever `torch` you have installed in the build venv.
+  For a CUDA-enabled build, install CUDA wheels **before** running `cheremsha-build` (example: CUDA 12.8):
+
+  ```bash
+  pip uninstall -y torch torchaudio
+  pip install --index-url https://download.pytorch.org/whl/cu128 torch torchaudio
+  ```
 
 - Linux audio: the build includes Qt plugins for **QML + QtMultimedia**. If your system lacks codecs/backends
   (e.g. GStreamer plugins for MP3 on Fedora), install them via your distro packages.

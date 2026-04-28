@@ -72,6 +72,46 @@ Item {
         background: Item {}
     }
 
+    component ConnMainSwitch: Switch {
+        id: mainSw
+        padding: 0
+        implicitWidth: 46
+        implicitHeight: 24
+        focusPolicy: Qt.NoFocus
+        hoverEnabled: true
+        // Keep the right edge visually aligned with the card border: scaling from center
+        // can overflow outside the card when the control is right-aligned.
+        transformOrigin: Item.Right
+        scale: mainSw.hovered ? 1.06 : 1.0
+        Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+
+        indicator: Rectangle {
+            width: mainSw.implicitWidth
+            height: mainSw.implicitHeight
+            radius: 12
+            color: mainSw.checked ? "#16a34a" : "#dc2626" // green / red
+            border.width: 1
+            border.color: mainSw.checked ? "#22c55e" : "#ef4444"
+            opacity: mainSw.enabled ? 1.0 : 0.55
+            Behavior on color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
+            Behavior on border.color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
+
+            Rectangle {
+                width: 18
+                height: 18
+                radius: 9
+                y: 3
+                x: mainSw.checked ? (parent.width - width - 3) : 3
+                color: "#0b0f17"
+                border.width: 1
+                border.color: "#1f2937"
+                Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+            }
+        }
+
+        contentItem: Item {}
+    }
+
     ScrollView {
         id: sc
         anchors.fill: parent
@@ -99,24 +139,34 @@ Item {
         Item {
             id: scInner
             width: root.width
-            implicitHeight: col.implicitHeight
+            implicitHeight: col.implicitHeight + 24
 
-            ColumnLayout {
-                id: col
-                width: Math.min(720, scInner.width - 32)
+            RowLayout {
+                id: row
+                width: Math.max(1, scInner.width - 32)
                 anchors {
                     top: parent.top
-                    horizontalCenter: parent.horizontalCenter
+                    left: parent.left
                     topMargin: 10
+                    leftMargin: 16
                     bottomMargin: 20
                 }
-                spacing: 18
+                spacing: 14
+
+                ColumnLayout {
+                    id: col
+                    Layout.alignment: Qt.AlignTop
+                    Layout.preferredWidth: Math.min(560, row.width)
+                    Layout.maximumWidth: 560
+                    Layout.fillHeight: true
+                    spacing: 12
 
             // -------- Twitch card (Item sizes to ColumnLayout; Rectangle is background only) --------
             Item {
                 id: twCard
                 Layout.fillWidth: true
-                implicitHeight: twCol.implicitHeight + 40
+                implicitHeight: twCol.implicitHeight + 28
+                clip: true
 
                 Rectangle {
                     anchors.fill: parent
@@ -127,9 +177,9 @@ Item {
 
                 ColumnLayout {
                     id: twCol
-                    x: 20; y: 20
-                    width: parent.width - 40
-                    spacing: 14
+                    x: 14; y: 14
+                    width: parent.width - 28
+                    spacing: 10
 
                     RowLayout {
                         Layout.fillWidth: true; spacing: 10
@@ -146,7 +196,7 @@ Item {
                         }
                         Text {
                             text: { if (!api) return ""; api.refreshCounter; return api.loc("ui.twitch_head") }
-                            color: twHi; font.pixelSize: 22; font.bold: true; font.letterSpacing: 0.2
+                            color: twHi; font.pixelSize: 18; font.bold: true; font.letterSpacing: 0.2
                             Layout.alignment: Qt.AlignVCenter; Layout.fillWidth: true
                         }
                     }
@@ -199,10 +249,10 @@ Item {
 
                     Column {
                         Layout.fillWidth: true
-                        spacing: 6
+                        spacing: 4
                         Text { text: { if (!api) return ""; api.refreshCounter; return api.loc("tw.channel") } color: muted; font.pixelSize: 12; font.weight: Font.Medium; font.letterSpacing: 0.2 }
                         TextField {
-                            id: twCh; width: parent.width; color: ink; leftPadding: 12; rightPadding: 12; topPadding: 10; bottomPadding: 10; font.pixelSize: 14
+                            id: twCh; width: parent.width; color: ink; leftPadding: 10; rightPadding: 10; topPadding: 8; bottomPadding: 8; font.pixelSize: 13
                             placeholderTextColor: muted
                             placeholderText: { if (!api) return ""; api.refreshCounter; return api.loc("tw.channel_ph") }
                             onTextChanged: if (activeFocus) api.setTwitchChannelText(text)
@@ -216,18 +266,47 @@ Item {
                     RowLayout {
                         Layout.fillWidth: true
                         Layout.topMargin: 4
-                        Item { height: 1; Layout.fillWidth: true; Layout.alignment: Qt.AlignVCenter }
+                        spacing: 12
+                        Text {
+                            text: { if (!api) return ""; api.refreshCounter; return api.loc("connections.tts_chat") }
+                            color: muted
+                            font.pixelSize: 12
+                            Layout.alignment: Qt.AlignVCenter
+                            Layout.fillWidth: true
+                            wrapMode: Text.Wrap
+                        }
                         Switch {
-                            id: twSw
+                            id: twTtsSw
                             padding: 0
                             focusPolicy: Qt.NoFocus
                             hoverEnabled: true
                             transformOrigin: Item.Center
                             Layout.alignment: Qt.AlignVCenter
+                            checked: { if (!api) return true; api.refreshCounter; return api.twitchChatTtsEnabled() }
+                            onClicked: { if (api) api.twitchSetChatTtsEnabled(!api.twitchChatTtsEnabled()) }
+                            scale: twTtsSw.hovered ? 1.08 : 1.0
+                            Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.topMargin: 4
+                        spacing: 12
+                        Text {
+                            text: { if (!api) return ""; api.refreshCounter; return api.loc("connections.platform_enabled") }
+                            color: muted
+                            font.pixelSize: 12
+                            Layout.alignment: Qt.AlignVCenter
+                            Layout.fillWidth: true
+                            wrapMode: Text.Wrap
+                        }
+                        ConnMainSwitch {
+                            id: twSw
+                            Layout.alignment: Qt.AlignVCenter
+                            Layout.rightMargin: 6
                             checked: { if (!api) return false; api.refreshCounter; return api.twitchRunning() }
                             onToggled: { if (api) api.twitchTransport() }
-                            scale: twSw.hovered ? 1.08 : 1.0
-                            Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
                         }
                     }
                 }
@@ -237,7 +316,8 @@ Item {
             Item {
                 id: ytCard
                 Layout.fillWidth: true
-                implicitHeight: ytCol.implicitHeight + 40
+                implicitHeight: ytCol.implicitHeight + 28
+                clip: true
 
                 Rectangle {
                     anchors.fill: parent
@@ -248,9 +328,9 @@ Item {
 
                 ColumnLayout {
                     id: ytCol
-                    x: 20; y: 20
-                    width: parent.width - 40
-                    spacing: 14
+                    x: 14; y: 14
+                    width: parent.width - 28
+                    spacing: 10
                     RowLayout {
                         Layout.fillWidth: true; spacing: 10
                         Rectangle { width: 3; height: 26; radius: 1; color: ytBar; Layout.alignment: Qt.AlignVCenter }
@@ -266,7 +346,7 @@ Item {
                         }
                         Text {
                             text: { if (!api) return ""; api.refreshCounter; return api.loc("ui.youtube_head") }
-                            color: ytHi; font.pixelSize: 22; font.bold: true; Layout.alignment: Qt.AlignVCenter; Layout.fillWidth: true
+                            color: ytHi; font.pixelSize: 18; font.bold: true; Layout.alignment: Qt.AlignVCenter; Layout.fillWidth: true
                         }
                     }
 
@@ -299,7 +379,7 @@ Item {
                     }
                     Text { visible: { if (!api) return false; api.refreshCounter; return api.googleLinked() } text: { if (!api) return ""; api.refreshCounter; return api.loc("yt.video_label") } color: muted; font.pixelSize: 12; font.weight: Font.Medium; Layout.fillWidth: true }
                     TextField {
-                        id: ytV; visible: { if (!api) return false; api.refreshCounter; return api.googleLinked() } color: ink; leftPadding: 12; rightPadding: 12; topPadding: 10; bottomPadding: 10; font.pixelSize: 13
+                        id: ytV; visible: { if (!api) return false; api.refreshCounter; return api.googleLinked() } color: ink; leftPadding: 10; rightPadding: 10; topPadding: 8; bottomPadding: 8; font.pixelSize: 13
                         placeholderTextColor: muted
                         placeholderText: { if (!api) return ""; api.refreshCounter; return api.loc("yt.video_ph") }
                         onTextChanged: if (activeFocus) api.setYoutubeVideoText(text)
@@ -312,18 +392,48 @@ Item {
                         visible: { if (!api) return false; api.refreshCounter; return api.googleLinked() }
                         Layout.fillWidth: true
                         Layout.topMargin: 4
-                        Item { height: 1; Layout.fillWidth: true; Layout.alignment: Qt.AlignVCenter }
+                        spacing: 12
+                        Text {
+                            text: { if (!api) return ""; api.refreshCounter; return api.loc("connections.tts_chat") }
+                            color: muted
+                            font.pixelSize: 12
+                            Layout.alignment: Qt.AlignVCenter
+                            Layout.fillWidth: true
+                            wrapMode: Text.Wrap
+                        }
                         Switch {
-                            id: ytSw
+                            id: ytTtsSw
                             padding: 0
                             focusPolicy: Qt.NoFocus
                             hoverEnabled: true
                             transformOrigin: Item.Center
                             Layout.alignment: Qt.AlignVCenter
+                            checked: { if (!api) return true; api.refreshCounter; return api.youtubeChatTtsEnabled() }
+                            onClicked: { if (api) api.youtubeSetChatTtsEnabled(!api.youtubeChatTtsEnabled()) }
+                            scale: ytTtsSw.hovered ? 1.08 : 1.0
+                            Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                        }
+                    }
+
+                    RowLayout {
+                        visible: { if (!api) return false; api.refreshCounter; return api.googleLinked() }
+                        Layout.fillWidth: true
+                        Layout.topMargin: 4
+                        spacing: 12
+                        Text {
+                            text: { if (!api) return ""; api.refreshCounter; return api.loc("connections.platform_enabled") }
+                            color: muted
+                            font.pixelSize: 12
+                            Layout.alignment: Qt.AlignVCenter
+                            Layout.fillWidth: true
+                            wrapMode: Text.Wrap
+                        }
+                        ConnMainSwitch {
+                            id: ytSw
+                            Layout.alignment: Qt.AlignVCenter
+                            Layout.rightMargin: 6
                             checked: { if (!api) return false; api.refreshCounter; return api.youtubeRunning() }
                             onToggled: { if (api) api.youtubeTransport() }
-                            scale: ytSw.hovered ? 1.08 : 1.0
-                            Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
                         }
                     }
                 }
@@ -333,7 +443,8 @@ Item {
             Item {
                 id: tkCard
                 Layout.fillWidth: true
-                implicitHeight: tkCol.implicitHeight + 40
+                implicitHeight: tkCol.implicitHeight + 28
+                clip: true
 
                 Rectangle {
                     anchors.fill: parent
@@ -344,9 +455,9 @@ Item {
 
                 ColumnLayout {
                     id: tkCol
-                    x: 20; y: 20
-                    width: parent.width - 40
-                    spacing: 14
+                    x: 14; y: 14
+                    width: parent.width - 28
+                    spacing: 10
 
                     RowLayout {
                         Layout.fillWidth: true; spacing: 10
@@ -363,7 +474,7 @@ Item {
                         }
                         Text {
                             text: { if (!api) return ""; api.refreshCounter; return api.loc("ui.tiktok_head") }
-                            color: tkHi; font.pixelSize: 22; font.bold: true; Layout.alignment: Qt.AlignVCenter; Layout.fillWidth: true
+                            color: tkHi; font.pixelSize: 18; font.bold: true; Layout.alignment: Qt.AlignVCenter; Layout.fillWidth: true
                         }
                     }
 
@@ -394,10 +505,10 @@ Item {
 
                     Column {
                         Layout.fillWidth: true
-                        spacing: 6
+                        spacing: 4
                         Text { text: { if (!api) return ""; api.refreshCounter; return api.loc("tk.username") } color: muted; font.pixelSize: 12; font.weight: Font.Medium; font.letterSpacing: 0.2 }
                         TextField {
-                            id: tkUser; width: parent.width; color: ink; leftPadding: 12; rightPadding: 12; topPadding: 10; bottomPadding: 10; font.pixelSize: 14
+                            id: tkUser; width: parent.width; color: ink; leftPadding: 10; rightPadding: 10; topPadding: 8; bottomPadding: 8; font.pixelSize: 13
                             placeholderTextColor: muted
                             placeholderText: { if (!api) return ""; api.refreshCounter; return api.loc("tk.username_ph") }
                             onTextChanged: if (activeFocus) api.setTiktokUsernameText(text)
@@ -411,25 +522,105 @@ Item {
                     RowLayout {
                         Layout.fillWidth: true
                         Layout.topMargin: 4
-                        Item { height: 1; Layout.fillWidth: true; Layout.alignment: Qt.AlignVCenter }
+                        spacing: 12
+                        Text {
+                            text: { if (!api) return ""; api.refreshCounter; return api.loc("connections.tts_chat") }
+                            color: muted
+                            font.pixelSize: 12
+                            Layout.alignment: Qt.AlignVCenter
+                            Layout.fillWidth: true
+                            wrapMode: Text.Wrap
+                        }
                         Switch {
-                            id: tkSw
+                            id: tkTtsSw
                             padding: 0
                             focusPolicy: Qt.NoFocus
                             hoverEnabled: true
                             transformOrigin: Item.Center
                             Layout.alignment: Qt.AlignVCenter
+                            checked: { if (!api) return true; api.refreshCounter; return api.tiktokChatTtsEnabled() }
+                            onClicked: { if (api) api.tiktokSetChatTtsEnabled(!api.tiktokChatTtsEnabled()) }
+                            scale: tkTtsSw.hovered ? 1.08 : 1.0
+                            Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.topMargin: 4
+                        spacing: 12
+                        Text {
+                            text: { if (!api) return ""; api.refreshCounter; return api.loc("connections.platform_enabled") }
+                            color: muted
+                            font.pixelSize: 12
+                            Layout.alignment: Qt.AlignVCenter
+                            Layout.fillWidth: true
+                            wrapMode: Text.Wrap
+                        }
+                        ConnMainSwitch {
+                            id: tkSw
+                            Layout.alignment: Qt.AlignVCenter
+                            Layout.rightMargin: 6
                             checked: { if (!api) return false; api.refreshCounter; return api.tiktokEnabled() }
                             // Avoid feeding Switch's internal checked state back into backend.
                             // Binding-controlled checked + user interaction can cause double flips.
                             onClicked: { if (api) api.tiktokSetEnabled(!api.tiktokEnabled()) }
-                            scale: tkSw.hovered ? 1.08 : 1.0
-                            Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
                         }
                     }
                 }
             }
+
+            // end ColumnLayout col
         }
+
+        // Right-side placeholder for future Analytics panel
+        Item {
+            id: analyticsSlot
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.alignment: Qt.AlignTop
+            visible: row.width > (col.Layout.maximumWidth + 180)
+
+            Rectangle {
+                anchors.fill: parent
+                color: cardBase
+                radius: 16
+                border.width: 1
+                border.color: cardEdge
+                Rectangle {
+                    anchors { left: parent.left; right: parent.right; top: parent.top; margins: 1 }
+                    height: 1
+                    color: "#334155"
+                    opacity: 0.35
+                }
+            }
+
+            Column {
+                anchors.centerIn: parent
+                width: Math.min(420, parent.width - 64)
+                spacing: 10
+
+                Text {
+                    width: parent.width
+                    text: { if (!api) return "Analytics — coming soon"; api.refreshCounter; return api.loc("connections.analytics_soon_title") }
+                    color: ink
+                    font.pixelSize: 22
+                    font.bold: true
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.Wrap
+                }
+
+                Text {
+                    width: parent.width
+                    text: { if (!api) return ""; api.refreshCounter; return api.loc("connections.analytics_soon_sub") }
+                    color: muted
+                    font.pixelSize: 12
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.Wrap
+                }
+            }
         }
-    }
-}
+    } // RowLayout row
+} // Item scInner
+} // ScrollView sc
+} // root Item

@@ -7,6 +7,8 @@ KEY_TWITCH_OAUTH = "twitch_oauth_json"
 KEY_YOUTUBE_OAUTH = "youtube_oauth_json"
 KEY_YOUTUBE_CLIENT_CONFIG = "youtube_google_client_json"
 KEY_TIKTOK_USERNAME = "tiktok_username"
+# QSettings scope for TikTok actions: one ruleset for the platform, not per streamer login.
+TIKTOK_ACTIONS_ACCOUNT_KEY = "app"
 KEY_DONATIK_API_TOKEN = "donatik_api_token"
 KEY_DONATELLO_API_TOKEN = "donatello_api_token"
 

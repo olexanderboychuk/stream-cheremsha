@@ -8,7 +8,7 @@ import pytest
 from PySide6.QtCore import QSettings
 
 from stream_cheremsha.actions.models import RuleV1
-from stream_cheremsha.actions.store import load_rules, save_rules
+from stream_cheremsha.actions.store import actions_rules_key_is_set, load_rules, save_rules
 
 
 @pytest.fixture()
@@ -35,6 +35,12 @@ def _rule(rule_id: str) -> RuleV1:
 def test_load_rules_returns_empty_list_when_missing(ini_settings: QSettings) -> None:
     out = load_rules('twitch', 'acc-1', settings=ini_settings)
     assert out == []
+
+
+def test_actions_rules_key_is_set_false_until_saved_even_if_rules_empty(ini_settings: QSettings) -> None:
+    assert not actions_rules_key_is_set("tiktok", "app", settings=ini_settings)
+    save_rules("tiktok", "app", [], settings=ini_settings)
+    assert actions_rules_key_is_set("tiktok", "app", settings=ini_settings)
 
 
 def test_rules_are_scoped_by_account_key(ini_settings: QSettings) -> None:

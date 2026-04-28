@@ -64,12 +64,33 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "ui.twitch_head": {"uk": "Twitch", "en": "Twitch"},
     "ui.youtube_head": {"uk": "YouTube", "en": "YouTube"},
     "ui.tiktok_head": {"uk": "TikTok", "en": "TikTok"},
+    "connections.tts_chat": {"uk": "Озвучувати чат (TTS)", "en": "Speak chat (TTS)"},
+    "connections.platform_enabled": {"uk": "Платформа увімкнена", "en": "Platform enabled"},
+    "connections.analytics_soon_title": {"uk": "Аналітика — скоро", "en": "Analytics — coming soon"},
+    "connections.analytics_soon_sub": {
+        "uk": "Тут буде статистика по чату, TTS, активності й підключеннях.",
+        "en": "Here you'll see chat, TTS, activity, and connection stats.",
+    },
     # Platform actions
     "actions.btn": {"uk": "Дії", "en": "Actions"},
     "actions.title": {"uk": "Дії", "en": "Actions"},
     "actions.window_title": {"uk": "Дії — Stream Cheremsha", "en": "Actions — Stream Cheremsha"},
     "actions.add_rule": {"uk": "+ Додати правило", "en": "+ Add rule"},
+    "actions.save": {"uk": "Зберегти", "en": "Save"},
+    "actions.saved": {"uk": "Збережено", "en": "Saved"},
+    "actions.close": {"uk": "Закрити", "en": "Close"},
+    "actions.rule_name": {"uk": "Назва", "en": "Name"},
+    "actions.rule_name_ph": {"uk": "наприклад: Троянда → OBS", "en": "e.g. Rose → OBS"},
+    "actions.rule_chat_brief": {"uk": "Чат", "en": "Chat"},
+    "actions.rule_gift_brief": {"uk": "Подарунок", "en": "Gift"},
+    "actions.rule_no_actions": {"uk": "немає дій", "en": "no actions"},
     "actions.delete": {"uk": "Видалити", "en": "Delete"},
+    "actions.duplicate_btn": {"uk": "Копія", "en": "Copy"},
+    "actions.rule_name_copy_suffix": {"uk": " (копія)", "en": " (copy)"},
+    "actions.placeholders_hint_file": {
+        "uk": "Плейсхолдери (в тексті й у шляху файла): giftcount, giftname, …",
+        "en": "Placeholders (in text and file path): giftcount, giftname, …",
+    },
     "actions.edit": {"uk": "Редагування", "en": "Edit"},
     "actions.pick_rule_hint": {"uk": "Оберіть правило зліва.", "en": "Pick a rule on the left."},
     "actions.event.chat_keyword": {"uk": "Певне слово в чаті", "en": "Chat keyword"},
@@ -83,6 +104,30 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "actions.actions": {"uk": "Дії", "en": "Actions"},
     "actions.play_sound": {"uk": "Програти звук", "en": "Play sound"},
     "actions.pick_mp3": {"uk": "Оберіть .mp3…", "en": "Pick .mp3…"},
+    "actions.write_file": {"uk": "Запис у файл", "en": "Write to file"},
+    "actions.write_mode": {"uk": "Режим запису", "en": "Write mode"},
+    "actions.write_mode_overwrite": {"uk": "Перезаписати", "en": "Overwrite"},
+    "actions.write_mode_append": {"uk": "Дописати в кінець", "en": "Append"},
+    "actions.speak_tts": {"uk": "Озвучити текст (TTS)", "en": "Speak text (TTS)"},
+    "actions.speak_tts_text": {"uk": "Текст для озвучення", "en": "Text to speak"},
+    "actions.speak_tts_text_ph": {"uk": "фраза або з плейсхолдерами…", "en": "phrase or with placeholders…"},
+    "actions.run_program": {"uk": "Запустити програму", "en": "Run program"},
+    "actions.pick_program": {"uk": "Оберіть виконуваний файл…", "en": "Pick executable…"},
+    "actions.program_args": {"uk": "Параметри командного рядка", "en": "Command-line arguments"},
+    "actions.program_args_ph": {"uk": "наприклад: --foo bar", "en": "e.g. --foo bar"},
+    "actions.placeholders_hint": {
+        "uk": (
+            "У фігурних дужках, напр. {giftcount}, {giftname}. "
+            "Подарунок: gift_id, sender, platform. Чат: author, text, platform."
+        ),
+        "en": (
+            "Use braces, e.g. {giftcount}, {giftname}. "
+            "Gift: gift_id, sender, platform. Chat: author, text, platform."
+        ),
+    },
+    "actions.pick_file": {"uk": "Оберіть файл…", "en": "Pick file…"},
+    "actions.write_text": {"uk": "Текст", "en": "Text"},
+    "actions.write_text_ph": {"uk": "що записати…", "en": "text to append…"},
     "actions.browse": {"uk": "Огляд…", "en": "Browse…"},
     "actions.clear": {"uk": "Очистити", "en": "Clear"},
     "actions.add_action": {"uk": "+ Додати дію", "en": "+ Add action"},
@@ -246,6 +291,15 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     },
     "tk.stopped": {"uk": "TikTok: зупинено", "en": "TikTok: stopped"},
     "tk.bad_username": {"uk": "TikTok: введіть юзернейм (нік) стрімера", "en": "TikTok: enter the streamer username"},
+    # Audio / TTS
+    "audio.flush_queues": {
+        "uk": "Зупинити озвучення (очистити черги)",
+        "en": "Stop speech (clear queues)",
+    },
+    "audio.flush_queues_hint": {
+        "uk": "Скинути відкладені фрази TTS та зупинити поточне відтворення, якщо зависло/накопичилось.",
+        "en": "Drop pending TTS phrases and stop current playback if it got stuck or queued up.",
+    },
     # Connections — Twitch
     "tw.group": {"uk": "Twitch", "en": "Twitch"},
     "tw.apps_help": {

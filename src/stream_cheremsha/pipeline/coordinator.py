@@ -26,6 +26,7 @@ class StreamCoordinator:
         audio_sink: AudioSink,
         on_chat: Callable[[ChatMessage], None],
         on_status: Callable[[str], None],
+        should_tts: Callable[[ChatMessage], bool] | None = None,
         get_locale: Callable[[], str] | None = None,
         rvc_runtime: RvcRuntime | None = None,
     ) -> None:
@@ -34,6 +35,7 @@ class StreamCoordinator:
         self._rvc: RvcRuntime = rvc_runtime or RvcRuntime()
         self._on_chat = on_chat
         self._on_status = on_status
+        self._should_tts = should_tts or (lambda _msg: True)
         self._get_locale = get_locale or (lambda: l10n.DEFAULT_LOCALE)
         self.chat_in: asyncio.Queue[ChatMessage] = asyncio.Queue(maxsize=CHAT_QUEUE_MAX)
         self.tts_jobs: asyncio.Queue[str] = asyncio.Queue(maxsize=TTS_QUEUE_MAX)
@@ -47,6 +49,10 @@ class StreamCoordinator:
     def set_tts(self, tts: TextToSpeech) -> None:
         """Swap the TTS backend (e.g. Google vs Piper) while workers keep running."""
         self._tts = tts
+
+    def set_should_tts(self, predicate: Callable[[ChatMessage], bool]) -> None:
+        """Swap the predicate used to route chat into TTS."""
+        self._should_tts = predicate
 
     async def enqueue_chat(self, message: ChatMessage) -> None:
         try:
@@ -82,6 +88,30 @@ class StreamCoordinator:
             except asyncio.QueueEmpty:
                 break
 
+    def clear_queues(self) -> None:
+        """Drop pending chat and TTS work items (does not stop an in-flight TTS synth)."""
+        while not self.chat_in.empty():
+            try:
+                self.chat_in.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+        while not self.tts_jobs.empty():
+            try:
+                self.tts_jobs.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
+    async def flush_tts(self) -> None:
+        """Stop in-flight TTS task, drop queues, and resume workers if running."""
+        self.clear_queues()
+        t = self._tts_task
+        if t is None or t.done():
+            return
+        t.cancel()
+        await asyncio.gather(t, return_exceptions=True)
+        if self._running:
+            self._tts_task = asyncio.create_task(self._tts_loop(), name="cheremsha-tts")
+
     async def _ingest_loop(self) -> None:
         while self._running:
             try:
@@ -90,6 +120,8 @@ class StreamCoordinator:
                 continue
             except asyncio.CancelledError:
                 raise
+            if not self._should_tts(msg):
+                continue
             text = filter_for_tts(msg)
             if text is None:
                 continue

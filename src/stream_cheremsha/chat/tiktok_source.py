@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import traceback
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -39,15 +40,22 @@ class TikTokChatSource:
         on_status: Callable[[str], None],
         on_gift: Callable[[str, str, str, int], None] | None = None,
         get_locale: Callable[[], str] | None = None,
+        client_factory: Callable[[str], TikTokLiveClient] | None = None,
     ) -> None:
         self._coordinator = coordinator
         self._on_status = on_status
         self._on_gift = on_gift
         self._get_locale = get_locale or (lambda: l10n.DEFAULT_LOCALE)
+        self._client_factory = client_factory or (lambda uid: TikTokLiveClient(unique_id=uid))
         self._task: asyncio.Task[None] | None = None
         self._running = False
         self._unique_id: str | None = None
         self._client: TikTokLiveClient | None = None
+        self._gift_event_supported: bool | None = None
+        # TikTokLive may emit multiple GiftEvent updates for a single gift
+        # (e.g. streak updates + final). Keep a tiny in-memory dedupe window.
+        self._gift_dedupe: dict[tuple[str, str, str, int], float] = {}
+        self._gift_dedupe_window_sec: float = 6.0
 
     @property
     def running(self) -> bool:
@@ -101,8 +109,7 @@ class TikTokChatSource:
             uid = self._unique_id
             logger.info("TikTok supervisor attempt=%s uid=@%s", attempt, uid)
             self._on_status(f"TikTok: debug: attempt {attempt} @{uid}")
-            self._on_status(l10n.tr(self._get_locale(), "tk.connecting", user=uid))
-            client = TikTokLiveClient(unique_id=uid)
+            client = self._client_factory(uid)
             self._client = client
 
             @client.on(ConnectEvent)
@@ -139,6 +146,11 @@ class TikTokChatSource:
                 gift_event = _GiftEvent
             except ImportError:
                 gift_event = None
+            self._gift_event_supported = gift_event is not None
+            if gift_event is None:
+                logger.info("TikTok gifts disabled: TikTokLive.events.GiftEvent not available")
+            else:
+                logger.info("TikTok gifts enabled: GiftEvent handler registered")
 
             if gift_event is not None:
 
@@ -146,6 +158,7 @@ class TikTokChatSource:
                 async def _on_gift(event: object) -> None:  # noqa: ANN001
                     cb = self._on_gift
                     if cb is None:
+                        logger.debug("TikTok gift received but no callback is configured")
                         return
                     # Best-effort extraction (TikTokLive differs between versions).
                     user = getattr(getattr(event, "user", None), "nickname", None) or getattr(
@@ -161,12 +174,89 @@ class TikTokChatSource:
                         count_i = int(count)
                     except (TypeError, ValueError):
                         count_i = 1
-                    cb(str(user or "unknown"), str(gift_id or ""), str(gift_name or ""), count_i)
+
+                    sender_s = str(user or "unknown")
+                    gift_id_s = str(gift_id or "")
+                    gift_name_s = str(gift_name or "")
+
+                    # Prefer emitting only once per "streak": TikTokLive often sends incremental
+                    # updates while a gift streak is in progress. Many versions expose flags like:
+                    # - repeat_end: bool (True when streak ended)
+                    # - streaking: bool
+                    repeat_end = getattr(event, "repeat_end", None)
+                    streaking = getattr(event, "streaking", None)
+                    if isinstance(repeat_end, bool):
+                        if not repeat_end:
+                            logger.info(
+                                "TikTok gift suppressed (repeat_end=False): sender=%s gift_id=%s gift_name=%s count=%s",
+                                sender_s,
+                                gift_id_s,
+                                gift_name_s,
+                                count_i,
+                            )
+                            return
+                    elif isinstance(streaking, bool) and streaking:
+                        logger.info(
+                            "TikTok gift suppressed (streaking=True): sender=%s gift_id=%s gift_name=%s count=%s",
+                            sender_s,
+                            gift_id_s,
+                            gift_name_s,
+                            count_i,
+                        )
+                        return
+
+                    # Extra safety: suppress identical gifts repeated within a short time window.
+                    now = time.monotonic()
+                    k = (sender_s, gift_id_s, gift_name_s, count_i)
+                    last = self._gift_dedupe.get(k)
+                    if last is not None and (now - last) <= self._gift_dedupe_window_sec:
+                        logger.info(
+                            "TikTok gift suppressed (dedupe %.1fs): sender=%s gift_id=%s gift_name=%s count=%s",
+                            self._gift_dedupe_window_sec,
+                            sender_s,
+                            gift_id_s,
+                            gift_name_s,
+                            count_i,
+                        )
+                        return
+                    self._gift_dedupe[k] = now
+                    # Garbage-collect old keys occasionally (small map, O(n) is fine).
+                    cutoff = now - self._gift_dedupe_window_sec
+                    if len(self._gift_dedupe) > 64:
+                        self._gift_dedupe = {kk: ts for kk, ts in self._gift_dedupe.items() if ts >= cutoff}
+                    logger.info(
+                        "TikTok gift: sender=%s gift_id=%s gift_name=%s count=%s",
+                        sender_s,
+                        gift_id_s,
+                        gift_name_s,
+                        count_i,
+                    )
+                    cb(sender_s, gift_id_s, gift_name_s, count_i)
 
             try:
-                # Non-blocking: returns a task which completes when disconnected.
-                t = await client.start(fetch_room_info=False, fetch_gift_info=True)
-                await t
+                # TikTokLive docs: using connect/start just to check "is live" is inefficient.
+                # We poll via is_live() and only connect once the creator is live.
+                self._on_status(l10n.tr(self._get_locale(), "tk.connecting", user=uid))
+                try:
+                    live = await client.is_live()
+                except UserNotFoundError:
+                    self._on_status(l10n.tr(self._get_locale(), "tk.user_not_found", user=uid, sec=backoff))
+                    live = False
+                except AgeRestrictedError:
+                    self._on_status(l10n.tr(self._get_locale(), "tk.age_restricted", user=uid))
+                    live = False
+                except SignatureRateLimitError as exc:
+                    wait = max(float(getattr(exc, "retry_after", backoff)), backoff)
+                    self._on_status(l10n.tr(self._get_locale(), "tk.rate_limited", sec=wait))
+                    await asyncio.sleep(wait)
+                    live = False
+
+                if not live:
+                    self._on_status(l10n.tr(self._get_locale(), "tk.user_offline", user=uid, sec=backoff))
+                else:
+                    # Non-blocking: returns a task which completes when disconnected.
+                    t = await client.start(fetch_room_info=False, fetch_gift_info=True)
+                    await t
             except asyncio.CancelledError:
                 raise
             except UserOfflineError:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import shutil
 import subprocess
 import tempfile
@@ -33,6 +34,15 @@ def _ffmpeg_run(
         tail = ["-f", "wav", "-c:a", "pcm_s16le", "pipe:1"]
     else:
         return None
+
+    # On Windows, a subprocess can momentarily steal focus by flashing a console window.
+    # Hide the ffmpeg window to avoid focus loss in fullscreen games.
+    startupinfo = None
+    creationflags = 0
+    if os.name == "nt":
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     try:
         proc = subprocess.run(
             [
@@ -51,6 +61,8 @@ def _ffmpeg_run(
             capture_output=True,
             timeout=60,
             check=False,
+            startupinfo=startupinfo,
+            creationflags=creationflags,
         )
     except OSError as e:
         logger.debug("ffmpeg run failed: %s", e)

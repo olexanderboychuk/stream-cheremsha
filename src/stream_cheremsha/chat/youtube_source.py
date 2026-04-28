@@ -23,7 +23,24 @@ from stream_cheremsha.pipeline.coordinator import StreamCoordinator
 logger = logging.getLogger(__name__)
 
 # How long to wait between checks when no live chat is available yet (manual URL or auto).
-YOUTUBE_POLL_FOR_LIVE_SEC = 15.0
+YOUTUBE_POLL_FOR_LIVE_SEC = 45.0
+
+# Never poll live chat faster than this (ms); API may suggest less — quota is per call.
+YOUTUBE_MIN_POLL_INTERVAL_MS = 5000
+
+# After quotaExceeded, avoid hammering the API until the daily bucket resets (Pacific midnight).
+YOUTUBE_QUOTA_BACKOFF_SEC = 3600.0
+
+
+def _http_error_is_quota_exceeded(err: HttpError) -> bool:
+    if getattr(err, "resp", None) is None or err.resp.status != 403:
+        return False
+    raw = getattr(err, "content", b"") or b""
+    if isinstance(raw, bytes):
+        text = raw.decode("utf-8", errors="replace")
+    else:
+        text = str(raw)
+    return "quotaExceeded" in text
 
 
 def _dedupe_strs(items: list[str]) -> list[str]:
@@ -277,10 +294,20 @@ class YouTubeChatSource:
                     lambda: build("youtube", "v3", credentials=creds, cache_discovery=False),
                 )
             except (HttpError, OSError) as e:
-                self._on_status(
-                    l10n.tr(self._get_locale(), "yt.api_init_retry", err=str(e), sec=wait),
-                )
-                await asyncio.sleep(wait)
+                if isinstance(e, HttpError) and _http_error_is_quota_exceeded(e):
+                    self._on_status(
+                        l10n.tr(
+                            self._get_locale(),
+                            "yt.quota_backoff",
+                            min=YOUTUBE_QUOTA_BACKOFF_SEC / 60.0,
+                        ),
+                    )
+                    await asyncio.sleep(YOUTUBE_QUOTA_BACKOFF_SEC)
+                else:
+                    self._on_status(
+                        l10n.tr(self._get_locale(), "yt.api_init_retry", err=str(e), sec=wait),
+                    )
+                    await asyncio.sleep(wait)
                 continue
 
             try:
@@ -293,8 +320,18 @@ class YouTubeChatSource:
                 else:
                     live_chat_ids = await asyncio.to_thread(discover_my_live_chat_ids, service)
             except HttpError as e:
-                self._on_status(l10n.tr(self._get_locale(), "yt.retry", err=str(e), sec=wait))
-                await asyncio.sleep(wait)
+                if _http_error_is_quota_exceeded(e):
+                    self._on_status(
+                        l10n.tr(
+                            self._get_locale(),
+                            "yt.quota_backoff",
+                            min=YOUTUBE_QUOTA_BACKOFF_SEC / 60.0,
+                        ),
+                    )
+                    await asyncio.sleep(YOUTUBE_QUOTA_BACKOFF_SEC)
+                else:
+                    self._on_status(l10n.tr(self._get_locale(), "yt.retry", err=str(e), sec=wait))
+                    await asyncio.sleep(wait)
                 continue
             except ValueError as e:
                 self._on_status(l10n.tr(self._get_locale(), "yt.wait_live", err=str(e), sec=wait))
@@ -309,18 +346,23 @@ class YouTubeChatSource:
                 await asyncio.sleep(wait)
                 continue
 
+            live_chat_ids = _dedupe_strs(live_chat_ids)
             n = len(live_chat_ids)
             if n == 1:
                 self._on_status(l10n.tr(self._get_locale(), "yt.polling"))
             else:
                 self._on_status(l10n.tr(self._get_locale(), "yt.multi_streams", n=n))
 
-            await asyncio.gather(
-                *[self._poll_loop(creds, lcid) for lcid in live_chat_ids],
-            )
+            await self._poll_chats_round_robin(creds, live_chat_ids)
             break
 
-    async def _poll_loop(self, creds: Credentials, live_chat_id: str) -> None:
+    async def _poll_chats_round_robin(self, creds: Credentials, live_chat_ids: list[str]) -> None:
+        """One ``liveChatMessages.list`` at a time, rotating chats.
+
+        Parallel loops per stream multiply quota (~N×); round-robin keeps total call rate ~1×.
+        """
+        if not live_chat_ids:
+            return
         try:
             service = await asyncio.to_thread(
                 lambda: build("youtube", "v3", credentials=creds, cache_discovery=False),
@@ -329,21 +371,36 @@ class YouTubeChatSource:
             self._on_status(l10n.tr(self._get_locale(), "yt.api_init", err=str(e)))
             return
 
-        page_token: str | None = None
+        page_tokens: dict[str, str | None] = {lcid: None for lcid in live_chat_ids}
+        order = list(live_chat_ids)
+        rr = 0
+
         while self._running:
+            lcid = order[rr % len(order)]
+            rr += 1
             try:
                 body = await asyncio.to_thread(
                     self._list_messages,
                     service,
-                    live_chat_id,
-                    page_token,
+                    lcid,
+                    page_tokens[lcid],
                 )
             except asyncio.CancelledError:
                 raise
             except HttpError as e:
                 logger.warning("YouTube poll HTTP error: %s", e)
                 self._on_status(l10n.tr(self._get_locale(), "yt.http_error", err=str(e)))
-                await asyncio.sleep(5.0)
+                if _http_error_is_quota_exceeded(e):
+                    self._on_status(
+                        l10n.tr(
+                            self._get_locale(),
+                            "yt.quota_backoff",
+                            min=YOUTUBE_QUOTA_BACKOFF_SEC / 60.0,
+                        ),
+                    )
+                    await asyncio.sleep(YOUTUBE_QUOTA_BACKOFF_SEC)
+                else:
+                    await asyncio.sleep(5.0)
                 continue
             except OSError as e:
                 logger.warning("YouTube poll error: %s", e)
@@ -352,7 +409,7 @@ class YouTubeChatSource:
                 continue
 
             interval_ms = int(body.get("pollingIntervalMillis", 5000))
-            page_token = body.get("nextPageToken")
+            page_tokens[lcid] = body.get("nextPageToken")
 
             for item in body.get("items", []):
                 snippet = item.get("snippet") or {}
@@ -366,7 +423,9 @@ class YouTubeChatSource:
                 )
                 await self._coordinator.enqueue_chat(msg)
 
-            await asyncio.sleep(max(interval_ms, 1000) / 1000.0)
+            await asyncio.sleep(
+                max(interval_ms, YOUTUBE_MIN_POLL_INTERVAL_MS) / 1000.0,
+            )
 
     @staticmethod
     def _resolve_live_chat_ids_for_videos(service: object, video_ids: list[str]) -> list[str]:
@@ -396,6 +455,11 @@ class YouTubeChatSource:
     def _list_messages(service: object, live_chat_id: str, page_token: str | None) -> dict:
         req = (
             service.liveChatMessages()
-            .list(liveChatId=live_chat_id, part="snippet,authorDetails", pageToken=page_token)
+            .list(
+                liveChatId=live_chat_id,
+                part="snippet,authorDetails",
+                pageToken=page_token,
+                maxResults=2000,
+            )
         )
         return req.execute()

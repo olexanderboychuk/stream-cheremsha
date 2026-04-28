@@ -47,3 +47,17 @@ def test_rule_allows_empty_actions_list() -> None:
     out = ruleset_from_json_text('{"schema_version":1,"rules":[{"id":"r1","enabled":true,"event":{"type":"x","params":{}},"actions":[]}]}')
     assert out[0].actions == []
 
+
+def test_rule_name_roundtrip() -> None:
+    rule = RuleV1(
+        id="r1",
+        enabled=True,
+        event={"type": "gift_received", "params": {"gift_name": "Rose", "min_count": 1}},
+        actions=[{"type": "play_sound", "params": {"file_path": "/x/a.mp3"}}],
+        name="  Троянда  ",
+    )
+    text = ruleset_to_json_text([rule])
+    out = ruleset_from_json_text(text)
+    assert out[0].name == "Троянда"
+    assert out[0].id == "r1"
+

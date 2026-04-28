@@ -65,7 +65,11 @@ from stream_cheremsha.chat import twitch_credentials, twitch_oauth_device
 from stream_cheremsha.chat.tiktok_source import TikTokChatSource
 from stream_cheremsha.actions.engine import PlatformActionsEngine
 from stream_cheremsha.actions.events import ChatMessageEvent, GiftReceivedEvent
-from stream_cheremsha.actions.store import load_rules
+from stream_cheremsha.actions.store import (
+    actions_rules_key_is_set,
+    load_rules,
+    save_rules,
+)
 from stream_cheremsha.ui.actions_qml_api import ActionsQmlApi
 from stream_cheremsha.chat.twitch_source import TwitchSource
 from stream_cheremsha.chat.youtube_source import (
@@ -116,6 +120,14 @@ def _asset_path(name: str) -> Path:
     return _STREAM_ROOT / "assets" / name
 
 
+def _should_activate_window() -> bool:
+    """
+    Avoid stealing focus on Windows when the user is working in another app.
+    We only explicitly activate/raise when our app is already active.
+    """
+    return QApplication.instance() is not None and QApplication.applicationState() == Qt.ApplicationState.ApplicationActive
+
+
 def _footer_richtext_img(name: str, px: int) -> str:
     path = _asset_path(name)
     if not path.is_file():
@@ -135,6 +147,7 @@ _YOUTUBE_API_LIB_URL = "https://console.cloud.google.com/apis/library/youtube.go
 _FORM_LABEL_MIN_WIDTH = 260
 _SETTINGS_AUTOSTART_TWITCH = "startup/auto_start_twitch"
 _SETTINGS_AUTOSTART_YOUTUBE = "startup/auto_start_youtube"
+_SETTINGS_GAME_MODE = "ui/game_mode"
 _SETTINGS_TTS_GAIN_DB = "audio/tts_gain_db"
 _TTS_ENGINE_GOOGLE = "google"
 _TTS_ENGINE_PIPER = "piper"
@@ -149,6 +162,9 @@ _SETTINGS_RVC_CUDA = "tts/rvc_use_cuda"
 _LEGACY_RVC_ENABLED = "tts/piper_rvc_enabled"
 _LEGACY_RVC_MODEL = "tts/piper_rvc_model_path"
 _LEGACY_RVC_INDEX = "tts/piper_rvc_index_path"
+_SETTINGS_TTS_CHAT_TWITCH = "tts_chat/twitch_enabled"
+_SETTINGS_TTS_CHAT_YOUTUBE = "tts_chat/youtube_enabled"
+_SETTINGS_TTS_CHAT_TIKTOK = "tts_chat/tiktok_enabled"
 
 
 class UiBridge(QObject):
@@ -249,6 +265,11 @@ class MainWindow(QWidget):
         self._status_twitch = "—"
         self._status_youtube = "—"
         self._status_tiktok = "—"
+        self._tts_chat_platform_enabled: dict[ChatPlatform, bool] = {
+            ChatPlatform.TWITCH: bool(self._settings.value(_SETTINGS_TTS_CHAT_TWITCH, True, bool)),
+            ChatPlatform.YOUTUBE: bool(self._settings.value(_SETTINGS_TTS_CHAT_YOUTUBE, True, bool)),
+            ChatPlatform.TIKTOK: bool(self._settings.value(_SETTINGS_TTS_CHAT_TIKTOK, True, bool)),
+        }
 
         self._bridge = UiBridge(self)
         self._bridge.append_chat.connect(self._append_chat)
@@ -262,6 +283,7 @@ class MainWindow(QWidget):
             audio_sink=self._sink,
             on_chat=self._on_chat_message,
             on_status=self._on_user_status,
+            should_tts=self._should_tts_for_message,
             get_locale=self._get_locale,
             rvc_runtime=self._rvc_runtime,
         )
@@ -306,11 +328,30 @@ class MainWindow(QWidget):
         self._queue_timer.timeout.connect(self._refresh_footer)
         self._queue_timer.start(1000)
 
+        # Apply game mode after UI is constructed and settings are loaded.
+        self._apply_game_mode_from_settings()
+
     def _get_locale(self) -> str:
         return self._locale
 
     def _tr(self, key: str, **kwargs: object) -> str:
         return l10n.tr(self._locale, key, **kwargs)
+
+    def _should_tts_for_message(self, msg: ChatMessage) -> bool:
+        return self._chat_tts_enabled(msg.platform)
+
+    def _chat_tts_enabled(self, platform: ChatPlatform) -> bool:
+        return bool(self._tts_chat_platform_enabled.get(platform, True))
+
+    def _set_chat_tts_enabled(self, platform: ChatPlatform, enabled: bool) -> None:
+        self._tts_chat_platform_enabled[platform] = bool(enabled)
+        key = {
+            ChatPlatform.TWITCH: _SETTINGS_TTS_CHAT_TWITCH,
+            ChatPlatform.YOUTUBE: _SETTINGS_TTS_CHAT_YOUTUBE,
+            ChatPlatform.TIKTOK: _SETTINGS_TTS_CHAT_TIKTOK,
+        }.get(platform)
+        if key is not None:
+            self._settings.setValue(key, bool(enabled))
 
     def _tts_language_from_settings(self) -> str:
         v = str(self._settings.value(_SETTINGS_TTS_LANG, "uk-UA", str)).strip()
@@ -668,9 +709,41 @@ class MainWindow(QWidget):
         self._cb_autostart_youtube.stateChanged.connect(self._persist_autostart_youtube)
         lay.addWidget(self._cb_autostart_youtube)
 
+        self._cb_game_mode = QCheckBox()
+        self._cb_game_mode.stateChanged.connect(self._persist_game_mode)
+        lay.addWidget(self._cb_game_mode)
+
         lay.addStretch()
         self._apply_settings_tab_texts()
         return w
+
+    def _apply_game_mode_from_settings(self) -> None:
+        enabled = bool(self._settings.value(_SETTINGS_GAME_MODE, False, bool))
+        self._apply_game_mode_enabled(enabled)
+
+    def _apply_game_mode_enabled(self, enabled: bool) -> None:
+        """Game mode: reduce GPU load by avoiding QML on Connections page."""
+        if not hasattr(self, "_stack"):
+            return
+        # Prefer QWidget Connections tab in game mode, QML otherwise.
+        target = self._connections_root if enabled else self._qml_conn
+        # Already active
+        if self._stack.widget(self._IX_CONN) is target:
+            return
+        cur = self._stack.currentIndex()
+        old = self._stack.widget(self._IX_CONN)
+        self._stack.removeWidget(old)
+        self._stack.insertWidget(self._IX_CONN, target)
+        # Keep the user on the same logical page.
+        if cur == self._IX_CONN:
+            self._stack.setCurrentIndex(self._IX_CONN)
+        self._sync_footer_nav()
+
+    @Slot(int)
+    def _persist_game_mode(self, _state: int) -> None:
+        enabled = bool(self._cb_game_mode.isChecked())
+        self._settings.setValue(_SETTINGS_GAME_MODE, enabled)
+        self._apply_game_mode_enabled(enabled)
 
     def _build_connections_tab(self) -> QWidget:
         w = QWidget()
@@ -827,6 +900,8 @@ class MainWindow(QWidget):
         self._settings_intro.setText(self._tr("settings.intro"))
         self._cb_autostart_twitch.setText(self._tr("settings.autostart_twitch"))
         self._cb_autostart_youtube.setText(self._tr("settings.autostart_youtube"))
+        # No l10n key yet: keep explicit UA-focused label.
+        self._cb_game_mode.setText("Game mode (менше навантаження на GPU / менше просідань FPS)")
 
     def _apply_connections_tab_texts(self) -> None:
         self._gb_twitch.setTitle(self._tr("tw.group"))
@@ -1086,8 +1161,9 @@ class MainWindow(QWidget):
         w = self._chat_popout
         if w is not None and shiboken6.isValid(w):
             w.show()
-            w.raise_()
-            w.activateWindow()
+            if _should_activate_window():
+                w.raise_()
+                w.activateWindow()
             return
         self._chat_popout = None
         pop = ChatPopoutWindow(self)
@@ -1273,6 +1349,14 @@ class MainWindow(QWidget):
         le.addWidget(w_lang, stretch=1)
         le.addWidget(w_eng, stretch=1)
         tts_body.addWidget(lang_engine)
+
+        self._btn_audio_flush_queues = QPushButton()
+        self._btn_audio_flush_queues.setAutoDefault(False)
+        self._btn_audio_flush_queues.setDefault(False)
+        self._btn_audio_flush_queues.clicked.connect(
+            lambda: asyncio.ensure_future(self._flush_tts_and_rvc_queues()),
+        )
+        tts_body.addWidget(self._btn_audio_flush_queues)
         main_lay.addWidget(self._frm_audio_tts)
 
         # --- Piper card (voice model + CUDA only) ---
@@ -1420,6 +1504,8 @@ class MainWindow(QWidget):
         self._combo_tts_engine.setItemText(0, self._tr("audio.tts_engine_google"))
         self._combo_tts_engine.setItemText(1, self._tr("audio.tts_engine_piper"))
         self._btn_piper_help.setToolTip(self._tr("audio.piper_help_tooltip"))
+        self._btn_audio_flush_queues.setText(self._tr("audio.flush_queues"))
+        self._btn_audio_flush_queues.setToolTip(self._tr("audio.flush_queues_hint"))
         self._lbl_audio_tts_card_h.setText(self._tr("audio.card_tts_title"))
         self._lbl_audio_piper_card_h.setText(self._tr("audio.piper_voice_group"))
         self._frm_piper_voice.setToolTip(
@@ -1984,6 +2070,11 @@ class MainWindow(QWidget):
         )
         self._cb_autostart_youtube.blockSignals(False)
 
+        if hasattr(self, "_cb_game_mode"):
+            self._cb_game_mode.blockSignals(True)
+            self._cb_game_mode.setChecked(bool(self._settings.value(_SETTINGS_GAME_MODE, False, bool)))
+            self._cb_game_mode.blockSignals(False)
+
         self._combo_locale.blockSignals(True)
         idx = 0 if self._locale == "uk" else 1
         self._combo_locale.setCurrentIndex(idx)
@@ -2069,7 +2160,26 @@ class MainWindow(QWidget):
     def _on_user_status(self, msg: str) -> None:
         self._apply_status_routes(msg.strip())
         self._refresh_footer()
+        # QML bindings (Connections/Actions) are keyed off api.refreshCounter.
+        # Refresh only when something meaningful changes (status text etc.),
+        # not on a periodic timer, to avoid GPU/CPU wakeups while idle.
+        self._qml_refresh_if_visible()
         self._bridge.append_log.emit(f"[status] {msg}")
+
+    def _qml_refresh_if_visible(self) -> None:
+        """Refresh QML bindings only when QML views are visible."""
+        if not hasattr(self, "_qml_api"):
+            return
+        # QStackedWidget hides non-current pages, so isVisible() is a good proxy.
+        if getattr(self, "_qml_conn", None) is not None and self._qml_conn.isVisible():
+            self._qml_api.refresh()
+            return
+        if getattr(self, "_qml_donations", None) is not None and self._qml_donations.isVisible():
+            self._qml_api.refresh()
+            return
+        # Separate Actions window is a QQuickView (not in the stack).
+        if getattr(self, "_qml_actions", None) is not None and self._qml_actions.isVisible():
+            self._qml_api.refresh()
 
     def _apply_status_routes(self, msg: str) -> None:
         """Keep separate footer lines so Twitch and YouTube statuses are not overwritten."""
@@ -2176,14 +2286,14 @@ class MainWindow(QWidget):
         yt_btn = "yt.transport_stop" if self._youtube.running else "yt.transport_start"
         self._btn_twitch_transport.setText(self._tr(tw_btn))
         self._btn_youtube_transport.setText(self._tr(yt_btn))
-        if hasattr(self, "_qml_api"):
-            self._qml_api.refresh()
 
     @Slot()
     def _on_tiktok_transport_clicked(self) -> None:
+        self._qml_refresh_if_visible()
         asyncio.ensure_future(self._async_set_tiktok_enabled(not self._tiktok_enabled))
 
     def _request_tiktok_enabled(self, enabled: bool) -> None:
+        self._qml_refresh_if_visible()
         asyncio.ensure_future(self._async_set_tiktok_enabled(bool(enabled)))
 
     async def _async_set_tiktok_enabled(self, enabled: bool) -> None:
@@ -2200,9 +2310,11 @@ class MainWindow(QWidget):
                 await self._tiktok.stop()
         finally:
             self._tiktok_toggle_busy = False
+            self._qml_refresh_if_visible()
 
     @Slot()
     def _on_twitch_transport_clicked(self) -> None:
+        self._qml_refresh_if_visible()
         if self._twitch.running:
             asyncio.ensure_future(self._twitch.stop())
         else:
@@ -2210,6 +2322,7 @@ class MainWindow(QWidget):
 
     @Slot()
     def _on_youtube_transport_clicked(self) -> None:
+        self._qml_refresh_if_visible()
         if self._youtube.running:
             asyncio.ensure_future(self._youtube.stop())
         else:
@@ -2247,8 +2360,7 @@ class MainWindow(QWidget):
 
     def _actions_account_key_for_platform(self, platform: ChatPlatform) -> str | None:
         if platform == ChatPlatform.TIKTOK:
-            v = (self._tiktok_username.text() or "").strip().lstrip("@").strip()
-            return v or None
+            return constants.TIKTOK_ACTIONS_ACCOUNT_KEY
         if platform == ChatPlatform.TWITCH:
             v = (self._twitch_channel.text() or "").strip()
             return v or None
@@ -2257,14 +2369,34 @@ class MainWindow(QWidget):
             return v or None
         return None
 
+    def _maybe_migrate_tiktok_actions(self) -> None:
+        """If the app-wide TikTok rules key is unset, copy from legacy .../tiktok/<nick>/."""
+        if actions_rules_key_is_set("tiktok", constants.TIKTOK_ACTIONS_ACCOUNT_KEY):
+            return
+        user = (self._tiktok_username.text() or "").strip().lstrip("@").strip()
+        if not user:
+            t = keyring_store.get_password(constants.KEY_TIKTOK_USERNAME)
+            user = (t or "").strip().lstrip("@").strip() if t else ""
+        if not user or user == constants.TIKTOK_ACTIONS_ACCOUNT_KEY:
+            return
+        old = load_rules("tiktok", user)
+        if not old:
+            return
+        save_rules("tiktok", constants.TIKTOK_ACTIONS_ACCOUNT_KEY, old)
+        self._actions_reload_scope("tiktok", constants.TIKTOK_ACTIONS_ACCOUNT_KEY)
+
     def _get_actions_engine(self, platform: str, account_key: str) -> PlatformActionsEngine:
-        k = self._actions_scope_key(platform, account_key)
+        p, a = self._actions_scope_key(platform, account_key)
+        if p == "tiktok" and a == constants.TIKTOK_ACTIONS_ACCOUNT_KEY:
+            self._maybe_migrate_tiktok_actions()
+        k = (p, a)
         eng = self._actions_engines.get(k)
         if eng is None:
             eng = PlatformActionsEngine(
                 self._sink,
                 load_rules(k[0], k[1]),
                 status_callback=self._on_user_status,
+                tts_speak=self.speak_action_tts,
             )
             self._actions_engines[k] = eng
         return eng
@@ -2289,10 +2421,19 @@ class MainWindow(QWidget):
         asyncio.ensure_future(eng.on_chat_message(ev))
 
     def _on_tiktok_gift(self, sender: str, gift_id: str, gift_name: str, count: int) -> None:
-        ak = self._actions_account_key_for_platform(ChatPlatform.TIKTOK)
-        if not ak:
-            return
-        eng = self._get_actions_engine(ChatPlatform.TIKTOK.value, ak)
+        logger.info(
+            "TikTok gift dispatch: sender=%s gift_id=%s gift_name=%s count=%s enabled=%s user=%s",
+            sender,
+            gift_id,
+            gift_name,
+            count,
+            self._tiktok_enabled,
+            (self._tiktok_username.text() or "").strip(),
+        )
+        eng = self._get_actions_engine(
+            ChatPlatform.TIKTOK.value,
+            constants.TIKTOK_ACTIONS_ACCOUNT_KEY,
+        )
         ev = GiftReceivedEvent(
             platform=ChatPlatform.TIKTOK,
             sender=sender,
@@ -2302,6 +2443,7 @@ class MainWindow(QWidget):
             received_at=datetime.now(UTC),
         )
         asyncio.ensure_future(eng.on_gift_received(ev))
+
     def _ensure_actions_window(self) -> QQuickView:
         # Re-create on each open so QML reloads cleanly (avoids stale bindings during development,
         # and simplifies ensuring fresh model state per platform/account_key).
@@ -2312,7 +2454,24 @@ class MainWindow(QWidget):
                 pass
             self._qml_actions = None
         view = QQuickView()
-        view.setResizeMode(QQuickView.ResizeMode.SizeViewToRootObject)
+        # Helper/auxiliary window: only close, no minimize/maximize, tied to the main window.
+        view.setFlags(
+            Qt.WindowType.Tool
+            | Qt.WindowType.CustomizeWindowHint
+            | Qt.WindowType.WindowTitleHint
+            | Qt.WindowType.WindowCloseButtonHint,
+        )
+        try:
+            # Keep it associated with the main window so it doesn't randomly de-focus/minimize.
+            if self.windowHandle() is not None:
+                view.setTransientParent(self.windowHandle())
+        except RuntimeError:
+            pass
+        # Let the window drive the QML root size (adaptive on resize).
+        view.setResizeMode(QQuickView.ResizeMode.SizeRootObjectToView)
+        view.setMinimumSize(QSize(760, 520))
+        # Initial size; user can resize freely.
+        view.resize(QSize(980, 620))
         ctx = view.engine().rootContext()
         # Reuse main API for localization.
         ctx.setContextProperty("api", self._qml_api)
@@ -2323,18 +2482,15 @@ class MainWindow(QWidget):
         return view
 
     def _open_tiktok_actions(self) -> None:
-        user = (self._tiktok_username.text() or "").strip().lstrip("@").strip()
-        if not user:
-            QMessageBox.information(self, self._tr("dlg.tiktok"), self._tr("dlg.tiktok_need_username"))
-            return
         v = self._ensure_actions_window()
         root = v.rootObject()
         if root is not None:
             root.setProperty("platform", "tiktok")
-            root.setProperty("accountKey", user)
+            root.setProperty("accountKey", constants.TIKTOK_ACTIONS_ACCOUNT_KEY)
         v.setTitle(self._tr("actions.window_title"))
         v.show()
-        v.raise_()
+        if _should_activate_window():
+            v.raise_()
 
     @Slot()
     def _save_twitch_keys(self) -> None:
@@ -2529,6 +2685,19 @@ class MainWindow(QWidget):
         except (OSError, ValueError) as e:
             logger.warning("Donation TTS: %s", e)
 
+    async def speak_action_tts(self, text: str) -> None:
+        """Speak text from platform Actions; errors propagate to the actions engine."""
+        line = (text or "").strip()
+        if not line:
+            return
+        self._apply_audio_device_selection()
+        audio = await self._tts.synthesize(line)
+        try:
+            audio = await apply_rvc_if_active(self._rvc_runtime, audio, priority=0)
+        except (OSError, ValueError, RuntimeError) as e:
+            logger.warning("RVC action TTS: %s", e)
+        await self._sink.play_mp3(audio)
+
     async def _test_tts(self) -> None:
         text = self._test_phrase.text().strip()
         if not text:
@@ -2543,6 +2712,18 @@ class MainWindow(QWidget):
             await self._sink.play_mp3(audio)
         except (OSError, ValueError) as e:
             QMessageBox.warning(self, self._tr("dlg.tts"), str(e))
+
+    async def _flush_tts_and_rvc_queues(self) -> None:
+        """Force-stop pending TTS/RVC work and current playback."""
+        # Stop playback ASAP (even if synth is still running).
+        try:
+            self._sink.shutdown()
+        except RuntimeError:
+            # Qt objects may already be shutting down; ignore.
+            pass
+        # Cancel in-flight TTS/RVC processing + drop queued work.
+        await self._coordinator.flush_tts()
+        self._on_user_status(self._tr("audio.flush_queues"))
 
     async def run_startup(self) -> None:
         try:

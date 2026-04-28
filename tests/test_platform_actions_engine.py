@@ -1,4 +1,5 @@
 ﻿import asyncio
+import sys
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -141,3 +142,239 @@ def test_engine_matches_gift_received_and_executes_action(tmp_path: Path) -> Non
     )
     asyncio.run(engine.on_gift_received(ev))
     assert sink.mp3_calls == [b"gift-mp3"]
+
+
+def test_engine_executes_write_file_action(tmp_path: Path) -> None:
+    out = tmp_path / "out.txt"
+    out.write_text("OLD\n", encoding="utf-8")
+    sink = FakeSink()
+    st: list[str] = []
+    rules = [
+        RuleV1(
+            id="r1",
+            enabled=True,
+            event={"type": "chat_keyword", "params": {"keyword": "hello"}},
+            actions=[{"type": "write_file", "params": {"file_path": str(out), "text": "hi\\n"}}],
+        ),
+    ]
+    engine = PlatformActionsEngine(sink, rules, status_callback=st.append)
+    ev = ChatMessageEvent(
+        platform=ChatPlatform.TWITCH,
+        author="alice",
+        text="hello world",
+        received_at=datetime.now(tz=timezone.utc),
+    )
+    asyncio.run(engine.on_chat_message(ev))
+    assert out.read_text(encoding="utf-8") == "hi\\n"
+    assert st == []
+
+
+def test_engine_write_file_append_mode(tmp_path: Path) -> None:
+    out = tmp_path / "out.txt"
+    out.write_text("OLD\n", encoding="utf-8")
+    sink = FakeSink()
+    st: list[str] = []
+    rules = [
+        RuleV1(
+            id="r1",
+            enabled=True,
+            event={"type": "chat_keyword", "params": {"keyword": "hello"}},
+            actions=[
+                {
+                    "type": "write_file",
+                    "params": {"file_path": str(out), "text": "hi\\n", "mode": "append"},
+                }
+            ],
+        ),
+    ]
+    engine = PlatformActionsEngine(sink, rules, status_callback=st.append)
+    ev = ChatMessageEvent(
+        platform=ChatPlatform.TWITCH,
+        author="alice",
+        text="hello world",
+        received_at=datetime.now(tz=timezone.utc),
+    )
+    asyncio.run(engine.on_chat_message(ev))
+    assert out.read_text(encoding="utf-8") == "OLD\nhi\\n\n"
+    assert st == []
+
+
+def test_engine_write_file_append_adds_newline_between_entries(tmp_path: Path) -> None:
+    out = tmp_path / "out.txt"
+    # No trailing newline on purpose.
+    out.write_text("OLD", encoding="utf-8")
+    sink = FakeSink()
+    rules = [
+        RuleV1(
+            id="r1",
+            enabled=True,
+            event={"type": "chat_keyword", "params": {"keyword": "hello"}},
+            actions=[
+                {
+                    "type": "write_file",
+                    "params": {"file_path": str(out), "text": "hi", "mode": "append"},
+                }
+            ],
+        ),
+    ]
+    engine = PlatformActionsEngine(sink, rules)
+    ev = ChatMessageEvent(
+        platform=ChatPlatform.TWITCH,
+        author="alice",
+        text="hello world",
+        received_at=datetime.now(tz=timezone.utc),
+    )
+    asyncio.run(engine.on_chat_message(ev))
+    assert out.read_text(encoding="utf-8") == "OLD\nhi\n"
+
+def test_engine_write_file_supports_placeholders_in_path(tmp_path: Path) -> None:
+    out_tmpl = tmp_path / "{author}-{platform}.txt"
+    sink = FakeSink()
+    st: list[str] = []
+    rules = [
+        RuleV1(
+            id="r1",
+            enabled=True,
+            event={"type": "chat_keyword", "params": {"keyword": "hello"}},
+            actions=[{"type": "write_file", "params": {"file_path": str(out_tmpl), "text": "hi\\n"}}],
+        ),
+    ]
+    engine = PlatformActionsEngine(sink, rules, status_callback=st.append)
+    ev = ChatMessageEvent(
+        platform=ChatPlatform.TWITCH,
+        author="alice",
+        text="hello world",
+        received_at=datetime.now(tz=timezone.utc),
+    )
+    asyncio.run(engine.on_chat_message(ev))
+    out = tmp_path / "alice-twitch.txt"
+    assert out.read_text(encoding="utf-8") == "hi\\n"
+    assert st == []
+
+
+def test_engine_runs_multiple_actions_in_parallel(tmp_path: Path) -> None:
+    p1 = tmp_path / "a.mp3"
+    p2 = tmp_path / "b.mp3"
+    p1.write_bytes(b"a")
+    p2.write_bytes(b"b")
+    sink = FakeSink()
+    rules = [
+        RuleV1(
+            id="r1",
+            enabled=True,
+            event={"type": "chat_keyword", "params": {"keyword": "hello"}},
+            actions=[
+                {"type": "play_sound", "params": {"file_path": str(p1)}},
+                {"type": "play_sound", "params": {"file_path": str(p2)}},
+            ],
+        ),
+    ]
+    engine = PlatformActionsEngine(sink, rules)
+    ev = ChatMessageEvent(
+        platform=ChatPlatform.TWITCH,
+        author="alice",
+        text="hello world",
+        received_at=datetime.now(tz=timezone.utc),
+    )
+    asyncio.run(engine.on_chat_message(ev))
+    # Order is not guaranteed when actions run concurrently.
+    assert sorted(sink.mp3_calls) == sorted([b"a", b"b"])
+
+
+def test_engine_run_program_invokes_interpreter() -> None:
+    sink = FakeSink()
+    st: list[str] = []
+    rules = [
+        RuleV1(
+            id="r1",
+            enabled=True,
+            event={"type": "chat_keyword", "params": {"keyword": "hello"}},
+            actions=[
+                {
+                    "type": "run_program",
+                    "params": {"program_path": sys.executable, "arguments": "-c pass"},
+                },
+            ],
+        ),
+    ]
+    engine = PlatformActionsEngine(sink, rules, status_callback=st.append)
+    ev = ChatMessageEvent(
+        platform=ChatPlatform.TWITCH,
+        author="alice",
+        text="hello world",
+        received_at=datetime.now(tz=timezone.utc),
+    )
+    asyncio.run(engine.on_chat_message(ev))
+    assert st == []
+
+
+def test_engine_run_exe_legacy_type_and_exe_path_key() -> None:
+    sink = FakeSink()
+    st: list[str] = []
+    rules = [
+        RuleV1(
+            id="r1",
+            enabled=True,
+            event={"type": "chat_keyword", "params": {"keyword": "hello"}},
+            actions=[
+                {"type": "run_exe", "params": {"exe_path": sys.executable, "arguments": "-c pass"}},
+            ],
+        ),
+    ]
+    engine = PlatformActionsEngine(sink, rules, status_callback=st.append)
+    ev = ChatMessageEvent(
+        platform=ChatPlatform.TWITCH,
+        author="alice",
+        text="hello world",
+        received_at=datetime.now(tz=timezone.utc),
+    )
+    asyncio.run(engine.on_chat_message(ev))
+    assert st == []
+
+
+def test_engine_speak_tts_invokes_callback() -> None:
+    sink = FakeSink()
+    spoken: list[str] = []
+
+    async def speak(s: str) -> None:
+        spoken.append(s)
+
+    rules = [
+        RuleV1(
+            id="r1",
+            enabled=True,
+            event={"type": "chat_keyword", "params": {"keyword": "hello"}},
+            actions=[{"type": "speak_tts", "params": {"text": "Привіт"}}],
+        ),
+    ]
+    engine = PlatformActionsEngine(sink, rules, tts_speak=speak)
+    ev = ChatMessageEvent(
+        platform=ChatPlatform.TWITCH,
+        author="alice",
+        text="hello world",
+        received_at=datetime.now(tz=timezone.utc),
+    )
+    asyncio.run(engine.on_chat_message(ev))
+    assert spoken == ["Привіт"]
+
+
+def test_engine_speak_tts_without_callback_reports_status() -> None:
+    sink = FakeSink()
+    st: list[str] = []
+    rules = [
+        RuleV1(
+            id="r1",
+            enabled=True,
+            event={"type": "chat_keyword", "params": {"keyword": "hello"}},
+            actions=[{"type": "speak_tts", "params": {"text": "x"}}],
+        ),
+    ]
+    engine = PlatformActionsEngine(sink, rules, status_callback=st.append)
+    ev = ChatMessageEvent(
+        platform=ChatPlatform.TWITCH,
+        author="alice",
+        text="hello world",
+        received_at=datetime.now(tz=timezone.utc),
+    )
+    asyncio.run(engine.on_chat_message(ev))
+    assert any("not configured" in m for m in st)

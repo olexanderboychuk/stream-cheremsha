@@ -25,13 +25,37 @@ def _rules_key(platform: str, account_key: str) -> str:
     return f'actions/{p2}/{a2}/rules_json'
 
 
+def actions_rules_key_is_set(
+    platform: str,
+    account_key: str,
+    *,
+    settings: QSettings | None = None,
+    org: str = DEFAULT_SETTINGS_ORG,
+    app: str = DEFAULT_SETTINGS_APP,
+) -> bool:
+    """True if a non-empty rules JSON is stored (including an intentionally empty rules list)."""
+    key = _rules_key(platform, account_key)
+    s = _get_settings(settings, org=org, app=app)
+    text = s.value(key, None, str)
+    if text is None:
+        return False
+    return (text or '').strip() != ''
+
+
 def _get_settings(settings: QSettings | None, *, org: str, app: str) -> QSettings:
     if settings is not None:
         return settings
     return QSettings(org, app)
 
 
-def load_rules(platform: str, account_key: str, *, settings: QSettings | None = None, org: str = DEFAULT_SETTINGS_ORG, app: str = DEFAULT_SETTINGS_APP) -> list[RuleV1]:
+def load_rules(
+    platform: str,
+    account_key: str,
+    *,
+    settings: QSettings | None = None,
+    org: str = DEFAULT_SETTINGS_ORG,
+    app: str = DEFAULT_SETTINGS_APP,
+) -> list[RuleV1]:
     key = _rules_key(platform, account_key)
     s = _get_settings(settings, org=org, app=app)
     text = s.value(key, None, str)
@@ -43,7 +67,15 @@ def load_rules(platform: str, account_key: str, *, settings: QSettings | None = 
     return ruleset_from_json_text(text)
 
 
-def save_rules(platform: str, account_key: str, rules: list[RuleV1], *, settings: QSettings | None = None, org: str = DEFAULT_SETTINGS_ORG, app: str = DEFAULT_SETTINGS_APP) -> None:
+def save_rules(
+    platform: str,
+    account_key: str,
+    rules: list[RuleV1],
+    *,
+    settings: QSettings | None = None,
+    org: str = DEFAULT_SETTINGS_ORG,
+    app: str = DEFAULT_SETTINGS_APP,
+) -> None:
     key = _rules_key(platform, account_key)
     s = _get_settings(settings, org=org, app=app)
     s.setValue(key, ruleset_to_json_text(rules))
