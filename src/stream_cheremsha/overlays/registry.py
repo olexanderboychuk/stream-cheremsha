@@ -65,22 +65,39 @@ class _DebugOverlayType:
 
         const log = document.getElementById('log');
         const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
-        const ws = new WebSocket(wsUrl);
+        let ws = null;
+        let tries = 0;
 
-        ws.onopen = () => {{
-          const subscribeMsg = {_json_for_script(subscribe_msg)};
-          ws.send(JSON.stringify(subscribeMsg));
-          log.textContent = 'connected';
-        }};
-        ws.onmessage = (ev) => {{
-          log.textContent = ev.data;
-        }};
-        ws.onerror = () => {{
-          log.textContent = 'ws error';
-        }};
-        ws.onclose = () => {{
-          log.textContent = 'ws closed';
-        }};
+        function connect() {{
+          tries += 1;
+          const backoff = Math.min(5000, 250 + Math.floor(Math.random() * 250) + (tries * 350));
+          if (tries > 1) log.textContent = 'reconnecting… (' + tries + ')';
+          try {{ ws = new WebSocket(wsUrl); }}
+          catch (e) {{
+            log.textContent = 'ws create failed';
+            setTimeout(connect, backoff);
+            return;
+          }}
+
+          ws.onopen = () => {{
+            tries = 0;
+            const subscribeMsg = {_json_for_script(subscribe_msg)};
+            ws.send(JSON.stringify(subscribeMsg));
+            log.textContent = 'connected';
+          }};
+          ws.onmessage = (ev) => {{
+            log.textContent = ev.data;
+          }};
+          ws.onerror = () => {{
+            log.textContent = 'ws error';
+          }};
+          ws.onclose = () => {{
+            log.textContent = 'ws closed';
+            setTimeout(connect, backoff);
+          }};
+        }}
+
+        connect();
       }})();
     </script>
   </body>

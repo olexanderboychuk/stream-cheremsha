@@ -92,7 +92,8 @@ class ChatOverlayType:
       (function() {{
         const root = document.getElementById('root');
         const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
-        const ws = new WebSocket(wsUrl);
+        let ws = null;
+        let tries = 0;
         let cfg = null;
         // items: array of message objects (id, author, text, platform, received_at)
         let items = [];
@@ -263,63 +264,77 @@ class ChatOverlayType:
           }});
         }} catch (e) {{ }}
 
-        ws.onopen = () => {{
+        function connect() {{
+          tries += 1;
+          const backoff = Math.min(5000, 250 + Math.floor(Math.random() * 250) + (tries * 350));
           try {{
-            const subscribeMsg = {_json_for_script(subscribe_msg)};
-            ws.send(JSON.stringify(subscribeMsg));
+            ws = new WebSocket(wsUrl);
           }} catch (e) {{
-            showFatal(e);
-          }}
-        }};
-
-        ws.onmessage = (ev) => {{
-          let obj = null;
-          try {{ obj = JSON.parse(ev.data); }} catch (e) {{ return; }}
-          if (!obj || !obj.op) return;
-          if (obj.op === 'initial_state') {{
-            cfg = (obj.state && obj.state.config) ? obj.state.config : null;
-            items = (obj.state && obj.state.items) ? obj.state.items : [];
-            applyCfg();
-            render();
+            showFatal('ws create failed');
+            setTimeout(connect, backoff);
             return;
           }}
-          if (obj.op === 'patch') {{
-            const p = obj.patch || {{}};
-            if (p.append) {{
-              const it = Object.assign({{}}, p.append);
-              it.id = (++_id);
-              items.push(it);
-              // Prevent unbounded growth: keep a small buffer beyond visible window.
-              const maxItems = Math.max(1, (cfg && cfg.max_items) ? cfg.max_items : 12);
-              const cap = Math.max(25, maxItems * 5);
-              if (items.length > cap) items = items.slice(-cap);
-              render();
-              // Add enter animation to last item.
-              const last = root.lastElementChild;
-              if (last) {{
-                last.classList.add('enter');
-                requestAnimationFrame(() => {{
-                  // Let animation play; keep class.
-                }});
-              }}
-              scheduleExit(it.id);
+
+          ws.onopen = () => {{
+            try {{
+              tries = 0;
+              const subscribeMsg = {_json_for_script(subscribe_msg)};
+              ws.send(JSON.stringify(subscribeMsg));
+            }} catch (e) {{
+              showFatal(e);
             }}
-            if (p.config) {{
-              cfg = p.config;
+          }};
+
+          ws.onmessage = (ev) => {{
+            let obj = null;
+            try {{ obj = JSON.parse(ev.data); }} catch (e) {{ return; }}
+            if (!obj || !obj.op) return;
+            if (obj.op === 'initial_state') {{
+              cfg = (obj.state && obj.state.config) ? obj.state.config : null;
+              items = (obj.state && obj.state.items) ? obj.state.items : [];
               applyCfg();
               render();
+              return;
             }}
-          }}
-        }};
+            if (obj.op === 'patch') {{
+              const p = obj.patch || {{}};
+              if (p.append) {{
+                const it = Object.assign({{}}, p.append);
+                it.id = (++_id);
+                items.push(it);
+                // Prevent unbounded growth: keep a small buffer beyond visible window.
+                const maxItems = Math.max(1, (cfg && cfg.max_items) ? cfg.max_items : 12);
+                const cap = Math.max(25, maxItems * 5);
+                if (items.length > cap) items = items.slice(-cap);
+                render();
+                // Add enter animation to last item.
+                const last = root.lastElementChild;
+                if (last) {{
+                  last.classList.add('enter');
+                  requestAnimationFrame(() => {{
+                    // Let animation play; keep class.
+                  }});
+                }}
+                scheduleExit(it.id);
+              }}
+              if (p.config) {{
+                cfg = p.config;
+                applyCfg();
+                render();
+              }}
+            }}
+          }};
 
-        ws.onerror = () => {{
-          log('ws error');
-          showFatal('ws error');
-        }};
-        ws.onclose = () => {{
-          log('ws closed');
-          showFatal('ws closed');
-        }};
+          ws.onerror = () => {{
+            log('ws error');
+          }};
+          ws.onclose = () => {{
+            log('ws closed');
+            setTimeout(connect, backoff);
+          }};
+        }}
+
+        connect();
       }})();
     </script>
   </body>
