@@ -81,6 +81,7 @@ class ChatOverlayType:
         const ws = new WebSocket(wsUrl);
         let cfg = null;
         let items = [];
+        const log = (...args) => {{ try {{ console.log('[chat-overlay]', ...args); }} catch (e) {{ }} }};
 
         function applyCfg() {{
           if (!cfg) return;
@@ -144,6 +145,10 @@ class ChatOverlayType:
             const p = obj.patch || {{}};
             if (p.append) {{
               items.push(p.append);
+              // Prevent unbounded growth: keep a small buffer beyond visible window.
+              const maxItems = Math.max(1, (cfg && cfg.max_items) ? cfg.max_items : 12);
+              const cap = Math.max(25, maxItems * 5);
+              if (items.length > cap) items = items.slice(-cap);
               render();
             }}
             if (p.config) {{
@@ -152,6 +157,13 @@ class ChatOverlayType:
               render();
             }}
           }}
+        }};
+
+        ws.onerror = () => {{
+          log('ws error');
+        }};
+        ws.onclose = () => {{
+          log('ws closed');
         }};
       }})();
     </script>
