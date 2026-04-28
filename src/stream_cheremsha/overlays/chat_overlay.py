@@ -79,9 +79,9 @@ class ChatOverlayType:
       .msg {{ margin: 0 0 8px 0; padding: 8px 10px; border-radius: 10px; display:flex; }}
       .msg {{ gap:6px; align-items: baseline; }}
       .author {{ font-weight: 700; margin-right: 6px; }}
-      .picon {{ width: 14px; height: 14px; display:inline-flex; flex:0 0 auto; }}
+      .picon {{ width: 18px; height: 18px; display:inline-flex; flex:0 0 auto; }}
       .picon {{ align-items:center; justify-content:center; }}
-      .pimg {{ width: 14px; height: 14px; display:block; opacity: 0.92; }}
+      .pimg {{ width: 18px; height: 18px; display:block; opacity: 0.92; }}
 
       .enter {{ animation: enter 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }}
       .exit {{ animation: exit 520ms cubic-bezier(0.4, 0, 0.2, 1) both; }}
