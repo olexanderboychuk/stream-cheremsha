@@ -109,32 +109,6 @@ Item {
             border.color: sb.hovered ? "#3b4458" : root.cardEdge
         }
 
-        function _mkStepBtn(sign) {
-            return Rectangle {
-                width: 34
-                height: 34
-                radius: 8
-                color: stepMa.pressed ? "#303a50" : (stepMa.containsMouse ? "#263246" : "#1c2434")
-                border.width: 1
-                border.color: stepMa.containsMouse ? "#3b4458" : root.cardEdge
-                Text {
-                    anchors.centerIn: parent
-                    text: sign
-                    color: root.ink
-                    font.pixelSize: 16
-                    font.weight: Font.DemiBold
-                }
-                MouseArea {
-                    id: stepMa
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: parent._step()
-                }
-                function _step() {}
-            }
-        }
-
         down.indicator: Item {
             implicitWidth: 34
             implicitHeight: 34
