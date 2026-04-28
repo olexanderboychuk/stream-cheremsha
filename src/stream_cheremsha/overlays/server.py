@@ -187,6 +187,10 @@ class OverlayServer:
                     await patch_task
                 except asyncio.CancelledError:
                     pass
+                except Exception:
+                    # Connection lifecycle should not be dominated by forwarder failures.
+                    # If forwarding failed unexpectedly, the websocket is already closing.
+                    pass
             if patch_q is not None:
                 self._pubsub.unsubscribe(patch_q)
             if not ws.closed:

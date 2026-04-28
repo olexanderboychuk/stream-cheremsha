@@ -2361,12 +2361,14 @@ class MainWindow(QWidget):
         fragment = self._format_chat_message_fragment(message)
         self._bridge.append_chat.emit(fragment)
         if not self._closing:
-            asyncio.ensure_future(
+            t = asyncio.create_task(
                 self._overlay_server.pubsub().publish(
                     "overlay:chat:main",
                     chat_message_to_patch(message),
                 ),
             )
+            # Ensure exceptions are retrieved to avoid "Task exception was never retrieved".
+            t.add_done_callback(lambda _t: _t.exception())
         self._dispatch_actions_for_chat(message)
 
     def _actions_scope_key(self, platform: str, account_key: str) -> tuple[str, str]:
