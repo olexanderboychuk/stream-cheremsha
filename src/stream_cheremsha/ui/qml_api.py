@@ -378,3 +378,9 @@ class StreamCheremshaQmlApi(QObject):
         w = self._win()
         if w is not None:
             w._open_tiktok_actions()  # noqa: SLF001
+
+    @Slot()
+    def openWidgets(self) -> None:
+        w = self._win()
+        if w is not None:
+            w.open_widgets()

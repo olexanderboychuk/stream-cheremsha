@@ -103,6 +103,7 @@ from stream_cheremsha.ui.chat_formatting import (
 from stream_cheremsha.ui.chat_popout import ChatPopoutWindow
 from stream_cheremsha.ui.donations_qml_api import DonationsQmlApi
 from stream_cheremsha.ui.qml_api import StreamCheremshaQmlApi
+from stream_cheremsha.ui.widgets_qml_api import WidgetsQmlApi
 from stream_cheremsha.ui.window_geometry import (
     KEY_MAIN_WINDOW,
     KEY_PIPER_HELP_DIALOG,
@@ -313,6 +314,8 @@ class MainWindow(QWidget):
         self._tiktok_username = QLineEdit()
         self._actions_qml_api = ActionsQmlApi(self)
         self._qml_actions: QQuickView | None = None
+        self._widgets_qml_api: WidgetsQmlApi | None = None
+        self._qml_widgets: QQuickView | None = None
         self._actions_engines: dict[tuple[str, str], PlatformActionsEngine] = {}
         self._chat_ic_tw: str | None = None
         self._chat_ic_yt: str | None = None
@@ -2496,6 +2499,47 @@ class MainWindow(QWidget):
         view.setSource(QUrl.fromLocalFile(str(qml_p)))
         self._qml_actions = view
         return view
+
+    def _ensure_widgets_window(self) -> QQuickView:
+        if self._qml_widgets is not None:
+            try:
+                self._qml_widgets.close()
+            except RuntimeError:
+                pass
+            self._qml_widgets = None
+            self._widgets_qml_api = None
+
+        view = QQuickView()
+        view.setFlags(
+            Qt.WindowType.Tool
+            | Qt.WindowType.CustomizeWindowHint
+            | Qt.WindowType.WindowTitleHint
+            | Qt.WindowType.WindowCloseButtonHint,
+        )
+        try:
+            if self.windowHandle() is not None:
+                view.setTransientParent(self.windowHandle())
+        except RuntimeError:
+            pass
+        view.setResizeMode(QQuickView.ResizeMode.SizeRootObjectToView)
+        view.setMinimumSize(QSize(560, 420))
+        view.resize(QSize(760, 560))
+
+        self._widgets_qml_api = WidgetsQmlApi(overlay_base_url=self._overlay_server.base_url())
+        ctx = view.engine().rootContext()
+        ctx.setContextProperty("api", self._widgets_qml_api)
+        qml_p = _qml_path("WidgetsView.qml")
+        view.setSource(QUrl.fromLocalFile(str(qml_p)))
+
+        self._qml_widgets = view
+        return view
+
+    def open_widgets(self) -> None:
+        v = self._ensure_widgets_window()
+        v.setTitle("Віджети")
+        v.show()
+        if _should_activate_window():
+            v.raise_()
 
     def _open_tiktok_actions(self) -> None:
         v = self._ensure_actions_window()
