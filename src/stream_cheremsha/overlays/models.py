@@ -7,10 +7,10 @@ _INSTANCE_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$")
 
 
 def normalize_instance_id(v: str) -> str:
-    s = (v or "").strip()
+    s = v.strip()
     if not s:
         return "default"
-    if not _INSTANCE_RE.match(s):
+    if not _INSTANCE_RE.fullmatch(s):
         raise ValueError("Invalid overlay instance id")
     return s
 
