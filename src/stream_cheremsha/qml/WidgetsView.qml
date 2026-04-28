@@ -104,6 +104,15 @@ Item {
                             focusPolicy: Qt.NoFocus
                             onClicked: if (api) api.copyChatOverlayUrl()
                         }
+
+                        Button {
+                            text: "Закрити"
+                            hoverEnabled: true
+                            focusPolicy: Qt.NoFocus
+                            onClicked: {
+                                if (typeof widgetsWindow !== "undefined" && widgetsWindow) widgetsWindow.close();
+                            }
+                        }
                     }
                 }
             }

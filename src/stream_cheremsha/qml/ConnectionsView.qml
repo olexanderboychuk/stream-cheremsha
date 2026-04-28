@@ -161,16 +161,6 @@ Item {
                     Layout.fillHeight: true
                     spacing: 12
 
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-                        ConnPillButton {
-                            text: "Віджети"
-                            onClicked: if (api) api.openWidgets()
-                        }
-                        Item { Layout.fillWidth: true }
-                    }
-
             // -------- Twitch card (Item sizes to ColumnLayout; Rectangle is background only) --------
             Item {
                 id: twCard
@@ -578,6 +568,16 @@ Item {
                         }
                     }
                 }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                ConnPillButton {
+                    text: "Віджети"
+                    onClicked: if (api) api.openWidgets()
+                }
+                Item { Layout.fillWidth: true }
             }
 
             // end ColumnLayout col

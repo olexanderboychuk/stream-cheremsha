@@ -2532,6 +2532,7 @@ class MainWindow(QWidget):
         self._widgets_qml_api = WidgetsQmlApi(overlay_base_url=base_url)
         ctx = view.engine().rootContext()
         ctx.setContextProperty("api", self._widgets_qml_api)
+        ctx.setContextProperty("widgetsWindow", view)
         qml_p = _qml_path("WidgetsView.qml")
         view.setSource(QUrl.fromLocalFile(str(qml_p)))
 
