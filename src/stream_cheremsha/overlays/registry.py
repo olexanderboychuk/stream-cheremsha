@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from stream_cheremsha.overlays.chat_overlay import ChatOverlayType
 from stream_cheremsha.overlays.models import normalize_instance_id
 
 
@@ -93,6 +94,7 @@ class OverlayRegistry:
     def __init__(self) -> None:
         self._types: dict[str, OverlayType] = {}
         self.register(_DebugOverlayType())
+        self.register(ChatOverlayType())
 
     def register(self, t: OverlayType) -> None:
         self._types[str(t.type)] = t

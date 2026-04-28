@@ -62,6 +62,16 @@ def test_debug_overlay_invalid_instance_falls_back_to_default() -> None:
     assert 'const instance = "default"' in html
 
 
+def test_registry_has_chat_overlay() -> None:
+    reg = OverlayRegistry()
+    t = reg.get("chat")
+    assert t.type == "chat"
+    html = t.render_html({"instance": "main"})
+    assert "/ws" in html
+    st = t.initial_state({"instance": "main"})
+    assert "config" in st
+
+
 def test_pubsub_publishes_to_subscribers() -> None:
     async def _run() -> dict[str, int]:
         ps = OverlayPubSub()
