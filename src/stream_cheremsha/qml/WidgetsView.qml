@@ -434,7 +434,7 @@ Item {
     ColorDialog {
         id: bubbleColorDlg
         title: "Bubble background color"
-        currentColor: _bubbleColor
+        selectedColor: _bubbleColor
         onAccepted: {
             if (cfg === null) return;
             _bubbleColor = selectedColor;
@@ -446,7 +446,7 @@ Item {
     ColorDialog {
         id: usernameColorDlg
         title: "Username color"
-        currentColor: _usernameCustomColor
+        selectedColor: _usernameCustomColor
         onAccepted: {
             if (cfg === null) return;
             _usernameCustomColor = selectedColor;
