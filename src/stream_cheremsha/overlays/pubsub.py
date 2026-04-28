@@ -26,6 +26,6 @@ class OverlayPubSub:
             if s.topic != topic:
                 continue
             try:
-                s.q.put_nowait(payload)
+                s.q.put_nowait(payload.copy())
             except asyncio.QueueFull:
                 continue
