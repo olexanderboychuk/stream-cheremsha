@@ -44,6 +44,9 @@ class OverlayServer:
             raise RuntimeError("OverlayServer is not running")
         return f"http://{self._host}:{self._running.port}"
 
+    def pubsub(self) -> OverlayPubSub:
+        return self._pubsub
+
     async def start(self) -> None:
         if self._running is not None:
             return

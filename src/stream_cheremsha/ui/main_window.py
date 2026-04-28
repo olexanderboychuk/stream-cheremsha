@@ -81,6 +81,7 @@ from stream_cheremsha.chat.youtube_source import (
 from stream_cheremsha.config import constants, keyring_store
 from stream_cheremsha.domain.models import ChatMessage, ChatPlatform
 from stream_cheremsha.domain.protocols import TextToSpeech
+from stream_cheremsha.overlays.chat_overlay import chat_message_to_patch
 from stream_cheremsha.overlays.registry import OverlayRegistry
 from stream_cheremsha.overlays.server import OverlayServer
 from stream_cheremsha.pipeline.coordinator import StreamCoordinator
@@ -2359,6 +2360,13 @@ class MainWindow(QWidget):
         self._chat_message_history.append(message)
         fragment = self._format_chat_message_fragment(message)
         self._bridge.append_chat.emit(fragment)
+        if not self._closing:
+            asyncio.ensure_future(
+                self._overlay_server.pubsub().publish(
+                    "overlay:chat:main",
+                    chat_message_to_patch(message),
+                ),
+            )
         self._dispatch_actions_for_chat(message)
 
     def _actions_scope_key(self, platform: str, account_key: str) -> tuple[str, str]:
