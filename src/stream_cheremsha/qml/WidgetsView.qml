@@ -83,6 +83,121 @@ Item {
         }
     }
 
+    component StyledSpinBox: SpinBox {
+        id: sb
+        hoverEnabled: true
+        focusPolicy: Qt.NoFocus
+        font.pixelSize: 13
+        implicitHeight: 34
+        implicitWidth: 150
+
+        contentItem: TextInput {
+            text: sb.displayText
+            color: root.ink
+            selectionColor: "#334155"
+            selectedTextColor: root.ink
+            font.pixelSize: sb.font.pixelSize
+            horizontalAlignment: Qt.AlignHCenter
+            verticalAlignment: Qt.AlignVCenter
+            readOnly: true
+        }
+
+        background: Rectangle {
+            radius: 8
+            color: root.fieldBg
+            border.width: 1
+            border.color: sb.hovered ? "#3b4458" : root.cardEdge
+        }
+
+        function _mkStepBtn(sign) {
+            return Rectangle {
+                width: 34
+                height: 34
+                radius: 8
+                color: stepMa.pressed ? "#303a50" : (stepMa.containsMouse ? "#263246" : "#1c2434")
+                border.width: 1
+                border.color: stepMa.containsMouse ? "#3b4458" : root.cardEdge
+                Text {
+                    anchors.centerIn: parent
+                    text: sign
+                    color: root.ink
+                    font.pixelSize: 16
+                    font.weight: Font.DemiBold
+                }
+                MouseArea {
+                    id: stepMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: parent._step()
+                }
+                function _step() {}
+            }
+        }
+
+        down.indicator: Item {
+            implicitWidth: 34
+            implicitHeight: 34
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: 0
+            Rectangle {
+                anchors.fill: parent
+                radius: 8
+                color: downMa.pressed ? "#303a50" : (downMa.containsMouse ? "#263246" : "#1c2434")
+                border.width: 1
+                border.color: downMa.containsMouse ? "#3b4458" : root.cardEdge
+                Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                Behavior on border.color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                Text {
+                    anchors.centerIn: parent
+                    text: "−"
+                    color: root.ink
+                    font.pixelSize: 16
+                    font.weight: Font.DemiBold
+                }
+                MouseArea {
+                    id: downMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: sb.decrease()
+                }
+            }
+        }
+
+        up.indicator: Item {
+            implicitWidth: 34
+            implicitHeight: 34
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.rightMargin: 0
+            Rectangle {
+                anchors.fill: parent
+                radius: 8
+                color: upMa.pressed ? "#303a50" : (upMa.containsMouse ? "#263246" : "#1c2434")
+                border.width: 1
+                border.color: upMa.containsMouse ? "#3b4458" : root.cardEdge
+                Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                Behavior on border.color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                Text {
+                    anchors.centerIn: parent
+                    text: "+"
+                    color: root.ink
+                    font.pixelSize: 16
+                    font.weight: Font.DemiBold
+                }
+                MouseArea {
+                    id: upMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: sb.increase()
+                }
+            }
+        }
+    }
+
     property var cfg: null
     property color _bubbleColor: "#0a0c12"
     property real _bubbleAlpha: 0.55
@@ -256,7 +371,7 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "К-сть повідомлень"; color: muted; Layout.preferredWidth: 160 }
-                            SpinBox {
+                            StyledSpinBox {
                                 id: maxItems
                                 from: 1
                                 to: 200
@@ -274,7 +389,7 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Розмір шрифту"; color: muted; Layout.preferredWidth: 160 }
-                            SpinBox {
+                            StyledSpinBox {
                                 id: fontSize
                                 from: 8
                                 to: 96
@@ -308,7 +423,7 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Авто-приховування (сек)"; color: muted; Layout.preferredWidth: 160 }
-                            SpinBox {
+                            StyledSpinBox {
                                 id: fadeSeconds
                                 from: 0
                                 to: 600
@@ -361,7 +476,7 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Заокруглення (px)"; color: muted; Layout.preferredWidth: 160 }
-                            SpinBox {
+                            StyledSpinBox {
                                 id: bubbleRadius
                                 from: 0
                                 to: 60
