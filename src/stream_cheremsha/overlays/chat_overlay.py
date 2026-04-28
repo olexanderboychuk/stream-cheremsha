@@ -64,9 +64,18 @@ class ChatOverlayType:
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Chat Overlay</title>
     <style>
-      html, body {{ margin: 0; padding: 0; background: transparent; overflow: hidden; }}
+      html, body {{ margin: 0; padding: 0; background: transparent; overflow: hidden; height: 100%; }}
       body {{ font-family: system-ui, sans-serif; }}
-      .wrap {{ padding: 10px; }}
+      .wrap {{
+        position: absolute;
+        inset: 0;
+        padding: 10px;
+        box-sizing: border-box;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+      }}
       .msg {{ margin: 0 0 8px 0; padding: 8px 10px; border-radius: 10px; display:flex; }}
       .msg {{ gap:6px; align-items: baseline; }}
       .author {{ font-weight: 700; margin-right: 6px; }}
