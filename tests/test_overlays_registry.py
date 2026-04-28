@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from stream_cheremsha.overlays.models import (
@@ -5,6 +7,7 @@ from stream_cheremsha.overlays.models import (
     overlays_initial_state_msg,
     overlays_patch_msg,
 )
+from stream_cheremsha.overlays.pubsub import OverlayPubSub
 from stream_cheremsha.overlays.registry import OverlayRegistry, UnknownOverlayTypeError
 
 
@@ -57,3 +60,14 @@ def test_debug_overlay_invalid_instance_falls_back_to_default() -> None:
     assert html.lower().count("</script>") == 1
     # And ensure we actually fell back to the safe default instance in JS.
     assert 'const instance = "default"' in html
+
+
+def test_pubsub_publishes_to_subscribers() -> None:
+    async def _run() -> dict[str, int]:
+        ps = OverlayPubSub()
+        q = ps.subscribe(topic="t")
+        ps.publish(topic="t", patch={"x": 1})
+        got = await asyncio.wait_for(q.get(), timeout=1.0)
+        return got
+
+    assert asyncio.run(_run()) == {"x": 1}
