@@ -1,0 +1,129 @@
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from typing import Any
+
+from aiohttp import web
+
+from stream_cheremsha.overlays.models import normalize_instance_id, overlays_initial_state_msg
+from stream_cheremsha.overlays.registry import OverlayRegistry, UnknownOverlayTypeError
+
+
+@dataclass(slots=True, frozen=True)
+class _Running:
+    runner: web.AppRunner
+    site: web.TCPSite
+    port: int
+
+
+class OverlayServer:
+    def __init__(self, *, registry: OverlayRegistry, host: str = "127.0.0.1", port: int = 17171) -> None:
+        self._registry = registry
+        self._host = str(host)
+        self._port = int(port)
+        self._running: _Running | None = None
+
+    def base_url(self) -> str:
+        if self._running is None:
+            raise RuntimeError("OverlayServer is not running")
+        return f"http://{self._host}:{self._running.port}"
+
+    async def start(self) -> None:
+        if self._running is not None:
+            return
+
+        app = web.Application()
+        app.router.add_get("/health", self._health)
+        app.router.add_get("/overlay/{overlay_type}", self._overlay_page)
+        app.router.add_get("/ws", self._ws)
+
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, host=self._host, port=self._port)
+        await site.start()
+
+        bound_port = self._port
+        server = getattr(site, "_server", None)
+        sockets = getattr(server, "sockets", None)
+        if sockets:
+            bound_port = int(sockets[0].getsockname()[1])
+
+        self._running = _Running(runner=runner, site=site, port=bound_port)
+
+    async def stop(self) -> None:
+        r = self._running
+        if r is None:
+            return
+        self._running = None
+        await r.runner.cleanup()
+
+    async def _health(self, _req: web.Request) -> web.Response:
+        return web.Response(text="ok", content_type="text/plain")
+
+    async def _overlay_page(self, req: web.Request) -> web.Response:
+        overlay_type = str(req.match_info.get("overlay_type") or "").strip()
+        try:
+            t = self._registry.get(overlay_type)
+        except UnknownOverlayTypeError as e:
+            raise web.HTTPNotFound(text=f"unknown overlay type: {e.args[0]}") from e
+
+        try:
+            instance = normalize_instance_id(str(req.query.get("instance", "")))
+        except ValueError as e:
+            raise web.HTTPBadRequest(text="invalid instance") from e
+
+        params: dict[str, Any] = {"instance": instance}
+        html = t.render_html(params)
+        return web.Response(text=html, content_type="text/html", charset="utf-8")
+
+    async def _ws(self, req: web.Request) -> web.WebSocketResponse:
+        ws = web.WebSocketResponse()
+        await ws.prepare(req)
+
+        msg = await ws.receive()
+        if msg.type != web.WSMsgType.TEXT:
+            await ws.close()
+            return ws
+
+        try:
+            data = json.loads(msg.data)
+        except json.JSONDecodeError:
+            await ws.close()
+            return ws
+
+        if not isinstance(data, dict) or data.get("op") != "subscribe":
+            await ws.close()
+            return ws
+
+        overlay_type = str(data.get("type") or "").strip()
+        try:
+            instance = normalize_instance_id(str(data.get("instance") or ""))
+        except ValueError:
+            await ws.close()
+            return ws
+
+        raw_params = data.get("params")
+        params: dict[str, Any]
+        if isinstance(raw_params, dict):
+            params = dict(raw_params)
+        else:
+            params = {}
+        params["instance"] = instance
+
+        try:
+            t = self._registry.get(overlay_type)
+        except UnknownOverlayTypeError:
+            await ws.send_str(json.dumps({"op": "error", "message": "unknown overlay type"}))
+            await ws.close()
+            return ws
+
+        state = t.initial_state(params)
+        await ws.send_str(json.dumps(overlays_initial_state_msg(state), ensure_ascii=False))
+
+        while not ws.closed:
+            nxt = await ws.receive()
+            if nxt.type in (web.WSMsgType.CLOSE, web.WSMsgType.CLOSED, web.WSMsgType.ERROR):
+                break
+
+        return ws

@@ -25,7 +25,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.8"]
+dev = ["aiohttp>=3.10", "pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.8"]
 # Nuitka 4.x is known to crash on some dependency graphs (e.g. librosa); pin to 2.x/3.x line.
 build = ["nuitka>=2.4,<4.0", "ordered-set>=4.1", "zstandard>=0.22", "pillow>=10"]
 # RVC: ``rvc-python`` — ``--no-deps`` (піни faiss/numpy). Не ``fairseq==0.12.2`` з PyPI: на Py3.11
