@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass
 from typing import Any
@@ -7,7 +8,12 @@ from typing import Any
 from aiohttp import WSCloseCode
 from aiohttp import web
 
-from stream_cheremsha.overlays.models import normalize_instance_id, overlays_initial_state_msg
+from stream_cheremsha.overlays.models import (
+    normalize_instance_id,
+    overlays_initial_state_msg,
+    overlays_patch_msg,
+)
+from stream_cheremsha.overlays.pubsub import OverlayPubSub
 from stream_cheremsha.overlays.registry import OverlayRegistry, UnknownOverlayTypeError
 
 
@@ -19,8 +25,16 @@ class _Running:
 
 
 class OverlayServer:
-    def __init__(self, *, registry: OverlayRegistry, host: str = "127.0.0.1", port: int = 17171) -> None:
+    def __init__(
+        self,
+        *,
+        registry: OverlayRegistry,
+        pubsub: OverlayPubSub | None = None,
+        host: str = "127.0.0.1",
+        port: int = 17171,
+    ) -> None:
         self._registry = registry
+        self._pubsub = pubsub or OverlayPubSub()
         self._host = str(host)
         self._port = int(port)
         self._running: _Running | None = None
@@ -86,6 +100,8 @@ class OverlayServer:
     async def _ws(self, req: web.Request) -> web.WebSocketResponse:
         ws = web.WebSocketResponse()
         await ws.prepare(req)
+        patch_task: asyncio.Task[None] | None = None
+        patch_q: asyncio.Queue[dict[str, Any]] | None = None
         try:
             msg = await ws.receive()
             if msg.type != web.WSMsgType.TEXT:
@@ -134,10 +150,38 @@ class OverlayServer:
             state = t.initial_state(params)
             await ws.send_str(json.dumps(overlays_initial_state_msg(state), ensure_ascii=False))
 
+            topic = f"overlay:{overlay_type}:{instance}"
+            patch_q = self._pubsub.subscribe(topic)
+
+            async def _forward_patches() -> None:
+                assert patch_q is not None
+                while True:
+                    patch = await patch_q.get()
+                    if ws.closed:
+                        return
+                    try:
+                        await ws.send_str(json.dumps(overlays_patch_msg(patch), ensure_ascii=False))
+                    except (ConnectionResetError, RuntimeError):
+                        return
+
+            patch_task = asyncio.create_task(_forward_patches())
+
+            # Debug patch generator (at least one patch observable).
+            if overlay_type == "debug":
+                await self._pubsub.publish(topic, {"tick": 1})
+
             async for nxt in ws:
                 if nxt.type in (web.WSMsgType.CLOSE, web.WSMsgType.CLOSED, web.WSMsgType.ERROR):
                     break
         finally:
+            if patch_task is not None:
+                patch_task.cancel()
+                try:
+                    await patch_task
+                except asyncio.CancelledError:
+                    pass
+            if patch_q is not None:
+                self._pubsub.unsubscribe(patch_q)
             if not ws.closed:
                 await ws.close()
 

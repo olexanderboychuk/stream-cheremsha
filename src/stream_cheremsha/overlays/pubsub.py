@@ -20,6 +20,9 @@ class OverlayPubSub:
         self._subs.append(_Sub(topic=str(topic), q=q))
         return q
 
+    def unsubscribe(self, q: asyncio.Queue[dict[str, Any]]) -> None:
+        self._subs = [s for s in self._subs if s.q is not q]
+
     async def publish(self, topic: str, patch: dict[str, Any]) -> None:
         payload = dict(patch)
         for s in list(self._subs):

@@ -3,6 +3,7 @@ import json
 import aiohttp
 import pytest
 
+from stream_cheremsha.overlays.pubsub import OverlayPubSub
 from stream_cheremsha.overlays.registry import OverlayRegistry
 from stream_cheremsha.overlays.server import OverlayServer
 
@@ -28,9 +29,10 @@ async def test_overlay_server_health_and_debug_html() -> None:
 
 
 @pytest.mark.asyncio
-async def test_overlay_server_ws_initial_state() -> None:
+async def test_overlay_server_ws_initial_state_and_patch() -> None:
     reg = OverlayRegistry()
-    srv = OverlayServer(registry=reg, host="127.0.0.1", port=0)
+    ps = OverlayPubSub()
+    srv = OverlayServer(registry=reg, pubsub=ps, host="127.0.0.1", port=0)
     await srv.start()
     try:
         base = srv.base_url()
@@ -44,6 +46,16 @@ async def test_overlay_server_ws_initial_state() -> None:
                 obj = json.loads(msg.data)
                 assert obj["op"] == "initial_state"
                 assert "state" in obj
+
+                await ps.publish("overlay:debug:default", {"tick": 999})
+                while True:
+                    msg2 = await ws.receive(timeout=2.0)
+                    assert msg2.type == aiohttp.WSMsgType.TEXT
+                    obj2 = json.loads(msg2.data)
+                    if obj2.get("op") != "patch":
+                        continue
+                    if obj2.get("patch") == {"tick": 999}:
+                        break
     finally:
         await srv.stop()
 
