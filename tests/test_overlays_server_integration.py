@@ -60,6 +60,49 @@ async def test_overlay_server_ws_initial_state_and_patch() -> None:
         await srv.stop()
 
 
+@pytest.mark.asyncio
+async def test_chat_overlay_ws_receives_append_patch() -> None:
+    reg = OverlayRegistry()
+    ps = OverlayPubSub()
+    srv = OverlayServer(registry=reg, pubsub=ps, host="127.0.0.1", port=0)
+    await srv.start()
+    try:
+        ws_url = srv.base_url().replace("http://", "ws://") + "/ws"
+        async with aiohttp.ClientSession() as s:
+            async with s.ws_connect(ws_url) as ws:
+                await ws.send_str(
+                    json.dumps({"op": "subscribe", "type": "chat", "instance": "main", "params": {}})
+                )
+                msg = await ws.receive(timeout=2.0)
+                assert msg.type == aiohttp.WSMsgType.TEXT
+                obj = json.loads(msg.data)
+                assert obj["op"] == "initial_state"
+                assert "state" in obj
+
+                await ps.publish(
+                    "overlay:chat:main",
+                    {
+                        "append": {
+                            "author": "a",
+                            "text": "t",
+                            "platform": "twitch",
+                            "received_at": "x",
+                        }
+                    },
+                )
+                while True:
+                    m2 = await ws.receive(timeout=2.0)
+                    assert m2.type == aiohttp.WSMsgType.TEXT
+                    o2 = json.loads(m2.data)
+                    if (
+                        o2.get("op") == "patch"
+                        and o2.get("patch", {}).get("append", {}).get("author") == "a"
+                    ):
+                        break
+    finally:
+        await srv.stop()
+
+
 def _subscribe_debug_default() -> dict[str, object]:
     return {"op": "subscribe", "type": "debug", "instance": "default", "params": {}}
 
