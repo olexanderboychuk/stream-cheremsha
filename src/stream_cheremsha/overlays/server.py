@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from aiohttp import WSCloseCode
 from aiohttp import web
 
 from stream_cheremsha.overlays.models import normalize_instance_id, overlays_initial_state_msg
@@ -35,6 +36,7 @@ class OverlayServer:
 
         app = web.Application()
         app.router.add_get("/health", self._health)
+        app.router.add_get("/assets/{path:.*}", self._assets)
         app.router.add_get("/overlay/{overlay_type}", self._overlay_page)
         app.router.add_get("/ws", self._ws)
 
@@ -61,6 +63,10 @@ class OverlayServer:
     async def _health(self, _req: web.Request) -> web.Response:
         return web.Response(text="ok", content_type="text/plain")
 
+    async def _assets(self, _req: web.Request) -> web.Response:
+        # Foundation route: real static assets can be added later. For now, return 404.
+        raise web.HTTPNotFound(text="assets not found")
+
     async def _overlay_page(self, req: web.Request) -> web.Response:
         overlay_type = str(req.match_info.get("overlay_type") or "").strip()
         try:
@@ -80,50 +86,59 @@ class OverlayServer:
     async def _ws(self, req: web.Request) -> web.WebSocketResponse:
         ws = web.WebSocketResponse()
         await ws.prepare(req)
-
-        msg = await ws.receive()
-        if msg.type != web.WSMsgType.TEXT:
-            await ws.close()
-            return ws
-
         try:
-            data = json.loads(msg.data)
-        except json.JSONDecodeError:
-            await ws.close()
-            return ws
+            msg = await ws.receive()
+            if msg.type != web.WSMsgType.TEXT:
+                await ws.close(code=WSCloseCode.PROTOCOL_ERROR, message=b"expected text")
+                return ws
 
-        if not isinstance(data, dict) or data.get("op") != "subscribe":
-            await ws.close()
-            return ws
+            try:
+                data = json.loads(msg.data)
+            except json.JSONDecodeError:
+                await ws.close(code=WSCloseCode.INVALID_TEXT, message=b"invalid json")
+                return ws
 
-        overlay_type = str(data.get("type") or "").strip()
-        try:
-            instance = normalize_instance_id(str(data.get("instance") or ""))
-        except ValueError:
-            await ws.close()
-            return ws
+            if not isinstance(data, dict) or data.get("op") != "subscribe":
+                await ws.close(code=WSCloseCode.PROTOCOL_ERROR, message=b"expected subscribe")
+                return ws
 
-        raw_params = data.get("params")
-        params: dict[str, Any]
-        if isinstance(raw_params, dict):
-            params = dict(raw_params)
-        else:
-            params = {}
-        params["instance"] = instance
+            overlay_type = str(data.get("type") or "").strip()
+            if not overlay_type:
+                await ws.close(code=WSCloseCode.PROTOCOL_ERROR, message=b"missing overlay type")
+                return ws
 
-        try:
-            t = self._registry.get(overlay_type)
-        except UnknownOverlayTypeError:
-            await ws.send_str(json.dumps({"op": "error", "message": "unknown overlay type"}))
-            await ws.close()
-            return ws
+            try:
+                instance = normalize_instance_id(str(data.get("instance") or ""))
+            except ValueError:
+                await ws.close(code=WSCloseCode.PROTOCOL_ERROR, message=b"invalid instance")
+                return ws
 
-        state = t.initial_state(params)
-        await ws.send_str(json.dumps(overlays_initial_state_msg(state), ensure_ascii=False))
+            raw_params = data.get("params")
+            params: dict[str, Any]
+            if raw_params is None:
+                params = {}
+            elif isinstance(raw_params, dict):
+                params = dict(raw_params)
+            else:
+                await ws.close(code=WSCloseCode.PROTOCOL_ERROR, message=b"params must be object")
+                return ws
+            params["instance"] = instance
 
-        while not ws.closed:
-            nxt = await ws.receive()
-            if nxt.type in (web.WSMsgType.CLOSE, web.WSMsgType.CLOSED, web.WSMsgType.ERROR):
-                break
+            try:
+                t = self._registry.get(overlay_type)
+            except UnknownOverlayTypeError:
+                await ws.send_str(json.dumps({"op": "error", "message": "unknown overlay type"}))
+                await ws.close(code=WSCloseCode.PROTOCOL_ERROR, message=b"unknown overlay type")
+                return ws
+
+            state = t.initial_state(params)
+            await ws.send_str(json.dumps(overlays_initial_state_msg(state), ensure_ascii=False))
+
+            async for nxt in ws:
+                if nxt.type in (web.WSMsgType.CLOSE, web.WSMsgType.CLOSED, web.WSMsgType.ERROR):
+                    break
+        finally:
+            if not ws.closed:
+                await ws.close()
 
         return ws

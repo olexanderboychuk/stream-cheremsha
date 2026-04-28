@@ -1,5 +1,6 @@
 import json
 
+import aiohttp
 import pytest
 
 from stream_cheremsha.overlays.registry import OverlayRegistry
@@ -13,7 +14,6 @@ async def test_overlay_server_health_and_debug_html() -> None:
     await srv.start()
     try:
         base = srv.base_url()
-        import aiohttp
 
         async with aiohttp.ClientSession() as s:
             async with s.get(f"{base}/health") as r:
@@ -34,7 +34,6 @@ async def test_overlay_server_ws_initial_state() -> None:
     await srv.start()
     try:
         base = srv.base_url()
-        import aiohttp
 
         ws_url = base.replace("http://", "ws://") + "/ws"
         async with aiohttp.ClientSession() as s:
