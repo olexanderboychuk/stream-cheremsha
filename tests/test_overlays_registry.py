@@ -47,3 +47,13 @@ def test_debug_overlay_renders_html() -> None:
     assert "/ws" in html
     assert "subscribe" in html.lower()
 
+
+def test_debug_overlay_invalid_instance_falls_back_to_default() -> None:
+    reg = OverlayRegistry()
+    t = reg.get("debug")
+    html = t.render_html({"instance": "</script>"})
+    # If the untrusted input were reflected into the <script>, we'd likely see an
+    # extra `</script>` (beyond the template's own closing tag).
+    assert html.lower().count("</script>") == 1
+    # And ensure we actually fell back to the safe default instance in JS.
+    assert 'const instance = "default"' in html

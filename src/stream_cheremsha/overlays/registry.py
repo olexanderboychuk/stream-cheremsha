@@ -4,6 +4,8 @@ import json
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from stream_cheremsha.overlays.models import normalize_instance_id
+
 
 class UnknownOverlayTypeError(KeyError):
     pass
@@ -17,14 +19,24 @@ class OverlayType(Protocol):
     def initial_state(self, params: dict[str, Any]) -> dict[str, Any]: ...
 
 
+def _json_for_script(value: Any) -> str:
+    s = json.dumps(value, ensure_ascii=False)
+    # Prevent `</script>` termination and other HTML parser edge-cases.
+    return s.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+
+
 @dataclass(frozen=True, slots=True)
 class _DebugOverlayType:
     type: str = "debug"
 
     def render_html(self, params: dict[str, Any]) -> str:
-        instance = str(params.get("instance") or "default")
+        raw_instance = params.get("instance")
+        try:
+            instance = normalize_instance_id(str(raw_instance or ""))
+        except ValueError:
+            instance = "default"
+
         subscribe_msg = {"op": "subscribe", "type": "debug", "instance": instance, "params": {}}
-        subscribe_json = json.dumps(subscribe_msg, ensure_ascii=False)
 
         return f"""<!doctype html>
 <html>
@@ -33,7 +45,8 @@ class _DebugOverlayType:
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Overlay Debug</title>
     <style>
-      html, body {{ margin: 0; padding: 0; background: transparent; color: #e5e7eb; font-family: system-ui, sans-serif; }}
+      html, body {{ margin: 0; padding: 0; background: transparent; color: #e5e7eb;
+        font-family: system-ui, sans-serif; }}
       .box {{ padding: 10px; background: rgba(10,12,18,0.60); border: 1px solid rgba(148,163,184,0.25); }}
       pre {{ white-space: pre-wrap; word-break: break-word; margin: 8px 0 0; }}
     </style>
@@ -46,7 +59,7 @@ class _DebugOverlayType:
     </div>
     <script>
       (function() {{
-        const instance = {json.dumps(instance, ensure_ascii=False)};
+        const instance = {_json_for_script(instance)};
         document.getElementById('instance').textContent = instance;
 
         const log = document.getElementById('log');
@@ -54,7 +67,8 @@ class _DebugOverlayType:
         const ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {{
-          ws.send({json.dumps(subscribe_json, ensure_ascii=False)});
+          const subscribeMsg = {_json_for_script(subscribe_msg)};
+          ws.send(JSON.stringify(subscribeMsg));
           log.textContent = 'connected';
         }};
         ws.onmessage = (ev) => {{
@@ -89,4 +103,3 @@ class OverlayRegistry:
         if t is None:
             raise UnknownOverlayTypeError(k)
         return t
-
