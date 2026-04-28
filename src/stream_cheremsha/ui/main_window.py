@@ -2825,6 +2825,14 @@ class MainWindow(QWidget):
             return
         save_window_geometry(KEY_MAIN_WINDOW, self)
         self._closing = True
+        # We run an async shutdown sequence; hide immediately so the user doesn't
+        # need to click close twice while teardown runs in the background.
+        try:
+            self.setEnabled(False)
+            self.hide()
+        except RuntimeError:
+            # Window may already be in teardown; keep going.
+            pass
         event.ignore()
         asyncio.ensure_future(self._async_shutdown())
 
