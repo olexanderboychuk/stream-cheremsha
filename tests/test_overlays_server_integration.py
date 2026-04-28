@@ -8,6 +8,27 @@ from stream_cheremsha.overlays.registry import OverlayRegistry
 from stream_cheremsha.overlays.server import OverlayServer
 
 
+async def _ws_next_text(
+    ws: aiohttp.ClientWebSocketResponse,
+    *,
+    timeout: float = 2.0,
+) -> aiohttp.WSMessage:
+    """Receive next TEXT frame, skipping ping/pong; fail on close/error."""
+    while True:
+        msg = await ws.receive(timeout=timeout)
+        if msg.type in (aiohttp.WSMsgType.PING, aiohttp.WSMsgType.PONG):
+            continue
+        if msg.type in (
+            aiohttp.WSMsgType.CLOSE,
+            aiohttp.WSMsgType.CLOSED,
+            aiohttp.WSMsgType.ERROR,
+        ):
+            raise AssertionError(f"websocket closed/error: {msg.type} {ws.exception()!r}")
+        if msg.type == aiohttp.WSMsgType.TEXT:
+            return msg
+        # Ignore other frame types.
+
+
 @pytest.mark.asyncio
 async def test_overlay_server_health_and_debug_html() -> None:
     reg = OverlayRegistry()
@@ -16,7 +37,8 @@ async def test_overlay_server_health_and_debug_html() -> None:
     try:
         base = srv.base_url()
 
-        async with aiohttp.ClientSession() as s:
+        timeout = aiohttp.ClientTimeout(total=2.0)
+        async with aiohttp.ClientSession(timeout=timeout) as s:
             async with s.get(f"{base}/health") as r:
                 assert r.status == 200
                 assert (await r.text()).strip() == "ok"
@@ -38,19 +60,18 @@ async def test_overlay_server_ws_initial_state_and_patch() -> None:
         base = srv.base_url()
 
         ws_url = base.replace("http://", "ws://") + "/ws"
-        async with aiohttp.ClientSession() as s:
+        timeout = aiohttp.ClientTimeout(total=2.0)
+        async with aiohttp.ClientSession(timeout=timeout) as s:
             async with s.ws_connect(ws_url) as ws:
                 await ws.send_str(json.dumps(_subscribe_debug_default()))
-                msg = await ws.receive(timeout=2.0)
-                assert msg.type == aiohttp.WSMsgType.TEXT
+                msg = await _ws_next_text(ws)
                 obj = json.loads(msg.data)
                 assert obj["op"] == "initial_state"
                 assert "state" in obj
 
                 await ps.publish("overlay:debug:default", {"tick": 999})
                 while True:
-                    msg2 = await ws.receive(timeout=2.0)
-                    assert msg2.type == aiohttp.WSMsgType.TEXT
+                    msg2 = await _ws_next_text(ws)
                     obj2 = json.loads(msg2.data)
                     if obj2.get("op") != "patch":
                         continue
@@ -68,13 +89,13 @@ async def test_chat_overlay_ws_receives_append_patch() -> None:
     await srv.start()
     try:
         ws_url = srv.base_url().replace("http://", "ws://") + "/ws"
-        async with aiohttp.ClientSession() as s:
+        timeout = aiohttp.ClientTimeout(total=2.0)
+        async with aiohttp.ClientSession(timeout=timeout) as s:
             async with s.ws_connect(ws_url) as ws:
                 await ws.send_str(
                     json.dumps({"op": "subscribe", "type": "chat", "instance": "main", "params": {}})
                 )
-                msg = await ws.receive(timeout=2.0)
-                assert msg.type == aiohttp.WSMsgType.TEXT
+                msg = await _ws_next_text(ws)
                 obj = json.loads(msg.data)
                 assert obj["op"] == "initial_state"
                 assert "state" in obj
@@ -91,8 +112,7 @@ async def test_chat_overlay_ws_receives_append_patch() -> None:
                     },
                 )
                 while True:
-                    m2 = await ws.receive(timeout=2.0)
-                    assert m2.type == aiohttp.WSMsgType.TEXT
+                    m2 = await _ws_next_text(ws)
                     o2 = json.loads(m2.data)
                     if (
                         o2.get("op") == "patch"
