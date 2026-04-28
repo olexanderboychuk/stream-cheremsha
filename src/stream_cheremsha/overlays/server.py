@@ -103,7 +103,11 @@ class OverlayServer:
         patch_task: asyncio.Task[None] | None = None
         patch_q: asyncio.Queue[dict[str, Any]] | None = None
         try:
-            msg = await ws.receive()
+            try:
+                msg = await asyncio.wait_for(ws.receive(), timeout=5.0)
+            except asyncio.TimeoutError:
+                await ws.close(code=WSCloseCode.POLICY_VIOLATION, message=b"subscribe timeout")
+                return ws
             if msg.type != web.WSMsgType.TEXT:
                 await ws.close(code=WSCloseCode.PROTOCOL_ERROR, message=b"expected text")
                 return ws
