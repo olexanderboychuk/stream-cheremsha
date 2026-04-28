@@ -70,20 +70,19 @@ class ChatOverlayType:
       .msg {{ margin: 0 0 8px 0; padding: 8px 10px; border-radius: 10px; display:flex; }}
       .msg {{ gap:6px; align-items: baseline; }}
       .author {{ font-weight: 700; margin-right: 6px; }}
-      .platform {{ opacity: 0.9; margin-right: 2px; }}
       .picon {{ width: 14px; height: 14px; display:inline-flex; flex:0 0 auto; }}
       .picon {{ align-items:center; justify-content:center; }}
       .pimg {{ width: 14px; height: 14px; display:block; opacity: 0.92; }}
 
-      .enter {{ animation: enter 180ms ease-out both; }}
-      .exit {{ animation: exit 320ms ease-in both; }}
+      .enter {{ animation: enter 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }}
+      .exit {{ animation: exit 520ms cubic-bezier(0.4, 0, 0.2, 1) both; }}
       @keyframes enter {{
-        from {{ transform: translateY(6px); opacity: 0; }}
+        from {{ transform: translateY(10px); opacity: 0; filter: blur(1px); }}
         to {{ transform: translateY(0); opacity: 1; }}
       }}
       @keyframes exit {{
-        from {{ opacity: 1; }}
-        to {{ opacity: 0; }}
+        from {{ transform: translateY(0); opacity: 1; }}
+        to {{ transform: translateY(-6px); opacity: 0; }}
       }}
     </style>
   </head>
@@ -191,12 +190,12 @@ class ChatOverlayType:
           const bubbleBg = cfg.bubble_bg_rgba || 'rgba(10,12,18,0.55)';
           const bubbleRadius = clampInt(cfg.bubble_radius_px, 0, 60, 10);
           const textColor = cfg.text_color || '#e5e7eb';
-          const showPlatform = !!cfg.show_platform;
           const showPlatformIcon = !!cfg.show_platform_icon;
           const view = items.slice(-maxItems);
           for (const it of view) {{
             const row = document.createElement('div');
             row.className = 'msg';
+            row.dataset.mid = String(it.id || '');
             row.style.background = bubbleBg;
             row.style.borderRadius = bubbleRadius + 'px';
             row.style.color = textColor;
@@ -206,13 +205,6 @@ class ChatOverlayType:
               ico.className = 'picon';
               ico.appendChild(platformIconEl(it.platform));
               row.appendChild(ico);
-            }}
-
-            if (showPlatform) {{
-              const pl = document.createElement('span');
-              pl.className = 'platform';
-              pl.textContent = '[' + (it.platform || '?') + ']';
-              row.appendChild(pl);
             }}
 
             const a = document.createElement('span');
@@ -229,21 +221,38 @@ class ChatOverlayType:
           }}
         }}
 
+        function findNodeById(id) {{
+          const sid = String(id);
+          for (let i = 0; i < root.children.length; i++) {{
+            const node = root.children[i];
+            if (node && node.dataset && node.dataset.mid === sid) return node;
+          }}
+          return null;
+        }}
+
+        function removeItemById(id) {{
+          const sid = String(id);
+          items = items.filter(x => String(x.id) !== sid);
+        }}
+
         function scheduleExit(id) {{
           if (!cfg) return;
           const fadeSeconds = Number(cfg.fade_seconds || 0);
           if (!Number.isFinite(fadeSeconds) || fadeSeconds <= 0) return;
           const ms = Math.max(0, Math.round(fadeSeconds * 1000));
           setTimeout(() => {{
-            // Mark exiting, then remove.
-            for (let i = 0; i < root.children.length; i++) {{
-              const node = root.children[i];
-              if (node && node.dataset && node.dataset.mid === String(id)) node.classList.add('exit');
+            // Mark exiting in-place so the animation can actually play in OBS.
+            const node = findNodeById(id);
+            if (node) {{
+              node.classList.add('exit');
+              setTimeout(() => {{
+                try {{ if (node && node.parentNode) node.parentNode.removeChild(node); }} catch (e) {{ }}
+                removeItemById(id);
+              }}, 560);
+              return;
             }}
-            setTimeout(() => {{
-              items = items.filter(x => x.id !== id);
-              render();
-            }}, 360);
+            // Fallback: if node isn't found (e.g. rerendered), just drop the item.
+            removeItemById(id);
           }}, ms);
         }}
 
@@ -289,7 +298,6 @@ class ChatOverlayType:
               const last = root.lastElementChild;
               if (last) {{
                 last.classList.add('enter');
-                last.dataset.mid = String(it.id);
                 requestAnimationFrame(() => {{
                   // Let animation play; keep class.
                 }});
