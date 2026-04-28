@@ -2525,7 +2525,11 @@ class MainWindow(QWidget):
         view.setMinimumSize(QSize(560, 420))
         view.resize(QSize(760, 560))
 
-        self._widgets_qml_api = WidgetsQmlApi(overlay_base_url=self._overlay_server.base_url())
+        try:
+            base_url = self._overlay_server.base_url()
+        except RuntimeError:
+            base_url = ""
+        self._widgets_qml_api = WidgetsQmlApi(overlay_base_url=base_url)
         ctx = view.engine().rootContext()
         ctx.setContextProperty("api", self._widgets_qml_api)
         qml_p = _qml_path("WidgetsView.qml")

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from PySide6.QtCore import QObject, Slot
 from PySide6.QtGui import QGuiApplication
 
@@ -19,14 +21,19 @@ class WidgetsQmlApi(QObject):
 
     @Slot(result=str)
     def chatOverlayUrl(self) -> str:
+        if not self._base:
+            return ""
         return f"{self._base}/overlay/chat?instance=main"
 
     @Slot()
     def copyChatOverlayUrl(self) -> None:
+        url = self.chatOverlayUrl()
+        if not url:
+            return
         clip = QGuiApplication.clipboard()
         if clip is None:
             return
-        clip.setText(self.chatOverlayUrl())
+        clip.setText(url)
 
     @Slot(result=str)
     def loadChatConfigJson(self) -> str:
@@ -39,5 +46,9 @@ class WidgetsQmlApi(QObject):
         if not txt:
             save_chat_config(chat_config_defaults())
             return
-        cfg = chat_config_from_json_text(txt)
+        try:
+            cfg = chat_config_from_json_text(txt)
+        except (ValueError, TypeError, json.JSONDecodeError):
+            save_chat_config(chat_config_defaults())
+            return
         save_chat_config(cfg)

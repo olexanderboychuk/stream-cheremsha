@@ -24,6 +24,7 @@ Item {
         if (obj.max_items === undefined) obj.max_items = 12;
         if (obj.font_size_px === undefined) obj.font_size_px = 18;
         if (obj.show_platform === undefined) obj.show_platform = true;
+        if (obj.fade_seconds === undefined) obj.fade_seconds = 0;
         if (!obj.bg_rgba) obj.bg_rgba = "rgba(10,12,18,0.55)";
         if (!obj.author_color) obj.author_color = "#93c5fd";
         if (!obj.text_color) obj.text_color = "#e5e7eb";
@@ -172,6 +173,24 @@ Item {
                                 onClicked: {
                                     if (cfg === null) return;
                                     cfg.show_platform = checked;
+                                    _save();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "fade_seconds"; color: muted; Layout.preferredWidth: 160 }
+                            SpinBox {
+                                id: fadeSeconds
+                                from: 0
+                                to: 600
+                                value: (cfg && cfg.fade_seconds !== undefined) ? cfg.fade_seconds : 0
+                                onValueModified: {
+                                    if (cfg === null) return;
+                                    cfg.fade_seconds = value;
                                     _save();
                                 }
                             }
