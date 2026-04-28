@@ -100,6 +100,33 @@ class ChatOverlayType:
         const log = (...args) => {{ try {{ console.log('[chat-overlay]', ...args); }} catch (e) {{ }} }};
         let _id = 0;
 
+        function ensureCompat() {{
+          if (!Number.isFinite) {{
+            Number.isFinite = function(n) {{ return typeof n === 'number' && isFinite(n); }};
+          }}
+          if (!Math.trunc) {{
+            Math.trunc = function(n) {{ return n < 0 ? Math.ceil(n) : Math.floor(n); }};
+          }}
+        }}
+
+        function showFatal(err) {{
+          try {{
+            const pre = document.createElement('pre');
+            pre.style.position = 'absolute';
+            pre.style.left = '0';
+            pre.style.top = '0';
+            pre.style.right = '0';
+            pre.style.background = 'rgba(120,0,0,0.65)';
+            pre.style.color = '#fff';
+            pre.style.padding = '8px 10px';
+            pre.style.margin = '0';
+            pre.style.fontSize = '12px';
+            pre.style.whiteSpace = 'pre-wrap';
+            pre.textContent = 'chat overlay error: ' + String(err && (err.stack || err.message) || err);
+            document.body.appendChild(pre);
+          }} catch (e) {{ }}
+        }}
+
         function clampInt(v, minV, maxV, defV) {{
           const n = Number(v);
           if (!Number.isFinite(n)) return defV;
@@ -122,7 +149,8 @@ class ChatOverlayType:
           const hue = (h % 360);
           const sat = 72;
           const light = 62;
-          return 'hsl(' + hue + 'deg ' + sat + '% ' + light + '%)';
+          // Use legacy hsl() syntax for older embedded browsers (OBS CEF).
+          return 'hsl(' + hue + ', ' + sat + '%, ' + light + '%)';
         }}
 
         function platformColor(platform) {{
@@ -208,10 +236,9 @@ class ChatOverlayType:
           const ms = Math.max(0, Math.round(fadeSeconds * 1000));
           setTimeout(() => {{
             // Mark exiting, then remove.
-            for (const node of root.children) {{
-              if (node && node.dataset && node.dataset.mid === String(id)) {{
-                node.classList.add('exit');
-              }}
+            for (let i = 0; i < root.children.length; i++) {{
+              const node = root.children[i];
+              if (node && node.dataset && node.dataset.mid === String(id)) node.classList.add('exit');
             }}
             setTimeout(() => {{
               items = items.filter(x => x.id !== id);
@@ -220,9 +247,20 @@ class ChatOverlayType:
           }}, ms);
         }}
 
+        try {{
+          ensureCompat();
+          window.addEventListener('error', (ev) => {{
+            showFatal(ev && (ev.error || ev.message) || 'unknown error');
+          }});
+        }} catch (e) {{ }}
+
         ws.onopen = () => {{
-          const subscribeMsg = {_json_for_script(subscribe_msg)};
-          ws.send(JSON.stringify(subscribeMsg));
+          try {{
+            const subscribeMsg = {_json_for_script(subscribe_msg)};
+            ws.send(JSON.stringify(subscribeMsg));
+          }} catch (e) {{
+            showFatal(e);
+          }}
         }};
 
         ws.onmessage = (ev) => {{
@@ -268,9 +306,11 @@ class ChatOverlayType:
 
         ws.onerror = () => {{
           log('ws error');
+          showFatal('ws error');
         }};
         ws.onclose = () => {{
           log('ws closed');
+          showFatal('ws closed');
         }};
       }})();
     </script>
