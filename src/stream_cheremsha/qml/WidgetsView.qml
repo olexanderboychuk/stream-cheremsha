@@ -382,6 +382,20 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "text_color"; color: muted; Layout.preferredWidth: 160 }
+                            Rectangle {
+                                width: 26
+                                height: 26
+                                radius: 8
+                                color: cfg ? (cfg.text_color || "#e5e7eb") : "#e5e7eb"
+                                border.width: 1
+                                border.color: cardEdge
+                                Layout.alignment: Qt.AlignVCenter
+                            }
+                            Button {
+                                text: "Вибрати колір"
+                                focusPolicy: Qt.NoFocus
+                                onClicked: textColorDlg.open()
+                            }
                             TextField {
                                 Layout.fillWidth: true
                                 color: ink
@@ -451,6 +465,17 @@ Item {
             if (cfg === null) return;
             _usernameCustomColor = selectedColor;
             cfg.username_color_custom = _colorToHex(_usernameCustomColor);
+            _save();
+        }
+    }
+
+    ColorDialog {
+        id: textColorDlg
+        title: "Text color"
+        selectedColor: cfg ? (cfg.text_color || "#e5e7eb") : "#e5e7eb"
+        onAccepted: {
+            if (cfg === null) return;
+            cfg.text_color = _colorToHex(selectedColor);
             _save();
         }
     }
