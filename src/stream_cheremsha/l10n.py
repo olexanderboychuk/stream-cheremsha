@@ -150,6 +150,11 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Донати з Donatik та інших сервісів",
         "en": "Donations from Donatik and other services",
     },
+    "ui.nav_widgets": {"uk": "Віджети", "en": "Widgets"},
+    "ui.nav_widgets_hint": {
+        "uk": "Налаштування віджетів (оверлеї, URL для OBS)",
+        "en": "Widget settings (overlays, OBS URLs)",
+    },
     # Donations tab (Donatik)
     "donations.title_pick": {"uk": "Ваші донати", "en": "Your donations"},
     "donations.title_donatik": {"uk": "Donatik", "en": "Donatik"},

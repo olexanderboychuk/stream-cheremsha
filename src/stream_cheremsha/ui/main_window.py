@@ -508,6 +508,19 @@ class MainWindow(QWidget):
         self._btn_footer_donations.clicked.connect(
             lambda: self._set_main_page(self._IX_DONATIONS),
         )
+        self._btn_footer_widgets = QToolButton()
+        self._btn_footer_widgets.setObjectName("footerNav")
+        self._btn_footer_widgets.setProperty("navId", "navWidgets")
+        self._btn_footer_widgets.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DesktopIcon),
+        )
+        self._btn_footer_widgets.setIconSize(QSize(18, 18))
+        self._btn_footer_widgets.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextBesideIcon,
+        )
+        self._btn_footer_widgets.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._btn_footer_widgets.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_footer_widgets.clicked.connect(self.open_widgets)
         _foot.addWidget(
             self._btn_footer_home,
             0,
@@ -515,6 +528,11 @@ class MainWindow(QWidget):
         )
         _foot.addWidget(
             self._btn_footer_donations,
+            0,
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+        )
+        _foot.addWidget(
+            self._btn_footer_widgets,
             0,
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
         )
@@ -587,9 +605,14 @@ class MainWindow(QWidget):
         on_tts = self._stack.currentIndex() == self._IX_AUDIO
         on_logs = self._stack.currentIndex() == self._IX_LOGS
         on_don = self._stack.currentIndex() == self._IX_DONATIONS
+        on_widgets = (
+            getattr(self, "_qml_widgets", None) is not None
+            and bool(getattr(self._qml_widgets, "isVisible", lambda: False)())
+        )
         for b, active in (
             (getattr(self, "_btn_footer_home", None), on_conn),
             (getattr(self, "_btn_footer_donations", None), on_don),
+            (getattr(self, "_btn_footer_widgets", None), on_widgets),
             (getattr(self, "_btn_footer_logs", None), on_logs),
             (self._btn_footer_chat, on_chat),
             (self._btn_footer_tts, on_tts),
@@ -624,6 +647,11 @@ class MainWindow(QWidget):
             self._btn_footer_donations.setText(td)
             self._btn_footer_donations.setToolTip(self._tr("ui.nav_donations_hint"))
             self._btn_footer_donations.setAccessibleName(td)
+        if hasattr(self, "_btn_footer_widgets"):
+            tw = self._tr("ui.nav_widgets")
+            self._btn_footer_widgets.setText(tw)
+            self._btn_footer_widgets.setToolTip(self._tr("ui.nav_widgets_hint"))
+            self._btn_footer_widgets.setAccessibleName(tw)
 
     def _apply_dark_chrome(self) -> None:
         self.setStyleSheet(

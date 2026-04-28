@@ -570,16 +570,6 @@ Item {
                 }
             }
 
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
-                ConnPillButton {
-                    text: "Віджети"
-                    onClicked: if (api) api.openWidgets()
-                }
-                Item { Layout.fillWidth: true }
-            }
-
             // end ColumnLayout col
         }
 
