@@ -17,6 +17,72 @@ Item {
 
     Rectangle { anchors.fill: parent; color: base }
 
+    component PillButton: Button {
+        id: pillCtl
+        property int pillFontSize: 13
+        property color colRest: "#1c2434"
+        property color colHover: "#263246"
+        property color colPress: "#303a50"
+        property color borRest: root.cardEdge
+        property color borHover: "#3b4458"
+        hoverEnabled: true
+        focusPolicy: Qt.NoFocus
+        font.pixelSize: pillFontSize
+        transformOrigin: Item.Center
+        scale: pillCtl.hovered ? 1.02 : 1.0
+        Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+        contentItem: Text {
+            text: pillCtl.text
+            color: root.ink
+            font.pixelSize: pillCtl.pillFontSize
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
+        }
+        background: Rectangle {
+            radius: 8
+            color: pillCtl.pressed ? pillCtl.colPress : (pillCtl.hovered ? pillCtl.colHover : pillCtl.colRest)
+            border.width: 1
+            border.color: pillCtl.hovered ? pillCtl.borHover : pillCtl.borRest
+            Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
+            Behavior on border.color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
+        }
+    }
+
+    component StyledComboBox: ComboBox {
+        id: cb
+        hoverEnabled: true
+        focusPolicy: Qt.NoFocus
+        font.pixelSize: 13
+        padding: 10
+        contentItem: Text {
+            text: cb.editable ? (cb.editText || "") : cb.displayText
+            color: root.ink
+            font.pixelSize: cb.font.pixelSize
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+        }
+        background: Rectangle {
+            radius: 8
+            color: root.fieldBg
+            border.width: 1
+            border.color: cb.hovered ? "#3b4458" : root.cardEdge
+        }
+        delegate: ItemDelegate {
+            width: ListView.view ? ListView.view.width : implicitWidth
+            contentItem: Text {
+                text: cb.textRole ? (modelData[cb.textRole] || "") : (modelData || "")
+                color: root.ink
+                font.pixelSize: 13
+                elide: Text.ElideRight
+            }
+            background: Rectangle {
+                radius: 6
+                color: highlighted ? "#1a2232" : "#111827"
+            }
+        }
+    }
+
     property var cfg: null
     property color _bubbleColor: "#0a0c12"
     property real _bubbleAlpha: 0.55
@@ -27,7 +93,8 @@ Item {
         if (obj.schema_version === undefined) obj.schema_version = 1;
         if (obj.max_items === undefined) obj.max_items = 12;
         if (obj.font_size_px === undefined) obj.font_size_px = 18;
-        if (obj.show_platform === undefined) obj.show_platform = true;
+        // Platform text labels are deprecated in UI (icons cover it).
+        if (obj.show_platform === undefined) obj.show_platform = false;
         if (obj.show_platform_icon === undefined) obj.show_platform_icon = true;
         if (obj.fade_seconds === undefined) obj.fade_seconds = 0;
         if (!obj.bubble_bg_rgba) obj.bubble_bg_rgba = "rgba(10,12,18,0.55)";
@@ -151,17 +218,13 @@ Item {
                             text: api ? api.chatOverlayUrl() : ""
                         }
 
-                        Button {
-                            text: "Copy URL"
-                            hoverEnabled: true
-                            focusPolicy: Qt.NoFocus
+                        PillButton {
+                            text: "Скопіювати URL"
                             onClicked: if (api) api.copyChatOverlayUrl()
                         }
 
-                        Button {
+                        PillButton {
                             text: "Закрити"
-                            hoverEnabled: true
-                            focusPolicy: Qt.NoFocus
                             onClicked: {
                                 if (typeof widgetsWindow !== "undefined" && widgetsWindow) widgetsWindow.close();
                             }
@@ -192,7 +255,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "max_items"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: "К-сть повідомлень"; color: muted; Layout.preferredWidth: 160 }
                             SpinBox {
                                 id: maxItems
                                 from: 1
@@ -210,7 +273,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "font_size_px"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: "Розмір шрифту"; color: muted; Layout.preferredWidth: 160 }
                             SpinBox {
                                 id: fontSize
                                 from: 8
@@ -228,23 +291,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "show_platform"; color: muted; Layout.preferredWidth: 160 }
-                            Switch {
-                                id: showPlatform
-                                checked: cfg ? !!cfg.show_platform : true
-                                onClicked: {
-                                    if (cfg === null) return;
-                                    cfg.show_platform = checked;
-                                    _save();
-                                }
-                            }
-                            Item { Layout.fillWidth: true }
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 10
-                            Text { text: "show_platform_icon"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: "Іконки платформ"; color: muted; Layout.preferredWidth: 160 }
                             Switch {
                                 id: showPlatformIcon
                                 checked: cfg ? !!cfg.show_platform_icon : true
@@ -260,7 +307,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "fade_seconds"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: "Авто-приховування (сек)"; color: muted; Layout.preferredWidth: 160 }
                             SpinBox {
                                 id: fadeSeconds
                                 from: 0
@@ -278,7 +325,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "bubble_bg_rgba"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: "Фон бульбашки"; color: muted; Layout.preferredWidth: 160 }
                             Rectangle {
                                 width: 26
                                 height: 26
@@ -289,7 +336,7 @@ Item {
                                 opacity: _bubbleAlpha
                                 Layout.alignment: Qt.AlignVCenter
                             }
-                            Button {
+                            PillButton {
                                 text: "Вибрати колір"
                                 focusPolicy: Qt.NoFocus
                                 onClicked: bubbleColorDlg.open()
@@ -313,7 +360,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "bubble_radius_px"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: "Заокруглення (px)"; color: muted; Layout.preferredWidth: 160 }
                             SpinBox {
                                 id: bubbleRadius
                                 from: 0
@@ -331,20 +378,20 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "username_color_mode"; color: muted; Layout.preferredWidth: 160 }
-                            ComboBox {
+                            Text { text: "Колір ніку"; color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
                                 id: usernameColorMode
-                                model: ["auto", "platform", "custom"]
+                                model: ["Авто", "Колір платформи", "Свій колір"]
                                 Layout.fillWidth: true
                                 onActivated: {
                                     if (cfg === null) return;
-                                    cfg.username_color_mode = currentText;
+                                    cfg.username_color_mode = (currentIndex === 1) ? "platform" : ((currentIndex === 2) ? "custom" : "auto");
                                     _save();
                                 }
                                 Component.onCompleted: {
                                     if (!cfg) return;
-                                    var i = model.indexOf(cfg.username_color_mode || "auto");
-                                    currentIndex = (i >= 0) ? i : 0;
+                                    var raw = cfg.username_color_mode || "auto";
+                                    currentIndex = (raw === "platform") ? 1 : ((raw === "custom") ? 2 : 0);
                                 }
                             }
                         }
@@ -353,7 +400,7 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             visible: cfg && cfg.username_color_mode === "custom"
-                            Text { text: "username_color_custom"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: "Свій колір ніку"; color: muted; Layout.preferredWidth: 160 }
                             Rectangle {
                                 width: 26
                                 height: 26
@@ -363,7 +410,7 @@ Item {
                                 border.color: cardEdge
                                 Layout.alignment: Qt.AlignVCenter
                             }
-                            Button {
+                            PillButton {
                                 text: "Вибрати колір"
                                 focusPolicy: Qt.NoFocus
                                 onClicked: usernameColorDlg.open()
@@ -381,7 +428,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "text_color"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: "Колір тексту"; color: muted; Layout.preferredWidth: 160 }
                             Rectangle {
                                 width: 26
                                 height: 26
@@ -391,7 +438,7 @@ Item {
                                 border.color: cardEdge
                                 Layout.alignment: Qt.AlignVCenter
                             }
-                            Button {
+                            PillButton {
                                 text: "Вибрати колір"
                                 focusPolicy: Qt.NoFocus
                                 onClicked: textColorDlg.open()
@@ -412,16 +459,41 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "font_family"; color: muted; Layout.preferredWidth: 160 }
-                            TextField {
+                            Text { text: "Шрифт"; color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: fontFamily
                                 Layout.fillWidth: true
-                                color: ink
-                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                                text: cfg ? (cfg.font_family || "") : ""
-                                onEditingFinished: {
+                                editable: true
+                                model: [
+                                    "Segoe UI",
+                                    "Inter",
+                                    "Roboto",
+                                    "Arial",
+                                    "Tahoma",
+                                    "Verdana",
+                                    "Noto Sans",
+                                    "Ubuntu",
+                                    "SF Pro Display"
+                                ]
+                                onActivated: {
                                     if (cfg === null) return;
-                                    cfg.font_family = text;
+                                    cfg.font_family = currentText;
                                     _save();
+                                }
+                                onAccepted: {
+                                    if (cfg === null) return;
+                                    cfg.font_family = editText || currentText;
+                                    _save();
+                                }
+                                Component.onCompleted: {
+                                    if (!cfg) return;
+                                    var ff = (cfg.font_family || "").trim();
+                                    var i = model.indexOf(ff);
+                                    if (i >= 0) currentIndex = i;
+                                    else {
+                                        currentIndex = -1;
+                                        editText = ff || "Segoe UI";
+                                    }
                                 }
                             }
                         }
