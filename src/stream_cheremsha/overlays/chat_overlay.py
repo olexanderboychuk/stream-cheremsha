@@ -178,6 +178,25 @@ class ChatOverlayType:
           return img;
         }}
 
+        function applyTextShadow(nodes) {{
+          if (!cfg || !cfg.text_shadow_enabled) {{
+            for (let i = 0; i < nodes.length; i++) {{
+              const el = nodes[i];
+              if (el && el.style) el.style.textShadow = '';
+            }}
+            return;
+          }}
+          const blur = clampInt(cfg.text_shadow_blur_px, 0, 24, 4);
+          const ox = clampInt(cfg.text_shadow_offset_x_px, -12, 12, 0);
+          const oy = clampInt(cfg.text_shadow_offset_y_px, -12, 12, 1);
+          const col = String(cfg.text_shadow_rgba || 'rgba(0,0,0,0.65)');
+          const ts = ox + 'px ' + oy + 'px ' + blur + 'px ' + col;
+          for (let i = 0; i < nodes.length; i++) {{
+            const el = nodes[i];
+            if (el && el.style) el.style.textShadow = ts;
+          }}
+        }}
+
         function applyCfg() {{
           if (!cfg) return;
           document.body.style.fontFamily = cfg.font_family || 'system-ui';
@@ -217,6 +236,8 @@ class ChatOverlayType:
             const t = document.createElement('span');
             t.textContent = it.text || '';
             row.appendChild(t);
+
+            applyTextShadow([a, t]);
 
             root.appendChild(row);
           }}

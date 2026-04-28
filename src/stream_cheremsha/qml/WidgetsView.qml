@@ -176,6 +176,8 @@ Item {
     property color _bubbleColor: "#0a0c12"
     property real _bubbleAlpha: 0.55
     property color _usernameCustomColor: "#93c5fd"
+    property color _textShadowColor: "#000000"
+    property real _textShadowAlpha: 0.65
 
     function _ensureDefaults(obj) {
         if (!obj) obj = {};
@@ -191,6 +193,11 @@ Item {
         if (!obj.username_color_mode) obj.username_color_mode = "auto";
         if (!obj.username_color_custom) obj.username_color_custom = "#93c5fd";
         if (!obj.text_color) obj.text_color = "#e5e7eb";
+        if (obj.text_shadow_enabled === undefined) obj.text_shadow_enabled = false;
+        if (!obj.text_shadow_rgba) obj.text_shadow_rgba = "rgba(0,0,0,0.65)";
+        if (obj.text_shadow_blur_px === undefined) obj.text_shadow_blur_px = 4;
+        if (obj.text_shadow_offset_x_px === undefined) obj.text_shadow_offset_x_px = 0;
+        if (obj.text_shadow_offset_y_px === undefined) obj.text_shadow_offset_y_px = 1;
         if (!obj.font_family) obj.font_family = "Segoe UI";
         return obj;
     }
@@ -548,6 +555,115 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
+                            Text { text: "Тінь тексту"; color: muted; Layout.preferredWidth: 160 }
+                            Switch {
+                                id: textShadowSw
+                                checked: cfg ? !!cfg.text_shadow_enabled : false
+                                onClicked: {
+                                    if (cfg === null) return;
+                                    cfg.text_shadow_enabled = checked;
+                                    _save();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            visible: cfg && cfg.text_shadow_enabled
+                            Text { text: "Колір тіні"; color: muted; Layout.preferredWidth: 160 }
+                            Rectangle {
+                                width: 26
+                                height: 26
+                                radius: 8
+                                color: _textShadowColor
+                                border.width: 1
+                                border.color: cardEdge
+                                opacity: _textShadowAlpha
+                                Layout.alignment: Qt.AlignVCenter
+                            }
+                            PillButton {
+                                text: "Вибрати колір"
+                                focusPolicy: Qt.NoFocus
+                                onClicked: textShadowColorDlg.open()
+                            }
+                            Slider {
+                                id: shadowAlpha
+                                Layout.fillWidth: true
+                                from: 0.0
+                                to: 1.0
+                                stepSize: 0.01
+                                value: _textShadowAlpha
+                                onMoved: {
+                                    if (cfg === null) return;
+                                    _textShadowAlpha = value;
+                                    cfg.text_shadow_rgba = _rgbaString(_textShadowColor, _textShadowAlpha);
+                                    _save();
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            visible: cfg && cfg.text_shadow_enabled
+                            Text { text: "Розмиття тіні"; color: muted; Layout.preferredWidth: 160 }
+                            StyledSpinBox {
+                                id: textShadowBlur
+                                from: 0
+                                to: 24
+                                value: (cfg && cfg.text_shadow_blur_px !== undefined) ? cfg.text_shadow_blur_px : 4
+                                onValueModified: {
+                                    if (cfg === null) return;
+                                    cfg.text_shadow_blur_px = value;
+                                    _save();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            visible: cfg && cfg.text_shadow_enabled
+                            Text { text: "Зміщення X"; color: muted; Layout.preferredWidth: 160 }
+                            StyledSpinBox {
+                                id: textShadowOffX
+                                from: -12
+                                to: 12
+                                value: (cfg && cfg.text_shadow_offset_x_px !== undefined) ? cfg.text_shadow_offset_x_px : 0
+                                onValueModified: {
+                                    if (cfg === null) return;
+                                    cfg.text_shadow_offset_x_px = value;
+                                    _save();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            visible: cfg && cfg.text_shadow_enabled
+                            Text { text: "Зміщення Y"; color: muted; Layout.preferredWidth: 160 }
+                            StyledSpinBox {
+                                id: textShadowOffY
+                                from: -12
+                                to: 12
+                                value: (cfg && cfg.text_shadow_offset_y_px !== undefined) ? cfg.text_shadow_offset_y_px : 1
+                                onValueModified: {
+                                    if (cfg === null) return;
+                                    cfg.text_shadow_offset_y_px = value;
+                                    _save();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
                             Text { text: "Шрифт"; color: muted; Layout.preferredWidth: 160 }
                             StyledComboBox {
                                 id: fontFamily
@@ -602,6 +718,10 @@ Item {
                 _bubbleAlpha = p.a;
                 bubbleAlpha.value = _bubbleAlpha;
                 _usernameCustomColor = cfg.username_color_custom || "#93c5fd";
+                var sp = _parseRgba(cfg.text_shadow_rgba || "rgba(0,0,0,0.65)");
+                _textShadowColor = sp.c;
+                _textShadowAlpha = sp.a;
+                shadowAlpha.value = _textShadowAlpha;
             }
         }
     }
@@ -637,6 +757,18 @@ Item {
         onAccepted: {
             if (cfg === null) return;
             cfg.text_color = _colorToHex(selectedColor);
+            _save();
+        }
+    }
+
+    ColorDialog {
+        id: textShadowColorDlg
+        title: "Text shadow color"
+        selectedColor: _textShadowColor
+        onAccepted: {
+            if (cfg === null) return;
+            _textShadowColor = selectedColor;
+            cfg.text_shadow_rgba = _rgbaString(_textShadowColor, _textShadowAlpha);
             _save();
         }
     }

@@ -18,6 +18,11 @@ class ChatOverlayConfig:
     username_color_mode: str
     username_color_custom: str
     text_color: str
+    text_shadow_enabled: bool
+    text_shadow_rgba: str
+    text_shadow_blur_px: int
+    text_shadow_offset_x_px: int
+    text_shadow_offset_y_px: int
     show_platform: bool
     show_platform_icon: bool
     bubble_bg_rgba: str
@@ -37,6 +42,11 @@ def chat_config_defaults() -> ChatOverlayConfig:
         username_color_mode="auto",
         username_color_custom="#93c5fd",
         text_color="#e5e7eb",
+        text_shadow_enabled=False,
+        text_shadow_rgba="rgba(0,0,0,0.65)",
+        text_shadow_blur_px=4,
+        text_shadow_offset_x_px=0,
+        text_shadow_offset_y_px=1,
         show_platform=True,
         show_platform_icon=True,
         bubble_bg_rgba="rgba(10,12,18,0.55)",
@@ -70,6 +80,11 @@ def chat_config_to_json_text(cfg: ChatOverlayConfig) -> str:
         "username_color_mode": str(cfg.username_color_mode),
         "username_color_custom": str(cfg.username_color_custom),
         "text_color": str(cfg.text_color),
+        "text_shadow_enabled": bool(cfg.text_shadow_enabled),
+        "text_shadow_rgba": str(cfg.text_shadow_rgba),
+        "text_shadow_blur_px": int(cfg.text_shadow_blur_px),
+        "text_shadow_offset_x_px": int(cfg.text_shadow_offset_x_px),
+        "text_shadow_offset_y_px": int(cfg.text_shadow_offset_y_px),
         "show_platform": bool(cfg.show_platform),
         "show_platform_icon": bool(cfg.show_platform_icon),
         "bubble_bg_rgba": str(cfg.bubble_bg_rgba),
@@ -95,6 +110,22 @@ def chat_config_from_json_text(text: str) -> ChatOverlayConfig:
         username_color_mode = d.username_color_mode
     username_color_custom = str(raw.get("username_color_custom") or d.username_color_custom)
     text_color = str(raw.get("text_color") or d.text_color)
+    text_shadow_enabled = bool(raw.get("text_shadow_enabled", d.text_shadow_enabled))
+    text_shadow_rgba = str(raw.get("text_shadow_rgba") or d.text_shadow_rgba)
+    text_shadow_blur_px = max(
+        0,
+        min(24, _ensure_int(raw.get("text_shadow_blur_px"), default=d.text_shadow_blur_px)),
+    )
+    text_shadow_offset_x_px = _ensure_int(
+        raw.get("text_shadow_offset_x_px"),
+        default=d.text_shadow_offset_x_px,
+    )
+    text_shadow_offset_x_px = max(-12, min(12, text_shadow_offset_x_px))
+    text_shadow_offset_y_px = _ensure_int(
+        raw.get("text_shadow_offset_y_px"),
+        default=d.text_shadow_offset_y_px,
+    )
+    text_shadow_offset_y_px = max(-12, min(12, text_shadow_offset_y_px))
     show_platform = bool(raw.get("show_platform", d.show_platform))
     show_platform_icon = bool(raw.get("show_platform_icon", d.show_platform_icon))
     bubble_bg_rgba = str(raw.get("bubble_bg_rgba") or d.bubble_bg_rgba)
@@ -108,6 +139,11 @@ def chat_config_from_json_text(text: str) -> ChatOverlayConfig:
         username_color_mode=username_color_mode,
         username_color_custom=username_color_custom,
         text_color=text_color,
+        text_shadow_enabled=text_shadow_enabled,
+        text_shadow_rgba=text_shadow_rgba,
+        text_shadow_blur_px=text_shadow_blur_px,
+        text_shadow_offset_x_px=text_shadow_offset_x_px,
+        text_shadow_offset_y_px=text_shadow_offset_y_px,
         show_platform=show_platform,
         show_platform_icon=show_platform_icon,
         bubble_bg_rgba=bubble_bg_rgba,
