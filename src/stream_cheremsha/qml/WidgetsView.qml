@@ -17,6 +17,8 @@ Item {
 
     Rectangle { anchors.fill: parent; color: base }
 
+    readonly property int titleBarH: 44
+
     component PillButton: Button {
         id: pillCtl
         property int pillFontSize: 13
@@ -91,6 +93,13 @@ Item {
         implicitHeight: 34
         implicitWidth: 150
 
+        function _stepBy(delta) {
+            var next = sb.value + delta;
+            if (next < sb.from) next = sb.from;
+            if (next > sb.to) next = sb.to;
+            sb.value = next;
+        }
+
         contentItem: TextInput {
             text: sb.displayText
             color: root.ink
@@ -135,7 +144,7 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: sb.decrease()
+                    onClicked: sb._stepBy(-sb.stepSize)
                 }
             }
         }
@@ -166,7 +175,7 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: sb.increase()
+                    onClicked: sb._stepBy(sb.stepSize)
                 }
             }
         }
@@ -275,6 +284,97 @@ Item {
             anchors.margins: 14
             spacing: 12
 
+            // Custom title bar (frameless window controls).
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: root.titleBarH
+                visible: typeof winApi !== "undefined" && winApi !== null
+                radius: 14
+                color: cardBase
+                border.width: 1
+                border.color: cardEdge
+
+                MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.LeftButton
+                    onDoubleClicked: if (winApi) winApi.toggleMaximize()
+                    onPressed: if (winApi) winApi.startMove()
+                }
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    spacing: 10
+
+                    Text {
+                        text: "Віджети"
+                        color: ink
+                        font.pixelSize: 14
+                        font.bold: true
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
+                        verticalAlignment: Text.AlignVCenter
+                    }
+
+                    // Window controls
+                    component WinBtn: Rectangle {
+                        id: b
+                        signal clicked()
+                        property string glyph: "?"
+                        property color bgRest: "#1c2434"
+                        property color bgHover: "#263246"
+                        property color bgPress: "#303a50"
+                        property color fg: root.ink
+                        property color bor: root.cardEdge
+                        property color borHover: "#3b4458"
+                        property bool danger: false
+                        implicitWidth: 34
+                        implicitHeight: 28
+                        radius: 8
+                        border.width: 1
+                        color: ma.pressed ? (danger ? "#7f1d1d" : bgPress) : (ma.containsMouse ? (danger ? "#991b1b" : bgHover) : bgRest)
+                        border.color: ma.containsMouse ? borHover : bor
+                        Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                        Behavior on border.color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: b.glyph
+                            color: b.fg
+                            font.pixelSize: 14
+                            font.weight: Font.DemiBold
+                        }
+
+                        MouseArea {
+                            id: ma
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: b.clicked()
+                        }
+                    }
+
+                    WinBtn {
+                        glyph: "—"
+                        Layout.alignment: Qt.AlignVCenter
+                        onClicked: if (winApi) winApi.minimize()
+                    }
+
+                    WinBtn {
+                        glyph: (winApi && winApi.isMaximized()) ? "❐" : "□"
+                        Layout.alignment: Qt.AlignVCenter
+                        onClicked: if (winApi) winApi.toggleMaximize()
+                    }
+
+                    WinBtn {
+                        glyph: "×"
+                        danger: true
+                        Layout.alignment: Qt.AlignVCenter
+                        onClicked: if (winApi) winApi.close()
+                    }
+                }
+            }
+
             Rectangle {
                 Layout.fillWidth: true
                 radius: 14
@@ -311,7 +411,7 @@ Item {
                             color: ink
                             font.pixelSize: 12
                             background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                            text: api ? api.chatOverlayUrl() : ""
+                            text: api ? api.chatOverlayUrlValue : ""
                         }
 
                         PillButton {
@@ -322,7 +422,8 @@ Item {
                         PillButton {
                             text: "Закрити"
                             onClicked: {
-                                if (typeof widgetsWindow !== "undefined" && widgetsWindow) widgetsWindow.close();
+                                if (typeof navApi !== "undefined" && navApi) navApi.goHome();
+                                else if (winApi) winApi.close();
                             }
                         }
                     }
