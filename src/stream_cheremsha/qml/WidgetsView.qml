@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 
 Item {
@@ -17,6 +18,9 @@ Item {
     Rectangle { anchors.fill: parent; color: base }
 
     property var cfg: null
+    property color _bubbleColor: "#0a0c12"
+    property real _bubbleAlpha: 0.55
+    property color _usernameCustomColor: "#93c5fd"
 
     function _ensureDefaults(obj) {
         if (!obj) obj = {};
@@ -33,6 +37,52 @@ Item {
         if (!obj.text_color) obj.text_color = "#e5e7eb";
         if (!obj.font_family) obj.font_family = "Segoe UI";
         return obj;
+    }
+
+    function _clamp01(v) {
+        if (v === undefined || v === null) return 0;
+        var n = Number(v);
+        if (!isFinite(n)) return 0;
+        if (n < 0) return 0;
+        if (n > 1) return 1;
+        return n;
+    }
+
+    function _toByte(v) {
+        var n = Math.round(Number(v) * 255);
+        if (!isFinite(n)) return 0;
+        if (n < 0) return 0;
+        if (n > 255) return 255;
+        return n;
+    }
+
+    function _hex2(n) {
+        var s = n.toString(16);
+        return (s.length === 1) ? ("0" + s) : s;
+    }
+
+    function _colorToHex(c) {
+        // QML color has r/g/b in 0..1
+        return "#" + _hex2(_toByte(c.r)) + _hex2(_toByte(c.g)) + _hex2(_toByte(c.b));
+    }
+
+    function _rgbaString(c, a) {
+        return "rgba(" + _toByte(c.r) + "," + _toByte(c.g) + "," + _toByte(c.b) + "," + _clamp01(a) + ")";
+    }
+
+    function _parseRgba(s) {
+        // returns {c: color, a: alpha}
+        var txt = (s || "").trim();
+        var m = /^rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([0-9.]+)\s*\)$/i.exec(txt);
+        if (m) {
+            var r = Math.max(0, Math.min(255, parseInt(m[1])));
+            var g = Math.max(0, Math.min(255, parseInt(m[2])));
+            var b = Math.max(0, Math.min(255, parseInt(m[3])));
+            var a = _clamp01(parseFloat(m[4]));
+            return { c: Qt.rgba(r/255.0, g/255.0, b/255.0, 1.0), a: a };
+        }
+        // Fallback: let Qt parse color; assume alpha from cfg or default.
+        return { c: txt ? txt : "#0a0c12", a: 0.55 };
     }
 
     function _save() {
@@ -229,14 +279,32 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "bubble_bg_rgba"; color: muted; Layout.preferredWidth: 160 }
-                            TextField {
+                            Rectangle {
+                                width: 26
+                                height: 26
+                                radius: 8
+                                color: _bubbleColor
+                                border.width: 1
+                                border.color: cardEdge
+                                opacity: _bubbleAlpha
+                                Layout.alignment: Qt.AlignVCenter
+                            }
+                            Button {
+                                text: "Вибрати колір"
+                                focusPolicy: Qt.NoFocus
+                                onClicked: bubbleColorDlg.open()
+                            }
+                            Slider {
+                                id: bubbleAlpha
                                 Layout.fillWidth: true
-                                color: ink
-                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                                text: cfg ? (cfg.bubble_bg_rgba || "") : ""
-                                onEditingFinished: {
+                                from: 0.0
+                                to: 1.0
+                                stepSize: 0.01
+                                value: _bubbleAlpha
+                                onMoved: {
                                     if (cfg === null) return;
-                                    cfg.bubble_bg_rgba = text;
+                                    _bubbleAlpha = value;
+                                    cfg.bubble_bg_rgba = _rgbaString(_bubbleColor, _bubbleAlpha);
                                     _save();
                                 }
                             }
@@ -286,16 +354,27 @@ Item {
                             spacing: 10
                             visible: cfg && cfg.username_color_mode === "custom"
                             Text { text: "username_color_custom"; color: muted; Layout.preferredWidth: 160 }
-                            TextField {
-                                Layout.fillWidth: true
-                                color: ink
-                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                            Rectangle {
+                                width: 26
+                                height: 26
+                                radius: 8
+                                color: _usernameCustomColor
+                                border.width: 1
+                                border.color: cardEdge
+                                Layout.alignment: Qt.AlignVCenter
+                            }
+                            Button {
+                                text: "Вибрати колір"
+                                focusPolicy: Qt.NoFocus
+                                onClicked: usernameColorDlg.open()
+                            }
+                            Text {
                                 text: cfg ? (cfg.username_color_custom || "") : ""
-                                onEditingFinished: {
-                                    if (cfg === null) return;
-                                    cfg.username_color_custom = text;
-                                    _save();
-                                }
+                                color: muted
+                                font.pixelSize: 11
+                                Layout.fillWidth: true
+                                horizontalAlignment: Text.AlignRight
+                                elide: Text.ElideRight
                             }
                         }
 
@@ -342,7 +421,37 @@ Item {
                 var obj = null;
                 try { obj = JSON.parse(raw); } catch (e) { obj = {}; }
                 cfg = _ensureDefaults(obj);
+                // Initialize derived UI state for pickers.
+                var p = _parseRgba(cfg.bubble_bg_rgba);
+                _bubbleColor = p.c;
+                _bubbleAlpha = p.a;
+                bubbleAlpha.value = _bubbleAlpha;
+                _usernameCustomColor = cfg.username_color_custom || "#93c5fd";
             }
+        }
+    }
+
+    ColorDialog {
+        id: bubbleColorDlg
+        title: "Bubble background color"
+        currentColor: _bubbleColor
+        onAccepted: {
+            if (cfg === null) return;
+            _bubbleColor = selectedColor;
+            cfg.bubble_bg_rgba = _rgbaString(_bubbleColor, _bubbleAlpha);
+            _save();
+        }
+    }
+
+    ColorDialog {
+        id: usernameColorDlg
+        title: "Username color"
+        currentColor: _usernameCustomColor
+        onAccepted: {
+            if (cfg === null) return;
+            _usernameCustomColor = selectedColor;
+            cfg.username_color_custom = _colorToHex(_usernameCustomColor);
+            _save();
         }
     }
 }
