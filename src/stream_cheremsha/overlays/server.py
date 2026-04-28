@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import mimetypes
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from aiohttp import WSCloseCode
@@ -81,8 +83,24 @@ class OverlayServer:
         return web.Response(text="ok", content_type="text/plain")
 
     async def _assets(self, _req: web.Request) -> web.Response:
-        # Foundation route: real static assets can be added later. For now, return 404.
-        raise web.HTTPNotFound(text="assets not found")
+        rel = str(_req.match_info.get("path") or "").lstrip("/")
+        if not rel:
+            raise web.HTTPNotFound(text="asset not found")
+        # Prevent path traversal.
+        if "\\" in rel or ":" in rel:
+            raise web.HTTPNotFound(text="asset not found")
+        base = Path(__file__).resolve().parents[1] / "assets"
+        p = (base / rel).resolve()
+        try:
+            p.relative_to(base)
+        except ValueError as e:
+            raise web.HTTPNotFound(text="asset not found") from e
+        if not p.is_file():
+            raise web.HTTPNotFound(text="asset not found")
+        ctype, _enc = mimetypes.guess_type(str(p))
+        if p.suffix.lower() == ".svg":
+            ctype = "image/svg+xml"
+        return web.FileResponse(path=p, headers={"Content-Type": ctype or "application/octet-stream"})
 
     async def _overlay_page(self, req: web.Request) -> web.Response:
         overlay_type = str(req.match_info.get("overlay_type") or "").strip()

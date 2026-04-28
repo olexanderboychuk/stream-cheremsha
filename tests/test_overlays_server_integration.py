@@ -46,6 +46,9 @@ async def test_overlay_server_health_and_debug_html() -> None:
                 assert r.status == 200
                 body = await r.text()
                 assert "<!doctype html>" in body.lower()
+            async with s.get(f"{base}/assets/twitch.svg") as r:
+                assert r.status == 200
+                assert "svg" in (r.headers.get("Content-Type") or "").lower()
     finally:
         await srv.stop()
 

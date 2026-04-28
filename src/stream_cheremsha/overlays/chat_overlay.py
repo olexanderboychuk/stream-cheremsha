@@ -67,11 +67,13 @@ class ChatOverlayType:
       html, body {{ margin: 0; padding: 0; background: transparent; overflow: hidden; }}
       body {{ font-family: system-ui, sans-serif; }}
       .wrap {{ padding: 10px; }}
-      .msg {{ margin: 0 0 8px 0; padding: 8px 10px; border-radius: 10px; display:flex; gap:6px; align-items: baseline; }}
+      .msg {{ margin: 0 0 8px 0; padding: 8px 10px; border-radius: 10px; display:flex; }}
+      .msg {{ gap:6px; align-items: baseline; }}
       .author {{ font-weight: 700; margin-right: 6px; }}
       .platform {{ opacity: 0.9; margin-right: 2px; }}
-      .picon {{ width: 14px; height: 14px; display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; }}
-      .pbadge {{ display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; border-radius:4px; font-size:9px; font-weight:800; letter-spacing:0.2px; color:#0b0e15; }}
+      .picon {{ width: 14px; height: 14px; display:inline-flex; flex:0 0 auto; }}
+      .picon {{ align-items:center; justify-content:center; }}
+      .pimg {{ width: 14px; height: 14px; display:block; opacity: 0.92; }}
 
       .enter {{ animation: enter 180ms ease-out both; }}
       .exit {{ animation: exit 320ms ease-in both; }}
@@ -140,14 +142,12 @@ class ChatOverlayType:
 
         function platformIconEl(platform) {{
           const p = String(platform || '').toLowerCase();
-          const el = document.createElement('span');
-          el.className = 'pbadge';
-          if (p === 'twitch') {{ el.textContent = 'TW'; el.style.background = '#a78bfa'; return el; }}
-          if (p === 'youtube') {{ el.textContent = 'YT'; el.style.background = '#f87171'; return el; }}
-          if (p === 'tiktok') {{ el.textContent = 'TK'; el.style.background = '#7dd3fc'; return el; }}
-          el.textContent = '?';
-          el.style.background = '#94a3b8';
-          return el;
+          const img = document.createElement('img');
+          img.className = 'pimg';
+          const name = (p === 'twitch' || p === 'youtube' || p === 'tiktok') ? p : 'pulse';
+          img.src = '/assets/' + name + '.svg';
+          img.alt = p;
+          return img;
         }}
 
         function applyCfg() {{
