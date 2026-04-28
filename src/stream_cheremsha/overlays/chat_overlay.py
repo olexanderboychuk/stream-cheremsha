@@ -67,9 +67,22 @@ class ChatOverlayType:
       html, body {{ margin: 0; padding: 0; background: transparent; overflow: hidden; }}
       body {{ font-family: system-ui, sans-serif; }}
       .wrap {{ padding: 10px; }}
-      .msg {{ margin: 0 0 8px 0; padding: 8px 10px; border-radius: 10px; }}
+      .msg {{ margin: 0 0 8px 0; padding: 8px 10px; border-radius: 10px; display:flex; gap:6px; align-items: baseline; }}
       .author {{ font-weight: 700; margin-right: 6px; }}
-      .platform {{ opacity: 0.85; margin-right: 6px; }}
+      .platform {{ opacity: 0.9; margin-right: 2px; }}
+      .picon {{ width: 14px; height: 14px; display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; }}
+      .pbadge {{ display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; border-radius:4px; font-size:9px; font-weight:800; letter-spacing:0.2px; color:#0b0e15; }}
+
+      .enter {{ animation: enter 180ms ease-out both; }}
+      .exit {{ animation: exit 320ms ease-in both; }}
+      @keyframes enter {{
+        from {{ transform: translateY(6px); opacity: 0; }}
+        to {{ transform: translateY(0); opacity: 1; }}
+      }}
+      @keyframes exit {{
+        from {{ opacity: 1; }}
+        to {{ opacity: 0; }}
+      }}
     </style>
   </head>
   <body>
@@ -80,29 +93,92 @@ class ChatOverlayType:
         const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
         const ws = new WebSocket(wsUrl);
         let cfg = null;
+        // items: array of message objects (id, author, text, platform, received_at)
         let items = [];
         const log = (...args) => {{ try {{ console.log('[chat-overlay]', ...args); }} catch (e) {{ }} }};
+        let _id = 0;
+
+        function clampInt(v, minV, maxV, defV) {{
+          const n = Number(v);
+          if (!Number.isFinite(n)) return defV;
+          const i = Math.trunc(n);
+          return Math.max(minV, Math.min(maxV, i));
+        }}
+
+        function hash32(s) {{
+          // FNV-1a
+          let h = 2166136261;
+          for (let i = 0; i < s.length; i++) {{
+            h ^= s.charCodeAt(i);
+            h = Math.imul(h, 16777619);
+          }}
+          return h >>> 0;
+        }}
+
+        function autoUserColor(author) {{
+          const h = hash32(String(author || ''));
+          const hue = (h % 360);
+          const sat = 72;
+          const light = 62;
+          return 'hsl(' + hue + 'deg ' + sat + '% ' + light + '%)';
+        }}
+
+        function platformColor(platform) {{
+          const p = String(platform || '').toLowerCase();
+          if (p === 'twitch') return '#a78bfa';
+          if (p === 'youtube') return '#f87171';
+          if (p === 'tiktok') return '#7dd3fc';
+          return '#93c5fd';
+        }}
+
+        function usernameColor(it) {{
+          const mode = String(cfg && cfg.username_color_mode || 'auto');
+          if (mode === 'platform') return platformColor(it.platform);
+          if (mode === 'custom') return String(cfg && cfg.username_color_custom || '#93c5fd');
+          return autoUserColor(it.author);
+        }}
+
+        function platformIconEl(platform) {{
+          const p = String(platform || '').toLowerCase();
+          const el = document.createElement('span');
+          el.className = 'pbadge';
+          if (p === 'twitch') {{ el.textContent = 'TW'; el.style.background = '#a78bfa'; return el; }}
+          if (p === 'youtube') {{ el.textContent = 'YT'; el.style.background = '#f87171'; return el; }}
+          if (p === 'tiktok') {{ el.textContent = 'TK'; el.style.background = '#7dd3fc'; return el; }}
+          el.textContent = '?';
+          el.style.background = '#94a3b8';
+          return el;
+        }}
 
         function applyCfg() {{
           if (!cfg) return;
           document.body.style.fontFamily = cfg.font_family || 'system-ui';
-          document.body.style.fontSize = (cfg.font_size_px || 18) + 'px';
+          document.body.style.fontSize = clampInt(cfg.font_size_px, 8, 96, 18) + 'px';
         }}
 
         function render() {{
           root.innerHTML = '';
           if (!cfg) return;
-          const maxItems = Math.max(1, cfg.max_items || 12);
-          const bg = cfg.bg_rgba || 'rgba(10,12,18,0.55)';
-          const authorColor = cfg.author_color || '#93c5fd';
+          const maxItems = clampInt(cfg.max_items, 1, 200, 12);
+          const bubbleBg = cfg.bubble_bg_rgba || 'rgba(10,12,18,0.55)';
+          const bubbleRadius = clampInt(cfg.bubble_radius_px, 0, 60, 10);
           const textColor = cfg.text_color || '#e5e7eb';
           const showPlatform = !!cfg.show_platform;
+          const showPlatformIcon = !!cfg.show_platform_icon;
           const view = items.slice(-maxItems);
           for (const it of view) {{
             const row = document.createElement('div');
             row.className = 'msg';
-            row.style.background = bg;
+            row.style.background = bubbleBg;
+            row.style.borderRadius = bubbleRadius + 'px';
             row.style.color = textColor;
+
+            if (showPlatformIcon) {{
+              const ico = document.createElement('span');
+              ico.className = 'picon';
+              ico.appendChild(platformIconEl(it.platform));
+              row.appendChild(ico);
+            }}
 
             if (showPlatform) {{
               const pl = document.createElement('span');
@@ -113,7 +189,7 @@ class ChatOverlayType:
 
             const a = document.createElement('span');
             a.className = 'author';
-            a.style.color = authorColor;
+            a.style.color = usernameColor(it);
             a.textContent = (it.author || '—') + ':';
             row.appendChild(a);
 
@@ -123,6 +199,25 @@ class ChatOverlayType:
 
             root.appendChild(row);
           }}
+        }}
+
+        function scheduleExit(id) {{
+          if (!cfg) return;
+          const fadeSeconds = Number(cfg.fade_seconds || 0);
+          if (!Number.isFinite(fadeSeconds) || fadeSeconds <= 0) return;
+          const ms = Math.max(0, Math.round(fadeSeconds * 1000));
+          setTimeout(() => {{
+            // Mark exiting, then remove.
+            for (const node of root.children) {{
+              if (node && node.dataset && node.dataset.mid === String(id)) {{
+                node.classList.add('exit');
+              }}
+            }}
+            setTimeout(() => {{
+              items = items.filter(x => x.id !== id);
+              render();
+            }}, 360);
+          }}, ms);
         }}
 
         ws.onopen = () => {{
@@ -144,12 +239,24 @@ class ChatOverlayType:
           if (obj.op === 'patch') {{
             const p = obj.patch || {{}};
             if (p.append) {{
-              items.push(p.append);
+              const it = Object.assign({{}}, p.append);
+              it.id = (++_id);
+              items.push(it);
               // Prevent unbounded growth: keep a small buffer beyond visible window.
               const maxItems = Math.max(1, (cfg && cfg.max_items) ? cfg.max_items : 12);
               const cap = Math.max(25, maxItems * 5);
               if (items.length > cap) items = items.slice(-cap);
               render();
+              // Add enter animation to last item.
+              const last = root.lastElementChild;
+              if (last) {{
+                last.classList.add('enter');
+                last.dataset.mid = String(it.id);
+                requestAnimationFrame(() => {{
+                  // Let animation play; keep class.
+                }});
+              }}
+              scheduleExit(it.id);
             }}
             if (p.config) {{
               cfg = p.config;

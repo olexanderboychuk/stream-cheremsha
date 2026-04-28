@@ -24,9 +24,12 @@ Item {
         if (obj.max_items === undefined) obj.max_items = 12;
         if (obj.font_size_px === undefined) obj.font_size_px = 18;
         if (obj.show_platform === undefined) obj.show_platform = true;
+        if (obj.show_platform_icon === undefined) obj.show_platform_icon = true;
         if (obj.fade_seconds === undefined) obj.fade_seconds = 0;
-        if (!obj.bg_rgba) obj.bg_rgba = "rgba(10,12,18,0.55)";
-        if (!obj.author_color) obj.author_color = "#93c5fd";
+        if (!obj.bubble_bg_rgba) obj.bubble_bg_rgba = "rgba(10,12,18,0.55)";
+        if (obj.bubble_radius_px === undefined) obj.bubble_radius_px = 10;
+        if (!obj.username_color_mode) obj.username_color_mode = "auto";
+        if (!obj.username_color_custom) obj.username_color_custom = "#93c5fd";
         if (!obj.text_color) obj.text_color = "#e5e7eb";
         if (!obj.font_family) obj.font_family = "Segoe UI";
         return obj;
@@ -191,6 +194,22 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
+                            Text { text: "show_platform_icon"; color: muted; Layout.preferredWidth: 160 }
+                            Switch {
+                                id: showPlatformIcon
+                                checked: cfg ? !!cfg.show_platform_icon : true
+                                onClicked: {
+                                    if (cfg === null) return;
+                                    cfg.show_platform_icon = checked;
+                                    _save();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
                             Text { text: "fade_seconds"; color: muted; Layout.preferredWidth: 160 }
                             SpinBox {
                                 id: fadeSeconds
@@ -209,15 +228,15 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "bg_rgba"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: "bubble_bg_rgba"; color: muted; Layout.preferredWidth: 160 }
                             TextField {
                                 Layout.fillWidth: true
                                 color: ink
                                 background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                                text: cfg ? (cfg.bg_rgba || "") : ""
+                                text: cfg ? (cfg.bubble_bg_rgba || "") : ""
                                 onEditingFinished: {
                                     if (cfg === null) return;
-                                    cfg.bg_rgba = text;
+                                    cfg.bubble_bg_rgba = text;
                                     _save();
                                 }
                             }
@@ -226,15 +245,55 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "author_color"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: "bubble_radius_px"; color: muted; Layout.preferredWidth: 160 }
+                            SpinBox {
+                                id: bubbleRadius
+                                from: 0
+                                to: 60
+                                value: (cfg && cfg.bubble_radius_px !== undefined) ? cfg.bubble_radius_px : 10
+                                onValueModified: {
+                                    if (cfg === null) return;
+                                    cfg.bubble_radius_px = value;
+                                    _save();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "username_color_mode"; color: muted; Layout.preferredWidth: 160 }
+                            ComboBox {
+                                id: usernameColorMode
+                                model: ["auto", "platform", "custom"]
+                                Layout.fillWidth: true
+                                onActivated: {
+                                    if (cfg === null) return;
+                                    cfg.username_color_mode = currentText;
+                                    _save();
+                                }
+                                Component.onCompleted: {
+                                    if (!cfg) return;
+                                    var i = model.indexOf(cfg.username_color_mode || "auto");
+                                    currentIndex = (i >= 0) ? i : 0;
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            visible: cfg && cfg.username_color_mode === "custom"
+                            Text { text: "username_color_custom"; color: muted; Layout.preferredWidth: 160 }
                             TextField {
                                 Layout.fillWidth: true
                                 color: ink
                                 background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                                text: cfg ? (cfg.author_color || "") : ""
+                                text: cfg ? (cfg.username_color_custom || "") : ""
                                 onEditingFinished: {
                                     if (cfg === null) return;
-                                    cfg.author_color = text;
+                                    cfg.username_color_custom = text;
                                     _save();
                                 }
                             }

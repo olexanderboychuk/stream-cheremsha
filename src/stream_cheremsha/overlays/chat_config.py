@@ -15,10 +15,13 @@ class ChatOverlayConfig:
     max_items: int
     font_family: str
     font_size_px: int
-    author_color: str
+    username_color_mode: str
+    username_color_custom: str
     text_color: str
-    bg_rgba: str
     show_platform: bool
+    show_platform_icon: bool
+    bubble_bg_rgba: str
+    bubble_radius_px: int
     fade_seconds: float
 
     def replace(self, **kwargs: object) -> "ChatOverlayConfig":
@@ -31,10 +34,13 @@ def chat_config_defaults() -> ChatOverlayConfig:
         max_items=12,
         font_family="Segoe UI",
         font_size_px=18,
-        author_color="#93c5fd",
+        username_color_mode="auto",
+        username_color_custom="#93c5fd",
         text_color="#e5e7eb",
-        bg_rgba="rgba(10,12,18,0.55)",
         show_platform=True,
+        show_platform_icon=True,
+        bubble_bg_rgba="rgba(10,12,18,0.55)",
+        bubble_radius_px=10,
         fade_seconds=0.0,
     )
 
@@ -61,10 +67,13 @@ def chat_config_to_json_text(cfg: ChatOverlayConfig) -> str:
         "max_items": int(cfg.max_items),
         "font_family": str(cfg.font_family),
         "font_size_px": int(cfg.font_size_px),
-        "author_color": str(cfg.author_color),
+        "username_color_mode": str(cfg.username_color_mode),
+        "username_color_custom": str(cfg.username_color_custom),
         "text_color": str(cfg.text_color),
-        "bg_rgba": str(cfg.bg_rgba),
         "show_platform": bool(cfg.show_platform),
+        "show_platform_icon": bool(cfg.show_platform_icon),
+        "bubble_bg_rgba": str(cfg.bubble_bg_rgba),
+        "bubble_radius_px": int(cfg.bubble_radius_px),
         "fade_seconds": float(cfg.fade_seconds),
     }
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
@@ -81,20 +90,28 @@ def chat_config_from_json_text(text: str) -> ChatOverlayConfig:
     max_items = max(1, _ensure_int(raw.get("max_items"), default=d.max_items))
     font_family = str(raw.get("font_family") or d.font_family)
     font_size_px = max(8, _ensure_int(raw.get("font_size_px"), default=d.font_size_px))
-    author_color = str(raw.get("author_color") or d.author_color)
+    username_color_mode = str(raw.get("username_color_mode") or d.username_color_mode)
+    if username_color_mode not in ("auto", "platform", "custom"):
+        username_color_mode = d.username_color_mode
+    username_color_custom = str(raw.get("username_color_custom") or d.username_color_custom)
     text_color = str(raw.get("text_color") or d.text_color)
-    bg_rgba = str(raw.get("bg_rgba") or d.bg_rgba)
     show_platform = bool(raw.get("show_platform", d.show_platform))
+    show_platform_icon = bool(raw.get("show_platform_icon", d.show_platform_icon))
+    bubble_bg_rgba = str(raw.get("bubble_bg_rgba") or d.bubble_bg_rgba)
+    bubble_radius_px = max(0, _ensure_int(raw.get("bubble_radius_px"), default=d.bubble_radius_px))
     fade_seconds = max(0.0, _ensure_float(raw.get("fade_seconds"), default=d.fade_seconds))
     return ChatOverlayConfig(
         schema_version=CHAT_CONFIG_SCHEMA_VERSION,
         max_items=max_items,
         font_family=font_family,
         font_size_px=font_size_px,
-        author_color=author_color,
+        username_color_mode=username_color_mode,
+        username_color_custom=username_color_custom,
         text_color=text_color,
-        bg_rgba=bg_rgba,
         show_platform=show_platform,
+        show_platform_icon=show_platform_icon,
+        bubble_bg_rgba=bubble_bg_rgba,
+        bubble_radius_px=bubble_radius_px,
         fade_seconds=fade_seconds,
     )
 
