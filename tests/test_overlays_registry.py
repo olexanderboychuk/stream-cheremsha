@@ -66,7 +66,7 @@ def test_pubsub_publishes_to_subscribers() -> None:
     async def _run() -> dict[str, int]:
         ps = OverlayPubSub()
         q = ps.subscribe(topic="t")
-        ps.publish(topic="t", patch={"x": 1})
+        await ps.publish(topic="t", patch={"x": 1})
         got = await asyncio.wait_for(q.get(), timeout=1.0)
         return got
 

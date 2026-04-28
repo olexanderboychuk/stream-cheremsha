@@ -20,7 +20,7 @@ class OverlayPubSub:
         self._subs.append(_Sub(topic=str(topic), q=q))
         return q
 
-    def publish(self, topic: str, patch: dict[str, Any]) -> None:
+    async def publish(self, topic: str, patch: dict[str, Any]) -> None:
         payload = dict(patch)
         for s in list(self._subs):
             if s.topic != topic:
