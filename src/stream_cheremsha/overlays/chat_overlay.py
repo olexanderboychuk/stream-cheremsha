@@ -240,8 +240,9 @@ class ChatOverlayType:
           root.innerHTML = '';
           if (!cfg) return;
           const maxItems = clampInt(cfg.max_items, 1, 200, 12);
-          const bubbleBg = cfg.bubble_bg_rgba || 'rgba(10,12,18,0.55)';
-          const bubbleRadius = clampInt(cfg.bubble_radius_px, 0, 60, 10);
+          const bubbleOn = (cfg.bubble_bg_enabled !== undefined) ? !!cfg.bubble_bg_enabled : true;
+          const bubbleBg = bubbleOn ? (cfg.bubble_bg_rgba || 'rgba(10,12,18,0.55)') : 'transparent';
+          const bubbleRadius = bubbleOn ? clampInt(cfg.bubble_radius_px, 0, 60, 10) : 0;
           const textColor = cfg.text_color || '#e5e7eb';
           const showPlatformIcon = !!cfg.show_platform_icon;
           const view = items.slice(-maxItems);

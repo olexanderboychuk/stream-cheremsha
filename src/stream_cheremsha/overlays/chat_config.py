@@ -29,6 +29,7 @@ class ChatOverlayConfig:
     widget_bg_padding_px: int
     show_platform: bool
     show_platform_icon: bool
+    bubble_bg_enabled: bool
     bubble_bg_rgba: str
     bubble_radius_px: int
     fade_seconds: float
@@ -57,6 +58,7 @@ def chat_config_defaults() -> ChatOverlayConfig:
         widget_bg_padding_px=10,
         show_platform=True,
         show_platform_icon=True,
+        bubble_bg_enabled=True,
         bubble_bg_rgba="rgba(10,12,18,0.55)",
         bubble_radius_px=10,
         fade_seconds=0.0,
@@ -99,6 +101,7 @@ def chat_config_to_json_text(cfg: ChatOverlayConfig) -> str:
         "widget_bg_padding_px": int(cfg.widget_bg_padding_px),
         "show_platform": bool(cfg.show_platform),
         "show_platform_icon": bool(cfg.show_platform_icon),
+        "bubble_bg_enabled": bool(cfg.bubble_bg_enabled),
         "bubble_bg_rgba": str(cfg.bubble_bg_rgba),
         "bubble_radius_px": int(cfg.bubble_radius_px),
         "fade_seconds": float(cfg.fade_seconds),
@@ -146,6 +149,7 @@ def chat_config_from_json_text(text: str) -> ChatOverlayConfig:
     widget_bg_padding_px = min(48, widget_bg_padding_px)
     show_platform = bool(raw.get("show_platform", d.show_platform))
     show_platform_icon = bool(raw.get("show_platform_icon", d.show_platform_icon))
+    bubble_bg_enabled = bool(raw.get("bubble_bg_enabled", d.bubble_bg_enabled))
     bubble_bg_rgba = str(raw.get("bubble_bg_rgba") or d.bubble_bg_rgba)
     bubble_radius_px = max(0, _ensure_int(raw.get("bubble_radius_px"), default=d.bubble_radius_px))
     fade_seconds = max(0.0, _ensure_float(raw.get("fade_seconds"), default=d.fade_seconds))
@@ -168,6 +172,7 @@ def chat_config_from_json_text(text: str) -> ChatOverlayConfig:
         widget_bg_padding_px=widget_bg_padding_px,
         show_platform=show_platform,
         show_platform_icon=show_platform_icon,
+        bubble_bg_enabled=bubble_bg_enabled,
         bubble_bg_rgba=bubble_bg_rgba,
         bubble_radius_px=bubble_radius_px,
         fade_seconds=fade_seconds,

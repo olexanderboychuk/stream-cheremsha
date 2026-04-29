@@ -27,6 +27,7 @@ def test_chat_config_defaults_are_valid() -> None:
     assert "rgba" in cfg.widget_bg_rgba
     assert 0 <= cfg.widget_bg_radius_px <= 60
     assert 0 <= cfg.widget_bg_padding_px <= 48
+    assert cfg.bubble_bg_enabled is True
 
 
 def test_chat_config_json_roundtrip() -> None:
@@ -47,6 +48,7 @@ def test_chat_config_json_roundtrip() -> None:
         widget_bg_rgba="rgba(5,6,7,0.33)",
         widget_bg_radius_px=18,
         widget_bg_padding_px=12,
+        bubble_bg_enabled=False,
     )
     txt = chat_config_to_json_text(cfg)
     obj = json.loads(txt)
@@ -68,6 +70,7 @@ def test_chat_config_json_roundtrip() -> None:
     assert out.widget_bg_rgba == "rgba(5,6,7,0.33)"
     assert out.widget_bg_radius_px == 18
     assert out.widget_bg_padding_px == 12
+    assert out.bubble_bg_enabled is False
 
 
 def test_chat_config_rejects_bad_schema_version() -> None:

@@ -203,6 +203,7 @@ Item {
         if (!obj.widget_bg_rgba) obj.widget_bg_rgba = "rgba(10,12,18,0.45)";
         if (obj.widget_bg_radius_px === undefined) obj.widget_bg_radius_px = 14;
         if (obj.widget_bg_padding_px === undefined) obj.widget_bg_padding_px = 10;
+        if (obj.bubble_bg_enabled === undefined) obj.bubble_bg_enabled = true;
         if (!obj.bubble_bg_rgba) obj.bubble_bg_rgba = "rgba(10,12,18,0.55)";
         if (obj.bubble_radius_px === undefined) obj.bubble_radius_px = 10;
         if (!obj.username_color_mode) obj.username_color_mode = "auto";
@@ -618,6 +619,23 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
+                            Text { text: "Фон повідомлень"; color: muted; Layout.preferredWidth: 160 }
+                            Switch {
+                                id: bubbleBgSw
+                                checked: cfg ? !!cfg.bubble_bg_enabled : true
+                                onClicked: {
+                                    if (cfg === null) return;
+                                    cfg.bubble_bg_enabled = checked;
+                                    _save();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            visible: cfg && cfg.bubble_bg_enabled
                             Text { text: "Фон бульбашки"; color: muted; Layout.preferredWidth: 160 }
                             Rectangle {
                                 width: 26
@@ -653,6 +671,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
+                            visible: cfg && cfg.bubble_bg_enabled
                             Text { text: "Заокруглення (px)"; color: muted; Layout.preferredWidth: 160 }
                             StyledSpinBox {
                                 id: bubbleRadius
