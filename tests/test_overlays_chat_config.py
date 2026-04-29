@@ -23,6 +23,10 @@ def test_chat_config_defaults_are_valid() -> None:
     assert cfg.text_shadow_enabled is False
     assert "rgba" in cfg.text_shadow_rgba
     assert 0 <= cfg.text_shadow_blur_px <= 24
+    assert cfg.widget_bg_enabled is False
+    assert "rgba" in cfg.widget_bg_rgba
+    assert 0 <= cfg.widget_bg_radius_px <= 60
+    assert 0 <= cfg.widget_bg_padding_px <= 48
 
 
 def test_chat_config_json_roundtrip() -> None:
@@ -39,6 +43,10 @@ def test_chat_config_json_roundtrip() -> None:
         text_shadow_blur_px=8,
         text_shadow_offset_x_px=2,
         text_shadow_offset_y_px=-1,
+        widget_bg_enabled=True,
+        widget_bg_rgba="rgba(5,6,7,0.33)",
+        widget_bg_radius_px=18,
+        widget_bg_padding_px=12,
     )
     txt = chat_config_to_json_text(cfg)
     obj = json.loads(txt)
@@ -56,6 +64,10 @@ def test_chat_config_json_roundtrip() -> None:
     assert out.text_shadow_blur_px == 8
     assert out.text_shadow_offset_x_px == 2
     assert out.text_shadow_offset_y_px == -1
+    assert out.widget_bg_enabled is True
+    assert out.widget_bg_rgba == "rgba(5,6,7,0.33)"
+    assert out.widget_bg_radius_px == 18
+    assert out.widget_bg_padding_px == 12
 
 
 def test_chat_config_rejects_bad_schema_version() -> None:

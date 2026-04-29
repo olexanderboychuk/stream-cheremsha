@@ -76,6 +76,12 @@ class ChatOverlayType:
         flex-direction: column;
         justify-content: flex-end;
       }}
+      .panel {{
+        width: 100%;
+        max-height: 100%;
+        overflow: hidden;
+        box-sizing: border-box;
+      }}
       .msg {{ margin: 0 0 8px 0; padding: 8px 10px; border-radius: 10px; display:flex; }}
       .msg {{ gap:6px; align-items: baseline; }}
       .author {{ font-weight: 700; margin-right: 6px; }}
@@ -96,10 +102,15 @@ class ChatOverlayType:
     </style>
   </head>
   <body>
-    <div class="wrap" id="root"></div>
+    <div class="wrap">
+      <div class="panel" id="panel">
+        <div id="root"></div>
+      </div>
+    </div>
     <script>
       (function() {{
         const root = document.getElementById('root');
+        const panel = document.getElementById('panel');
         const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
         let ws = null;
         let tries = 0;
@@ -210,6 +221,12 @@ class ChatOverlayType:
           if (!cfg) return;
           document.body.style.fontFamily = cfg.font_family || 'system-ui';
           document.body.style.fontSize = clampInt(cfg.font_size_px, 8, 96, 18) + 'px';
+          const on = !!cfg.widget_bg_enabled;
+          const pad = on ? clampInt(cfg.widget_bg_padding_px, 0, 48, 10) : 0;
+          const rad = on ? clampInt(cfg.widget_bg_radius_px, 0, 60, 14) : 0;
+          panel.style.padding = pad + 'px';
+          panel.style.borderRadius = rad + 'px';
+          panel.style.background = on ? String(cfg.widget_bg_rgba || 'rgba(10,12,18,0.45)') : 'transparent';
         }}
 
         function render() {{

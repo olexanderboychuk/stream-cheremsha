@@ -187,6 +187,8 @@ Item {
     property color _usernameCustomColor: "#93c5fd"
     property color _textShadowColor: "#000000"
     property real _textShadowAlpha: 0.65
+    property color _widgetBgColor: "#0a0c12"
+    property real _widgetBgAlpha: 0.45
 
     function _ensureDefaults(obj) {
         if (!obj) obj = {};
@@ -197,6 +199,10 @@ Item {
         if (obj.show_platform === undefined) obj.show_platform = false;
         if (obj.show_platform_icon === undefined) obj.show_platform_icon = true;
         if (obj.fade_seconds === undefined) obj.fade_seconds = 0;
+        if (obj.widget_bg_enabled === undefined) obj.widget_bg_enabled = false;
+        if (!obj.widget_bg_rgba) obj.widget_bg_rgba = "rgba(10,12,18,0.45)";
+        if (obj.widget_bg_radius_px === undefined) obj.widget_bg_radius_px = 14;
+        if (obj.widget_bg_padding_px === undefined) obj.widget_bg_padding_px = 10;
         if (!obj.bubble_bg_rgba) obj.bubble_bg_rgba = "rgba(10,12,18,0.55)";
         if (obj.bubble_radius_px === undefined) obj.bubble_radius_px = 10;
         if (!obj.username_color_mode) obj.username_color_mode = "auto";
@@ -361,7 +367,7 @@ Item {
                     }
 
                     WinBtn {
-                        glyph: (winApi && winApi.isMaximized()) ? "❐" : "□"
+                        glyph: (typeof winApi !== "undefined" && winApi && winApi.isMaximized()) ? "❐" : "□"
                         Layout.alignment: Qt.AlignVCenter
                         onClicked: if (winApi) winApi.toggleMaximize()
                     }
@@ -513,6 +519,96 @@ Item {
                                 onValueModified: {
                                     if (cfg === null) return;
                                     cfg.fade_seconds = value;
+                                    _save();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Фон віджета"; color: muted; Layout.preferredWidth: 160 }
+                            Switch {
+                                id: widgetBgSw
+                                checked: cfg ? !!cfg.widget_bg_enabled : false
+                                onClicked: {
+                                    if (cfg === null) return;
+                                    cfg.widget_bg_enabled = checked;
+                                    _save();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            visible: cfg && cfg.widget_bg_enabled
+                            Text { text: "Колір фону"; color: muted; Layout.preferredWidth: 160 }
+                            Rectangle {
+                                width: 26
+                                height: 26
+                                radius: 8
+                                color: _widgetBgColor
+                                border.width: 1
+                                border.color: cardEdge
+                                opacity: _widgetBgAlpha
+                                Layout.alignment: Qt.AlignVCenter
+                            }
+                            PillButton {
+                                text: "Вибрати колір"
+                                focusPolicy: Qt.NoFocus
+                                onClicked: widgetBgColorDlg.open()
+                            }
+                            Slider {
+                                id: widgetBgAlpha
+                                Layout.fillWidth: true
+                                from: 0.0
+                                to: 1.0
+                                stepSize: 0.01
+                                value: _widgetBgAlpha
+                                onMoved: {
+                                    if (cfg === null) return;
+                                    _widgetBgAlpha = value;
+                                    cfg.widget_bg_rgba = _rgbaString(_widgetBgColor, _widgetBgAlpha);
+                                    _save();
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            visible: cfg && cfg.widget_bg_enabled
+                            Text { text: "Заокруглення фону (px)"; color: muted; Layout.preferredWidth: 160 }
+                            StyledSpinBox {
+                                id: widgetBgRadius
+                                from: 0
+                                to: 60
+                                value: (cfg && cfg.widget_bg_radius_px !== undefined) ? cfg.widget_bg_radius_px : 14
+                                onValueModified: {
+                                    if (cfg === null) return;
+                                    cfg.widget_bg_radius_px = value;
+                                    _save();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            visible: cfg && cfg.widget_bg_enabled
+                            Text { text: "Внутрішній відступ (px)"; color: muted; Layout.preferredWidth: 160 }
+                            StyledSpinBox {
+                                id: widgetBgPadding
+                                from: 0
+                                to: 48
+                                value: (cfg && cfg.widget_bg_padding_px !== undefined) ? cfg.widget_bg_padding_px : 10
+                                onValueModified: {
+                                    if (cfg === null) return;
+                                    cfg.widget_bg_padding_px = value;
                                     _save();
                                 }
                             }
@@ -823,6 +919,10 @@ Item {
                 _textShadowColor = sp.c;
                 _textShadowAlpha = sp.a;
                 shadowAlpha.value = _textShadowAlpha;
+                var wp = _parseRgba(cfg.widget_bg_rgba || "rgba(10,12,18,0.45)");
+                _widgetBgColor = wp.c;
+                _widgetBgAlpha = wp.a;
+                widgetBgAlpha.value = _widgetBgAlpha;
             }
         }
     }
@@ -835,6 +935,18 @@ Item {
             if (cfg === null) return;
             _bubbleColor = selectedColor;
             cfg.bubble_bg_rgba = _rgbaString(_bubbleColor, _bubbleAlpha);
+            _save();
+        }
+    }
+
+    ColorDialog {
+        id: widgetBgColorDlg
+        title: "Widget background color"
+        selectedColor: _widgetBgColor
+        onAccepted: {
+            if (cfg === null) return;
+            _widgetBgColor = selectedColor;
+            cfg.widget_bg_rgba = _rgbaString(_widgetBgColor, _widgetBgAlpha);
             _save();
         }
     }
