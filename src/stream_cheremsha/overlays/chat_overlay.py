@@ -77,10 +77,15 @@ class ChatOverlayType:
         justify-content: flex-end;
       }}
       .panel {{
+        flex: 1 1 auto;
         width: 100%;
+        height: 100%;
         max-height: 100%;
         overflow: hidden;
         box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
       }}
       .msg {{ margin: 0 0 8px 0; padding: 8px 10px; border-radius: 10px; display:flex; }}
       .msg {{ gap:6px; align-items: baseline; }}
@@ -224,6 +229,8 @@ class ChatOverlayType:
           const on = !!cfg.widget_bg_enabled;
           const pad = on ? clampInt(cfg.widget_bg_padding_px, 0, 48, 10) : 0;
           const rad = on ? clampInt(cfg.widget_bg_radius_px, 0, 60, 14) : 0;
+          panel.style.width = '100%';
+          panel.style.height = '100%';
           panel.style.padding = pad + 'px';
           panel.style.borderRadius = rad + 'px';
           panel.style.background = on ? String(cfg.widget_bg_rgba || 'rgba(10,12,18,0.45)') : 'transparent';
