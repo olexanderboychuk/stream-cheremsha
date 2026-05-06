@@ -1069,6 +1069,9 @@ class TikTokChatSource:
                 logger.debug("TikTok supervisor stopping")
                 break
             try:
+                # Exponential backoff to avoid hot reconnect loops (and test flakiness when
+                # a mocked `client.start()` returns quickly).
+                backoff = min(60.0, max(TIKTOK_RECONNECT_SEC, backoff * 2.0))
                 logger.info("TikTok supervisor sleep %.1fs then retry", backoff)
                 logger.debug("TikTok supervisor sleep %.1fs then retry", backoff)
                 await asyncio.sleep(backoff)
