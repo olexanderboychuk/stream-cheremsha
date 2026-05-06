@@ -25,6 +25,8 @@ artifacts/
 docs/
 dist/
 build/
+!build/nsis/
+!build/nsis/**/*
 *.mp3
 *.json
 *.xml
