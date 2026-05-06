@@ -712,18 +712,13 @@ class TikTokChatSource:
                             mono0 = self._connect_cutoff_mono
                             if (
                                 mono0 is not None
-                                and (time.monotonic() - mono0)
-                                <= self._comment_backlog_window_sec
+                                and (time.monotonic() - mono0) <= self._comment_backlog_window_sec
                             ):
                                 return
 
                     user_blob = getattr(event, "user_info", None) or getattr(event, "user", None)
                     author = getattr(user_blob, "nickname", None) or "unknown"
-                    text = (
-                        getattr(event, "comment", None)
-                        or getattr(event, "content", None)
-                        or ""
-                    )
+                    text = getattr(event, "comment", None) or getattr(event, "content", None) or ""
                     msg = ChatMessage(
                         author=str(author),
                         text=str(text),

@@ -900,13 +900,9 @@ def moderation_blocked_for_tts(tts_output_language: str, author: str) -> str:
     if tag.startswith("uk"):
         return f"Повідомлення від {a} не було озвучено через недопустимий вміст."
     if tag.startswith("de"):
-        return (
-            f"Die Nachricht von {a} wurde wegen unzulässigen Inhalts nicht vorgelesen."
-        )
+        return f"Die Nachricht von {a} wurde wegen unzulässigen Inhalts nicht vorgelesen."
     if tag.startswith("pl"):
-        return (
-            f"Wiadomość użytkownika {a} nie została odczytana z powodu niedopuszczalnej treści."
-        )
+        return f"Wiadomość użytkownika {a} nie została odczytana z powodu niedopuszczalnej treści."
     return f"A message from {a} was not spoken due to disallowed content."
 
 

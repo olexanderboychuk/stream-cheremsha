@@ -117,7 +117,7 @@ def _nuitka_cmd(
         "--nofollow-import-to=torch.distributed",
         # Ensure TikTokLive package is present even when we don't compile its proto modules.
         "--include-package=TikTokLive",
-        # OBS actions use obsws-python (obsws_python) which pulls in websocket-client as `websocket`.
+        # OBS actions use obsws-python (obsws_python); it pulls websocket-client as `websocket`.
         # These are imported from UI callbacks and can be missed by module graph heuristics.
         "--include-package=obsws_python",
         "--include-package=websocket",

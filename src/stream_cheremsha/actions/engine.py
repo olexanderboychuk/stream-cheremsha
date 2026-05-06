@@ -1170,12 +1170,15 @@ class PlatformActionsEngine:
                     if len(resolved) > MAX_MESSAGE_CHARS:
                         resolved = resolved[:MAX_MESSAGE_CHARS]
 
-                    author = str(
-                        getattr(ev, "sender", "")
-                        or getattr(ev, "author", "")
-                        or getattr(ev, "user", "")
-                        or getattr(ev, "raider", "")
-                    ).strip() or None
+                    author = (
+                        str(
+                            getattr(ev, "sender", "")
+                            or getattr(ev, "author", "")
+                            or getattr(ev, "user", "")
+                            or getattr(ev, "raider", "")
+                        ).strip()
+                        or None
+                    )
 
                     async def _tts_line(s: str = resolved, who: str | None = author) -> None:
                         try:

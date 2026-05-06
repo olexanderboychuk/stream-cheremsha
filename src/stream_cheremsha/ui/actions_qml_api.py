@@ -600,9 +600,7 @@ class ActionsQmlApi(QObject):
                 (user_s or "preview") if scope in ("user_combo", "user_every_n") else "preview"
             )
             likes_preview_n = max(1, min_count)
-            _schedule_preview_task(
-                eng.on_tiktok_likes_received(display_user, likes_preview_n, now)
-            )
+            _schedule_preview_task(eng.on_tiktok_likes_received(display_user, likes_preview_n, now))
             msg = ""
             if wants_overlay and ps is None:
                 msg = "Overlay preview unavailable (overlay server missing)."
