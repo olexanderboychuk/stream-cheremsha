@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "twitchio>=2.10,<3",
-    "TikTokLive>=6.6.5",
+    "TikTokLive==7.0.0b1",
     "PySide6>=6.7",
     "PySideSix-Frameless-Window>=0.8.0",
     "qasync>=0.27",
