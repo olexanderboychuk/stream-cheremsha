@@ -456,6 +456,11 @@ class TikTokChatSource:
         self._logged_room_info_keys = False
         self._last_viewers_current: int = 0
         self._last_viewers_current_non_join_mono: float | None = None
+        # Connect-time cutoffs for suppressing backlog comments.
+        self._connect_cutoff_epoch: float | None = None
+        self._connect_cutoff_mono: float | None = None
+        # Current reconnect backoff used for status messages (read by event handlers).
+        self._connect_backoff_sec: float = TIKTOK_RECONNECT_SEC
 
     @staticmethod
     def _room_info_viewer_candidates(payload: object) -> dict[str, int]:
@@ -613,8 +618,9 @@ class TikTokChatSource:
         backoff = TIKTOK_RECONNECT_SEC
         attempt = 0
         while self._running:
-            connect_cutoff_epoch: float | None = None
-            connect_cutoff_mono: float | None = None
+            self._connect_cutoff_epoch = None
+            self._connect_cutoff_mono = None
+            self._connect_backoff_sec = backoff
             attempt += 1
             uid = self._unique_id
             self._logged_room_info_keys = False
@@ -625,86 +631,107 @@ class TikTokChatSource:
             _patch_tiktoklive_negative_log_id()
             _configure_tiktoklive_client(client)
 
-            @client.on(ConnectEvent)
-            async def _on_connect(event: ConnectEvent) -> None:  # noqa: ANN001
-                nonlocal connect_cutoff_epoch, connect_cutoff_mono
-                # TikTokLive may emit a small backlog of chat messages when attaching to an
-                # already-running live. Record "connected" time and suppress comments that
-                # are older than this moment (when the event provides timestamps).
-                connect_cutoff_epoch = time.time()
-                connect_cutoff_mono = time.monotonic()
-                if self._stream_ended:
-                    cb = self._on_stream_start
-                    if cb is not None:
-                        cb()
-                    self._stream_ended = False
-                    self._last_like_total = None
-                self._on_status(l10n.tr(self._get_locale(), "tk.connected", user=event.unique_id))
+            # Handlers may be registered multiple times if the caller supplies a client_factory
+            # that reuses the same client instance. Guard against duplicates.
+            if not bool(getattr(client, "_cheremsha_handlers_installed", False)):
+                setattr(client, "_cheremsha_handlers_installed", True)
 
-            @client.on(DisconnectEvent)
-            async def _on_disconnect(_event: DisconnectEvent) -> None:  # noqa: ANN001
-                if self._running:
-                    msg = l10n.tr(self._get_locale(), "tk.disconnected_retry", sec=backoff)
-                    self._on_status(msg)
-
-            @client.on(LiveEndEvent)
-            async def _on_live_end(_event: LiveEndEvent) -> None:  # noqa: ANN001
-                if self._running:
-                    self._stream_ended = True
-                    self._on_status(l10n.tr(self._get_locale(), "tk.live_ended_retry", sec=backoff))
-
-            @client.on(CommentEvent)
-            async def _on_comment(event: CommentEvent) -> None:  # noqa: ANN001
-                cutoff = connect_cutoff_epoch
-                if cutoff is not None:
-                    # Best-effort event time extraction (TikTokLive differs between versions).
-                    # Common fields observed: create_time (epoch sec), timestamp (epoch ms/sec).
-                    base_msg = getattr(event, "base_message", None)
-                    raw_ts = (
-                        getattr(event, "create_time", None)
-                        or getattr(event, "timestamp", None)
-                        or getattr(event, "time", None)
-                        or getattr(event, "event_time", None)
-                        or getattr(base_msg, "create_time", None)
-                        or getattr(base_msg, "timestamp", None)
-                        or getattr(base_msg, "server_time", None)
+                @client.on(ConnectEvent)
+                async def _on_connect(event: ConnectEvent) -> None:  # noqa: ANN001
+                    # TikTokLive may emit a small backlog of chat messages when attaching to an
+                    # already-running live. Record "connected" time and suppress comments that
+                    # are older than this moment (when the event provides timestamps).
+                    self._connect_cutoff_epoch = time.time()
+                    self._connect_cutoff_mono = time.monotonic()
+                    if self._stream_ended:
+                        cb = self._on_stream_start
+                        if cb is not None:
+                            cb()
+                        self._stream_ended = False
+                        self._last_like_total = None
+                    self._on_status(
+                        l10n.tr(self._get_locale(), "tk.connected", user=event.unique_id)
                     )
-                    event_epoch: float | None = None
-                    if isinstance(raw_ts, datetime):
-                        event_epoch = raw_ts.replace(tzinfo=UTC).timestamp()
-                    elif isinstance(raw_ts, (int, float)):
-                        # Heuristic: treat very large numbers as ms.
-                        v = float(raw_ts)
-                        event_epoch = (v / 1000.0) if v > 3_000_000_000 else v
-                    elif isinstance(raw_ts, str):
-                        s = raw_ts.strip()
-                        if s.isdigit():
-                            v = float(s)
-                            event_epoch = (v / 1000.0) if v > 3_000_000_000 else v
-                    if event_epoch is not None:
-                        if event_epoch < cutoff:
-                            return
-                    else:
-                        # Fallback: if the library doesn't expose timestamps for comments,
-                        # suppress a short backlog window right after connect.
-                        mono0 = connect_cutoff_mono
-                        if (
-                            mono0 is not None
-                            and (time.monotonic() - mono0) <= self._comment_backlog_window_sec
-                        ):
-                            return
 
-                user_blob = getattr(event, "user_info", None) or getattr(event, "user", None)
-                author = getattr(user_blob, "nickname", None) or "unknown"
-                text = getattr(event, "comment", None) or getattr(event, "content", None) or ""
-                msg = ChatMessage(
-                    author=str(author),
-                    text=str(text),
-                    platform=ChatPlatform.TIKTOK,
-                    received_at=datetime.now(UTC),
-                    author_avatar_url=tiktok_user_avatar_url(user_blob),
-                )
-                await self._coordinator.enqueue_chat(msg)
+                @client.on(DisconnectEvent)
+                async def _on_disconnect(_event: DisconnectEvent) -> None:  # noqa: ANN001
+                    if self._running:
+                        msg = l10n.tr(
+                            self._get_locale(),
+                            "tk.disconnected_retry",
+                            sec=self._connect_backoff_sec,
+                        )
+                        self._on_status(msg)
+
+                @client.on(LiveEndEvent)
+                async def _on_live_end(_event: LiveEndEvent) -> None:  # noqa: ANN001
+                    if self._running:
+                        self._stream_ended = True
+                        self._on_status(
+                            l10n.tr(
+                                self._get_locale(),
+                                "tk.live_ended_retry",
+                                sec=self._connect_backoff_sec,
+                            )
+                        )
+
+                @client.on(CommentEvent)
+                async def _on_comment(event: CommentEvent) -> None:  # noqa: ANN001
+                    cutoff = self._connect_cutoff_epoch
+                    if cutoff is not None:
+                        # Best-effort event time extraction (TikTokLive differs between versions).
+                        # Common fields observed: create_time (epoch sec), timestamp (epoch ms/sec).
+                        base_msg = getattr(event, "base_message", None)
+                        raw_ts = (
+                            getattr(event, "create_time", None)
+                            or getattr(event, "timestamp", None)
+                            or getattr(event, "time", None)
+                            or getattr(event, "event_time", None)
+                            or getattr(base_msg, "create_time", None)
+                            or getattr(base_msg, "timestamp", None)
+                            or getattr(base_msg, "server_time", None)
+                        )
+                        event_epoch: float | None = None
+                        if isinstance(raw_ts, datetime):
+                            event_epoch = raw_ts.replace(tzinfo=UTC).timestamp()
+                        elif isinstance(raw_ts, (int, float)):
+                            # Heuristic: treat very large numbers as ms.
+                            v = float(raw_ts)
+                            event_epoch = (v / 1000.0) if v > 3_000_000_000 else v
+                        elif isinstance(raw_ts, str):
+                            s = raw_ts.strip()
+                            if s.isdigit():
+                                v = float(s)
+                                event_epoch = (v / 1000.0) if v > 3_000_000_000 else v
+                        if event_epoch is not None:
+                            if event_epoch < cutoff:
+                                return
+                        else:
+                            # Fallback: if the library doesn't expose timestamps for comments,
+                            # suppress a short backlog window right after connect.
+                            mono0 = self._connect_cutoff_mono
+                            if (
+                                mono0 is not None
+                                and (time.monotonic() - mono0)
+                                <= self._comment_backlog_window_sec
+                            ):
+                                return
+
+                    user_blob = getattr(event, "user_info", None) or getattr(event, "user", None)
+                    author = getattr(user_blob, "nickname", None) or "unknown"
+                    text = (
+                        getattr(event, "comment", None)
+                        or getattr(event, "content", None)
+                        or ""
+                    )
+                    msg = ChatMessage(
+                        author=str(author),
+                        text=str(text),
+                        platform=ChatPlatform.TIKTOK,
+                        received_at=datetime.now(UTC),
+                        author_avatar_url=tiktok_user_avatar_url(user_blob),
+                    )
+                    await self._coordinator.enqueue_chat(msg)
 
             if ColdStartEvent is not None:
 
