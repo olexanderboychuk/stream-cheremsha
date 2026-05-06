@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 from importlib.util import find_spec
@@ -14,6 +15,18 @@ def _run(cmd: list[str]) -> None:
     proc = subprocess.run(cmd, check=False)
     if proc.returncode != 0:
         raise SystemExit(proc.returncode)
+
+
+def _remove_stale_nuitka_build_workdirs(out_dir: Path) -> None:
+    """
+    After a killed/interrupted Nuitka run, *.build can contain half-written *.c files.
+    Nuitka then asserts the output path is absent and crashes (e.g. module.PySide6.c).
+    """
+    if not out_dir.is_dir():
+        return
+    for child in out_dir.iterdir():
+        if child.is_dir() and child.suffix == ".build":
+            shutil.rmtree(child, ignore_errors=False)
 
 
 def _require_supported_nuitka() -> None:
@@ -104,15 +117,31 @@ def _nuitka_cmd(
         "--nofollow-import-to=torch.distributed",
         # Ensure TikTokLive package is present even when we don't compile its proto modules.
         "--include-package=TikTokLive",
+        # OBS actions use obsws-python (obsws_python) which pulls in websocket-client as `websocket`.
+        # These are imported from UI callbacks and can be missed by module graph heuristics.
+        "--include-package=obsws_python",
+        "--include-package=websocket",
         "--enable-plugin=pyside6",
         # Needed for QQuickWidget/QML and QMediaPlayer backends in standalone builds.
         "--include-qt-plugins=qml,multimedia",
         "--module-parameter=torch-disable-jit=yes",
         f"--output-dir={out_dir}",
         "--assume-yes-for-downloads",
+        # Keep data files under the package path so runtime code can
+        # locate them relative to `stream_cheremsha/...`.
         f"--include-data-dir={qml_dir}=stream_cheremsha/qml",
         f"--include-data-dir={assets_dir}=stream_cheremsha/assets",
     ]
+
+    # Ensure TLS works in standalone builds (httpx/ssl need a CA bundle).
+    # Certifi ships `cacert.pem` as a data file; make sure it's included.
+    if _has_pkg("certifi"):
+        import certifi  # type: ignore[import-not-found]
+
+        cacert = Path(certifi.where()).resolve()
+        if cacert.is_file():
+            cmd.append("--include-package=certifi")
+            cmd.append(f"--include-data-file={cacert}=certifi/cacert.pem")
 
     if clang:
         cmd.append("--clang")
@@ -210,6 +239,15 @@ def main(argv: list[str] | None = None) -> None:
         default=None,
         help="Build with a specific MSVC version, e.g. 14.3 (Nuitka: --msvc=...).",
     )
+    p.add_argument(
+        "--clean",
+        action="store_true",
+        help=(
+            "Remove Nuitka *.build workdirs under --out before compiling. "
+            "Use after a killed build if Nuitka crashes with "
+            "AssertionError: ... module.*.c already exists."
+        ),
+    )
     ns = p.parse_args(argv)
 
     if ns.fast:
@@ -218,6 +256,8 @@ def main(argv: list[str] | None = None) -> None:
 
     out = Path(ns.out).resolve()
     out.mkdir(parents=True, exist_ok=True)
+    if ns.clean:
+        _remove_stale_nuitka_build_workdirs(out)
     cmd = _nuitka_cmd(
         out_dir=out,
         onefile=ns.onefile,

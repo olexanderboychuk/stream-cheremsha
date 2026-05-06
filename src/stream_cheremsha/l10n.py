@@ -451,6 +451,7 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "If the box is checked and you are already signed in on the Connections tab, "
         "that platform starts automatically on the next app launch.",
     },
+    "settings.general_group": {"uk": "Загальне", "en": "General"},
     "settings.autostart_twitch": {
         "uk": "Автозапуск Twitch при старті додатку (потрібен вхід у Twitch і канал)",
         "en": "Auto-start Twitch on launch (requires Twitch sign-in and channel)",
@@ -458,6 +459,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "settings.autostart_youtube": {
         "uk": "Автозапуск YouTube при старті додатку (потрібен вхід у Google)",
         "en": "Auto-start YouTube on launch (requires Google sign-in)",
+    },
+    "settings.autostart_tiktok": {
+        "uk": "Автозапуск TikTok при старті додатку (потрібен юзернейм на вкладці «Зв'язки»)",
+        "en": "Auto-start TikTok on launch (requires username on Connections)",
     },
     "settings.obs_group": {"uk": "OBS WebSocket", "en": "OBS WebSocket"},
     "settings.obs_help_html": {
@@ -653,7 +658,51 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "audio.speak_test": {"uk": "Відтворити тестову фразу", "en": "Speak test phrase"},
     "audio.card_test_header": {"uk": "Тест озвучення", "en": "TTS test"},
     "audio.card_tts_title": {"uk": "Мова та рушій TTS", "en": "TTS language & engine"},
+    "audio.openai_moderate": {
+        "uk": "Перевіряти текст через OpenAI Moderation",
+        "en": "Validate text with OpenAI Moderation",
+    },
+    "audio.openai_moderate_hint": {
+        "uk": "Перед озвученням текст надсилається в OpenAI; якщо вміст порушує політики — "
+        "замість оригіналу озвучується коротке повідомлення з іменем автора.",
+        "en": "Before speaking, text is sent to OpenAI; if it violates policies, a short "
+        "replacement message with the author name is spoken instead of the original.",
+    },
+    "audio.speak_author_name": {
+        "uk": "Озвучувати ім’я автора (чат)",
+        "en": "Speak author name (chat)",
+    },
+    "audio.speak_author_name_hint": {
+        "uk": "Перед текстом повідомлення з чату озвучується, хто його написав (формулювання "
+        "залежить від обраної мови TTS). Для оголошень донатів не додається.",
+        "en": "Before each chat message, the speaker name is announced (phrasing follows the "
+        "selected TTS language). Not added for donation announcements.",
+    },
+    "audio.strip_non_alpha": {
+        "uk": "Не озвучувати символи та емодзі",
+        "en": "Do not speak symbols and emoji",
+    },
+    "audio.strip_non_alpha_hint": {
+        "uk": "Залишаються лише літери (усі підтримувані Unicode-алфавіти); цифри, розділові "
+        "знаки, емодзі та інші символи прибираються. Текст заміни після модерації OpenAI не змінюється.",
+        "en": "Only letters are kept (Unicode alphabets); digits, punctuation, emoji, and other "
+        "symbols are removed. OpenAI moderation replacement lines are left unchanged.",
+    },
     "audio.card_levels_title": {"uk": "Вихід і рівні", "en": "Output & levels"},
+    "settings.openai_group": {"uk": "OpenAI", "en": "OpenAI"},
+    "settings.openai_api_key": {"uk": "API-ключ", "en": "API key"},
+    "settings.openai_api_key_hint": {
+        "uk": "Для Moderation API (platform.openai.com). Зберігається в системному keyring.",
+        "en": "For the Moderation API (platform.openai.com). Stored in the OS keyring.",
+    },
+    "openai.moderation_no_api_key": {
+        "uk": "OpenAI: увімкнено перевірку TTS, але не задано API-ключ (Налаштування → OpenAI).",
+        "en": "OpenAI: TTS validation is on but no API key is set (Settings → OpenAI).",
+    },
+    "openai.moderation_error": {
+        "uk": "OpenAI Moderation: {err}",
+        "en": "OpenAI Moderation: {err}",
+    },
     # Status / footer
     "footer.pipeline": {"uk": "Пайплайн", "en": "Pipeline"},
     "footer.twitch": {"uk": "Twitch", "en": "Twitch"},
@@ -839,6 +888,42 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "dlg.tts": {"uk": "TTS", "en": "TTS"},
     "dlg.json_filter": {"uk": "JSON (*.json);;Усі файли (*)", "en": "JSON (*.json);;All files (*)"},
 }
+
+
+def moderation_blocked_for_tts(tts_output_language: str, author: str) -> str:
+    """
+    Spoken replacement when OpenAI moderation flags content.
+    Wording follows the selected TTS output language (BCP-47 tag), not the UI locale.
+    """
+    a = (author or "").strip() or "?"
+    tag = (tts_output_language or "").strip().lower()
+    if tag.startswith("uk"):
+        return f"Повідомлення від {a} не було озвучено через недопустимий вміст."
+    if tag.startswith("de"):
+        return (
+            f"Die Nachricht von {a} wurde wegen unzulässigen Inhalts nicht vorgelesen."
+        )
+    if tag.startswith("pl"):
+        return (
+            f"Wiadomość użytkownika {a} nie została odczytana z powodu niedopuszczalnej treści."
+        )
+    return f"A message from {a} was not spoken due to disallowed content."
+
+
+def tts_chat_author_lead(tts_output_language: str, author: str) -> str:
+    """
+    Prefix spoken before chat message body, e.g. «Author writes: …».
+    Phrasing follows the selected TTS output language (BCP-47 tag).
+    """
+    a = (author or "").strip() or "?"
+    tag = (tts_output_language or "").strip().lower()
+    if tag.startswith("uk"):
+        return f"{a} пише: "
+    if tag.startswith("de"):
+        return f"{a} schreibt: "
+    if tag.startswith("pl"):
+        return f"{a} pisze: "
+    return f"{a} writes: "
 
 
 def normalize_locale(raw: str) -> AppLocale:

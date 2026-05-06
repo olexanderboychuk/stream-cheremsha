@@ -809,7 +809,7 @@ def test_engine_speak_tts_invokes_callback() -> None:
     sink = FakeSink()
     spoken: list[str] = []
 
-    async def speak(s: str) -> None:
+    async def speak(s: str, _author: str | None = None) -> None:
         spoken.append(s)
 
     rules = [

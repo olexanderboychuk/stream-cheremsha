@@ -38,7 +38,7 @@ jobs:
           uv run --frozen python scripts/ci/validate_release_version.py --tag-version "$tagVersion"
 
       - name: Build (Nuitka standalone)
-        run: uv run --frozen cheremsha-build --out dist/nuitka
+        run: uv run --frozen cheremsha-build --out dist/nuitka --low-memory --jobs 1
 
       - name: Print Nuitka version
         shell: pwsh
