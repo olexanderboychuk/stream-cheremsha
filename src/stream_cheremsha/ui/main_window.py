@@ -89,10 +89,13 @@ from stream_cheremsha.music.queue_controller import MusicQueueController
 from stream_cheremsha.music.yt_dlp_resolver import fetch_youtube_title
 from stream_cheremsha.online.models import now_hms as online_now_hms
 from stream_cheremsha.online.models import online_state_patch
+from stream_cheremsha.openai_moderation import openai_moderation_flagged
 from stream_cheremsha.overlays.chat_overlay import chat_message_to_patch
 from stream_cheremsha.overlays.registry import OverlayRegistry
 from stream_cheremsha.overlays.server import OverlayServer
+from stream_cheremsha.paths import stream_cheremsha_root
 from stream_cheremsha.pipeline.coordinator import StreamCoordinator
+from stream_cheremsha.pipeline.tts_sanitize import strip_non_alphabetic_for_tts
 from stream_cheremsha.telegram.bot_service import TelegramBotService
 from stream_cheremsha.tts.edge_tts import (
     EdgeTts,
@@ -123,7 +126,7 @@ from stream_cheremsha.ui.youtube_analytics_api import YouTubeAnalyticsApi
 
 logger = logging.getLogger(__name__)
 
-_STREAM_ROOT = Path(__file__).resolve().parent.parent
+_STREAM_ROOT = stream_cheremsha_root()
 
 
 def _qml_path(name: str) -> Path:
@@ -163,7 +166,7 @@ _YOUTUBE_API_LIB_URL = "https://console.cloud.google.com/apis/library/youtube.go
 _FORM_LABEL_MIN_WIDTH = 260
 _SETTINGS_AUTOSTART_TWITCH = "startup/auto_start_twitch"
 _SETTINGS_AUTOSTART_YOUTUBE = "startup/auto_start_youtube"
-_SETTINGS_GAME_MODE = "ui/game_mode"
+_SETTINGS_AUTOSTART_TIKTOK = "startup/auto_start_tiktok"
 _SETTINGS_TTS_GAIN_DB = "audio/tts_gain_db"
 _TTS_ENGINE_GOOGLE = "google"
 _TTS_ENGINE_EDGE = "edge"
@@ -176,6 +179,9 @@ TTS_LANG_OPTIONS: tuple[str, ...] = ("uk-UA", "en-US", "en-GB", "de-DE", "pl-PL"
 _SETTINGS_TTS_CHAT_TWITCH = "tts_chat/twitch_enabled"
 _SETTINGS_TTS_CHAT_YOUTUBE = "tts_chat/youtube_enabled"
 _SETTINGS_TTS_CHAT_TIKTOK = "tts_chat/tiktok_enabled"
+_SETTINGS_TTS_OPENAI_MODERATE = "tts/openai_moderate_enabled"
+_SETTINGS_TTS_SPEAK_AUTHOR = "tts/speak_chat_author_name"
+_SETTINGS_TTS_STRIP_NON_ALPHA = "tts/strip_non_alphabetic"
 
 _SETTINGS_TELEGRAM_ENABLED = "telegram/enabled"
 _SETTINGS_TELEGRAM_ADMIN_ID = "telegram/admin_id"
@@ -538,6 +544,7 @@ class MainWindow(FramelessWindow):
             on_status=self._on_user_status,
             should_tts=self._should_tts_for_message,
             get_locale=self._get_locale,
+            pre_tts=self._pre_tts_chat,
         )
         self._twitch = TwitchSource(
             self._coordinator,
@@ -583,6 +590,8 @@ class MainWindow(FramelessWindow):
         self._tg_token.setEchoMode(QLineEdit.EchoMode.Password)
         self._tg_admin_id = QLineEdit()
         self._tg_song_requests_enabled = QCheckBox()
+        self._openai_api_key = QLineEdit()
+        self._openai_api_key.setEchoMode(QLineEdit.EchoMode.Password)
 
         self._music_use_mpv = QCheckBox()
         self._lbl_music_backend_hint = QLabel()
@@ -616,9 +625,6 @@ class MainWindow(FramelessWindow):
         self._queue_timer = QTimer(self)
         self._queue_timer.timeout.connect(self._refresh_footer)
         self._queue_timer.start(1000)
-
-        # Apply game mode after UI is constructed and settings are loaded.
-        self._apply_game_mode_from_settings()
 
     def nativeEvent(self, eventType, message):  # type: ignore[override]
         # Delegate to PySideSix-Frameless-Window native handler on Windows.
@@ -685,6 +691,62 @@ class MainWindow(FramelessWindow):
         }.get(platform)
         if key is not None:
             self._settings.setValue(key, bool(enabled))
+
+    async def _pre_tts_chat(self, text: str, author: str) -> str:
+        out, replaced = await self._apply_openai_moderation_to_tts_text(text, author)
+        out = self._maybe_strip_non_letters_for_tts(out, moderation_replaced=replaced)
+        out = (out or "").strip()
+        if not out:
+            return ""
+        return self._maybe_prefix_tts_author(author, out, moderation_replaced=replaced)
+
+    async def _apply_openai_moderation_to_tts_text(
+        self,
+        text: str,
+        author: str,
+    ) -> tuple[str, bool]:
+        """
+        Returns (text_for_tts, moderation_replaced).
+        ``moderation_replaced`` is True when the original was swapped for a policy message.
+        """
+        cb = getattr(self, "_cb_tts_openai_moderate", None)
+        if cb is None or not cb.isChecked():
+            return text, False
+        key = (keyring_store.get_password(constants.KEY_OPENAI_API_KEY) or "").strip()
+        if not key:
+            self._on_user_status(self._tr("openai.moderation_no_api_key"))
+            return text, False
+        try:
+            flagged = await openai_moderation_flagged(key, text)
+        except (httpx.HTTPError, ValueError, OSError) as e:
+            logger.warning("OpenAI moderation failed: %s", e)
+            self._on_user_status(self._tr("openai.moderation_error", err=str(e)))
+            return text, False
+        if not flagged:
+            return text, False
+        return l10n.moderation_blocked_for_tts(self._current_tts_language(), author), True
+
+    def _maybe_prefix_tts_author(
+        self,
+        author: str,
+        text: str,
+        *,
+        moderation_replaced: bool,
+    ) -> str:
+        if moderation_replaced:
+            return text
+        sw = getattr(self, "_cb_tts_speak_author", None)
+        if sw is None or not sw.isChecked():
+            return text
+        return l10n.tts_chat_author_lead(self._current_tts_language(), author) + text
+
+    def _maybe_strip_non_letters_for_tts(self, text: str, *, moderation_replaced: bool) -> str:
+        if moderation_replaced:
+            return text
+        cb = getattr(self, "_cb_tts_strip_non_alpha", None)
+        if cb is None or not cb.isChecked():
+            return text
+        return strip_non_alphabetic_for_tts(text)
 
     def _tts_language_from_settings(self) -> str:
         v = str(self._settings.value(_SETTINGS_TTS_LANG, "uk-UA", str)).strip()
@@ -1080,7 +1142,11 @@ class MainWindow(FramelessWindow):
             "QToolButton#footerNav:hover { background: #1a2030; border-color: #3b4458; }"
             'QToolButton#footerNav[activeNav="on"] { background: #1a2540; '
             "border-color: #3d4f6a; }"
-            "QGroupBox { border: 1px solid #2a3142; margin-top: 8px; font-weight: bold; }"
+            "QGroupBox { border: 1px solid #2a3142; border-radius: 10px; margin-top: 18px; "
+            "padding-top: 8px; padding-bottom: 12px; padding-left: 12px; padding-right: 12px; "
+            "font-weight: 600; background-color: #0c0e14; }"
+            "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; "
+            "left: 12px; padding: 2px 8px; color: #e8eaed; }"
             "QScrollArea { border: none; background: transparent; }"
             "QScrollBar:vertical { width: 10px; background: #0f1219; margin: 4px 2px 4px 0; "
             "border-radius: 5px; border: 1px solid #1e2430; }"
@@ -1134,8 +1200,33 @@ class MainWindow(FramelessWindow):
         )
 
     def _build_settings_tab(self) -> QWidget:
-        w = QWidget()
-        lay = QVBoxLayout(w)
+        page = QWidget()
+        page.setObjectName("settingsPageRoot")
+        page_lay = QVBoxLayout(page)
+        page_lay.setContentsMargins(0, 0, 0, 0)
+
+        center_row = QHBoxLayout()
+        center_row.setContentsMargins(12, 12, 12, 12)
+        center_row.addStretch(1)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+        body = QWidget()
+        body.setObjectName("settingsScrollBody")
+        body.setMaximumWidth(640)
+        lay = QVBoxLayout(body)
+        lay.setSpacing(16)
+        lay.setContentsMargins(0, 0, 0, 0)
+
+        self._gb_settings_general = QGroupBox()
+        gen_outer = QVBoxLayout(self._gb_settings_general)
+        gen_outer.setContentsMargins(2, 6, 2, 4)
+        gen_outer.setSpacing(12)
+
         lang_row = QHBoxLayout()
         self._lbl_locale = QLabel()
         self._combo_locale = QComboBox()
@@ -1144,28 +1235,29 @@ class MainWindow(FramelessWindow):
         self._combo_locale.currentIndexChanged.connect(self._on_locale_changed)
         lang_row.addWidget(self._lbl_locale)
         lang_row.addWidget(self._combo_locale, stretch=1)
-        lay.addLayout(lang_row)
+        gen_outer.addLayout(lang_row)
 
         self._settings_intro = QLabel()
         self._settings_intro.setWordWrap(True)
-        lay.addWidget(self._settings_intro)
+        gen_outer.addWidget(self._settings_intro)
 
         self._cb_autostart_twitch = QCheckBox()
         self._cb_autostart_twitch.stateChanged.connect(self._persist_autostart_twitch)
-        lay.addWidget(self._cb_autostart_twitch)
+        gen_outer.addWidget(self._cb_autostart_twitch)
 
         self._cb_autostart_youtube = QCheckBox()
         self._cb_autostart_youtube.stateChanged.connect(self._persist_autostart_youtube)
-        lay.addWidget(self._cb_autostart_youtube)
+        gen_outer.addWidget(self._cb_autostart_youtube)
 
-        self._cb_game_mode = QCheckBox()
-        self._cb_game_mode.stateChanged.connect(self._persist_game_mode)
-        lay.addWidget(self._cb_game_mode)
+        self._cb_autostart_tiktok = QCheckBox()
+        self._cb_autostart_tiktok.stateChanged.connect(self._persist_autostart_tiktok)
+        gen_outer.addWidget(self._cb_autostart_tiktok)
+
+        lay.addWidget(self._gb_settings_general)
 
         self._gb_obs = QGroupBox()
-        self._gb_obs.setMaximumWidth(560)
         obs_outer = QVBoxLayout(self._gb_obs)
-        obs_outer.setContentsMargins(14, 14, 14, 18)
+        obs_outer.setContentsMargins(2, 6, 2, 4)
         obs_outer.setSpacing(12)
 
         self._lbl_obs_help = self._external_link_label("")
@@ -1242,16 +1334,15 @@ class MainWindow(FramelessWindow):
 
         obs_outer.addLayout(obs_grid)
 
-        lay.addWidget(self._gb_obs, alignment=Qt.AlignmentFlag.AlignLeft)
+        lay.addWidget(self._gb_obs)
 
         self._obs_ws_host.editingFinished.connect(self._persist_obs_ws_host)
         self._obs_ws_port.editingFinished.connect(self._persist_obs_ws_port)
         self._obs_ws_password.editingFinished.connect(self._persist_obs_ws_password)
 
         self._gb_telegram = QGroupBox()
-        self._gb_telegram.setMaximumWidth(560)
         tg_outer = QVBoxLayout(self._gb_telegram)
-        tg_outer.setContentsMargins(14, 14, 14, 18)
+        tg_outer.setContentsMargins(2, 6, 2, 4)
         tg_outer.setSpacing(12)
 
         tg_grid = QGridLayout()
@@ -1282,7 +1373,32 @@ class MainWindow(FramelessWindow):
         tg_row += 1
 
         tg_outer.addLayout(tg_grid)
-        lay.addWidget(self._gb_telegram, alignment=Qt.AlignmentFlag.AlignLeft)
+        lay.addWidget(self._gb_telegram)
+
+        self._gb_openai = QGroupBox()
+        openai_outer = QVBoxLayout(self._gb_openai)
+        openai_outer.setContentsMargins(2, 6, 2, 4)
+        openai_outer.setSpacing(12)
+        openai_grid = QGridLayout()
+        openai_grid.setContentsMargins(0, 0, 0, 0)
+        openai_grid.setHorizontalSpacing(14)
+        openai_grid.setVerticalSpacing(10)
+        openai_grid.setColumnStretch(1, 1)
+        openai_grid.setColumnMinimumWidth(0, 124)
+        o_row = 0
+        self._lbl_openai_api_key = MainWindow._obs_settings_label("")
+        self._lbl_openai_api_key.setBuddy(self._openai_api_key)
+        openai_grid.addWidget(self._lbl_openai_api_key, o_row, 0)
+        openai_grid.addWidget(self._stretch_field(self._openai_api_key), o_row, 1)
+        o_row += 1
+        self._lbl_openai_api_hint = QLabel()
+        self._lbl_openai_api_hint.setWordWrap(True)
+        self._lbl_openai_api_hint.setStyleSheet("color: #8b95a5; font-size: 11px;")
+        openai_grid.addWidget(self._lbl_openai_api_hint, o_row, 0, 1, 2)
+        openai_outer.addLayout(openai_grid)
+        lay.addWidget(self._gb_openai)
+
+        self._openai_api_key.editingFinished.connect(self._persist_openai_api_key)
 
         self._tg_enabled.stateChanged.connect(self._persist_telegram_enabled)
         self._tg_token.editingFinished.connect(self._persist_telegram_token)
@@ -1292,9 +1408,8 @@ class MainWindow(FramelessWindow):
         )
 
         self._gb_music = QGroupBox()
-        self._gb_music.setMaximumWidth(560)
         music_outer = QVBoxLayout(self._gb_music)
-        music_outer.setContentsMargins(14, 14, 14, 18)
+        music_outer.setContentsMargins(2, 6, 2, 4)
         music_outer.setSpacing(12)
 
         music_grid = QGridLayout()
@@ -1323,42 +1438,18 @@ class MainWindow(FramelessWindow):
         mr += 1
 
         music_outer.addLayout(music_grid)
-        lay.addWidget(self._gb_music, alignment=Qt.AlignmentFlag.AlignLeft)
+        lay.addWidget(self._gb_music)
 
         self._music_use_mpv.stateChanged.connect(self._persist_music_backend)
         self._btn_mpv_check.clicked.connect(self._check_mpv_installed)
 
-        lay.addStretch()
+        scroll.setWidget(body)
+        center_row.addWidget(scroll)
+        center_row.addStretch(1)
+        page_lay.addLayout(center_row, stretch=1)
+
         self._apply_settings_tab_texts()
-        return w
-
-    def _apply_game_mode_from_settings(self) -> None:
-        enabled = bool(self._settings.value(_SETTINGS_GAME_MODE, False, bool))
-        self._apply_game_mode_enabled(enabled)
-
-    def _apply_game_mode_enabled(self, enabled: bool) -> None:
-        """Game mode: reduce GPU load by avoiding QML on Connections page."""
-        if not hasattr(self, "_stack"):
-            return
-        # Prefer QWidget Connections tab in game mode, QML otherwise.
-        target = self._connections_root if enabled else self._qml_conn
-        # Already active
-        if self._stack.widget(self._IX_CONN) is target:
-            return
-        cur = self._stack.currentIndex()
-        old = self._stack.widget(self._IX_CONN)
-        self._stack.removeWidget(old)
-        self._stack.insertWidget(self._IX_CONN, target)
-        # Keep the user on the same logical page.
-        if cur == self._IX_CONN:
-            self._stack.setCurrentIndex(self._IX_CONN)
-        self._sync_footer_nav()
-
-    @Slot(int)
-    def _persist_game_mode(self, _state: int) -> None:
-        enabled = bool(self._cb_game_mode.isChecked())
-        self._settings.setValue(_SETTINGS_GAME_MODE, enabled)
-        self._apply_game_mode_enabled(enabled)
+        return page
 
     def _persist_obs_ws_host(self) -> None:
         vv = (self._obs_ws_host.text() or "").strip() or "127.0.0.1"
@@ -1387,6 +1478,31 @@ class MainWindow(FramelessWindow):
         enabled = bool(self._tg_enabled.isChecked())
         self._settings.setValue(_SETTINGS_TELEGRAM_ENABLED, enabled)
         asyncio.ensure_future(self._apply_telegram_from_settings())
+
+    @Slot(int)
+    def _persist_tts_openai_moderate(self, _state: int) -> None:
+        self._settings.setValue(
+            _SETTINGS_TTS_OPENAI_MODERATE,
+            self._cb_tts_openai_moderate.isChecked(),
+        )
+
+    @Slot(int)
+    def _persist_tts_speak_author(self, _state: int) -> None:
+        self._settings.setValue(_SETTINGS_TTS_SPEAK_AUTHOR, self._cb_tts_speak_author.isChecked())
+
+    @Slot(int)
+    def _persist_tts_strip_non_alpha(self, _state: int) -> None:
+        self._settings.setValue(
+            _SETTINGS_TTS_STRIP_NON_ALPHA,
+            self._cb_tts_strip_non_alpha.isChecked(),
+        )
+
+    def _persist_openai_api_key(self) -> None:
+        vv = self._openai_api_key.text() or ""
+        if vv.strip():
+            keyring_store.set_password(constants.KEY_OPENAI_API_KEY, vv)
+        else:
+            keyring_store.delete_password(constants.KEY_OPENAI_API_KEY)
 
     def _persist_telegram_token(self) -> None:
         vv = self._tg_token.text() or ""
@@ -1665,10 +1781,10 @@ class MainWindow(FramelessWindow):
         self._combo_locale.setItemText(0, self._tr("settings.lang.uk"))
         self._combo_locale.setItemText(1, self._tr("settings.lang.en"))
         self._settings_intro.setText(self._tr("settings.intro"))
+        self._gb_settings_general.setTitle(self._tr("settings.general_group"))
         self._cb_autostart_twitch.setText(self._tr("settings.autostart_twitch"))
         self._cb_autostart_youtube.setText(self._tr("settings.autostart_youtube"))
-        # No l10n key yet: keep explicit UA-focused label.
-        self._cb_game_mode.setText("Game mode (менше навантаження на GPU / менше просідань FPS)")
+        self._cb_autostart_tiktok.setText(self._tr("settings.autostart_tiktok"))
         self._gb_obs.setTitle(self._tr("settings.obs_group"))
         self._lbl_obs_help.setText(self._tr("settings.obs_help_html"))
         self._lbl_obs_host.setText(self._tr("settings.obs_host"))
@@ -1682,6 +1798,10 @@ class MainWindow(FramelessWindow):
         self._lbl_tg_token.setText("Bot token")
         self._lbl_tg_admin_id.setText("Admin id")
         self._tg_song_requests_enabled.setText("Enable song requests")
+
+        self._gb_openai.setTitle(self._tr("settings.openai_group"))
+        self._lbl_openai_api_key.setText(self._tr("settings.openai_api_key"))
+        self._lbl_openai_api_hint.setText(self._tr("settings.openai_api_key_hint"))
 
         self._gb_music.setTitle("Music")
         self._music_use_mpv.setText("Open in mpv (instead of playing in app)")
@@ -2185,6 +2305,15 @@ class MainWindow(FramelessWindow):
             lambda: asyncio.ensure_future(self._flush_tts_queues()),
         )
         tts_body.addWidget(self._btn_audio_flush_queues)
+        self._cb_tts_openai_moderate = QCheckBox()
+        self._cb_tts_openai_moderate.stateChanged.connect(self._persist_tts_openai_moderate)
+        tts_body.addWidget(self._cb_tts_openai_moderate)
+        self._cb_tts_speak_author = QCheckBox()
+        self._cb_tts_speak_author.stateChanged.connect(self._persist_tts_speak_author)
+        tts_body.addWidget(self._cb_tts_speak_author)
+        self._cb_tts_strip_non_alpha = QCheckBox()
+        self._cb_tts_strip_non_alpha.stateChanged.connect(self._persist_tts_strip_non_alpha)
+        tts_body.addWidget(self._cb_tts_strip_non_alpha)
         main_lay.addWidget(self._frm_audio_tts)
 
         # --- Edge card (voice selection per language) ---
@@ -2273,6 +2402,12 @@ class MainWindow(FramelessWindow):
         self._btn_audio_flush_queues.setText(self._tr("audio.flush_queues"))
         self._btn_audio_flush_queues.setToolTip(self._tr("audio.flush_queues_hint"))
         self._lbl_audio_tts_card_h.setText(self._tr("audio.card_tts_title"))
+        self._cb_tts_openai_moderate.setText(self._tr("audio.openai_moderate"))
+        self._cb_tts_openai_moderate.setToolTip(self._tr("audio.openai_moderate_hint"))
+        self._cb_tts_speak_author.setText(self._tr("audio.speak_author_name"))
+        self._cb_tts_speak_author.setToolTip(self._tr("audio.speak_author_name_hint"))
+        self._cb_tts_strip_non_alpha.setText(self._tr("audio.strip_non_alpha"))
+        self._cb_tts_strip_non_alpha.setToolTip(self._tr("audio.strip_non_alpha_hint"))
         self._lbl_audio_edge_card_h.setText(self._tr("audio.edge_voice_group"))
         self._lbl_edge_voice.setText(self._tr("audio.edge_voice_label"))
         self._update_tts_engine_related_visibility()
@@ -2513,13 +2648,11 @@ class MainWindow(FramelessWindow):
             bool(self._settings.value(_SETTINGS_AUTOSTART_YOUTUBE, False, bool)),
         )
         self._cb_autostart_youtube.blockSignals(False)
-
-        if hasattr(self, "_cb_game_mode"):
-            self._cb_game_mode.blockSignals(True)
-            self._cb_game_mode.setChecked(
-                bool(self._settings.value(_SETTINGS_GAME_MODE, False, bool)),
-            )
-            self._cb_game_mode.blockSignals(False)
+        self._cb_autostart_tiktok.blockSignals(True)
+        self._cb_autostart_tiktok.setChecked(
+            bool(self._settings.value(_SETTINGS_AUTOSTART_TIKTOK, False, bool)),
+        )
+        self._cb_autostart_tiktok.blockSignals(False)
 
         self._combo_locale.blockSignals(True)
         idx = 0 if self._locale == "uk" else 1
@@ -2580,6 +2713,30 @@ class MainWindow(FramelessWindow):
         self._tg_song_requests_enabled.setChecked(tg_songs)
         self._tg_song_requests_enabled.blockSignals(False)
 
+        oai = keyring_store.get_password(constants.KEY_OPENAI_API_KEY) or ""
+        self._openai_api_key.setText(oai)
+
+        if hasattr(self, "_cb_tts_openai_moderate"):
+            self._cb_tts_openai_moderate.blockSignals(True)
+            self._cb_tts_openai_moderate.setChecked(
+                bool(self._settings.value(_SETTINGS_TTS_OPENAI_MODERATE, False, bool)),
+            )
+            self._cb_tts_openai_moderate.blockSignals(False)
+
+        if hasattr(self, "_cb_tts_speak_author"):
+            self._cb_tts_speak_author.blockSignals(True)
+            self._cb_tts_speak_author.setChecked(
+                bool(self._settings.value(_SETTINGS_TTS_SPEAK_AUTHOR, False, bool)),
+            )
+            self._cb_tts_speak_author.blockSignals(False)
+
+        if hasattr(self, "_cb_tts_strip_non_alpha"):
+            self._cb_tts_strip_non_alpha.blockSignals(True)
+            self._cb_tts_strip_non_alpha.setChecked(
+                bool(self._settings.value(_SETTINGS_TTS_STRIP_NON_ALPHA, False, bool)),
+            )
+            self._cb_tts_strip_non_alpha.blockSignals(False)
+
         backend = str(self._settings.value(_SETTINGS_MUSIC_BACKEND, "app", str) or "").strip()
         use_mpv = backend == "mpv"
         self._music_use_mpv.blockSignals(True)
@@ -2601,6 +2758,13 @@ class MainWindow(FramelessWindow):
         self._settings.setValue(
             _SETTINGS_AUTOSTART_YOUTUBE,
             self._cb_autostart_youtube.isChecked(),
+        )
+
+    @Slot(int)
+    def _persist_autostart_tiktok(self, _state: int) -> None:
+        self._settings.setValue(
+            _SETTINGS_AUTOSTART_TIKTOK,
+            self._cb_autostart_tiktok.isChecked(),
         )
 
     @Slot()
@@ -3062,6 +3226,9 @@ class MainWindow(FramelessWindow):
             )
         except ObsControlError as e:
             self._on_user_status(f"OBS: {e}")
+        except (ImportError, OSError, RuntimeError, TypeError, ValueError) as e:
+            logger.exception("OBS action execution failed")
+            self._on_user_status(f"OBS: failed ({e})")
 
     async def _obs_test_connection_async(self) -> None:
         from stream_cheremsha.obs_ws.control import ObsControlError, obs_test_connection
@@ -3551,9 +3718,15 @@ class MainWindow(FramelessWindow):
         self._sink.set_volume(value / 100.0)
         self._settings.setValue("audio/volume", value)
 
-    async def announce_donation_tts(self, line: str) -> None:
+    async def announce_donation_tts(self, line: str, donor_name: str | None = None) -> None:
         """Speak one donation line (used by Donations live TTS). Errors are logged, not modal."""
         text = (line or "").strip()
+        if not text:
+            return
+        author = (donor_name or "").strip() or "?"
+        text, replaced = await self._apply_openai_moderation_to_tts_text(text, author)
+        text = self._maybe_strip_non_letters_for_tts(text, moderation_replaced=replaced)
+        text = (text or "").strip()
         if not text:
             return
         self._apply_audio_device_selection()
@@ -3563,9 +3736,16 @@ class MainWindow(FramelessWindow):
         except (OSError, ValueError) as e:
             logger.warning("Donation TTS: %s", e)
 
-    async def speak_action_tts(self, text: str) -> None:
+    async def speak_action_tts(self, text: str, author: str | None = None) -> None:
         """Speak text from platform Actions; errors propagate to the actions engine."""
         line = (text or "").strip()
+        if not line:
+            return
+        who = (author or "").strip() or "?"
+        line, replaced = await self._apply_openai_moderation_to_tts_text(line, who)
+        line = self._maybe_strip_non_letters_for_tts(line, moderation_replaced=replaced)
+        line = self._maybe_prefix_tts_author(who, line, moderation_replaced=replaced)
+        line = (line or "").strip()
         if not line:
             return
         self._apply_audio_device_selection()
@@ -3574,6 +3754,13 @@ class MainWindow(FramelessWindow):
 
     async def _test_tts(self) -> None:
         text = self._test_phrase.text().strip()
+        if not text:
+            return
+        author_label = self._tr("chat.test_author")
+        text, replaced = await self._apply_openai_moderation_to_tts_text(text, author_label)
+        text = self._maybe_strip_non_letters_for_tts(text, moderation_replaced=replaced)
+        text = self._maybe_prefix_tts_author(author_label, text, moderation_replaced=replaced)
+        text = (text or "").strip()
         if not text:
             return
         self._apply_audio_device_selection()
@@ -3769,6 +3956,14 @@ class MainWindow(FramelessWindow):
             and not self._youtube.running
         ):
             await self._start_youtube()
+        if (
+            bool(self._settings.value(_SETTINGS_AUTOSTART_TIKTOK, False, bool))
+            and not self._tiktok.running
+        ):
+            user = (self._tiktok_username.text() or "").strip().lstrip("@").strip()
+            if user:
+                self._tiktok_enabled = True
+                await self._start_tiktok()
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if self._closing:

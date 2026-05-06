@@ -83,8 +83,13 @@ _ENGAGEMENT_PLACEHOLDER_TOKENS = frozenset(
 
 def _schedule_preview_task(coro: typing.Coroutine[typing.Any, typing.Any, typing.Any]) -> None:
     """Schedule preview coroutines on the qasync/Qt loop and log failures."""
-
-    task = asyncio.ensure_future(coro)
+    try:
+        task = asyncio.ensure_future(coro)
+    except (RuntimeError, ValueError) as exc:
+        # In packaged builds, a missing running loop (or an invalid coroutine) used to fail
+        # silently from the user's point of view. Log it and drop the preview request.
+        logger.exception("Actions preview could not be scheduled: %s", exc)
+        return
 
     def _done(t: asyncio.Task[typing.Any]) -> None:
         try:
@@ -595,9 +600,7 @@ class ActionsQmlApi(QObject):
                 (user_s or "preview") if scope in ("user_combo", "user_every_n") else "preview"
             )
             likes_preview_n = max(1, min_count)
-            _schedule_preview_task(
-                eng.on_tiktok_likes_received(display_user, likes_preview_n, now)
-            )
+            _schedule_preview_task(eng.on_tiktok_likes_received(display_user, likes_preview_n, now))
             msg = ""
             if wants_overlay and ps is None:
                 msg = "Overlay preview unavailable (overlay server missing)."
@@ -833,10 +836,15 @@ class ActionsQmlApi(QObject):
                 return "Preview skipped (invalid rule object)."
             rule = rule_from_json_obj(cleaned)
         except (ValueError, TypeError, json.JSONDecodeError) as e:
+            logger.exception("Actions previewRuleLive: invalid rule payload (%s)", e)
             return f"Preview skipped ({e})."
         if not rule.enabled:
             return "Preview skipped (rule disabled)."
-        return self._preview_engine_run(w, rule, p)
+        try:
+            return self._preview_engine_run(w, rule, p)
+        except Exception as e:
+            logger.exception("Actions previewRuleLive failed (%s)", e)
+            return f"Preview failed ({e})."
 
     @Slot(str, str, str, result=str)
     def previewRule(self, platform: str, accountKey: str, ruleId: str) -> str:
@@ -850,11 +858,19 @@ class ActionsQmlApi(QObject):
         if not p or not ak or not rid:
             return ""
 
-        rules = load_rules(p, ak)
+        try:
+            rules = load_rules(p, ak)
+        except Exception as e:
+            logger.exception("Actions previewRule: load_rules failed (%s)", e)
+            return f"Preview failed ({e})."
         rule = next((r for r in rules if r.id == rid), None)
         if rule is None:
             return "Preview skipped (rule missing)."
         if not rule.enabled:
             return "Preview skipped (rule disabled)."
 
-        return self._preview_engine_run(w, rule, p)
+        try:
+            return self._preview_engine_run(w, rule, p)
+        except Exception as e:
+            logger.exception("Actions previewRule failed (%s)", e)
+            return f"Preview failed ({e})."

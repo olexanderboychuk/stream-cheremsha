@@ -114,7 +114,7 @@ def _show_overlay_platform_slug(ev: object) -> str:
     return ""
 
 
-TtsSpeakCallback = Callable[[str], Awaitable[None]]
+TtsSpeakCallback = Callable[[str, str | None], Awaitable[None]]
 
 
 def _chat_trigger_matches(
@@ -1170,9 +1170,19 @@ class PlatformActionsEngine:
                     if len(resolved) > MAX_MESSAGE_CHARS:
                         resolved = resolved[:MAX_MESSAGE_CHARS]
 
-                    async def _tts_line(s: str = resolved) -> None:
+                    author = (
+                        str(
+                            getattr(ev, "sender", "")
+                            or getattr(ev, "author", "")
+                            or getattr(ev, "user", "")
+                            or getattr(ev, "raider", "")
+                        ).strip()
+                        or None
+                    )
+
+                    async def _tts_line(s: str = resolved, who: str | None = author) -> None:
                         try:
-                            await self._tts_speak(s)
+                            await self._tts_speak(s, who)
                         except (OSError, ValueError, httpx.HTTPError) as e:
                             self._status_callback(f"Rule {rule.id}: speak_tts failed: {e}")
 

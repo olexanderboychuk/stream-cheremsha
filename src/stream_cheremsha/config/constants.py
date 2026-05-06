@@ -13,6 +13,7 @@ KEY_DONATIK_API_TOKEN = "donatik_api_token"
 KEY_DONATELLO_API_TOKEN = "donatello_api_token"
 KEY_OBS_WEBSOCKET_PASSWORD = "obs_websocket_password"
 KEY_TELEGRAM_BOT_TOKEN = "telegram_bot_token"
+KEY_OPENAI_API_KEY = "openai_api_key"
 SETTINGS_OBS_WS_HOST = "obs/websocket_host"
 SETTINGS_OBS_WS_PORT = "obs/websocket_port"
 

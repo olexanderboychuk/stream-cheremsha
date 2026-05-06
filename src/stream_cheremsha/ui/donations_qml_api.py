@@ -216,7 +216,7 @@ class DonationsQmlApi(QObject):
     async def _async_donatik_poll(self) -> None:
         if not self._last_donatik_from or not self._last_donatik_to:
             return
-        tts_lines: list[str] = []
+        tts_lines: list[tuple[str, str]] = []
         snap: tuple[str, int] | None = None
         async with self._donatik_lock:
             if self._donatik_loading:
@@ -250,15 +250,16 @@ class DonationsQmlApi(QObject):
                         row = by_id.get(nid)
                         if row is None:
                             continue
-                        tts_lines.append(_donatik_tts_line(self._win(), row))
+                        donor = str(row.get("name") or "—").strip() or "—"
+                        tts_lines.append((_donatik_tts_line(self._win(), row), donor))
                 self._donatik_seen.update(ids)
             self._persist_donatik_seen()
 
             if self._page == 1:
                 snap = (json.dumps(rows, ensure_ascii=False), int(total))
 
-        for line in tts_lines:
-            await self._speak_line(line)
+        for line, donor in tts_lines:
+            await self._speak_line(line, donor)
         if snap is not None:
             async with self._donatik_lock:
                 self._donations_json = snap[0]
@@ -268,7 +269,7 @@ class DonationsQmlApi(QObject):
                 self.listMetaChanged.emit()
 
     async def _async_donatello_poll(self) -> None:
-        tts_lines: list[str] = []
+        tts_lines: list[tuple[str, str]] = []
         snap: tuple[str, dict[str, typing.Any]] | None = None
         async with self._donatello_lock:
             if self._donatello_loading:
@@ -296,15 +297,16 @@ class DonationsQmlApi(QObject):
                         row = by_id.get(nid)
                         if row is None:
                             continue
-                        tts_lines.append(_donatello_tts_line(self._win(), row))
+                        donor = str(row.get("clientName") or "—").strip() or "—"
+                        tts_lines.append((_donatello_tts_line(self._win(), row), donor))
                 self._donatello_seen.update(ids)
             self._persist_donatello_seen()
 
             if self._donatello_page == 0:
                 snap = (json.dumps(rows, ensure_ascii=False), meta)
 
-        for line in tts_lines:
-            await self._speak_line(line)
+        for line, donor in tts_lines:
+            await self._speak_line(line, donor)
         if snap is not None:
             raw, meta = snap
             async with self._donatello_lock:
@@ -326,11 +328,11 @@ class DonationsQmlApi(QObject):
         if len(seen) > _SEEN_CAP:
             seen.clear()
 
-    async def _speak_line(self, line: str) -> None:
+    async def _speak_line(self, line: str, donor_name: str | None = None) -> None:
         w = self._win()
         if w is None:
             return
-        await w.announce_donation_tts(line)  # noqa: SLF001
+        await w.announce_donation_tts(line, donor_name)  # noqa: SLF001
 
     @Property(bool, notify=donatikLoadingChanged)
     def donatikLoading(self) -> bool:  # noqa: ANN201

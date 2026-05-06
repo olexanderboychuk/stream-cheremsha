@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 import httpx
 
@@ -27,6 +27,7 @@ class StreamCoordinator:
         on_status: Callable[[str], None],
         should_tts: Callable[[ChatMessage], bool] | None = None,
         get_locale: Callable[[], str] | None = None,
+        pre_tts: Callable[[str, str], Awaitable[str]] | None = None,
     ) -> None:
         self._tts = tts
         self._sink = audio_sink
@@ -34,6 +35,7 @@ class StreamCoordinator:
         self._on_status = on_status
         self._should_tts = should_tts or (lambda _msg: True)
         self._get_locale = get_locale or (lambda: l10n.DEFAULT_LOCALE)
+        self._pre_tts = pre_tts
         self.chat_in: asyncio.Queue[ChatMessage] = asyncio.Queue(maxsize=CHAT_QUEUE_MAX)
         self.tts_jobs: asyncio.Queue[str] = asyncio.Queue(maxsize=TTS_QUEUE_MAX)
         self._running = False
@@ -50,6 +52,10 @@ class StreamCoordinator:
     def set_should_tts(self, predicate: Callable[[ChatMessage], bool]) -> None:
         """Swap the predicate used to route chat into TTS."""
         self._should_tts = predicate
+
+    def set_pre_tts(self, fn: Callable[[str, str], Awaitable[str]] | None) -> None:
+        """Optional async (filtered_text, author) -> text to enqueue for TTS (e.g. moderation)."""
+        self._pre_tts = fn
 
     async def enqueue_chat(self, message: ChatMessage) -> None:
         try:
@@ -122,6 +128,11 @@ class StreamCoordinator:
             text = filter_for_tts(msg)
             if text is None:
                 continue
+            if self._pre_tts is not None:
+                text = await self._pre_tts(text, msg.author)
+                text = (text or "").strip()
+                if not text:
+                    continue
             for chunk in merge_short_subchunks(chunk_text(text)):
                 if not self._running:
                     break

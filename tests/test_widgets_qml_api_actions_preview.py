@@ -57,9 +57,7 @@ def test_save_actions_config_publishes_config_patch() -> None:
             patch("stream_cheremsha.ui.widgets_qml_api.save_actions_config"),
         ):
             api = WidgetsQmlApi(pubsub=ps)
-            api.saveActionsConfigJson(
-                '{"schema_version":1,"auto_hide_seconds":3}'
-            )
+            api.saveActionsConfigJson('{"schema_version":1,"auto_hide_seconds":3}')
         got = await asyncio.wait_for(q.get(), timeout=1.0)
         return got
 
