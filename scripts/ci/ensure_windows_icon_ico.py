@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from PIL import Image
 
 _ROOT = Path(__file__).resolve().parents[2]
 
@@ -22,8 +23,6 @@ def main() -> None:
 
     if not src_png.is_file():
         raise SystemExit(f"Missing icon source: {src_png}")
-
-    from PIL import Image
 
     img = Image.open(src_png)
     sizes = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]

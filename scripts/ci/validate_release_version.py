@@ -2,15 +2,13 @@ from __future__ import annotations
 
 import argparse
 import re
+import tomllib
 from pathlib import Path
-
 
 _ROOT = Path(__file__).resolve().parents[2]
 
 
 def _read_pyproject_version(pyproject_path: Path) -> str:
-    import tomllib
-
     raw = pyproject_path.read_bytes()
     data = tomllib.loads(raw.decode("utf-8"))
     try:
@@ -48,11 +46,13 @@ def main(argv: list[str] | None = None) -> None:
     problems: list[str] = []
     if pyproject_version != tag_version:
         problems.append(
-            f"pyproject.toml [project].version={pyproject_version!r} does not match tag {tag_version!r}",
+            "pyproject.toml [project].version="
+            f"{pyproject_version!r} does not match tag {tag_version!r}",
         )
     if init_version != tag_version:
         problems.append(
-            f"src/stream_cheremsha/__init__.py __version__={init_version!r} does not match tag {tag_version!r}",
+            "src/stream_cheremsha/__init__.py __version__="
+            f"{init_version!r} does not match tag {tag_version!r}",
         )
 
     if problems:
