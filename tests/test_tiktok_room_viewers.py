@@ -176,7 +176,9 @@ def test_join_member_count_updates_online_when_room_seq_has_no_current() -> None
     assert totals == [12345]
 
 
-def test_join_viewer_hint_does_not_override_recent_reliable_current_value(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_join_viewer_hint_does_not_override_recent_reliable_current_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     client = _FakeTikTokClient()
     currents: list[int] = []
 
@@ -240,7 +242,9 @@ def test_room_seq_anonymous_does_not_override_room_info_value() -> None:
     src._push_room_viewers_current(6, reliable=True, source="room_info")  # noqa: SLF001
 
     # RoomUserSeq arrives with only `anonymous` populated (common but misleading).
-    evt = type("E", (), {"m_total": None, "total_user": 159, "anonymous": 2, "m_popularity": None})()
+    evt = type(
+        "E", (), {"m_total": None, "total_user": 159, "anonymous": 2, "m_popularity": None}
+    )()
     cur, metric = tk_mod._room_viewers_current_metric(evt)
     assert (cur, metric) == (2, "anonymous")
     src._push_room_viewers_current(cur, reliable=False, source="room_user_seq:anonymous")  # noqa: SLF001
@@ -284,7 +288,12 @@ def test_extract_live_viewers_from_nested_room_payload() -> None:
     assert tk_mod._extract_live_viewers_from_room_payload({"owner": {"user_count": 333}}) == 333
     assert tk_mod._extract_live_viewers_from_room_payload({"viewer_count": 12}) == 12
     assert tk_mod._extract_live_viewers_from_room_payload({"stats": {"live_watch_cnt": 44}}) == 44
-    assert tk_mod._extract_live_viewers_from_room_payload({"multi_live_room_stats": {"viewer_count": 55}}) == 55
+    assert (
+        tk_mod._extract_live_viewers_from_room_payload(
+            {"multi_live_room_stats": {"viewer_count": 55}}
+        )
+        == 55
+    )
 
 
 def test_extract_live_viewers_prefers_max_candidate_when_multiple_present() -> None:
@@ -343,4 +352,3 @@ def test_cold_start_event_updates_online_and_total() -> None:
 
     assert currents == [51]
     assert totals == [888]
-

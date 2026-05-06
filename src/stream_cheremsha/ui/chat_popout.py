@@ -80,6 +80,7 @@ def _build_popout_stylesheet(bg_opacity: float) -> str:
         f"border-radius: 7px; }}"
     )
 
+
 # NCHitTest / edge widgets: keep in sync
 _RESIZE_MARGIN = 8
 

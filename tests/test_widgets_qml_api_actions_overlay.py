@@ -11,4 +11,3 @@ def test_actions_overlay_url_empty_when_base_missing() -> None:
 def test_actions_overlay_url_value() -> None:
     api = WidgetsQmlApi(overlay_base_url="http://127.0.0.1:17171")
     assert api.actionsOverlayUrl() == "http://127.0.0.1:17171/overlay/actions?instance=main"
-

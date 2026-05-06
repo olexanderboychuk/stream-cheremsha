@@ -47,4 +47,3 @@ def now_hms() -> str:
 
 def activity_append_patch(item: ActivityItem) -> dict[str, Any]:
     return {"append": item.to_dict()}
-

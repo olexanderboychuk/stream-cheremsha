@@ -143,9 +143,13 @@ def chat_config_from_json_text(text: str) -> ChatOverlayConfig:
     text_shadow_offset_y_px = max(-12, min(12, text_shadow_offset_y_px))
     widget_bg_enabled = bool(raw.get("widget_bg_enabled", d.widget_bg_enabled))
     widget_bg_rgba = str(raw.get("widget_bg_rgba") or d.widget_bg_rgba)
-    widget_bg_radius_px = max(0, _ensure_int(raw.get("widget_bg_radius_px"), default=d.widget_bg_radius_px))
+    widget_bg_radius_px = max(
+        0, _ensure_int(raw.get("widget_bg_radius_px"), default=d.widget_bg_radius_px)
+    )
     widget_bg_radius_px = min(60, widget_bg_radius_px)
-    widget_bg_padding_px = max(0, _ensure_int(raw.get("widget_bg_padding_px"), default=d.widget_bg_padding_px))
+    widget_bg_padding_px = max(
+        0, _ensure_int(raw.get("widget_bg_padding_px"), default=d.widget_bg_padding_px)
+    )
     widget_bg_padding_px = min(48, widget_bg_padding_px)
     show_platform = bool(raw.get("show_platform", d.show_platform))
     show_platform_icon = bool(raw.get("show_platform_icon", d.show_platform_icon))

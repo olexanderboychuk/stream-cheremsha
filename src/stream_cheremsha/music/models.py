@@ -10,4 +10,3 @@ class Track:
     requested_by: str
     requested_at_iso: str
     title: str = ""
-

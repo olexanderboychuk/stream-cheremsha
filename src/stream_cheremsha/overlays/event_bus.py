@@ -37,4 +37,3 @@ class OverlayEventBus:
                 s.q.put_nowait(payload.copy())
             except asyncio.QueueFull:
                 continue
-

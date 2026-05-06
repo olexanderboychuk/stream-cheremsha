@@ -21,7 +21,7 @@ def _require_supported_nuitka() -> None:
         import nuitka  # noqa: F401  # type: ignore[import-not-found]
     except ImportError as e:
         raise SystemExit(
-            "Nuitka is not installed. Install with: pip install -e \".[build]\"",
+            'Nuitka is not installed. Install with: pip install -e ".[build]"',
         ) from e
 
     # NOTE: Nuitka behavior can vary by version. If builds regress, pin a known-good
@@ -62,7 +62,7 @@ def _nuitka_cmd(
             raise SystemExit(
                 "Windows icon: missing assets/icon.ico and Pillow is not installed. "
                 "Either add stream_cheremsha/assets/icon.ico or install build extras: "
-                "pip install -e \".[build]\"",
+                'pip install -e ".[build]"',
             ) from e
         img = Image.open(icon_png)
         # Common Windows icon sizes; Pillow will downscale as needed.

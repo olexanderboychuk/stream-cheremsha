@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,7 +19,9 @@ class FakeSink:
     async def play_mp3(self, data: bytes) -> None:
         self.mp3_calls.append(bytes(data))
 
-    async def play_mp3_with_volume_deduped(self, data: bytes, linear: float, *, dedupe_key: str) -> bool:
+    async def play_mp3_with_volume_deduped(
+        self, data: bytes, linear: float, *, dedupe_key: str
+    ) -> bool:
         _ = linear
         k = (dedupe_key or "").strip()
         if not k:
@@ -87,23 +89,23 @@ def test_engine_chat_or_two_triggers_dispatches_once() -> None:
 def test_engine_matches_chat_keyword_and_dispatches() -> None:
     rules = [
         RuleV1(
-            id='r1',
+            id="r1",
             enabled=True,
-            events=({'type': 'chat_keyword', 'params': {'keyword': 'hello'}},),
-            actions=[{'type': 'noop', 'params': {}}],
+            events=({"type": "chat_keyword", "params": {"keyword": "hello"}},),
+            actions=[{"type": "noop", "params": {}}],
         ),
     ]
     engine = CapturingEngine(rules)
     ev = ChatMessageEvent(
         platform=ChatPlatform.TWITCH,
-        author='alice',
-        text='hello world',
+        author="alice",
+        text="hello world",
         received_at=datetime.now(tz=UTC),
     )
 
     asyncio.run(engine.on_chat_message(ev))
 
-    assert engine.dispatched == ['r1']
+    assert engine.dispatched == ["r1"]
 
 
 def test_engine_chat_respects_trigger_platform_tiktok_only() -> None:
@@ -135,17 +137,17 @@ def test_engine_chat_respects_trigger_platform_tiktok_only() -> None:
 def test_engine_does_not_dispatch_when_not_matched() -> None:
     rules = [
         RuleV1(
-            id='r1',
+            id="r1",
             enabled=True,
-            events=({'type': 'chat_keyword', 'params': {'keyword': 'bye'}},),
-            actions=[{'type': 'noop', 'params': {}}],
+            events=({"type": "chat_keyword", "params": {"keyword": "bye"}},),
+            actions=[{"type": "noop", "params": {}}],
         ),
     ]
     engine = CapturingEngine(rules)
     ev = ChatMessageEvent(
         platform=ChatPlatform.TWITCH,
-        author='alice',
-        text='hello world',
+        author="alice",
+        text="hello world",
         received_at=datetime.now(tz=UTC),
     )
 
@@ -244,7 +246,9 @@ def test_engine_play_sound_skip_if_same_playing_skips_overlapping_same_file(tmp_
     asyncio.run(run())
 
 
-def test_engine_play_sound_skip_if_same_playing_across_two_overlapping_dispatches(tmp_path: Path) -> None:
+def test_engine_play_sound_skip_if_same_playing_across_two_overlapping_dispatches(
+    tmp_path: Path,
+) -> None:
     """Second chat event must be able to dispatch while the first sound is still playing."""
     p = tmp_path / "a.mp3"
     p.write_bytes(b"mp3-bytes")
@@ -284,7 +288,10 @@ def test_engine_play_sound_skip_if_same_playing_across_two_overlapping_dispatche
 
 
 def test_two_action_engines_share_one_sink_skip_duplicate_sound(tmp_path: Path) -> None:
-    """Regression: dedupe must live on the sink — each (platform, account) engine used to have its own set."""
+    """Regression: dedupe must live on the sink.
+
+    Each (platform, account) engine used to have its own set.
+    """
     p = tmp_path / "a.mp3"
     p.write_bytes(b"mp3-bytes")
     sink = BlockingOnceSink()
@@ -330,8 +337,14 @@ def test_engine_play_sound_skip_if_same_playing_allows_different_files(tmp_path:
             enabled=True,
             events=({"type": "chat_keyword", "params": {"keyword": "hello"}},),
             actions=[
-                {"type": "play_sound", "params": {"file_path": str(p1), "skip_if_same_playing": True}},
-                {"type": "play_sound", "params": {"file_path": str(p2), "skip_if_same_playing": True}},
+                {
+                    "type": "play_sound",
+                    "params": {"file_path": str(p1), "skip_if_same_playing": True},
+                },
+                {
+                    "type": "play_sound",
+                    "params": {"file_path": str(p2), "skip_if_same_playing": True},
+                },
             ],
         ),
     ]
@@ -366,7 +379,9 @@ def test_engine_obs_scene_calls_obs_execute() -> None:
             ],
         ),
     ]
-    engine = PlatformActionsEngine(sink, rules, status_callback=lambda _m: None, obs_execute=capture)
+    engine = PlatformActionsEngine(
+        sink, rules, status_callback=lambda _m: None, obs_execute=capture
+    )
     ev = ChatMessageEvent(
         platform=ChatPlatform.TWITCH,
         author="bob",
@@ -412,7 +427,9 @@ def test_engine_obs_source_visible_revert_schedules_second_call() -> None:
             ],
         ),
     ]
-    engine = PlatformActionsEngine(sink, rules, status_callback=lambda _m: None, obs_execute=capture)
+    engine = PlatformActionsEngine(
+        sink, rules, status_callback=lambda _m: None, obs_execute=capture
+    )
     ev = ChatMessageEvent(
         platform=ChatPlatform.TWITCH,
         author="u",
@@ -453,7 +470,9 @@ def test_engine_obs_revert_skipped_when_delay_zero() -> None:
             ],
         ),
     ]
-    engine = PlatformActionsEngine(sink, rules, status_callback=lambda _m: None, obs_execute=capture)
+    engine = PlatformActionsEngine(
+        sink, rules, status_callback=lambda _m: None, obs_execute=capture
+    )
     ev = ChatMessageEvent(
         platform=ChatPlatform.TWITCH,
         author="u",
@@ -490,7 +509,9 @@ def test_engine_obs_scene_source_visible_false_in_payload() -> None:
             ],
         ),
     ]
-    engine = PlatformActionsEngine(sink, rules, status_callback=lambda _m: None, obs_execute=capture)
+    engine = PlatformActionsEngine(
+        sink, rules, status_callback=lambda _m: None, obs_execute=capture
+    )
     ev = ChatMessageEvent(
         platform=ChatPlatform.TWITCH,
         author="u",
@@ -554,7 +575,6 @@ def test_engine_matches_gift_received_and_executes_action(tmp_path: Path) -> Non
 
 
 def test_engine_gift_respects_trigger_platform_twitch_only() -> None:
-    sink = FakeSink()
     rules = [
         RuleV1(
             id="r_tw_gift",
@@ -677,6 +697,7 @@ def test_engine_write_file_append_adds_newline_between_entries(tmp_path: Path) -
     asyncio.run(engine.on_chat_message(ev))
     assert out.read_text(encoding="utf-8") == "OLD\nhi\n"
 
+
 def test_engine_write_file_supports_placeholders_in_path(tmp_path: Path) -> None:
     out_tmpl = tmp_path / "{author}-{platform}.txt"
     sink = FakeSink()
@@ -686,7 +707,9 @@ def test_engine_write_file_supports_placeholders_in_path(tmp_path: Path) -> None
             id="r1",
             enabled=True,
             events=({"type": "chat_keyword", "params": {"keyword": "hello"}},),
-            actions=[{"type": "write_file", "params": {"file_path": str(out_tmpl), "text": "hi\\n"}}],
+            actions=[
+                {"type": "write_file", "params": {"file_path": str(out_tmpl), "text": "hi\\n"}}
+            ],
         ),
     ]
     engine = PlatformActionsEngine(sink, rules, status_callback=st.append)
@@ -838,7 +861,12 @@ def test_engine_tiktok_likes_all_users_crossing(tmp_path: Path) -> None:
         RuleV1(
             id="r1",
             enabled=True,
-            events=({"type": "tiktok_likes_received", "params": {"min_count": 10, "scope": "all_users"}},),
+            events=(
+                {
+                    "type": "tiktok_likes_received",
+                    "params": {"min_count": 10, "scope": "all_users"},
+                },
+            ),
             actions=[{"type": "play_sound", "params": {"file_path": str(p)}}],
         ),
     ]
@@ -1006,8 +1034,12 @@ def test_engine_tiktok_likes_placeholder_in_write_file(tmp_path: Path) -> None:
         RuleV1(
             id="r1",
             enabled=True,
-            events=({"type": "tiktok_likes_received", "params": {"min_count": 1, "scope": "all_users"}},),
-            actions=[{"type": "write_file", "params": {"file_path": str(out), "text": "{liketotal}"}}],
+            events=(
+                {"type": "tiktok_likes_received", "params": {"min_count": 1, "scope": "all_users"}},
+            ),
+            actions=[
+                {"type": "write_file", "params": {"file_path": str(out), "text": "{liketotal}"}}
+            ],
         ),
     ]
     engine = PlatformActionsEngine(sink, rules)
@@ -1019,9 +1051,15 @@ def test_engine_tiktok_likes_placeholder_in_write_file(tmp_path: Path) -> None:
 def test_tiktok_likes_preview_batch() -> None:
     sink = FakeSink()
     engine = PlatformActionsEngine(sink, [])
-    assert engine.tiktok_likes_preview_batch(scope="all_users", min_count=5, user="") == (5, "preview")
+    assert engine.tiktok_likes_preview_batch(scope="all_users", min_count=5, user="") == (
+        5,
+        "preview",
+    )
     asyncio.run(engine.on_tiktok_likes_received("a", 3, datetime.now(tz=UTC)))
-    assert engine.tiktok_likes_preview_batch(scope="all_users", min_count=5, user="") == (2, "preview")
+    assert engine.tiktok_likes_preview_batch(scope="all_users", min_count=5, user="") == (
+        2,
+        "preview",
+    )
     asyncio.run(engine.on_tiktok_likes_received("b", 2, datetime.now(tz=UTC)))
     assert engine.tiktok_likes_preview_batch(scope="all_users", min_count=5, user="") is None
 
@@ -1034,7 +1072,10 @@ def test_tiktok_likes_preview_batch_user_every_n() -> None:
         "preview",
     )
     asyncio.run(engine.on_tiktok_likes_received("u", 240, datetime.now(tz=UTC)))
-    assert engine.tiktok_likes_preview_batch(scope="user_every_n", min_count=250, user="u") == (10, "u")
+    assert engine.tiktok_likes_preview_batch(scope="user_every_n", min_count=250, user="u") == (
+        10,
+        "u",
+    )
 
 
 def test_engine_tiktok_joined_matches_user_filter(tmp_path: Path) -> None:
@@ -1295,11 +1336,16 @@ def test_engine_show_overlay_action_publishes_append_with_placeholders_and_gift_
             RuleV1(
                 id="r1",
                 enabled=True,
-                events=({"type": "gift_received", "params": {"gift_name": "Rose", "min_count": 1}},),
+                events=(
+                    {"type": "gift_received", "params": {"gift_name": "Rose", "min_count": 1}},
+                ),
                 actions=[
                     {
                         "type": "show_overlay",
-                        "params": {"text": "{sender} подарував {giftname} x{giftcount}", "seconds": 7},
+                        "params": {
+                            "text": "{sender} подарував {giftname} x{giftcount}",
+                            "seconds": 7,
+                        },
                     }
                 ],
             )
@@ -1331,7 +1377,14 @@ def test_engine_show_overlay_gift_picture_falls_back_to_catalog_when_live_icon_e
 ) -> None:
     monkeypatch.setattr(
         "stream_cheremsha.actions.tiktok_gifts.TIKTOK_GIFTS",
-        [{"id": "123", "name": "Rose", "price": 1, "image_url": "https://catalog.example/from-db.png"}],
+        [
+            {
+                "id": "123",
+                "name": "Rose",
+                "price": 1,
+                "image_url": "https://catalog.example/from-db.png",
+            }
+        ],
     )
 
     async def _run() -> dict[str, object]:

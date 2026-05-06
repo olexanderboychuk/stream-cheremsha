@@ -268,9 +268,7 @@ def _dispatch_notification(
         "channel.subscription.message",
     ):
         user = (
-            event.get("user_name")
-            or event.get("gifter_name")
-            or event.get("recipient_user_name")
+            event.get("user_name") or event.get("gifter_name") or event.get("recipient_user_name")
         )
         user_s = user if isinstance(user, str) else "?"
         st = "sub"

@@ -39,4 +39,3 @@ class ActivityOverlayType:
     def initial_state(self, params: dict[str, Any]) -> dict[str, Any]:
         _ = normalize_instance_id(str(params.get("instance") or ""))
         return {"items": []}
-

@@ -169,7 +169,7 @@ class TwitchAnalyticsApi(QObject):
         self._emit_stats()
 
     @Slot(str, str, int, str)
-    def _apply_sub(self, user: str, sub_type: str, months: int, message: str) -> None:
+    def _apply_sub(self, user: str, sub_type: str, months: int, message: str = "") -> None:
         u = (user or "").strip() or "?"
         st = (sub_type or "").strip()
         m = max(0, int(months))

@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from stream_cheremsha.chat.youtube_source import (
     _dedupe_strs,

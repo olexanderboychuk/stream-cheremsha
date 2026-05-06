@@ -35,4 +35,3 @@ def test_twitch_analytics_counters_and_reset() -> None:
     assert a.bitsSession == 0
     assert a.raidsSession == 0
     assert a.feedModel.rowCount() == 0
-

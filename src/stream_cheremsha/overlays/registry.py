@@ -4,8 +4,8 @@ import json
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from stream_cheremsha.overlays.activity_overlay import ActivityOverlayType
 from stream_cheremsha.overlays.actions_overlay import ActionsOverlayType
+from stream_cheremsha.overlays.activity_overlay import ActivityOverlayType
 from stream_cheremsha.overlays.chat_overlay import ChatOverlayType
 from stream_cheremsha.overlays.models import normalize_instance_id
 from stream_cheremsha.overlays.music_overlay import MusicOverlayType
@@ -52,7 +52,11 @@ class _DebugOverlayType:
     <style>
       html, body {{ margin: 0; padding: 0; background: transparent; color: #e5e7eb;
         font-family: system-ui, sans-serif; }}
-      .box {{ padding: 10px; background: rgba(10,12,18,0.60); border: 1px solid rgba(148,163,184,0.25); }}
+      .box {{
+        padding: 10px;
+        background: rgba(10,12,18,0.60);
+        border: 1px solid rgba(148,163,184,0.25);
+      }}
       pre {{ white-space: pre-wrap; word-break: break-word; margin: 8px 0 0; }}
     </style>
   </head>
@@ -68,7 +72,8 @@ class _DebugOverlayType:
         document.getElementById('instance').textContent = instance;
 
         const log = document.getElementById('log');
-        const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+        const wsUrl =
+          (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
         let ws = null;
         let tries = 0;
 

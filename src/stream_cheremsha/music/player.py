@@ -7,17 +7,17 @@ import shutil
 import time
 import uuid
 from collections.abc import Callable
-from typing import BinaryIO
+from typing import BinaryIO, Protocol
 
 from stream_cheremsha.chat.video_id import extract_youtube_video_id
 from stream_cheremsha.domain.protocols import AudioSink
 from stream_cheremsha.music.queue_controller import MusicQueueController
-from typing import Protocol
 
 
 class ResolveResult(Protocol):
     title: str
     audio_bytes: bytes
+
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ class MusicPlayer:
             return
         try:
             await asyncio.wait_for(proc.wait(), timeout=1.5)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             try:
                 proc.kill()
             except ProcessLookupError:
@@ -197,7 +197,7 @@ class MusicPlayer:
                     # Avoid missing a Condition notify race: periodically re-check.
                     try:
                         await asyncio.wait_for(self._queue.wait_changed(), timeout=0.5)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         pass
                     continue
 
@@ -205,7 +205,7 @@ class MusicPlayer:
                 if self._play_task is not None and not self._play_task.done():
                     try:
                         await asyncio.wait_for(self._queue.wait_changed(), timeout=0.5)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         pass
                     continue
 
@@ -224,7 +224,12 @@ class MusicPlayer:
 
                 # Advance only if current is still the same track (not skipped externally).
                 cur2 = await self._queue.current_track()
-                if (not was_cancelled) and finished_naturally and cur2 is not None and cur2.id == cur.id:
+                if (
+                    (not was_cancelled)
+                    and finished_naturally
+                    and cur2 is not None
+                    and cur2.id == cur.id
+                ):
                     self._status(f"Music: finished {cur.video_id}, advancing queue")
                     await self._queue.skip()
                     # If the queue is now empty, close mpv instead of leaving an idle window.
@@ -251,7 +256,8 @@ class MusicPlayer:
         if self._backend == "mpv":
             self._status(f"Music: mpv play {vid}")
             await self._play_mpv_track(vid)
-            # mpv track finishing is handled inside _play_mpv_track; if it returns, treat as natural.
+            # mpv track finishing is handled inside _play_mpv_track; if it returns, treat as
+            # natural.
             return True
         self._status(f"Music: loading {vid}…")
         try:
@@ -335,7 +341,7 @@ class MusicPlayer:
             return
         try:
             await asyncio.wait_for(p.wait(), timeout=2.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             try:
                 p.kill()
             except ProcessLookupError:
@@ -438,7 +444,9 @@ class MusicPlayer:
                 self._mpv_proc_exited.set()
                 # Also wake up any waiters that might be blocked on events.
                 try:
-                    self._mpv_events.put_nowait({"event": "proc-exit", "returncode": proc.returncode})
+                    self._mpv_events.put_nowait(
+                        {"event": "proc-exit", "returncode": proc.returncode}
+                    )
                 except asyncio.QueueFull:
                     pass
                 self._stop_mpv_reader_locked()
@@ -467,7 +475,7 @@ class MusicPlayer:
         try:
             fr = await asyncio.wait_for(asyncio.to_thread(_open_pipe_r, path), timeout=1.5)
             fw = await asyncio.wait_for(asyncio.to_thread(_open_pipe_w, path), timeout=1.5)
-        except (OSError, asyncio.TimeoutError):
+        except (TimeoutError, OSError):
             try:
                 fr.close()  # type: ignore[possibly-undefined]
             except Exception:
@@ -493,7 +501,9 @@ class MusicPlayer:
                 return
             self._mpv_pipe_r = fr
             self._mpv_pipe_w = fw
-            self._mpv_reader_task = asyncio.create_task(self._mpv_reader_loop(), name="mpv-ipc-reader")
+            self._mpv_reader_task = asyncio.create_task(
+                self._mpv_reader_loop(), name="mpv-ipc-reader"
+            )
 
     async def _mpv_reader_loop(self) -> None:
         """Read mpv IPC events and enqueue them."""
@@ -551,7 +561,7 @@ class MusicPlayer:
             remaining = max(0.01, deadline - time.monotonic())
             try:
                 msg = await asyncio.wait_for(self._mpv_events.get(), timeout=remaining)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return None
             ev = msg.get("event") if isinstance(msg, dict) else None
             if ev == name:
@@ -699,7 +709,7 @@ class MusicPlayer:
             # Never let a named-pipe open block forever (Windows quirk).
             try:
                 ok = await asyncio.wait_for(asyncio.to_thread(_probe), timeout=0.25)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 ok = False
             if ok:
                 return True
@@ -730,7 +740,7 @@ class MusicPlayer:
 
         try:
             await asyncio.wait_for(asyncio.to_thread(_write), timeout=0.5)
-        except (OSError, asyncio.TimeoutError, ValueError):
+        except (TimeoutError, OSError, ValueError):
             return False
         return True
 

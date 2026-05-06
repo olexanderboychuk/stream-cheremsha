@@ -6,10 +6,7 @@ from stream_cheremsha.chat.twitch_eventsub import (
 
 
 def test_parse_welcome_extracts_session_id() -> None:
-    raw = (
-        '{"metadata":{"message_type":"session_welcome"},'
-        '"payload":{"session":{"id":"abc123"}}}'
-    )
+    raw = '{"metadata":{"message_type":"session_welcome"},"payload":{"session":{"id":"abc123"}}}'
     p = _parse_eventsub_ws_message(raw)
     assert p is not None
     assert p.kind == "welcome"
@@ -40,4 +37,3 @@ def test_dispatch_sub_resub_passes_message() -> None:
         cb,
     )
     assert seen == [("bob", "resub", 6, "Still here!")]
-

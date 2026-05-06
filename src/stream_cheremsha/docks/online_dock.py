@@ -167,8 +167,14 @@ def render_online_dock_html() -> str:
               <div class="updated" id="updatedAt">—</div>
             </div>
             <div class="rows">
-              <div class="row"><div class="k" id="twCurrentK">Current</div><div class="v" id="twCurrentV">0</div></div>
-              <div class="row"><div class="k" id="twPeakK">Peak</div><div class="v" id="twPeakV">0</div></div>
+              <div class="row">
+                <div class="k" id="twCurrentK">Current</div>
+                <div class="v" id="twCurrentV">0</div>
+              </div>
+              <div class="row">
+                <div class="k" id="twPeakK">Peak</div>
+                <div class="v" id="twPeakV">0</div>
+              </div>
             </div>
           </div>
           <div class="card" id="youtubeCard">
@@ -178,10 +184,22 @@ def render_online_dock_html() -> str:
               <div class="spacer"></div>
             </div>
             <div class="rows">
-              <div class="row"><div class="k" id="ytMsgK">Messages</div><div class="v" id="ytMsgV">0</div></div>
-              <div class="row"><div class="k" id="ytUniqueK">Unique</div><div class="v" id="ytUniqueV">0</div></div>
-              <div class="row"><div class="k" id="ytSuperK">Super</div><div class="v" id="ytSuperV">0</div></div>
-              <div class="row"><div class="k" id="ytMemberK">Members</div><div class="v" id="ytMemberV">0</div></div>
+              <div class="row">
+                <div class="k" id="ytMsgK">Messages</div>
+                <div class="v" id="ytMsgV">0</div>
+              </div>
+              <div class="row">
+                <div class="k" id="ytUniqueK">Unique</div>
+                <div class="v" id="ytUniqueV">0</div>
+              </div>
+              <div class="row">
+                <div class="k" id="ytSuperK">Super</div>
+                <div class="v" id="ytSuperV">0</div>
+              </div>
+              <div class="row">
+                <div class="k" id="ytMemberK">Members</div>
+                <div class="v" id="ytMemberV">0</div>
+              </div>
             </div>
           </div>
           <div class="card" id="tiktokCard">
@@ -192,9 +210,18 @@ def render_online_dock_html() -> str:
               <div class="dot" id="connDot" title="ws"></div>
             </div>
             <div class="rows">
-              <div class="row"><div class="k" id="ttCurrentK">Current</div><div class="v" id="ttCurrentV">0</div></div>
-              <div class="row"><div class="k" id="ttTotalK">Total</div><div class="v" id="ttTotalV">0</div></div>
-              <div class="row"><div class="k" id="ttGiftsK">Gifts</div><div class="v" id="ttGiftsV">0</div></div>
+              <div class="row">
+                <div class="k" id="ttCurrentK">Current</div>
+                <div class="v" id="ttCurrentV">0</div>
+              </div>
+              <div class="row">
+                <div class="k" id="ttTotalK">Total</div>
+                <div class="v" id="ttTotalV">0</div>
+              </div>
+              <div class="row">
+                <div class="k" id="ttGiftsK">Gifts</div>
+                <div class="v" id="ttGiftsV">0</div>
+              </div>
               <div class="row">
                 <div class="k" id="ttDiamondsK">Diamonds</div>
                 <div class="v" id="ttDiamondsV">0</div>

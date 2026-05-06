@@ -39,9 +39,7 @@ def test_chat_message_to_patch_time_seconds_precision() -> None:
 
 def test_chat_message_to_patch_time_converts_to_utc() -> None:
     # +02:00 should convert to Z with correct hour.
-    received_at = datetime(
-        2026, 1, 2, 3, 4, 5, tzinfo=timezone(timedelta(hours=2))
-    )
+    received_at = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone(timedelta(hours=2)))
     msg = ChatMessage(
         author="alice",
         text="hello",

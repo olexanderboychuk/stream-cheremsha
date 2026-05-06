@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import uuid
@@ -96,7 +96,9 @@ def _parse_ui_rule_ref(obj: Mapping[str, Any], *, index: int | None = None) -> U
     return {"kind": "rule", "rule_id": rid.strip()}
 
 
-def _parse_ui_folder(obj: Mapping[str, Any], *, index: int | None = None, depth: int) -> UiFolderNode:
+def _parse_ui_folder(
+    obj: Mapping[str, Any], *, index: int | None = None, depth: int
+) -> UiFolderNode:
     if depth > 8:
         raise ValueError("ui_layout.tree folders are nested too deeply (max depth 8)")
     idx = "" if index is None else f"[{index}]"
@@ -195,12 +197,16 @@ def ui_rules_layout_to_json_text(layout: UiRulesLayoutV1) -> str:
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
-def normalize_ui_rules_layout_v1(layout: UiRulesLayoutV1 | None, rules: list[RuleV1]) -> UiRulesLayoutV1 | None:
+def normalize_ui_rules_layout_v1(
+    layout: UiRulesLayoutV1 | None, rules: list[RuleV1]
+) -> UiRulesLayoutV1 | None:
     """Drop stale rule refs / folders, dedupe rule ids, append missing rules (stable).
 
     Returns None when there is nothing meaningful to persist (no folders and default ordering).
     """
-    ids_in_order: list[str] = [r.id.strip() for r in rules if isinstance(r.id, str) and r.id.strip()]
+    ids_in_order: list[str] = [
+        r.id.strip() for r in rules if isinstance(r.id, str) and r.id.strip()
+    ]
     id_set = set(ids_in_order)
 
     def normalize_children(children: list[UiTreeNode]) -> tuple[list[UiTreeNode], list[str]]:
@@ -254,7 +260,11 @@ def normalize_ui_rules_layout_v1(layout: UiRulesLayoutV1 | None, rules: list[Rul
 def default_ui_rules_layout_v1(rules: list[RuleV1]) -> UiRulesLayoutV1:
     return {
         "schema_version": 1,
-        "tree": [{"kind": "rule", "rule_id": r.id.strip()} for r in rules if isinstance(r.id, str) and r.id.strip()],
+        "tree": [
+            {"kind": "rule", "rule_id": r.id.strip()}
+            for r in rules
+            if isinstance(r.id, str) and r.id.strip()
+        ],
     }
 
 
@@ -266,10 +276,7 @@ def rule_to_json_obj(rule: RuleV1) -> dict[str, Any]:
     out: dict[str, Any] = {
         "id": rule.id,
         "enabled": rule.enabled,
-        "actions": [
-            {"type": a["type"], "params": dict(a["params"])}
-            for a in rule.actions
-        ],
+        "actions": [{"type": a["type"], "params": dict(a["params"])} for a in rule.actions],
     }
     if len(rule.events) == 1:
         e = rule.events[0]

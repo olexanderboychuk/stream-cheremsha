@@ -323,4 +323,3 @@ async def test_online_overlay_ws_receives_online_state_patch() -> None:
 
 def _subscribe_debug_default() -> dict[str, object]:
     return {"op": "subscribe", "type": "debug", "instance": "default", "params": {}}
-

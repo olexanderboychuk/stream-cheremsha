@@ -5,8 +5,7 @@ import logging
 import threading
 from collections.abc import Awaitable, Callable
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram import BotCommand
+from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
@@ -224,7 +223,9 @@ class TelegramBotService:
         if data == _CB_CANCEL:
             self._awaiting_link.discard(uid)
             if q.message is not None:
-                await q.message.reply_text("Скасовано.", reply_markup=self._main_menu_markup(is_admin=is_admin))
+                await q.message.reply_text(
+                    "Скасовано.", reply_markup=self._main_menu_markup(is_admin=is_admin)
+                )
             return
 
         if data == _CB_ORDER:
@@ -257,7 +258,7 @@ class TelegramBotService:
             if not is_admin:
                 await q.message.reply_text("Недостатньо прав.")
                 return
-            tid = data[len(_CB_RM_PREFIX):].strip()
+            tid = data[len(_CB_RM_PREFIX) :].strip()
             if not tid:
                 await q.message.reply_text("Невірна команда.")
                 return
@@ -317,7 +318,9 @@ class TelegramBotService:
                 vid = str(it.get("video_id") or "").strip()
                 if not tid or not vid:
                     continue
-                kb.append([InlineKeyboardButton(f"🗑️ Remove {vid}", callback_data=f"{_CB_RM_PREFIX}{tid}")])
+                kb.append(
+                    [InlineKeyboardButton(f"🗑️ Remove {vid}", callback_data=f"{_CB_RM_PREFIX}{tid}")]
+                )
         kb.append([InlineKeyboardButton("⬅️ Menu", callback_data=_CB_MENU)])
 
         await message.reply_text(

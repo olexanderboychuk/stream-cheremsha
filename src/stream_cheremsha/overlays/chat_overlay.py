@@ -64,7 +64,13 @@ class ChatOverlayType:
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Chat Overlay</title>
     <style>
-      html, body {{ margin: 0; padding: 0; background: transparent; overflow: hidden; height: 100%; }}
+      html, body {{
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        overflow: hidden;
+        height: 100%;
+      }}
       body {{ font-family: system-ui, sans-serif; }}
       .wrap {{
         position: absolute;
@@ -116,13 +122,17 @@ class ChatOverlayType:
       (function() {{
         const root = document.getElementById('root');
         const panel = document.getElementById('panel');
-        const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+        const wsUrl =
+          (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
         let ws = null;
         const RECONNECT_MS = 5000;
         let cfg = null;
         // items: array of message objects (id, author, text, platform, received_at)
         let items = [];
-        const log = (...args) => {{ try {{ console.log('[chat-overlay]', ...args); }} catch (e) {{ }} }};
+        const log = (...args) => {{
+          try {{ console.log('[chat-overlay]', ...args); }}
+          catch (e) {{ }}
+        }};
         let _id = 0;
 
         function ensureCompat() {{
@@ -147,7 +157,8 @@ class ChatOverlayType:
             pre.style.margin = '0';
             pre.style.fontSize = '12px';
             pre.style.whiteSpace = 'pre-wrap';
-            pre.textContent = 'chat overlay error: ' + String(err && (err.stack || err.message) || err);
+            pre.textContent = 'chat overlay error: '
+              + String(err && (err.stack || err.message) || err);
             document.body.appendChild(pre);
           }} catch (e) {{ }}
         }}
@@ -233,7 +244,9 @@ class ChatOverlayType:
           panel.style.height = '100%';
           panel.style.padding = pad + 'px';
           panel.style.borderRadius = rad + 'px';
-          panel.style.background = on ? String(cfg.widget_bg_rgba || 'rgba(10,12,18,0.45)') : 'transparent';
+          panel.style.background = on
+            ? String(cfg.widget_bg_rgba || 'rgba(10,12,18,0.45)')
+            : 'transparent';
         }}
 
         function render() {{
@@ -302,7 +315,9 @@ class ChatOverlayType:
             if (node) {{
               node.classList.add('exit');
               setTimeout(() => {{
-                try {{ if (node && node.parentNode) node.parentNode.removeChild(node); }} catch (e) {{ }}
+                try {{
+                  if (node && node.parentNode) node.parentNode.removeChild(node);
+                }} catch (e) {{ }}
                 removeItemById(id);
               }}, 560);
               return;

@@ -163,4 +163,3 @@ def test_load_uses_backup_when_primary_is_invalid(ini_settings: QSettings) -> No
     out = load_actions_config(settings=ini_settings)
     assert out.font_family == "Inter"
     assert out.name_text_gap_px == 12
-

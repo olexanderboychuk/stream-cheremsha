@@ -6,10 +6,10 @@ from stream_cheremsha.actions.action_placeholders import apply_action_placeholde
 from stream_cheremsha.actions.events import (
     ChatMessageEvent,
     GiftReceivedEvent,
-    TikTokLikesReceivedEvent,
     TikTokFirstActivityEvent,
     TikTokFollowedEvent,
     TikTokJoinedEvent,
+    TikTokLikesReceivedEvent,
     TikTokPaidSubscribedEvent,
     TikTokSharedEvent,
     TwitchCheerEvent,
@@ -56,7 +56,10 @@ def test_tiktok_likes_placeholders() -> None:
         likes_total_for_scope=120,
         received_at=datetime.now(tz=UTC),
     )
-    assert apply_action_placeholders("{sender} +{likebatch} total {liketotal}", ev) == "bob +5 total 120"
+    assert (
+        apply_action_placeholders("{sender} +{likebatch} total {liketotal}", ev)
+        == "bob +5 total 120"
+    )
 
 
 def test_tiktok_joined_placeholders() -> None:

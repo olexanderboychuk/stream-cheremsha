@@ -260,4 +260,3 @@ class MusicOverlayType:
             "queue": [],
             "config": {"autoplay_muted": False, "max_queue_items": 20},
         }
-

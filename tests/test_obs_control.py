@@ -73,7 +73,12 @@ def test_run_obs_source_visible_passes_canvas_uuid() -> None:
     )
     mock_cl.send.assert_any_call(
         "SetSceneItemEnabled",
-        {"sceneName": "SceneA", "sceneItemId": 7, "sceneItemEnabled": True, "canvasUuid": "abc-def"},
+        {
+            "sceneName": "SceneA",
+            "sceneItemId": 7,
+            "sceneItemEnabled": True,
+            "canvasUuid": "abc-def",
+        },
         raw=True,
     )
 

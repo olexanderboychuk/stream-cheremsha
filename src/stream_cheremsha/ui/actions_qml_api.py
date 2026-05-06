@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from PySide6.QtCore import QObject, Signal, Slot
 from PySide6.QtWidgets import QFileDialog
 
+from stream_cheremsha.actions import store as actions_store
 from stream_cheremsha.actions.action_placeholders import _PLACEHOLDER_RE
 from stream_cheremsha.actions.engine import PlatformActionsEngine
 from stream_cheremsha.actions.events import ChatMessageEvent, GiftReceivedEvent
@@ -30,7 +31,6 @@ from stream_cheremsha.actions.models import (
 from stream_cheremsha.actions.store import (
     load_rules,
     load_rules_bundle,
-    save_rules,
     save_rules_bundle,
 )
 from stream_cheremsha.actions.tiktok_gifts import TIKTOK_GIFTS
@@ -40,13 +40,20 @@ from stream_cheremsha.actions.trigger_meta import (
 )
 from stream_cheremsha.config import constants, keyring_store
 from stream_cheremsha.domain.models import ChatPlatform
-from stream_cheremsha.obs_ws.control import obs_list_canvases, obs_list_scene_sources, obs_list_scenes
+from stream_cheremsha.obs_ws.control import (
+    obs_list_canvases,
+    obs_list_scene_sources,
+    obs_list_scenes,
+)
 
 if typing.TYPE_CHECKING:
     from stream_cheremsha.ui.main_window import MainWindow
 
 
 logger = logging.getLogger(__name__)
+
+# Back-compat export for older tests/callers that monkeypatch `save_rules` directly.
+save_rules = actions_store.save_rules
 
 
 _LIKE_PLACEHOLDER_TOKENS = frozenset(
@@ -69,7 +76,9 @@ _GIFT_PLACEHOLDER_TOKENS = frozenset(
     }
 )
 _CHAT_PLACEHOLDER_TOKENS = frozenset({"author", "text"})
-_ENGAGEMENT_PLACEHOLDER_TOKENS = frozenset({"sender", "user", "kind", "months", "message", "bits", "raider", "viewers"})
+_ENGAGEMENT_PLACEHOLDER_TOKENS = frozenset(
+    {"sender", "user", "kind", "months", "message", "bits", "raider", "viewers"}
+)
 
 
 def _schedule_preview_task(coro: typing.Coroutine[typing.Any, typing.Any, typing.Any]) -> None:
@@ -322,7 +331,10 @@ class ActionsQmlApi(QObject):
             # Match Widgets overlay APIs: never wipe persisted state on empty/whitespace payloads.
             # Clearing rules is done explicitly via JSON {"schema_version":1,"rules":[]}.
             logger.debug(
-                "saveRulesJson ignored: empty payload for platform=%s account=%s (rules not cleared)",
+                (
+                    "saveRulesJson ignored: empty payload for platform=%s account=%s "
+                    "(rules not cleared)"
+                ),
                 p,
                 ak,
             )
@@ -336,7 +348,10 @@ class ActionsQmlApi(QObject):
 
     @Slot(str, str, result=str)
     def loadRulesUiLayoutJson(self, platform: str, accountKey: str) -> str:
-        """Return persisted Actions UI layout JSON (folders/order). Empty object if absent."""
+        """Return persisted Actions UI layout JSON (folders/order).
+
+        Empty object if absent.
+        """
         p = (platform or "").strip()
         if not p:
             return "{}"
@@ -574,12 +589,15 @@ class ActionsQmlApi(QObject):
                     scope = sc
                 user_s = str(params.get("user") or "").strip()
             # Synthetic batch sized to min_count (fresh engine; no cumulative totals).
-            # user_combo / user_every_n with empty user matches any viewer; use a display name for preview.
+            # user_combo / user_every_n with empty user matches any viewer; use a display name for
+            # preview.
             display_user = (
                 (user_s or "preview") if scope in ("user_combo", "user_every_n") else "preview"
             )
             likes_preview_n = max(1, min_count)
-            _schedule_preview_task(eng.on_tiktok_likes_received(display_user, likes_preview_n, now))
+            _schedule_preview_task(
+                eng.on_tiktok_likes_received(display_user, likes_preview_n, now)
+            )
             msg = ""
             if wants_overlay and ps is None:
                 msg = "Overlay preview unavailable (overlay server missing)."
@@ -798,7 +816,10 @@ class ActionsQmlApi(QObject):
 
     @Slot(str, str, "QVariantMap", result=str)
     def previewRuleLive(self, platform: str, accountKey: str, rule_map: object) -> str:
-        """Preview using the rule from the editor list (includes unsaved edits, e.g. play_sound options)."""
+        """Preview using the rule from the editor list.
+
+        Includes unsaved edits, e.g. play_sound options.
+        """
         w = self._win()
         if w is None:
             return "Preview unavailable (window)."

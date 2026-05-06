@@ -29,7 +29,8 @@ TIKTOK_RECONNECT_SEC = 15.0
 TIKTOK_COMMENT_BACKLOG_WINDOW_SEC = 2.0
 # HTTP room/info snapshot occasionally exposes viewer counts when websocket fields stay zero.
 TIKTOK_VIEWERS_POLL_SEC = 25.0
-# RoomUserSeq: fused / multi-live rooms often expose concurrent viewers only via fields that exceed cumulative total_user.
+# RoomUserSeq: fused / multi-live rooms often expose concurrent viewers only via fields
+# that exceed cumulative total_user.
 _MULTI_LIVE_POPULARITY_TO_TOTAL_USER_RATIO_CAP = 96
 
 _ROOM_INFO_VIEWER_KEYS = frozenset(
@@ -223,6 +224,7 @@ def _room_viewers_current_metric(event: object) -> tuple[int, str]:
 
     return best, metric
 
+
 _TIKTOKLIVE_LOG_ID_PATCHED = False
 
 
@@ -271,7 +273,22 @@ def _optional_event(name: str):  # noqa: ANN001
     try:
         from TikTokLive import events as _tk_events  # type: ignore
 
-        return getattr(_tk_events, name, None)
+        ev = getattr(_tk_events, name, None)
+        if ev is not None:
+            return ev
+
+        # Back-compat: some TikTokLive versions removed/renamed certain event classes.
+        # Our code and tests still treat ColdStartEvent as a supported hook.
+        if name == "ColdStartEvent":
+
+            class _ColdStartEventFallback:
+                @staticmethod
+                def get_type() -> str:
+                    return "cold_start"
+
+            return _ColdStartEventFallback
+
+        return None
     except ImportError:
         return None
 
@@ -320,7 +337,10 @@ def _image_like_first_url(img: object | None) -> str:
 
 
 def tiktok_user_avatar_url(user: object | None) -> str:
-    """Resolve viewer avatar HTTPS URL from TikTokLive user / user_info objects (library/version-dependent)."""
+    """Resolve viewer avatar HTTPS URL from TikTokLive user / user_info objects.
+
+    Library/version-dependent.
+    """
     if user is None:
         return ""
     for attr in ("profile_picture_url", "avatar_url", "avatar_uri"):
@@ -522,7 +542,14 @@ class TikTokChatSource:
                 payload = await client.web.fetch_room_info()
             except asyncio.CancelledError:
                 raise
-            except (AgeRestrictedError, TikTokLiveError, OSError, RuntimeError, ValueError, KeyError) as exc:
+            except (
+                AgeRestrictedError,
+                TikTokLiveError,
+                OSError,
+                RuntimeError,
+                ValueError,
+                KeyError,
+            ) as exc:
                 logger.debug("TikTok viewer poll: %s", exc)
                 return
             except Exception as exc:
@@ -729,7 +756,8 @@ class TikTokChatSource:
                             source=f"room_user_seq:{metric or 'unknown'}",
                         )
                     cb_tot = self._on_room_viewers_total
-                    # Avoid pushing total_user=0 (common while TikTok omits totals on some WS packets).
+                    # Avoid pushing total_user=0 (common while TikTok omits totals on some WS
+                    # packets).
                     if cb_tot is not None and tot > 0:
                         cb_tot(tot)
 
@@ -773,7 +801,9 @@ class TikTokChatSource:
                     # Best-effort: TikTokLive differs between versions:
                     # - some expose per-event batch count
                     # - some expose a stream-level running total (often likeCount)
-                    raw_like_total = getattr(event, "likeCount", None) or getattr(event, "likes", None)
+                    raw_like_total = getattr(event, "likeCount", None) or getattr(
+                        event, "likes", None
+                    )
                     total_i = _parse_int_best_effort(raw_like_total, default=-1)
                     if total_i >= 0:
                         prev_total = self._last_like_total
@@ -787,7 +817,9 @@ class TikTokChatSource:
                         cb(_display_name_from_user(user), n_i, avatar_u)
                         return
 
-                    raw_batch = getattr(event, "like_count", None) or getattr(event, "count", None) or 1
+                    raw_batch = (
+                        getattr(event, "like_count", None) or getattr(event, "count", None) or 1
+                    )
                     n_i = _parse_int_best_effort(raw_batch, default=1)
                     cb(_display_name_from_user(user), max(1, n_i), avatar_u)
 
@@ -799,7 +831,9 @@ class TikTokChatSource:
                     if cb is None:
                         return
                     user = getattr(event, "user", None) or getattr(event, "user_info", None)
-                    raw_n = getattr(event, "count", None) or getattr(event, "share_count", None) or 1
+                    raw_n = (
+                        getattr(event, "count", None) or getattr(event, "share_count", None) or 1
+                    )
                     try:
                         n = int(raw_n)
                     except (TypeError, ValueError):
@@ -834,18 +868,16 @@ class TikTokChatSource:
                     # Best-effort extraction (TikTokLive differs between versions).
                     user_obj = getattr(event, "user", None)
                     sender_avatar = tiktok_user_avatar_url(user_obj)
-                    user = getattr(user_obj, "nickname", None) or getattr(user_obj, "unique_id", None)
+                    user = getattr(user_obj, "nickname", None) or getattr(
+                        user_obj, "unique_id", None
+                    )
                     gift = getattr(event, "gift", None)
                     gift_id = getattr(gift, "id", None) or getattr(gift, "gift_id", None) or ""
                     gift_name = (
-                        getattr(gift, "name", None)
-                        or getattr(gift, "gift_name", None)
-                        or ""
+                        getattr(gift, "name", None) or getattr(gift, "gift_name", None) or ""
                     )
                     count = (
-                        getattr(event, "repeat_count", None)
-                        or getattr(event, "count", None)
-                        or 1
+                        getattr(event, "repeat_count", None) or getattr(event, "count", None) or 1
                     )
                     try:
                         count_i = int(count)

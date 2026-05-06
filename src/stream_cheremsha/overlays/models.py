@@ -21,4 +21,3 @@ def overlays_initial_state_msg(state: dict[str, Any]) -> dict[str, Any]:
 
 def overlays_patch_msg(patch: dict[str, Any]) -> dict[str, Any]:
     return {"op": "patch", "patch": dict(patch)}
-

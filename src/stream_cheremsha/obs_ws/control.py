@@ -59,7 +59,9 @@ def obs_test_connection(host: str, port: int, password: str) -> str:
         _disconnect_safe(cl)
 
 
-def obs_list_canvases(host: str, port: int, password: str) -> tuple[list[dict[str, str]], str | None]:
+def obs_list_canvases(
+    host: str, port: int, password: str
+) -> tuple[list[dict[str, str]], str | None]:
     """Return (rows, error). Each row: ``name`` (label), ``value`` (canvasUuid, empty = main).
 
     Uses ``GetCanvasList`` when available (OBS 31+ / obs-websocket 5.7+); otherwise one default row.
@@ -86,7 +88,9 @@ def obs_list_canvases(host: str, port: int, password: str) -> tuple[list[dict[st
         _disconnect_safe(cl)
 
 
-def obs_list_scenes(host: str, port: int, password: str, canvas_uuid: str = "") -> tuple[list[dict[str, str]], str | None]:
+def obs_list_scenes(
+    host: str, port: int, password: str, canvas_uuid: str = ""
+) -> tuple[list[dict[str, str]], str | None]:
     """Return scene rows: ``name`` and ``value`` both set to scene name (protocol ``sceneName``)."""
     cl = _client(host, port, password, timeout=8.0)
     try:

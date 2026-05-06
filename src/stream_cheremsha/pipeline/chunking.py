@@ -49,10 +49,7 @@ def merge_short_subchunks(
         n = nxt.strip()
         if not n:
             continue
-        if (
-            len(buf) + 1 + len(n) <= max_chars
-            and (len(buf) < min_chars or len(n) < min_chars)
-        ):
+        if len(buf) + 1 + len(n) <= max_chars and (len(buf) < min_chars or len(n) < min_chars):
             buf = f"{buf} {n}"
         else:
             out.append(buf)

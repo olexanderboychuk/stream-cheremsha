@@ -188,7 +188,11 @@ def render_multichat_dock_html() -> str:
           try {{
             const d = new Date(received_at);
             if (!isFinite(d.getTime())) return '';
-            return d.toLocaleTimeString([], {{ hour: '2-digit', minute: '2-digit', second: '2-digit' }});
+            return d.toLocaleTimeString([], {{
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit'
+            }});
           }} catch (_) {{
             return '';
           }}
@@ -356,4 +360,3 @@ def render_multichat_dock_html() -> str:
     </script>
   </body>
 </html>"""
-

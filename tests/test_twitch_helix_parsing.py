@@ -14,4 +14,3 @@ def test_parse_stream_viewers_offline_is_zero() -> None:
 
 def test_parse_stream_viewers_reads_viewer_count() -> None:
     assert _parse_stream_viewer_count({"data": [{"viewer_count": 123}]}) == 123
-
