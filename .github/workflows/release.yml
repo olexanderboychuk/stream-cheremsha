@@ -40,6 +40,10 @@ jobs:
       - name: Build (Nuitka standalone)
         run: uv run --frozen cheremsha-build --out dist/nuitka
 
+      - name: Print Nuitka version
+        shell: pwsh
+        run: uv run --frozen python -m nuitka --version
+
       - name: Ensure Windows icon.ico for NSIS
         shell: pwsh
         run: uv run --frozen python scripts/ci/ensure_windows_icon_ico.py

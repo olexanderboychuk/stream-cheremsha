@@ -40,7 +40,7 @@ profile = ["memory-profiler>=0.61", "psutil>=5.9"]
 profile-plot = ["matplotlib>=3.8"]
 # Nuitka: we build with standalone mode. If a specific version regresses on your
 # dependency graph, pin it in the environment (e.g. `pip install nuitka==...`).
-build = ["nuitka>=2.4,<5.0", "ordered-set>=4.1", "zstandard>=0.22", "pillow>=10"]
+build = ["nuitka==4.0.8", "ordered-set>=4.1", "zstandard>=0.22", "pillow>=10"]
 
 [project.scripts]
 cheremsha = "stream_cheremsha.app.main:main"
