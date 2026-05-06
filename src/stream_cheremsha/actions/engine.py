@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 import logging
@@ -112,6 +112,8 @@ def _show_overlay_platform_slug(ev: object) -> str:
         if s in ("tiktok", "twitch", "youtube"):
             return s
     return ""
+
+
 TtsSpeakCallback = Callable[[str], Awaitable[None]]
 
 
@@ -147,7 +149,9 @@ def _chat_trigger_matches(
         return False
 
 
-def _gift_trigger_matches(ev_blob: Mapping[str, Any], ev: GiftReceivedEvent, *, rule_id: str, status: StatusCallback) -> bool:
+def _gift_trigger_matches(
+    ev_blob: Mapping[str, Any], ev: GiftReceivedEvent, *, rule_id: str, status: StatusCallback
+) -> bool:
     if ev_blob.get("type") != "gift_received":
         return False
     params: Any = ev_blob.get("params")
@@ -382,9 +386,7 @@ def _tiktok_any_gift_received_trigger_matches(
     status: StatusCallback,
 ) -> bool:
     return (
-        _tiktok_any_gift_received_min_price_if_matches(
-            ev_blob, ev, rule_id=rule_id, status=status
-        )
+        _tiktok_any_gift_received_min_price_if_matches(ev_blob, ev, rule_id=rule_id, status=status)
         is not None
     )
 
@@ -404,7 +406,10 @@ def _tiktok_like_blob_fire_totals(
     prev_u: int,
     next_u: int,
 ) -> list[int]:
-    """Milestone totals for TikTok likes dispatches (`likes_total_for_scope` each); empty if none."""
+    """Milestone totals for TikTok likes dispatches (`likes_total_for_scope` each).
+
+    Empty if none.
+    """
     if ev_blob.get("type") != "tiktok_likes_received":
         return []
     params: Any = ev_blob.get("params")
@@ -425,9 +430,7 @@ def _tiktok_like_blob_fire_totals(
         return []
     scope = scope_raw.strip()
     if scope not in ("all_users", "user_stream", "user_combo", "user_every_n"):
-        status(
-            f"Rule {rule_id}: scope must be all_users, user_stream, user_combo, or user_every_n"
-        )
+        status(f"Rule {rule_id}: scope must be all_users, user_stream, user_combo, or user_every_n")
         return []
     rule_user_raw = params.get("user", "")
     rule_user = _norm_like_user(str(rule_user_raw) if rule_user_raw is not None else "")
@@ -617,7 +620,9 @@ class PlatformActionsEngine:
                     break
             if not matched:
                 continue
-            ev = TikTokSharedEvent(platform=ChatPlatform.TIKTOK, user=u, count=c, received_at=received_at)
+            ev = TikTokSharedEvent(
+                platform=ChatPlatform.TIKTOK, user=u, count=c, received_at=received_at
+            )
             await self._dispatch_actions(rule, ev)
 
     async def on_tiktok_paid_subscribed(self, user: str, received_at: datetime) -> None:
@@ -644,7 +649,9 @@ class PlatformActionsEngine:
                     break
             if not matched:
                 continue
-            ev = TikTokPaidSubscribedEvent(platform=ChatPlatform.TIKTOK, user=u, received_at=received_at)
+            ev = TikTokPaidSubscribedEvent(
+                platform=ChatPlatform.TIKTOK, user=u, received_at=received_at
+            )
             await self._dispatch_actions(rule, ev)
 
     async def on_twitch_follow(self, user: str, received_at: datetime) -> None:
@@ -757,7 +764,9 @@ class PlatformActionsEngine:
                     break
             if not matched:
                 continue
-            ev = TwitchSubscriptionGiftEvent(platform=plat, user=u, months=m, received_at=received_at)
+            ev = TwitchSubscriptionGiftEvent(
+                platform=plat, user=u, months=m, received_at=received_at
+            )
             await self._dispatch_actions(rule, ev)
 
     async def on_twitch_cheer(self, user: str, bits: int, received_at: datetime) -> None:
@@ -841,7 +850,10 @@ class PlatformActionsEngine:
 
     async def on_gift_received(self, ev: GiftReceivedEvent) -> None:
         logger.info(
-            "Actions gift_received: platform=%s sender=%s gift_id=%s gift_name=%s count=%s rules=%s",
+            (
+                "Actions gift_received: platform=%s sender=%s gift_id=%s gift_name=%s "
+                "count=%s rules=%s"
+            ),
             getattr(ev.platform, "value", ev.platform),
             ev.sender,
             ev.gift_id,
@@ -990,10 +1002,15 @@ class PlatformActionsEngine:
                 logger.info("Actions tiktok_likes_received matched rule=%s", rule.id)
                 await self._dispatch_actions(rule, ev)
 
-    def tiktok_likes_preview_batch(self, *, scope: str, min_count: int, user: str) -> tuple[int, str] | None:
-        """Return (batch_n, display_user) so one synthetic batch crosses one trigger intent, or None.
+    def tiktok_likes_preview_batch(
+        self, *, scope: str, min_count: int, user: str
+    ) -> tuple[int, str] | None:
+        """Return (batch_n, display_user) so one synthetic batch crosses one trigger intent.
 
-        For `user_every_n`, crossing means reaching the viewer's next N · k milestone (session totals).
+        Returns None if there is no such batch.
+
+        For `user_every_n`, crossing means reaching the viewer's next N · k milestone.
+        (Session totals.)
         """
         u = (user or "").strip() or "preview"
         uk = _norm_like_user(u)
@@ -1109,12 +1126,15 @@ class PlatformActionsEngine:
                     program_path = params.get("program_path") or params.get("exe_path")
                     if not isinstance(program_path, str) or not program_path.strip():
                         self._status_callback(
-                            f"Rule {rule.id}: actions[{i}].program_path (or legacy exe_path) is required"
+                            f"Rule {rule.id}: actions[{i}].program_path "
+                            f"(or legacy exe_path) is required"
                         )
                         continue
                     args_raw = params.get("arguments", "")
                     if not isinstance(args_raw, str):
-                        self._status_callback(f"Rule {rule.id}: actions[{i}].arguments must be a string")
+                        self._status_callback(
+                            f"Rule {rule.id}: actions[{i}].arguments must be a string"
+                        )
                         continue
                     args_raw = apply_action_placeholders(args_raw, ev)
 
@@ -1138,10 +1158,14 @@ class PlatformActionsEngine:
                         continue
                     resolved = apply_action_placeholders(raw, ev).strip()
                     if not resolved:
-                        self._status_callback(f"Rule {rule.id}: actions[{i}].text is empty after placeholders")
+                        self._status_callback(
+                            f"Rule {rule.id}: actions[{i}].text is empty after placeholders"
+                        )
                         continue
                     if self._tts_speak is None:
-                        self._status_callback(f"Rule {rule.id}: speak_tts requires TTS (not configured)")
+                        self._status_callback(
+                            f"Rule {rule.id}: speak_tts requires TTS (not configured)"
+                        )
                         continue
                     if len(resolved) > MAX_MESSAGE_CHARS:
                         resolved = resolved[:MAX_MESSAGE_CHARS]
@@ -1171,24 +1195,26 @@ class PlatformActionsEngine:
                         seconds = 600.0
 
                     if self._pubsub is None:
-                        self._status_callback(f"Rule {rule.id}: show_overlay requires overlays (not configured)")
+                        self._status_callback(
+                            f"Rule {rule.id}: show_overlay requires overlays (not configured)"
+                        )
                         continue
 
                     text = apply_action_placeholders(raw, ev).strip()
                     if not text:
-                        self._status_callback(f"Rule {rule.id}: actions[{i}].text is empty after placeholders")
+                        self._status_callback(
+                            f"Rule {rule.id}: actions[{i}].text is empty after placeholders"
+                        )
                         continue
                     if len(text) > MAX_MESSAGE_CHARS:
                         text = text[:MAX_MESSAGE_CHARS]
 
-                    username = (
-                        str(
-                            getattr(ev, "sender", "")
-                            or getattr(ev, "author", "")
-                            or getattr(ev, "user", "")
-                            or getattr(ev, "raider", "")
-                        ).strip()
-                    )
+                    username = str(
+                        getattr(ev, "sender", "")
+                        or getattr(ev, "author", "")
+                        or getattr(ev, "user", "")
+                        or getattr(ev, "raider", "")
+                    ).strip()
                     if not username:
                         username = "?"
 
@@ -1206,11 +1232,17 @@ class PlatformActionsEngine:
 
                     profile_picture_url = ""
                     if isinstance(ev, ChatMessageEvent):
-                        profile_picture_url = str(getattr(ev, "profile_picture_url", "") or "").strip()
+                        profile_picture_url = str(
+                            getattr(ev, "profile_picture_url", "") or ""
+                        ).strip()
                     elif isinstance(ev, GiftReceivedEvent):
-                        profile_picture_url = str(getattr(ev, "sender_avatar_url", "") or "").strip()
+                        profile_picture_url = str(
+                            getattr(ev, "sender_avatar_url", "") or ""
+                        ).strip()
                     elif isinstance(ev, TikTokLikesReceivedEvent):
-                        profile_picture_url = str(getattr(ev, "profile_picture_url", "") or "").strip()
+                        profile_picture_url = str(
+                            getattr(ev, "profile_picture_url", "") or ""
+                        ).strip()
 
                     patch = {
                         "append": {
@@ -1219,7 +1251,9 @@ class PlatformActionsEngine:
                             "profile_picture_url": profile_picture_url,
                             "gift_picture_url": gift_picture_url,
                             "platform": _show_overlay_platform_slug(ev),
-                            "show_seconds": int(seconds) if float(seconds).is_integer() else seconds,
+                            "show_seconds": int(seconds)
+                            if float(seconds).is_integer()
+                            else seconds,
                         }
                     }
                     topic = f"overlay:actions:{self._actions_overlay_instance}"
@@ -1233,8 +1267,7 @@ class PlatformActionsEngine:
                 if t == "obs_scene":
                     if self._obs_execute is None:
                         self._status_callback(
-                            f"Rule {rule.id}: obs_scene needs OBS "
-                            f"(host/port/password in Settings)"
+                            f"Rule {rule.id}: obs_scene needs OBS (host/port/password in Settings)"
                         )
                         continue
                     mode_raw = params.get("mode", "program_scene")
@@ -1250,7 +1283,9 @@ class PlatformActionsEngine:
                     )
                     sn_raw = params.get("scene_name", "")
                     if not isinstance(sn_raw, str):
-                        self._status_callback(f"Rule {rule.id}: obs_scene scene_name must be a string")
+                        self._status_callback(
+                            f"Rule {rule.id}: obs_scene scene_name must be a string"
+                        )
                         continue
                     scene_name = apply_action_placeholders(sn_raw, ev).strip()
                     if not scene_name:

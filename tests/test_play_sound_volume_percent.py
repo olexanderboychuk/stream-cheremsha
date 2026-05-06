@@ -18,7 +18,9 @@ class FakeSink:
         _ = data
 
 
-def test_play_sound_volume_percent_passed_to_playback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_play_sound_volume_percent_passed_to_playback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     p = tmp_path / "a.mp3"
     p.write_bytes(b"mp3-bytes")
 

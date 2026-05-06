@@ -178,11 +178,15 @@ def actions_config_from_json_text(text: str) -> ActionsOverlayConfig:
     effect_3d_enabled = _ensure_bool(raw.get("effect_3d_enabled"), default=d.effect_3d_enabled)
     wiggle_enabled = _ensure_bool(raw.get("wiggle_enabled"), default=d.wiggle_enabled)
 
-    text_shadow_enabled = _ensure_bool(raw.get("text_shadow_enabled"), default=d.text_shadow_enabled)
+    text_shadow_enabled = _ensure_bool(
+        raw.get("text_shadow_enabled"), default=d.text_shadow_enabled
+    )
     text_shadow_color = str(raw.get("text_shadow_color") or d.text_shadow_color)
     text_color = str(raw.get("text_color") or d.text_color)
 
-    font_border_enabled = _ensure_bool(raw.get("font_border_enabled"), default=d.font_border_enabled)
+    font_border_enabled = _ensure_bool(
+        raw.get("font_border_enabled"), default=d.font_border_enabled
+    )
     font_border_color = str(raw.get("font_border_color") or d.font_border_color)
 
     username_custom_color_enabled = _ensure_bool(
@@ -201,7 +205,9 @@ def actions_config_from_json_text(text: str) -> ActionsOverlayConfig:
     name_text_gap_px = _ensure_int(raw.get("name_text_gap_px"), default=d.name_text_gap_px)
     name_text_gap_px = max(0, min(80, name_text_gap_px))
 
-    show_profile_picture = _ensure_bool(raw.get("show_profile_picture"), default=d.show_profile_picture)
+    show_profile_picture = _ensure_bool(
+        raw.get("show_profile_picture"), default=d.show_profile_picture
+    )
     show_gift_picture = _ensure_bool(raw.get("show_gift_picture"), default=d.show_gift_picture)
     show_action_platform_icon = _ensure_bool(
         raw.get("show_action_platform_icon"),
@@ -211,14 +217,18 @@ def actions_config_from_json_text(text: str) -> ActionsOverlayConfig:
         raw.get("platform_icon_flip_enabled"),
         default=d.platform_icon_flip_enabled,
     )
-    platform_icon_size_px = max(16, _ensure_int(raw.get("platform_icon_size_px"), default=d.platform_icon_size_px))
+    platform_icon_size_px = max(
+        16, _ensure_int(raw.get("platform_icon_size_px"), default=d.platform_icon_size_px)
+    )
     platform_icon_size_px = min(128, platform_icon_size_px)
     single_text_line = _ensure_bool(raw.get("single_text_line"), default=d.single_text_line)
     parallel_popups_enabled = _ensure_bool(
         raw.get("parallel_popups_enabled", raw.get("parallelPopupsEnabled")),
         default=d.parallel_popups_enabled,
     )
-    auto_hide_seconds = max(0.0, _ensure_float(raw.get("auto_hide_seconds"), default=d.auto_hide_seconds))
+    auto_hide_seconds = max(
+        0.0, _ensure_float(raw.get("auto_hide_seconds"), default=d.auto_hide_seconds)
+    )
     auto_hide_seconds = min(600.0, auto_hide_seconds)
 
     bubble_bg_enabled = _ensure_bool(raw.get("bubble_bg_enabled"), default=d.bubble_bg_enabled)

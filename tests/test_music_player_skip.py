@@ -44,10 +44,17 @@ async def test_music_player_skip_does_not_stop_supervisor_loop() -> None:
             deadline = asyncio.get_running_loop().time() + 0.5
             while True:
                 cur0, q0 = await q.list_queue(limit=10)
-                if cur0 is not None and cur0.video_id == "a" * 11 and len(q0) == 1 and q0[0].video_id == "b" * 11:
+                if (
+                    cur0 is not None
+                    and cur0.video_id == "a" * 11
+                    and len(q0) == 1
+                    and q0[0].video_id == "b" * 11
+                ):
                     return
                 if asyncio.get_running_loop().time() >= deadline:
-                    raise AssertionError(f"unexpected initial queue: cur={cur0} q={[t.video_id for t in q0]}")
+                    raise AssertionError(
+                        f"unexpected initial queue: cur={cur0} q={[t.video_id for t in q0]}"
+                    )
                 await asyncio.sleep(0)
 
         await _wait_initial()

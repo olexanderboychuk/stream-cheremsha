@@ -3,10 +3,11 @@ from __future__ import annotations
 import csv
 import json
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import requests
 
@@ -110,7 +111,12 @@ def main() -> None:
     # The page is server-rendered HTML with repeated "gift" cards like:
     # <div class="gift"><img src="..." alt="Rose"> ... <p class="gift-name">Rose</p>
     # <p class="gift-price">1</p>
-    print("marker counts:", html.count('class="gift"'), html.count("gift-name"), html.count("gift-price"))
+    print(
+        "marker counts:",
+        html.count('class="gift"'),
+        html.count("gift-name"),
+        html.count("gift-price"),
+    )
 
     parser = _GiftParser()
     parser.feed(html)
@@ -170,4 +176,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

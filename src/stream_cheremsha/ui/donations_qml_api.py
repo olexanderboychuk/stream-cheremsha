@@ -86,11 +86,7 @@ class DonationsQmlApi(QObject):
         self._donatello_live_poll = bool(st and st.value(_SETTINGS_DONATELLO_LIVE, False, bool))
         self._donatello_tts_new = bool(st and st.value(_SETTINGS_DONATELLO_TTS, False, bool))
 
-        if (
-            self._donatik_live_poll
-            and self._donatik_token_from_store()
-            and not self._donatik_seen
-        ):
+        if self._donatik_live_poll and self._donatik_token_from_store() and not self._donatik_seen:
             self._donatik_prime_poll = True
         if (
             self._donatello_live_poll

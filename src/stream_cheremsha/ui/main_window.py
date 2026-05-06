@@ -9,9 +9,9 @@ import shutil
 import threading
 import time
 from collections import deque
-from typing import Any
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from xml.sax.saxutils import quoteattr
 
 import httpx
@@ -84,15 +84,15 @@ from stream_cheremsha.chat.youtube_source import (
 from stream_cheremsha.config import constants, keyring_store
 from stream_cheremsha.domain.models import ChatMessage, ChatPlatform
 from stream_cheremsha.domain.protocols import TextToSpeech
+from stream_cheremsha.music.player import MusicPlayer
+from stream_cheremsha.music.queue_controller import MusicQueueController
+from stream_cheremsha.music.yt_dlp_resolver import fetch_youtube_title
 from stream_cheremsha.online.models import now_hms as online_now_hms
 from stream_cheremsha.online.models import online_state_patch
 from stream_cheremsha.overlays.chat_overlay import chat_message_to_patch
 from stream_cheremsha.overlays.registry import OverlayRegistry
 from stream_cheremsha.overlays.server import OverlayServer
 from stream_cheremsha.pipeline.coordinator import StreamCoordinator
-from stream_cheremsha.music.queue_controller import MusicQueueController
-from stream_cheremsha.music.player import MusicPlayer
-from stream_cheremsha.music.yt_dlp_resolver import fetch_youtube_title
 from stream_cheremsha.telegram.bot_service import TelegramBotService
 from stream_cheremsha.tts.edge_tts import (
     EdgeTts,
@@ -1078,7 +1078,7 @@ class MainWindow(FramelessWindow):
             "color: #e2e8f0; border: 1px solid #2a3142; border-radius: 10px; font-weight: 600; "
             "font-size: 12px; padding: 4px 10px; }"
             "QToolButton#footerNav:hover { background: #1a2030; border-color: #3b4458; }"
-            "QToolButton#footerNav[activeNav=\"on\"] { background: #1a2540; "
+            'QToolButton#footerNav[activeNav="on"] { background: #1a2540; '
             "border-color: #3d4f6a; }"
             "QGroupBox { border: 1px solid #2a3142; margin-top: 8px; font-weight: bold; }"
             "QScrollArea { border: none; background: transparent; }"
@@ -1287,7 +1287,9 @@ class MainWindow(FramelessWindow):
         self._tg_enabled.stateChanged.connect(self._persist_telegram_enabled)
         self._tg_token.editingFinished.connect(self._persist_telegram_token)
         self._tg_admin_id.editingFinished.connect(self._persist_telegram_admin_id)
-        self._tg_song_requests_enabled.stateChanged.connect(self._persist_telegram_song_requests_enabled)
+        self._tg_song_requests_enabled.stateChanged.connect(
+            self._persist_telegram_song_requests_enabled
+        )
 
         self._gb_music = QGroupBox()
         self._gb_music.setMaximumWidth(560)
@@ -1485,7 +1487,9 @@ class MainWindow(FramelessWindow):
             self._lbl_mpv_check_result.setText(f"mpv: OK ({mpv_path})")
             return
         if want_mpv or force:
-            self._lbl_mpv_check_result.setText("mpv: НЕ знайдено. Встанови mpv і додай його в PATH.")
+            self._lbl_mpv_check_result.setText(
+                "mpv: НЕ знайдено. Встанови mpv і додай його в PATH."
+            )
         else:
             self._lbl_mpv_check_result.setText("")
 
@@ -1914,7 +1918,9 @@ class MainWindow(FramelessWindow):
         controls = QHBoxLayout()
         self._btn_music_play_pause = QPushButton("Play/Pause")
         self._btn_music_next = QPushButton("Next")
-        self._btn_music_play_pause.clicked.connect(lambda: asyncio.ensure_future(self._music_toggle_pause()))
+        self._btn_music_play_pause.clicked.connect(
+            lambda: asyncio.ensure_future(self._music_toggle_pause())
+        )
         self._btn_music_next.clicked.connect(lambda: asyncio.ensure_future(self._music_next()))
         controls.addWidget(self._btn_music_play_pause)
         controls.addWidget(self._btn_music_next)
@@ -2628,11 +2634,7 @@ class MainWindow(FramelessWindow):
         """Keep separate footer lines so Twitch and YouTube statuses are not overwritten."""
         if msg.startswith(("Twitch:", "Twitch error")):
             rest = (
-                msg.removeprefix("Twitch:")
-                .removeprefix("Twitch error")
-                .strip()
-                .lstrip(":")
-                .strip()
+                msg.removeprefix("Twitch:").removeprefix("Twitch error").strip().lstrip(":").strip()
             )
             self._status_twitch = rest if rest else msg
             return
@@ -2645,17 +2647,13 @@ class MainWindow(FramelessWindow):
                 "YouTube:",
             ):
                 if msg.startswith(prefix):
-                    self._status_youtube = msg[len(prefix):].strip(" :") or msg
+                    self._status_youtube = msg[len(prefix) :].strip(" :") or msg
                     return
             self._status_youtube = msg.removeprefix("YouTube:").strip() or msg
             return
         if msg.startswith(("TikTok:", "TikTok error")):
             rest = (
-                msg.removeprefix("TikTok:")
-                .removeprefix("TikTok error")
-                .strip()
-                .lstrip(":")
-                .strip()
+                msg.removeprefix("TikTok:").removeprefix("TikTok error").strip().lstrip(":").strip()
             )
             self._status_tiktok = rest if rest else msg
             return
@@ -2718,9 +2716,7 @@ class MainWindow(FramelessWindow):
             f'</span> <span style="color:#94a3b8;">({e(tk_on)}):</span> '
             f'<span style="color:#e2e8f0;">{e(self._status_tiktok)}</span>'
         )
-        h5 = (
-            f'<span style="color:#94a3b8;">{fq}: {fchat}={cq} &nbsp; {ftts}={tq}</span>'
-        )
+        h5 = f'<span style="color:#94a3b8;">{fq}: {fchat}={cq} &nbsp; {ftts}={tq}</span>'
         self._status_label.setText(f"{h1}<br/>{h2}<br/>{h3}<br/>{h4}<br/>{h5}")
         tw_btn = "tw.transport_stop" if self._twitch.running else "tw.transport_start"
         yt_btn = "yt.transport_stop" if self._youtube.running else "yt.transport_start"
@@ -2977,7 +2973,9 @@ class MainWindow(FramelessWindow):
             ChatPlatform.TIKTOK.value,
             constants.TIKTOK_ACTIONS_ACCOUNT_KEY,
         )
-        asyncio.ensure_future(eng.on_tiktok_paid_subscribed((user or "").strip(), datetime.now(UTC)))
+        asyncio.ensure_future(
+            eng.on_tiktok_paid_subscribed((user or "").strip(), datetime.now(UTC))
+        )
         it = ActivityItem(
             platform="tiktok",
             kind="paid_sub",
@@ -3608,7 +3606,9 @@ class MainWindow(FramelessWindow):
                 queue=self._music_queue,
                 sink=self._sink,
                 on_status=self._on_user_status,
-                backend=str(self._settings.value(_SETTINGS_MUSIC_BACKEND, "app", str) or "").strip(),
+                backend=str(
+                    self._settings.value(_SETTINGS_MUSIC_BACKEND, "app", str) or ""
+                ).strip(),
             )
             self._music_player.set_volume_percent(
                 int(self._settings.value("music/volume_percent", 100)),
@@ -3695,8 +3695,7 @@ class MainWindow(FramelessWindow):
             if cur is not None:
                 cur_map = {"id": cur.id, "video_id": cur.video_id, "requested_by": cur.requested_by}
             q_maps = [
-                {"id": t.id, "video_id": t.video_id, "requested_by": t.requested_by}
-                for t in q
+                {"id": t.id, "video_id": t.video_id, "requested_by": t.requested_by} for t in q
             ]
             return (cur_map, q_maps)
 

@@ -20,7 +20,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "chat.font": {"uk": "Шрифт", "en": "Font"},
     "chat.font_size": {"uk": "Розмір", "en": "Size"},
     "chat.clear": {"uk": "Очистити чат", "en": "Clear chat"},
-    "chat.clear_hint": {"uk": "Видалити всі повідомлення з вікна чату", "en": "Remove all messages from the chat pane"},
+    "chat.clear_hint": {
+        "uk": "Видалити всі повідомлення з вікна чату",
+        "en": "Remove all messages from the chat pane",
+    },
     "chat.test_message": {"uk": "Тестове повідомлення", "en": "Test chat message"},
     "chat.test_hint": {
         "uk": "Показати приклади повідомлень Twitch і YouTube — лише для перевірки вигляду (не йдуть у стрім)",
@@ -66,7 +69,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "ui.tiktok_head": {"uk": "TikTok", "en": "TikTok"},
     "connections.tts_chat": {"uk": "Озвучувати чат (TTS)", "en": "Speak chat (TTS)"},
     "connections.platform_enabled": {"uk": "Платформа увімкнена", "en": "Platform enabled"},
-    "connections.analytics_soon_title": {"uk": "Аналітика — скоро", "en": "Analytics — coming soon"},
+    "connections.analytics_soon_title": {
+        "uk": "Аналітика — скоро",
+        "en": "Analytics — coming soon",
+    },
     "connections.analytics_soon_sub": {
         "uk": "Тут буде статистика по чату, TTS, активності й підключеннях.",
         "en": "Here you'll see chat, TTS, activity, and connection stats.",
@@ -116,7 +122,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "connections.youtube_analytics_superchat": {"uk": "суперчат", "en": "super chat"},
     "connections.youtube_analytics_supersticker": {"uk": "стікер", "en": "sticker"},
     "connections.youtube_analytics_member": {"uk": "учасник", "en": "member"},
-    "obs.test_ok": {"uk": "OBS: з’єднано, версія {version}", "en": "OBS: connected, version {version}"},
+    "obs.test_ok": {
+        "uk": "OBS: з’єднано, версія {version}",
+        "en": "OBS: connected, version {version}",
+    },
     "obs.test_fail": {"uk": "OBS: помилка — {detail}", "en": "OBS: error — {detail}"},
     # Platform actions
     "actions.btn": {"uk": "Дії", "en": "Actions"},
@@ -156,24 +165,45 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Будь-який подарунок (за ціною)",
         "en": "Any gift (by price)",
     },
-    "actions.event.tiktok_likes_received": {"uk": "Отримані лайки TikTok", "en": "TikTok likes received"},
+    "actions.event.tiktok_likes_received": {
+        "uk": "Отримані лайки TikTok",
+        "en": "TikTok likes received",
+    },
     "actions.event.tiktok_joined": {"uk": "Приєднався", "en": "Joined"},
     "actions.event.tiktok_followed": {"uk": "Підписався", "en": "Followed"},
     "actions.event.tiktok_shared": {"uk": "Пошерив", "en": "Shared"},
     "actions.event.tiktok_paid_subscribed": {"uk": "Платний саб", "en": "Paid sub"},
     "actions.event.tiktok_first_activity": {"uk": "Перша активність", "en": "First activity"},
     "actions.event.twitch_follow": {"uk": "Фоллов (Twitch)", "en": "Follow (Twitch)"},
-    "actions.event.twitch_subscribe": {"uk": "Нова підписка (Twitch)", "en": "New subscription (Twitch)"},
-    "actions.event.twitch_resub": {"uk": "Продовження підписки / повідомлення (Twitch)", "en": "Resub / sub message (Twitch)"},
-    "actions.event.twitch_sub_gift": {"uk": "Подарована підписка (Twitch)", "en": "Gift sub (Twitch)"},
+    "actions.event.twitch_subscribe": {
+        "uk": "Нова підписка (Twitch)",
+        "en": "New subscription (Twitch)",
+    },
+    "actions.event.twitch_resub": {
+        "uk": "Продовження підписки / повідомлення (Twitch)",
+        "en": "Resub / sub message (Twitch)",
+    },
+    "actions.event.twitch_sub_gift": {
+        "uk": "Подарована підписка (Twitch)",
+        "en": "Gift sub (Twitch)",
+    },
     "actions.event.twitch_cheer": {"uk": "Біти / cheer (Twitch)", "en": "Bits / cheer (Twitch)"},
     "actions.event.twitch_raid": {"uk": "Рейд (Twitch)", "en": "Raid (Twitch)"},
     "actions.twitch_min_bits": {"uk": "Мін. бітів", "en": "Min bits"},
     "actions.twitch_min_viewers": {"uk": "Мін. глядачів у рейді", "en": "Min raid viewers"},
-    "actions.twitch_raider_filter": {"uk": "Канал рейдера (опційно)", "en": "Raider channel (optional)"},
-    "actions.likes_min_count": {"uk": "Кількість лайків для спрацювання", "en": "Like count to trigger"},
+    "actions.twitch_raider_filter": {
+        "uk": "Канал рейдера (опційно)",
+        "en": "Raider channel (optional)",
+    },
+    "actions.likes_min_count": {
+        "uk": "Кількість лайків для спрацювання",
+        "en": "Like count to trigger",
+    },
     "actions.likes_scope_label": {"uk": "Рахувати", "en": "Count"},
-    "actions.likes_scope_all": {"uk": "Усі глядачі (сума за стрім)", "en": "All viewers (stream total)"},
+    "actions.likes_scope_all": {
+        "uk": "Усі глядачі (сума за стрім)",
+        "en": "All viewers (stream total)",
+    },
     "actions.likes_scope_user_stream": {
         "uk": "Будь-який глядач (його сума за стрім)",
         "en": "Any viewer (their total this stream)",
@@ -217,7 +247,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "actions.write_mode_append": {"uk": "Дописати в кінець", "en": "Append"},
     "actions.speak_tts": {"uk": "Озвучити текст (TTS)", "en": "Speak text (TTS)"},
     "actions.speak_tts_text": {"uk": "Текст для озвучення", "en": "Text to speak"},
-    "actions.speak_tts_text_ph": {"uk": "фраза або з плейсхолдерами…", "en": "phrase or with placeholders…"},
+    "actions.speak_tts_text_ph": {
+        "uk": "фраза або з плейсхолдерами…",
+        "en": "phrase or with placeholders…",
+    },
     "actions.run_program": {"uk": "Запустити програму", "en": "Run program"},
     "actions.pick_program": {"uk": "Оберіть виконуваний файл…", "en": "Pick executable…"},
     "actions.program_args": {"uk": "Параметри командного рядка", "en": "Command-line arguments"},
@@ -249,11 +282,20 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "actions.show_overlay_seconds": {"uk": "Секунди", "en": "Seconds"},
     "actions.obs_scene": {"uk": "OBS: сцена / видимість", "en": "OBS: scene / visibility"},
     "actions.obs_mode": {"uk": "Режим", "en": "Mode"},
-    "actions.obs_mode_program": {"uk": "Перемкнути сцену програми (ефір)", "en": "Switch program scene (live)"},
-    "actions.obs_mode_source": {"uk": "Показати/сховати джерело у сцені", "en": "Show/hide source in scene"},
+    "actions.obs_mode_program": {
+        "uk": "Перемкнути сцену програми (ефір)",
+        "en": "Switch program scene (live)",
+    },
+    "actions.obs_mode_source": {
+        "uk": "Показати/сховати джерело у сцені",
+        "en": "Show/hide source in scene",
+    },
     "actions.obs_scene_name": {"uk": "Назва сцени", "en": "Scene name"},
     "actions.obs_scene_name_ph": {"uk": "наприклад: Game", "en": "e.g. Game"},
-    "actions.obs_source_name": {"uk": "Назва джерела (у списку сцени)", "en": "Source name (in scene list)"},
+    "actions.obs_source_name": {
+        "uk": "Назва джерела (у списку сцени)",
+        "en": "Source name (in scene list)",
+    },
     "actions.obs_source_name_ph": {"uk": "наприклад: Alert", "en": "e.g. Alert"},
     "actions.obs_visible": {"uk": "Видимо", "en": "Visible"},
     "actions.obs_canvas": {"uk": "Полотно (canvas)", "en": "Canvas"},
@@ -283,7 +325,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "ui.open_settings_hint": {"uk": "Мова, автозапуск, TTS", "en": "Language, autostart, TTS"},
     "ui.nav_logs": {"uk": "Логи", "en": "Logs"},
     "ui.nav_logs_hint": {"uk": "Відкрити технічні логи", "en": "Open technical logs"},
-    "ui.back_home_hint": {"uk": "Повернутися до зв'язків (головна)", "en": "Back to connections (home)"},
+    "ui.back_home_hint": {
+        "uk": "Повернутися до зв'язків (головна)",
+        "en": "Back to connections (home)",
+    },
     "ui.nav_home": {"uk": "Додому", "en": "Home"},
     "ui.nav_home_hint": {
         "uk": "Повернутися на екран підключення Twitch / YouTube",
@@ -436,7 +481,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "tk.username": {"uk": "Юзернейм", "en": "Username"},
     "tk.username_ph": {"uk": "нікнейм без @", "en": "username without @"},
     # TikTok source
-    "tk.connecting": {"uk": "TikTok: підключення до @{user}…", "en": "TikTok: connecting to @{user}…"},
+    "tk.connecting": {
+        "uk": "TikTok: підключення до @{user}…",
+        "en": "TikTok: connecting to @{user}…",
+    },
     "tk.connected": {"uk": "TikTok: підключено (@{user})", "en": "TikTok: connected (@{user})"},
     "tk.disconnected_retry": {
         "uk": "TikTok: роз'єднано — повтор через {sec:.0f}s…",
@@ -467,7 +515,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "TikTok error: {err} — retry in {sec:.0f}s…",
     },
     "tk.stopped": {"uk": "TikTok: зупинено", "en": "TikTok: stopped"},
-    "tk.bad_username": {"uk": "TikTok: введіть юзернейм (нік) стрімера", "en": "TikTok: enter the streamer username"},
+    "tk.bad_username": {
+        "uk": "TikTok: введіть юзернейм (нік) стрімера",
+        "en": "TikTok: enter the streamer username",
+    },
     # Audio / TTS
     "audio.flush_queues": {
         "uk": "Зупинити озвучення (очистити черги)",
@@ -489,7 +540,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "tw.client_secret": {"uk": "Client secret (необов'язково)", "en": "Client secret (optional)"},
     "tw.btn_browser": {"uk": "Увійти через браузер", "en": "Sign in with browser"},
     "tw.account": {"uk": "Обліковий запис", "en": "Account"},
-    "tw.token_placeholder": {"uk": "Або вставте access token вручну", "en": "Or paste an access token manually"},
+    "tw.token_placeholder": {
+        "uk": "Або вставте access token вручну",
+        "en": "Or paste an access token manually",
+    },
     "tw.token_manual": {"uk": "Токен вручну", "en": "Manual token"},
     "tw.save_app": {"uk": "Зберегти дані застосунку", "en": "Save application credentials"},
     "tw.client_id_env_required": {
@@ -499,8 +553,14 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "tw.logout": {"uk": "Вийти з Twitch", "en": "Sign out of Twitch"},
     "tw.channel": {"uk": "Канал чату", "en": "Chat channel"},
     "tw.channel_ph": {"uk": "логін каналу без #", "en": "channel login without #"},
-    "tw.connected_as": {"uk": "Підключено до Twitch як @{login}", "en": "Connected to Twitch as @{login}"},
-    "tw.connected_oauth": {"uk": "Підключено до Twitch (OAuth).", "en": "Connected to Twitch (OAuth)."},
+    "tw.connected_as": {
+        "uk": "Підключено до Twitch як @{login}",
+        "en": "Connected to Twitch as @{login}",
+    },
+    "tw.connected_oauth": {
+        "uk": "Підключено до Twitch (OAuth).",
+        "en": "Connected to Twitch (OAuth).",
+    },
     "tw.connected_token": {
         "uk": "Підключено до Twitch (збережений токен).",
         "en": "Connected to Twitch (saved token).",
@@ -521,7 +581,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         '<a href="{api_url}">enable YouTube Data API v3</a>',
     },
     "yt.btn_google": {"uk": "Увійти через Google (браузер)", "en": "Sign in with Google (browser)"},
-    "yt.forget_json": {"uk": "Забути збережений JSON клієнта Google…", "en": "Forget saved Google client JSON…"},
+    "yt.forget_json": {
+        "uk": "Забути збережений JSON клієнта Google…",
+        "en": "Forget saved Google client JSON…",
+    },
     "yt.connected_default": {
         "uk": "Обліковий запис Google підключено для YouTube.",
         "en": "Google account linked for YouTube.",
@@ -531,7 +594,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Порожньо — знайти всі ваші активні ефіри; або URL / ID одного live-відео",
         "en": "Empty — discover all your live streams; or one live video URL / ID",
     },
-    "yt.video_label": {"uk": "URL або ID відео (необов'язково)", "en": "Video URL or ID (optional)"},
+    "yt.video_label": {
+        "uk": "URL або ID відео (необов'язково)",
+        "en": "Video URL or ID (optional)",
+    },
     "yt.studio_link": {
         "uk": 'Посилання на ефір: <a href="https://studio.youtube.com/">YouTube Studio</a>',
         "en": 'Stream link: <a href="https://studio.youtube.com/">YouTube Studio</a>',
@@ -549,7 +615,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "audio.output": {"uk": "Вихід", "en": "Output"},
     "audio.refresh": {"uk": "Оновити пристрої", "en": "Refresh devices"},
     "audio.tts_engine": {"uk": "Рушій TTS", "en": "TTS engine"},
-    "audio.tts_engine_google": {"uk": "Google Translate (мережа)", "en": "Google Translate (online)"},
+    "audio.tts_engine_google": {
+        "uk": "Google Translate (мережа)",
+        "en": "Google Translate (online)",
+    },
     "audio.tts_engine_edge": {"uk": "Edge TTS (мережа)", "en": "Edge TTS (online)"},
     "audio.edge_voice_group": {"uk": "Edge — голос", "en": "Edge — voice"},
     "audio.edge_voice_label": {"uk": "Голос", "en": "Voice"},
@@ -597,14 +666,23 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "footer.tts": {"uk": "tts", "en": "tts"},
     # Main-window status messages (exact match routing uses all locales)
     "status.logout_twitch": {"uk": "Вийшли з Twitch.", "en": "Signed out of Twitch."},
-    "status.logout_youtube": {"uk": "Вийшли з Google (YouTube).", "en": "Signed out of Google (YouTube)."},
+    "status.logout_youtube": {
+        "uk": "Вийшли з Google (YouTube).",
+        "en": "Signed out of Google (YouTube).",
+    },
     "status.twitch_keys_saved": {"uk": "Дані Twitch збережено.", "en": "Twitch credentials saved."},
-    "status.twitch_browser_ok": {"uk": "Twitch: увійшли через браузер.", "en": "Twitch: signed in via browser."},
+    "status.twitch_browser_ok": {
+        "uk": "Twitch: увійшли через браузер.",
+        "en": "Twitch: signed in via browser.",
+    },
     "status.youtube_json_removed": {
         "uk": "YouTube: JSON клієнта Google видалено зі сховища.",
         "en": "YouTube: Google client JSON removed from storage.",
     },
-    "status.youtube_signed_in": {"uk": "YouTube: увійшли через Google.", "en": "YouTube: signed in with Google."},
+    "status.youtube_signed_in": {
+        "uk": "YouTube: увійшли через Google.",
+        "en": "YouTube: signed in with Google.",
+    },
     "startup.workers": {"uk": "Запуск обробників пайплайну…", "en": "Starting pipeline workers…"},
     "startup.ready": {
         "uk": "Готово — підключіть Twitch і/або YouTube",
@@ -657,17 +735,29 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Вхід Twitch за пристроєм: час очікування підтвердження в браузері вичерпано",
         "en": "Twitch device login timed out waiting for browser approval",
     },
-    "twitch.oauth_token_err": {"uk": "Помилка токена Twitch: {detail}", "en": "Twitch token error: {detail}"},
+    "twitch.oauth_token_err": {
+        "uk": "Помилка токена Twitch: {detail}",
+        "en": "Twitch token error: {detail}",
+    },
     # YouTube source
-    "yt.oauth_browser": {"uk": "YouTube: відкриваємо браузер для OAuth…", "en": "YouTube: opening browser for OAuth…"},
+    "yt.oauth_browser": {
+        "uk": "YouTube: відкриваємо браузер для OAuth…",
+        "en": "YouTube: opening browser for OAuth…",
+    },
     "yt.oauth_saved": {"uk": "YouTube: токен OAuth збережено", "en": "YouTube: OAuth token saved"},
-    "yt.run_oauth_first": {"uk": "YouTube: спочатку виконайте OAuth", "en": "YouTube: run OAuth first"},
+    "yt.run_oauth_first": {
+        "uk": "YouTube: спочатку виконайте OAuth",
+        "en": "YouTube: run OAuth first",
+    },
     "yt.token_expired": {
         "uk": "YouTube: токен прострочено — знову OAuth",
         "en": "YouTube: token expired — run OAuth again",
     },
     "yt.stopped": {"uk": "YouTube: зупинено", "en": "YouTube: stopped"},
-    "yt.bad_url": {"uk": "YouTube: некоректний URL або ID відео", "en": "YouTube: invalid video URL or ID"},
+    "yt.bad_url": {
+        "uk": "YouTube: некоректний URL або ID відео",
+        "en": "YouTube: invalid video URL or ID",
+    },
     "yt.token_missing": {
         "uk": "YouTube: немає токена OAuth — увійдіть знову",
         "en": "YouTube: OAuth token missing — run login again",
@@ -676,7 +766,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "YouTube API init error: {err} — повтор через {sec:.0f}s…",
         "en": "YouTube API init error: {err} — retry in {sec:.0f}s…",
     },
-    "yt.retry": {"uk": "YouTube: {err} — повтор через {sec:.0f}s…", "en": "YouTube: {err} — retry in {sec:.0f}s…"},
+    "yt.retry": {
+        "uk": "YouTube: {err} — повтор через {sec:.0f}s…",
+        "en": "YouTube: {err} — retry in {sec:.0f}s…",
+    },
     "yt.wait_live": {
         "uk": "YouTube: {err} — очікування live ({sec:.0f}s)…",
         "en": "YouTube: {err} — waiting for live ({sec:.0f}s)…",
@@ -721,14 +814,20 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Спочатку введіть Client ID застосунку Twitch.",
         "en": "Enter the Twitch application Client ID first.",
     },
-    "dlg.twitch_need_channel": {"uk": "Потрібен канал (логін без #).", "en": "Channel login is required (without #)."},
+    "dlg.twitch_need_channel": {
+        "uk": "Потрібен канал (логін без #).",
+        "en": "Channel login is required (without #).",
+    },
     "dlg.twitch_need_token": {
         "uk": "Немає токена: увійдіть через браузер, збережіть дані застосунку або вставте токен.",
         "en": "No token: sign in via browser, save app credentials, or paste a token.",
     },
     "dlg.youtube": {"uk": "YouTube", "en": "YouTube"},
     "dlg.tiktok": {"uk": "TikTok", "en": "TikTok"},
-    "dlg.tiktok_need_username": {"uk": "Потрібен юзернейм (нік) стрімера.", "en": "Streamer username is required."},
+    "dlg.tiktok_need_username": {
+        "uk": "Потрібен юзернейм (нік) стрімера.",
+        "en": "Streamer username is required.",
+    },
     "dlg.youtube_next_json": {
         "uk": "Наступний вхід через Google знову запропонує обрати JSON клієнта.",
         "en": "The next Google sign-in will ask you to pick the client JSON again.",

@@ -45,4 +45,3 @@ def test_aggregator_splits_after_window() -> None:
     out2 = ag.flush_ready(now_mono=26.2)
     assert len(out2) == 1
     assert out2[0].count == 4
-

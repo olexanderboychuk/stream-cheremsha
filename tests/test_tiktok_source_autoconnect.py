@@ -104,7 +104,9 @@ def test_tiktok_source_polls_is_live_before_connecting(monkeypatch: pytest.Monke
     asyncio.run(_run())
 
 
-def test_tiktok_source_suppresses_backlog_comments_before_connect(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_tiktok_source_suppresses_backlog_comments_before_connect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # Make reconnect loop fast and deterministic.
     monkeypatch.setattr(tk_mod, "TIKTOK_RECONNECT_SEC", 0.01)
 
@@ -130,7 +132,7 @@ def test_tiktok_source_suppresses_backlog_comments_before_connect(monkeypatch: p
     monkeypatch.setattr(tk_mod.time, "time", lambda: 1000.0)
 
     client = _FakeTikTokClient("user1")
-    client.is_live = (lambda: asyncio.sleep(0, result=True))  # type: ignore[method-assign]
+    client.is_live = lambda: asyncio.sleep(0, result=True)  # type: ignore[method-assign]
 
     async def _start_and_emit(**_kwargs):  # noqa: ANN001
         client.start_called = True
@@ -139,8 +141,20 @@ def test_tiktok_source_suppresses_backlog_comments_before_connect(monkeypatch: p
             await fn(type("E", (), {"unique_id": "user1"})())
 
         # Emit two comments: one older than cutoff, one newer.
-        old = type("C", (), {"create_time": 999, "user_info": type("U", (), {"nickname": "a"})(), "comment": "old"})()
-        new = type("C", (), {"create_time": 1001, "user_info": type("U", (), {"nickname": "b"})(), "comment": "new"})()
+        old = type(
+            "C",
+            (),
+            {"create_time": 999, "user_info": type("U", (), {"nickname": "a"})(), "comment": "old"},
+        )()
+        new = type(
+            "C",
+            (),
+            {
+                "create_time": 1001,
+                "user_info": type("U", (), {"nickname": "b"})(),
+                "comment": "new",
+            },
+        )()
         for fn in client._handlers.get(_Comment, []):
             await fn(old)
             await fn(new)
@@ -206,7 +220,7 @@ def test_tiktok_source_suppresses_backlog_without_timestamps_right_after_connect
     monkeypatch.setattr(tk_mod.time, "time", lambda: 1000.0)
 
     client = _FakeTikTokClient("user1")
-    client.is_live = (lambda: asyncio.sleep(0, result=True))  # type: ignore[method-assign]
+    client.is_live = lambda: asyncio.sleep(0, result=True)  # type: ignore[method-assign]
 
     async def _start_and_emit(**_kwargs):  # noqa: ANN001
         client.start_called = True
@@ -214,7 +228,9 @@ def test_tiktok_source_suppresses_backlog_without_timestamps_right_after_connect
             await fn(type("E", (), {"unique_id": "user1"})())
 
         # No timestamps available on these comment events.
-        early = type("C", (), {"user_info": type("U", (), {"nickname": "a"})(), "comment": "early"})()
+        early = type(
+            "C", (), {"user_info": type("U", (), {"nickname": "a"})(), "comment": "early"}
+        )()
         late = type("C", (), {"user_info": type("U", (), {"nickname": "b"})(), "comment": "late"})()
 
         for fn in client._handlers.get(_Comment, []):

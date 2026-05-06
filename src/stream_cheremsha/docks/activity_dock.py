@@ -422,4 +422,3 @@ def render_activity_dock_html() -> str:
     </script>
   </body>
 </html>"""
-

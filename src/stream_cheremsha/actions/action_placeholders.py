@@ -6,10 +6,10 @@ from typing import Any
 from stream_cheremsha.actions.events import (
     ChatMessageEvent,
     GiftReceivedEvent,
-    TikTokLikesReceivedEvent,
     TikTokFirstActivityEvent,
     TikTokFollowedEvent,
     TikTokJoinedEvent,
+    TikTokLikesReceivedEvent,
     TikTokPaidSubscribedEvent,
     TikTokSharedEvent,
     TwitchCheerEvent,

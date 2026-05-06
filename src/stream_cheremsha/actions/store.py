@@ -12,23 +12,23 @@ from stream_cheremsha.actions.models import (
     ruleset_to_json_text,
 )
 
-DEFAULT_SETTINGS_ORG: Final[str] = 'stream-cheremsha'
-DEFAULT_SETTINGS_APP: Final[str] = 'cheremsha'
+DEFAULT_SETTINGS_ORG: Final[str] = "stream-cheremsha"
+DEFAULT_SETTINGS_APP: Final[str] = "cheremsha"
 
 
 def _validate_key_part(name: str, value: str) -> str:
-    v = (value or '').strip()
+    v = (value or "").strip()
     if not v:
-        raise ValueError(f'{name} must be non-empty')
-    if '/' in v or '\\' in v:
-        raise ValueError(f'{name} must not contain path separators')
+        raise ValueError(f"{name} must be non-empty")
+    if "/" in v or "\\" in v:
+        raise ValueError(f"{name} must not contain path separators")
     return v
 
 
 def _rules_key(platform: str, account_key: str) -> str:
-    p2 = _validate_key_part('platform', platform)
-    a2 = _validate_key_part('account_key', account_key)
-    return f'actions/{p2}/{a2}/rules_json'
+    p2 = _validate_key_part("platform", platform)
+    a2 = _validate_key_part("account_key", account_key)
+    return f"actions/{p2}/{a2}/rules_json"
 
 
 def actions_rules_key_is_set(
@@ -45,7 +45,7 @@ def actions_rules_key_is_set(
     text = s.value(key, None, str)
     if text is None:
         return False
-    return (text or '').strip() != ''
+    return (text or "").strip() != ""
 
 
 def _get_settings(settings: QSettings | None, *, org: str, app: str) -> QSettings:
@@ -67,7 +67,7 @@ def load_rules(
     text = s.value(key, None, str)
     if text is None:
         return []
-    text = (text or '').strip()
+    text = (text or "").strip()
     if not text:
         return []
     rules, _layout = ruleset_bundle_from_json_text(text)

@@ -234,8 +234,12 @@ class QtAudioSink(QObject):
         async with self._play_lock:
             await self._play_mp3_locked(data)
 
-    async def play_mp3_with_volume_deduped(self, data: bytes, linear: float, *, dedupe_key: str) -> bool:
-        """Play one clip at ``linear`` volume; return False if ``dedupe_key`` is already playing or queued.
+    async def play_mp3_with_volume_deduped(
+        self, data: bytes, linear: float, *, dedupe_key: str
+    ) -> bool:
+        """Play one clip at ``linear`` volume.
+
+        Returns False if ``dedupe_key`` is already playing or queued.
 
         Reserves ``dedupe_key`` before waiting on the playback lock so duplicate files are not
         appended to the sink FIFO when the same path is already in line to play.

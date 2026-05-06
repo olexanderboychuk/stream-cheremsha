@@ -20,7 +20,9 @@ def test_catalog_image_url_matches_name_when_id_missing(monkeypatch) -> None:
         "TIKTOK_GIFTS",
         [{"id": "", "name": "Finger Heart", "price": 5, "image_url": "https://cdn.example/fh.png"}],
     )
-    assert tg.tiktok_catalog_gift_image_url(gift_name="finger heart") == "https://cdn.example/fh.png"
+    assert (
+        tg.tiktok_catalog_gift_image_url(gift_name="finger heart") == "https://cdn.example/fh.png"
+    )
 
 
 def test_catalog_returns_empty_when_no_image(monkeypatch) -> None:

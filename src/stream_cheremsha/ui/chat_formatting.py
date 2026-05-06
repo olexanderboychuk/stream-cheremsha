@@ -31,9 +31,9 @@ def author_color_hex(author: str) -> str:
 
 def chat_font_stack_css(primary_family: str) -> str:
     """CSS font-family stack with emoji-capable fallbacks after the user font."""
-    base = (
-        (primary_family or "").strip().replace("'", "").replace('"', "") or CHAT_DEFAULT_FONT_FAMILY
-    )
+    base = (primary_family or "").strip().replace("'", "").replace(
+        '"', ""
+    ) or CHAT_DEFAULT_FONT_FAMILY
     return (
         f"'{base}','Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',"
         f"'Noto Sans','DejaVu Sans',sans-serif"

@@ -4,11 +4,13 @@ import asyncio
 import json
 from unittest.mock import patch
 
+from stream_cheremsha.overlays.actions_config import (
+    actions_config_defaults,
+    actions_config_to_json_text,
+)
+from stream_cheremsha.overlays.chat_config import chat_config_defaults, chat_config_to_json_text
 from stream_cheremsha.overlays.pubsub import OverlayPubSub
 from stream_cheremsha.ui.widgets_qml_api import WidgetsQmlApi
-
-from stream_cheremsha.overlays.actions_config import actions_config_defaults, actions_config_to_json_text
-from stream_cheremsha.overlays.chat_config import chat_config_defaults, chat_config_to_json_text
 
 
 def test_load_actions_config_map_matches_python_roundtrip() -> None:
@@ -48,13 +50,16 @@ def test_save_actions_config_publishes_config_patch() -> None:
         ps = OverlayPubSub()
         q = ps.subscribe("overlay:actions:main")
         base = actions_config_defaults()
-        # Isolate from host QSettings: equality short-circuit must not skip publish; never touch disk.
+        # Isolate from host QSettings: equality short-circuit must not skip publish; never touch
+        # disk.
         with (
             patch("stream_cheremsha.ui.widgets_qml_api.load_actions_config", return_value=base),
             patch("stream_cheremsha.ui.widgets_qml_api.save_actions_config"),
         ):
             api = WidgetsQmlApi(pubsub=ps)
-            api.saveActionsConfigJson('{"schema_version":1,"auto_hide_seconds":3}')
+            api.saveActionsConfigJson(
+                '{"schema_version":1,"auto_hide_seconds":3}'
+            )
         got = await asyncio.wait_for(q.get(), timeout=1.0)
         return got
 
@@ -76,4 +81,3 @@ def test_save_actions_config_ignores_invalid_json_and_does_not_publish() -> None
             return
 
     asyncio.run(_run())
-

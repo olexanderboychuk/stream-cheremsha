@@ -17,7 +17,10 @@ def test_ruleset_roundtrip_v1_includes_schema_version_1() -> None:
         id="rule-1",
         enabled=True,
         events=(
-            {"type": "chat_keyword", "params": {"text": "hello", "match": "contains", "case_sensitive": False}},
+            {
+                "type": "chat_keyword",
+                "params": {"text": "hello", "match": "contains", "case_sensitive": False},
+            },
         ),
         actions=[{"type": "play_sound", "params": {"file_path": r"C:\tmp\a.mp3"}}],
     )
@@ -49,11 +52,15 @@ def test_ruleset_rejects_invalid_json_text() -> None:
 
 def test_rule_validation_mentions_action_index() -> None:
     with pytest.raises(ValueError, match=r"Rule actions\[0\]\.type is required"):
-        ruleset_from_json_text('{"schema_version":1,"rules":[{"id":"r1","enabled":true,"event":{"type":"x","params":{}},"actions":[{"type":"","params":{}}]}]}')
+        ruleset_from_json_text(
+            '{"schema_version":1,"rules":[{"id":"r1","enabled":true,"event":{"type":"x","params":{}},"actions":[{"type":"","params":{}}]}]}'
+        )
 
 
 def test_rule_allows_empty_actions_list() -> None:
-    out = ruleset_from_json_text('{"schema_version":1,"rules":[{"id":"r1","enabled":true,"event":{"type":"x","params":{}},"actions":[]}]}')
+    out = ruleset_from_json_text(
+        '{"schema_version":1,"rules":[{"id":"r1","enabled":true,"event":{"type":"x","params":{}},"actions":[]}]}'
+    )
     assert out[0].actions == []
 
 
@@ -94,7 +101,10 @@ def test_event_default_platform_omitted_from_json() -> None:
         id="r1",
         enabled=True,
         events=(
-            {"type": "chat_keyword", "params": {"text": "hi", "match": "contains", "case_sensitive": False}},
+            {
+                "type": "chat_keyword",
+                "params": {"text": "hi", "match": "contains", "case_sensitive": False},
+            },
         ),
         actions=[],
     )
@@ -107,8 +117,14 @@ def test_ruleset_multi_events_roundtrip_uses_events_array() -> None:
         id="r2",
         enabled=True,
         events=(
-            {"type": "chat_keyword", "params": {"text": "a", "match": "contains", "case_sensitive": False}},
-            {"type": "chat_keyword", "params": {"text": "b", "match": "contains", "case_sensitive": False}},
+            {
+                "type": "chat_keyword",
+                "params": {"text": "a", "match": "contains", "case_sensitive": False},
+            },
+            {
+                "type": "chat_keyword",
+                "params": {"text": "b", "match": "contains", "case_sensitive": False},
+            },
         ),
         actions=[{"type": "play_sound", "params": {"file_path": "/x/a.mp3"}}],
     )
@@ -124,7 +140,10 @@ def test_ruleset_roundtrip_preserves_ui_layout() -> None:
         id="rule-1",
         enabled=True,
         events=(
-            {"type": "chat_keyword", "params": {"text": "hello", "match": "contains", "case_sensitive": False}},
+            {
+                "type": "chat_keyword",
+                "params": {"text": "hello", "match": "contains", "case_sensitive": False},
+            },
         ),
         actions=[{"type": "play_sound", "params": {"file_path": r"C:\tmp\a.mp3"}}],
     )
@@ -146,7 +165,12 @@ def test_normalize_ui_layout_drops_unknown_rule_refs() -> None:
     rule = RuleV1(
         id="rA",
         enabled=True,
-        events=({"type": "chat_keyword", "params": {"text": "x", "match": "contains", "case_sensitive": False}},),
+        events=(
+            {
+                "type": "chat_keyword",
+                "params": {"text": "x", "match": "contains", "case_sensitive": False},
+            },
+        ),
         actions=[],
     )
     layout = ui_rules_layout_from_json_text(
@@ -155,5 +179,3 @@ def test_normalize_ui_layout_drops_unknown_rule_refs() -> None:
     norm = normalize_ui_rules_layout_v1(layout, [rule])
     assert norm is not None
     assert norm["tree"] == [{"kind": "rule", "rule_id": "rA"}]
-
-

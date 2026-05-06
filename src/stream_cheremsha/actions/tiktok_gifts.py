@@ -68,7 +68,10 @@ TIKTOK_GIFTS: Final[list[TikTokGift]] = _load_streamtoearn_ua() or TIKTOK_GIFTS_
 
 
 def tiktok_catalog_gift_image_url(*, gift_id: str = "", gift_name: str = "") -> str:
-    """Return ``image_url`` from the bundled TikTok gift list when stream payload has no icon URL."""
+    """Return ``image_url`` from the bundled TikTok gift list.
+
+    Used when the stream payload has no icon URL.
+    """
     gid = (gift_id or "").strip()
     name_cf = (gift_name or "").strip().casefold()
     if gid:

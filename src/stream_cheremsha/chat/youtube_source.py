@@ -8,12 +8,12 @@ from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import Any
 
+import httpx
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-import httpx
 
 from stream_cheremsha import l10n
 from stream_cheremsha.chat.video_id import extract_youtube_video_id
@@ -116,9 +116,7 @@ def _channel_live_fallback_url(service: object) -> str | None:
     return f"https://www.youtube.com/channel/{cid}/live" if cid else None
 
 
-_YOUTUBE_CHANNEL_VIDEO_RSS_TMPL = (
-    "https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-)
+_YOUTUBE_CHANNEL_VIDEO_RSS_TMPL = "https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
 
 
 def fetch_channel_video_ids_from_rss(channel_id: str) -> list[str]:
@@ -175,12 +173,8 @@ def discover_my_live_chat_ids(service: object) -> list[str]:
 
     out: list[str] = []
     for i in range(0, len(video_ids), 50):
-        chunk = video_ids[i:i + 50]
-        vresp = (
-            service.videos()
-            .list(part="liveStreamingDetails", id=",".join(chunk))
-            .execute()
-        )
+        chunk = video_ids[i : i + 50]
+        vresp = service.videos().list(part="liveStreamingDetails", id=",".join(chunk)).execute()
         for item in vresp.get("items", []):
             lsd = item.get("liveStreamingDetails") or {}
             lcid = lsd.get("activeLiveChatId")
@@ -611,12 +605,8 @@ class YouTubeChatSource:
             return []
         out: list[str] = []
         for i in range(0, len(video_ids), 50):
-            chunk = video_ids[i:i + 50]
-            resp = (
-                service.videos()
-                .list(part="liveStreamingDetails", id=",".join(chunk))
-                .execute()
-            )
+            chunk = video_ids[i : i + 50]
+            resp = service.videos().list(part="liveStreamingDetails", id=",".join(chunk)).execute()
             items = resp.get("items", [])
             if len(chunk) == 1 and not items:
                 raise ValueError("video not found or not accessible")
@@ -630,15 +620,14 @@ class YouTubeChatSource:
         return _dedupe_strs(out)
 
     @staticmethod
-    def _list_messages(service: object, live_chat_id: str, page_token: str | None) -> dict[str, Any]:
-        req = (
-            service.liveChatMessages()
-            .list(
-                liveChatId=live_chat_id,
-                part="snippet,authorDetails",
-                pageToken=page_token,
-                maxResults=2000,
-            )
+    def _list_messages(
+        service: object, live_chat_id: str, page_token: str | None
+    ) -> dict[str, Any]:
+        req = service.liveChatMessages().list(
+            liveChatId=live_chat_id,
+            part="snippet,authorDetails",
+            pageToken=page_token,
+            maxResults=2000,
         )
         return req.execute()
 
