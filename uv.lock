@@ -752,13 +752,9 @@ wheels = [
 
 [[package]]
 name = "nuitka"
-version = "2.8.10"
+version = "4.0.8"
 source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "ordered-set" },
-    { name = "zstandard" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/a6/b8/5c58a2c4d66631ec12eb641c08b7a31116d972c4ccbb0a340a047db51238/nuitka-2.8.10.tar.gz", hash = "sha256:03e4d0756d8a11cb2627da3a2d9b518c802d031bf4f2c629e0a7b8c773497452", size = 4331977, upload-time = "2026-01-23T09:54:56.396Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1c/48/e54130d57b89fc015d702e98a1a217b5757625d01a01cc07d29fd046d336/nuitka-4.0.8.tar.gz", hash = "sha256:3f87e87e4d3773997944ce401145ef21461337121d39ea0fbe678274005e60ba", size = 4422692, upload-time = "2026-04-10T07:18:15.109Z" }
 
 [[package]]
 name = "numpy"
@@ -3612,7 +3608,7 @@ wheels = [
 
 [[package]]
 name = "stream-cheremsha"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -3664,7 +3660,7 @@ requires-dist = [
     { name = "keyring", specifier = ">=25" },
     { name = "matplotlib", marker = "extra == 'profile-plot'", specifier = ">=3.8" },
     { name = "memory-profiler", marker = "extra == 'profile'", specifier = ">=0.61" },
-    { name = "nuitka", marker = "extra == 'build'", specifier = ">=2.4,<5.0" },
+    { name = "nuitka", marker = "extra == 'build'", specifier = "==4.0.8" },
     { name = "numpy", specifier = ">=1.26.0" },
     { name = "obsws-python", specifier = ">=1.6,<2" },
     { name = "ordered-set", marker = "extra == 'build'", specifier = ">=4.1" },
