@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows (Nuitka + NSIS)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          enable-cache: true
+
+      - name: Install dependencies (build)
+        run: uv sync --extra build --frozen
+
+      - name: Validate version matches tag
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $tagVersion = $tag
+          if ($tagVersion.StartsWith("v")) { $tagVersion = $tagVersion.Substring(1) }
+          uv run --frozen python scripts/ci/validate_release_version.py --tag-version "$tagVersion"
+
+      - name: Build (Nuitka standalone)
+        run: uv run --frozen cheremsha-build --out dist/nuitka
+
+      - name: Ensure Windows icon.ico for NSIS
+        shell: pwsh
+        run: uv run --frozen python scripts/ci/ensure_windows_icon_ico.py
+
+      - name: Locate Nuitka dist folder
+        id: nuitka
+        shell: pwsh
+        run: |
+          $distRoot = Resolve-Path "dist/nuitka"
+          $distDir = Get-ChildItem -Path $distRoot -Directory | Where-Object { $_.Name -like "*.dist" } | Select-Object -First 1
+          if (-not $distDir) {
+            Write-Error "Could not find Nuitka *.dist folder under $distRoot"
+            exit 1
+          }
+          $exe = Join-Path $distDir.FullName "cheremsha.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Error "Expected cheremsha.exe at: $exe"
+            exit 1
+          }
+          "dist_dir=$($distDir.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Prepare portable ZIP
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "dist/release" | Out-Null
+          $tag = "${{ github.ref_name }}"
+          $zip = "dist/release/Cheremsha-$tag-windows-x64-portable.zip"
+          if (Test-Path $zip) { Remove-Item -Force $zip }
+          Compress-Archive -Path "${{ steps.nuitka.outputs.dist_dir }}\*" -DestinationPath $zip
+
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis -y --no-progress
+
+      - name: Build NSIS installer
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $tagVersion = $tag
+          if ($tagVersion.StartsWith("v")) { $tagVersion = $tagVersion.Substring(1) }
+          $out = "dist/release/Cheremsha-Setup-$tag.exe"
+          & makensis `
+            "/DAPP_VERSION=$tagVersion" `
+            "/DINPUT_DIR=${{ steps.nuitka.outputs.dist_dir }}" `
+            "/DOUTPUT_EXE=$out" `
+            "build/nsis/cheremsha.nsi"
+          if (-not (Test-Path $out)) {
+            Write-Error "NSIS output not found: $out"
+            exit 1
+          }
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Cheremsha ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/release/*.zip
+            dist/release/*.exe
