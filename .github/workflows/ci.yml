@@ -16,7 +16,7 @@ jobs:
       - name: Install system libraries (PySide6)
         run: |
           sudo apt-get update
-          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libxcb-cursor0
+          sudo apt-get install -y libegl1 libgl1 libpulse0 libxkbcommon0 libxcb-cursor0
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
