@@ -34,7 +34,7 @@ def merge_short_subchunks(
     min_chars: int = TTS_MIN_MERGE_CHUNK_CHARS,
     max_chars: int = TTS_CHUNK_CHARS,
 ) -> list[str]:
-    """Merge small neighbors into one chunk (up to *max_chars*) to save TTS/RVC work."""
+    """Merge small neighbors into one chunk (up to *max_chars*) to save TTS work."""
     if not chunks:
         return []
     first = chunks[0].strip()

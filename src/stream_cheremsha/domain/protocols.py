@@ -8,7 +8,7 @@ from stream_cheremsha.domain.models import ChatMessage
 
 class TextToSpeech(Protocol):
     async def synthesize(self, text: str) -> bytes:
-        """Return audio bytes (MP3 from Google, WAV from Piper, etc.)."""
+        """Return audio bytes for playback."""
 
     async def aclose(self) -> None:
         """Release network or native resources."""

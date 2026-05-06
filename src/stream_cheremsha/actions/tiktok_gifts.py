@@ -38,11 +38,16 @@ def _load_streamtoearn_ua() -> list[TikTokGift]:
         name = it.get("name")
         price = it.get("price")
         image_url = it.get("image_url")
+        raw_id = it.get("id")
         if not isinstance(name, str) or not name.strip():
             continue
         if not isinstance(price, int):
             continue
         gift: TikTokGift = {"id": "", "name": name.strip(), "price": price}
+        if isinstance(raw_id, str) and raw_id.strip():
+            gift["id"] = raw_id.strip()
+        elif isinstance(raw_id, int):
+            gift["id"] = str(raw_id)
         if isinstance(image_url, str) and image_url.strip():
             gift["image_url"] = image_url.strip()
         out.append(gift)
@@ -60,3 +65,29 @@ TIKTOK_GIFTS_FALLBACK: Final[list[TikTokGift]] = [
 
 
 TIKTOK_GIFTS: Final[list[TikTokGift]] = _load_streamtoearn_ua() or TIKTOK_GIFTS_FALLBACK
+
+
+def tiktok_catalog_gift_image_url(*, gift_id: str = "", gift_name: str = "") -> str:
+    """Return ``image_url`` from the bundled TikTok gift list when stream payload has no icon URL."""
+    gid = (gift_id or "").strip()
+    name_cf = (gift_name or "").strip().casefold()
+    if gid:
+        for g in TIKTOK_GIFTS:
+            if str(g.get("id") or "").strip() != gid:
+                continue
+            raw = g.get("image_url")
+            if isinstance(raw, str):
+                u = raw.strip()
+                if u.startswith("http://") or u.startswith("https://"):
+                    return u
+    if name_cf:
+        for g in TIKTOK_GIFTS:
+            nm = str(g.get("name") or "").strip().casefold()
+            if nm != name_cf:
+                continue
+            raw = g.get("image_url")
+            if isinstance(raw, str):
+                u = raw.strip()
+                if u.startswith("http://") or u.startswith("https://"):
+                    return u
+    return ""

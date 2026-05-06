@@ -7,6 +7,7 @@ from PySide6.QtCore import QSettings
 
 CHAT_CONFIG_SCHEMA_VERSION = 1
 CHAT_CONFIG_QSETTINGS_KEY = "overlays/chat/main/config_json"
+_CHAT_CONFIG_QSETTINGS_BACKUP_KEY = "overlays/chat/main/config_json_backup"
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,7 +35,7 @@ class ChatOverlayConfig:
     bubble_radius_px: int
     fade_seconds: float
 
-    def replace(self, **kwargs: object) -> "ChatOverlayConfig":
+    def replace(self, **kwargs: object) -> ChatOverlayConfig:
         return replace(self, **kwargs)
 
 
@@ -113,9 +114,8 @@ def chat_config_from_json_text(text: str) -> ChatOverlayConfig:
     raw = json.loads(text)
     if not isinstance(raw, dict):
         raise ValueError("Invalid chat config JSON")
-    ver = _ensure_int(raw.get("schema_version"), default=0)
-    if ver != CHAT_CONFIG_SCHEMA_VERSION:
-        raise ValueError("Unsupported chat config schema_version")
+    # schema_version is informational only; merge keys we understand across versions.
+
     d = chat_config_defaults()
     max_items = max(1, _ensure_int(raw.get("max_items"), default=d.max_items))
     font_family = str(raw.get("font_family") or d.font_family)
@@ -187,9 +187,20 @@ def load_chat_config(settings: QSettings | None = None) -> ChatOverlayConfig:
     try:
         return chat_config_from_json_text(raw)
     except (ValueError, TypeError, json.JSONDecodeError):
+        bak = (s.value(_CHAT_CONFIG_QSETTINGS_BACKUP_KEY, "", str) or "").strip()
+        if bak:
+            try:
+                cfg = chat_config_from_json_text(bak)
+            except (ValueError, TypeError, json.JSONDecodeError):
+                return chat_config_defaults()
+            s.setValue(CHAT_CONFIG_QSETTINGS_KEY, chat_config_to_json_text(cfg))
+            return cfg
         return chat_config_defaults()
 
 
 def save_chat_config(cfg: ChatOverlayConfig, settings: QSettings | None = None) -> None:
     s = settings or QSettings("stream-cheremsha", "cheremsha")
-    s.setValue(CHAT_CONFIG_QSETTINGS_KEY, chat_config_to_json_text(cfg))
+    txt = chat_config_to_json_text(cfg)
+    s.setValue(CHAT_CONFIG_QSETTINGS_KEY, txt)
+    s.setValue(_CHAT_CONFIG_QSETTINGS_BACKUP_KEY, txt)
+    s.sync()

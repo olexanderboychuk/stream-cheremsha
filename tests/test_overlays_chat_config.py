@@ -1,7 +1,5 @@
 import json
 
-import pytest
-
 from stream_cheremsha.overlays.chat_config import (
     CHAT_CONFIG_SCHEMA_VERSION,
     ChatOverlayConfig,
@@ -73,6 +71,10 @@ def test_chat_config_json_roundtrip() -> None:
     assert out.bubble_bg_enabled is False
 
 
-def test_chat_config_rejects_bad_schema_version() -> None:
-    with pytest.raises(ValueError):
-        chat_config_from_json_text('{"schema_version":999,"max_items":1}')
+def test_chat_config_future_schema_preserves_known_fields() -> None:
+    cfg = chat_config_defaults().replace(max_items=3, show_platform_icon=False)
+    obj = json.loads(chat_config_to_json_text(cfg))
+    obj["schema_version"] = 999
+    out = chat_config_from_json_text(json.dumps(obj))
+    assert out.max_items == 3
+    assert out.show_platform_icon is False

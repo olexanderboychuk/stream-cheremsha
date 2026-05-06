@@ -27,7 +27,9 @@ def _rule(rule_id: str) -> RuleV1:
     return RuleV1(
         id=rule_id,
         enabled=True,
-        event={'type': 'chat_keyword', 'params': {'text': 'hello', 'match': 'contains', 'case_sensitive': False}},
+        events=(
+            {'type': 'chat_keyword', 'params': {'text': 'hello', 'match': 'contains', 'case_sensitive': False}},
+        ),
         actions=[{'type': 'play_sound', 'params': {'file_path': r'C:\tmp\a.mp3'}}],
     )
 

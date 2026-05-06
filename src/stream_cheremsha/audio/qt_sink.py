@@ -136,6 +136,8 @@ class QtAudioSink(QObject):
         self._audio = QAudioOutput(self)
         self._player.setAudioOutput(self._audio)
         self._play_lock = asyncio.Lock()
+        self._sound_dedupe_lock = asyncio.Lock()
+        self._sound_dedupe_keys: set[str] = set()
         self._pending_fut: asyncio.Future[None] | None = None
 
         self._player.errorOccurred.connect(self._on_player_error)
@@ -159,6 +161,9 @@ class QtAudioSink(QObject):
     def set_volume(self, linear: float) -> None:
         self._audio.setVolume(max(0.0, min(1.0, linear)))
 
+    def get_volume(self) -> float:
+        return float(self._audio.volume())
+
     def _on_player_error(self, error: QMediaPlayer.Error, error_string: str) -> None:
         fut = self._pending_fut
         if fut is not None and not fut.done():
@@ -171,46 +176,101 @@ class QtAudioSink(QObject):
         if fut is not None and not fut.done():
             fut.set_result(None)
 
+    def pause(self) -> None:
+        """Pause current playback (best-effort)."""
+        try:
+            self._player.pause()
+        except RuntimeError:
+            return
+
+    def resume(self) -> None:
+        """Resume current playback (best-effort)."""
+        try:
+            self._player.play()
+        except RuntimeError:
+            return
+
+    async def _play_mp3_locked(self, data: bytes) -> None:
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future[None] = loop.create_future()
+        self._pending_fut = fut
+
+        boosted = await asyncio.to_thread(_try_louder_mp3, data, self._tts_gain_db)
+        if boosted is data:
+            ff = shutil.which("ffmpeg")
+            logger.warning(
+                "TTS: підсилення ffmpeg не застосовано (%s B, base=%s dB, ffmpeg=%r). "
+                "Часто бракує libmp3lame у ffmpeg-free — спробуйте повний ffmpeg або "
+                "перевірте вихід: ffmpeg -h encoder=libmp3lame",
+                len(data),
+                self._tts_gain_db,
+                ff,
+            )
+        else:
+            enc = "WAV" if boosted[:4] == b"RIFF" else "MP3"
+            logger.info(
+                "TTS: ffmpeg ok (%s B -> %s B, %s, base_gain=%s dB)",
+                len(data),
+                len(boosted),
+                enc,
+                self._tts_gain_db,
+            )
+
+        file_path = await asyncio.to_thread(_write_temp_audio, boosted)
+
+        self._player.setSource(QUrl.fromLocalFile(str(file_path)))
+        self._player.play()
+        try:
+            await fut
+        finally:
+            self._pending_fut = None
+            self._player.stop()
+            try:
+                file_path.unlink(missing_ok=True)
+            except OSError as e:
+                logger.debug("Temp audio cleanup: %s", e)
+
     async def play_mp3(self, data: bytes) -> None:
         async with self._play_lock:
-            loop = asyncio.get_running_loop()
-            fut: asyncio.Future[None] = loop.create_future()
-            self._pending_fut = fut
+            await self._play_mp3_locked(data)
 
-            boosted = await asyncio.to_thread(_try_louder_mp3, data, self._tts_gain_db)
-            if boosted is data:
-                ff = shutil.which("ffmpeg")
-                logger.warning(
-                    "TTS: підсилення ffmpeg не застосовано (%s B, base=%s dB, ffmpeg=%r). "
-                    "Часто бракує libmp3lame у ffmpeg-free — спробуйте повний ffmpeg або "
-                    "перевірте вихід: ffmpeg -h encoder=libmp3lame",
-                    len(data),
-                    self._tts_gain_db,
-                    ff,
-                )
-            else:
-                enc = "WAV" if boosted[:4] == b"RIFF" else "MP3"
-                logger.info(
-                    "TTS: ffmpeg ok (%s B -> %s B, %s, base_gain=%s dB)",
-                    len(data),
-                    len(boosted),
-                    enc,
-                    self._tts_gain_db,
-                )
+    async def play_mp3_with_volume_deduped(self, data: bytes, linear: float, *, dedupe_key: str) -> bool:
+        """Play one clip at ``linear`` volume; return False if ``dedupe_key`` is already playing or queued.
 
-            file_path = await asyncio.to_thread(_write_temp_audio, boosted)
-
-            self._player.setSource(QUrl.fromLocalFile(str(file_path)))
-            self._player.play()
-            try:
-                await fut
-            finally:
-                self._pending_fut = None
-                self._player.stop()
+        Reserves ``dedupe_key`` before waiting on the playback lock so duplicate files are not
+        appended to the sink FIFO when the same path is already in line to play.
+        """
+        k = (dedupe_key or "").strip()
+        if not k:
+            await self.play_mp3_with_volume(data, linear)
+            return True
+        k = os.path.normcase(k)
+        async with self._sound_dedupe_lock:
+            if k in self._sound_dedupe_keys:
+                return False
+            self._sound_dedupe_keys.add(k)
+        try:
+            async with self._play_lock:
+                prev = float(self._audio.volume())
+                self._audio.setVolume(max(0.0, min(1.0, float(linear))))
                 try:
-                    file_path.unlink(missing_ok=True)
-                except OSError as e:
-                    logger.debug("Temp audio cleanup: %s", e)
+                    await self._play_mp3_locked(data)
+                finally:
+                    self._audio.setVolume(prev)
+            return True
+        finally:
+            async with self._sound_dedupe_lock:
+                self._sound_dedupe_keys.discard(k)
+
+    async def play_mp3_with_volume(self, data: bytes, linear: float) -> None:
+        """Play one clip at the given volume (atomic with playback lock)."""
+        async with self._play_lock:
+            prev = float(self._audio.volume())
+            self._audio.setVolume(max(0.0, min(1.0, float(linear))))
+            try:
+                await self._play_mp3_locked(data)
+            finally:
+                self._audio.setVolume(prev)
 
     def shutdown(self) -> None:
         self._player.stop()

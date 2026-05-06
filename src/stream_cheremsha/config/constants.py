@@ -11,6 +11,10 @@ KEY_TIKTOK_USERNAME = "tiktok_username"
 TIKTOK_ACTIONS_ACCOUNT_KEY = "app"
 KEY_DONATIK_API_TOKEN = "donatik_api_token"
 KEY_DONATELLO_API_TOKEN = "donatello_api_token"
+KEY_OBS_WEBSOCKET_PASSWORD = "obs_websocket_password"
+KEY_TELEGRAM_BOT_TOKEN = "telegram_bot_token"
+SETTINGS_OBS_WS_HOST = "obs/websocket_host"
+SETTINGS_OBS_WS_PORT = "obs/websocket_port"
 
 # Public (non-secret) build/run-time overrides.
 # Example (PowerShell): $env:STREAM_CHEREMSHA_TWITCH_CLIENT_ID="..."
@@ -20,7 +24,7 @@ YOUTUBE_READONLY_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
 
 MAX_MESSAGE_CHARS = 400
 TTS_CHUNK_CHARS = 180
-# Sub-chunks shorter than this merge with neighbors (single message) to cut TTS/RVC calls.
+# Sub-chunks shorter than this merge with neighbors (single message) to cut TTS calls.
 TTS_MIN_MERGE_CHUNK_CHARS = 40
 
 CHAT_QUEUE_MAX = 500

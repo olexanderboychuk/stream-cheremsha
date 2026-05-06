@@ -118,7 +118,7 @@ class ChatOverlayType:
         const panel = document.getElementById('panel');
         const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
         let ws = null;
-        let tries = 0;
+        const RECONNECT_MS = 5000;
         let cfg = null;
         // items: array of message objects (id, author, text, platform, received_at)
         let items = [];
@@ -320,19 +320,16 @@ class ChatOverlayType:
         }} catch (e) {{ }}
 
         function connect() {{
-          tries += 1;
-          const backoff = Math.min(5000, 250 + Math.floor(Math.random() * 250) + (tries * 350));
           try {{
             ws = new WebSocket(wsUrl);
           }} catch (e) {{
             showFatal('ws create failed');
-            setTimeout(connect, backoff);
+            setTimeout(connect, RECONNECT_MS);
             return;
           }}
 
           ws.onopen = () => {{
             try {{
-              tries = 0;
               const subscribeMsg = {_json_for_script(subscribe_msg)};
               ws.send(JSON.stringify(subscribeMsg));
             }} catch (e) {{
@@ -385,7 +382,7 @@ class ChatOverlayType:
           }};
           ws.onclose = () => {{
             log('ws closed');
-            setTimeout(connect, backoff);
+            setTimeout(connect, RECONNECT_MS);
           }};
         }}
 

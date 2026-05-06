@@ -5,11 +5,10 @@ from __future__ import annotations
 import typing
 import weakref
 
-from PySide6.QtCore import Property, QObject, QUrl, Signal, Slot
+from PySide6.QtCore import Property, QEvent, QObject, QPoint, QRect, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices
 
-from stream_cheremsha.config import constants
-from stream_cheremsha.config import keyring_store
+from stream_cheremsha.config import constants, keyring_store
 from stream_cheremsha.domain.models import ChatPlatform
 
 if typing.TYPE_CHECKING:
@@ -25,6 +24,27 @@ class StreamCheremshaQmlApi(QObject):
         super().__init__(parent=main)
         self._m: weakref.ref[MainWindow] = weakref.ref(main)
         self._rc: int = 0
+        self._footer_obj: QObject | None = None
+        self._qml_conn_obj: QObject | None = None
+        self._win_obj: QObject | None = main
+
+        try:
+            foot = main._footer_frame  # noqa: SLF001
+        except AttributeError:
+            foot = None
+        if foot is not None:
+            self._footer_obj = foot
+            foot.installEventFilter(self)
+
+        try:
+            qml = main._qml_conn  # noqa: SLF001
+        except AttributeError:
+            qml = None
+        if qml is not None:
+            self._qml_conn_obj = qml
+            qml.installEventFilter(self)
+
+        main.installEventFilter(self)
 
     def _win(self) -> MainWindow | None:
         return self._m()
@@ -32,6 +52,94 @@ class StreamCheremshaQmlApi(QObject):
     @Property(int, notify=refreshCounterChanged)
     def refreshCounter(self) -> int:  # noqa: ANN201 - PySide pattern
         return self._rc
+
+    @Property(int, notify=refreshCounterChanged)
+    def bottomInsetPx(self) -> int:  # noqa: ANN201 - PySide pattern
+        """Bottom inset for QML ScrollViews to avoid overlapping the QWidget footer."""
+        w = self._win()
+        if w is None:
+            return 0
+        try:
+            foot = w._footer_frame  # noqa: SLF001
+        except AttributeError:
+            return 0
+        try:
+            h = int(foot.height())
+        except RuntimeError:
+            return 0
+        return max(0, h)
+
+    @Property(int, notify=refreshCounterChanged)
+    def footerOverlapPx(self) -> int:  # noqa: ANN201 - PySide pattern
+        """Pixels by which the QWidget footer overlaps the QML connections view.
+
+        If layouts are correct, this is 0. If the footer is drawn on top of QML,
+        this reports the real overlap in screen coordinates.
+        """
+        w = self._win()
+        if w is None:
+            return 0
+        try:
+            qml = w._qml_conn  # noqa: SLF001
+            foot = w._footer_frame  # noqa: SLF001
+        except AttributeError:
+            return 0
+        try:
+            if not qml.isVisible() or not foot.isVisible():
+                return 0
+            qml_tl = qml.mapToGlobal(QPoint(0, 0))
+            qml_br = qml.mapToGlobal(QPoint(qml.width(), qml.height()))
+            foot_tl = foot.mapToGlobal(QPoint(0, 0))
+            foot_br = foot.mapToGlobal(QPoint(foot.width(), foot.height()))
+        except RuntimeError:
+            return 0
+        qml_r = QRect(qml_tl, qml_br)
+        foot_r = QRect(foot_tl, foot_br)
+        inter = qml_r.intersected(foot_r)
+        if inter.isNull() or inter.height() <= 0:
+            return 0
+        return int(inter.height())
+
+    @Property(int, notify=refreshCounterChanged)
+    def footerHeightPx(self) -> int:  # noqa: ANN201 - PySide pattern
+        w = self._win()
+        if w is None:
+            return 0
+        try:
+            foot = w._footer_frame  # noqa: SLF001
+        except AttributeError:
+            return 0
+        try:
+            return int(foot.height())
+        except RuntimeError:
+            return 0
+
+    @Property(int, notify=refreshCounterChanged)
+    def qmlConnHeightPx(self) -> int:  # noqa: ANN201 - PySide pattern
+        w = self._win()
+        if w is None:
+            return 0
+        try:
+            qml = w._qml_conn  # noqa: SLF001
+        except AttributeError:
+            return 0
+        try:
+            return int(qml.height())
+        except RuntimeError:
+            return 0
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 - Qt naming
+        et = event.type()
+        if watched in (self._footer_obj, self._qml_conn_obj, self._win_obj):
+            if et in (
+                QEvent.Type.Resize,
+                QEvent.Type.Move,
+                QEvent.Type.Show,
+                QEvent.Type.Hide,
+                QEvent.Type.LayoutRequest,
+            ):
+                self.refresh()
+        return super().eventFilter(watched, event)
 
     @Slot()
     def refresh(self) -> None:
@@ -377,10 +485,16 @@ class StreamCheremshaQmlApi(QObject):
     def openTikTokActions(self) -> None:
         w = self._win()
         if w is not None:
-            w._open_tiktok_actions()  # noqa: SLF001
+            w.open_actions()  # noqa: SLF001
 
     @Slot()
     def openWidgets(self) -> None:
         w = self._win()
         if w is not None:
             w.open_widgets()
+
+    @Slot()
+    def goHome(self) -> None:
+        w = self._win()
+        if w is not None:
+            w._set_main_page(w._IX_CONN)  # noqa: SLF001

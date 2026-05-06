@@ -5,8 +5,11 @@ import html
 import json
 import logging
 import os
+import shutil
 import threading
+import time
 from collections import deque
+from typing import Any
 from datetime import UTC, datetime
 from pathlib import Path
 from xml.sax.saxutils import quoteattr
@@ -21,20 +24,16 @@ from PySide6.QtCore import (
     Qt,
     QTimer,
     QUrl,
-    QVariantAnimation,
     Signal,
     Slot,
 )
-from PySide6.QtGui import QCloseEvent, QColor, QFont, QIcon, QTextCursor
+from PySide6.QtGui import QCloseEvent, QColor, QFont, QIcon, QPainter, QPen, QTextCursor
 from PySide6.QtQuick import QQuickView
 from PySide6.QtQuickWidgets import QQuickWidget
-from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
-    QDialog,
-    QDialogButtonBox,
     QFileDialog,
     QFontComboBox,
     QFormLayout,
@@ -44,6 +43,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -52,17 +52,14 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QStackedWidget,
     QStyle,
-    QTextBrowser,
     QTextEdit,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
+from qframelesswindow import FramelessWindow, StandardTitleBar
 
 from stream_cheremsha import l10n
-from stream_cheremsha.audio.qt_sink import QtAudioSink
-from stream_cheremsha.chat import twitch_credentials, twitch_oauth_device
-from stream_cheremsha.chat.tiktok_source import TikTokChatSource
 from stream_cheremsha.actions.engine import PlatformActionsEngine
 from stream_cheremsha.actions.events import ChatMessageEvent, GiftReceivedEvent
 from stream_cheremsha.actions.store import (
@@ -70,7 +67,13 @@ from stream_cheremsha.actions.store import (
     load_rules,
     save_rules,
 )
-from stream_cheremsha.ui.actions_qml_api import ActionsQmlApi
+from stream_cheremsha.activity.aggregator import LikeShareAggregator
+from stream_cheremsha.activity.models import ActivityItem, activity_append_patch, now_hms
+from stream_cheremsha.audio.qt_sink import QtAudioSink
+from stream_cheremsha.chat import twitch_credentials, twitch_oauth_device
+from stream_cheremsha.chat.tiktok_source import TikTokChatSource
+from stream_cheremsha.chat.twitch_eventsub import TwitchEventSubCallbacks, TwitchEventSubClient
+from stream_cheremsha.chat.twitch_helix import TwitchHelixClient
 from stream_cheremsha.chat.twitch_source import TwitchSource
 from stream_cheremsha.chat.youtube_source import (
     YouTubeChatSource,
@@ -81,19 +84,23 @@ from stream_cheremsha.chat.youtube_source import (
 from stream_cheremsha.config import constants, keyring_store
 from stream_cheremsha.domain.models import ChatMessage, ChatPlatform
 from stream_cheremsha.domain.protocols import TextToSpeech
+from stream_cheremsha.online.models import now_hms as online_now_hms
+from stream_cheremsha.online.models import online_state_patch
 from stream_cheremsha.overlays.chat_overlay import chat_message_to_patch
 from stream_cheremsha.overlays.registry import OverlayRegistry
 from stream_cheremsha.overlays.server import OverlayServer
 from stream_cheremsha.pipeline.coordinator import StreamCoordinator
-from stream_cheremsha.tts.google_translate_tts import GoogleTranslateTts
-from stream_cheremsha.tts.piper_voices import TTS_LANG_OPTIONS
-from stream_cheremsha.tts.rvc_wav import (
-    RvcRuntime,
-    apply_rvc_if_active,
-    rvc_runtime_cancel_pending,
-    rvc_runtime_queue_size,
-    rvc_runtime_stop_dispatcher,
+from stream_cheremsha.music.queue_controller import MusicQueueController
+from stream_cheremsha.music.player import MusicPlayer
+from stream_cheremsha.music.yt_dlp_resolver import fetch_youtube_title
+from stream_cheremsha.telegram.bot_service import TelegramBotService
+from stream_cheremsha.tts.edge_tts import (
+    EdgeTts,
+    filter_edge_voices_for_locale,
+    list_edge_voices_cached,
 )
+from stream_cheremsha.tts.google_translate_tts import GoogleTranslateTts
+from stream_cheremsha.ui.actions_qml_api import ActionsQmlApi
 from stream_cheremsha.ui.chat_formatting import (
     CHAT_DEFAULT_FONT_FAMILY,
     chat_font_stack_css,
@@ -101,15 +108,18 @@ from stream_cheremsha.ui.chat_formatting import (
     load_platform_icon_data_uris,
 )
 from stream_cheremsha.ui.chat_popout import ChatPopoutWindow
+from stream_cheremsha.ui.docks_qml_api import DocksQmlApi
 from stream_cheremsha.ui.donations_qml_api import DonationsQmlApi
 from stream_cheremsha.ui.qml_api import StreamCheremshaQmlApi
-from stream_cheremsha.ui.widgets_qml_api import WidgetsQmlApi
+from stream_cheremsha.ui.tiktok_analytics_api import TikTokAnalyticsApi
+from stream_cheremsha.ui.twitch_analytics_api import TwitchAnalyticsApi
+from stream_cheremsha.ui.widgets_qml_api import WidgetsQmlApi, WidgetsWindowQmlApi
 from stream_cheremsha.ui.window_geometry import (
     KEY_MAIN_WINDOW,
-    KEY_PIPER_HELP_DIALOG,
     restore_window_geometry,
     save_window_geometry,
 )
+from stream_cheremsha.ui.youtube_analytics_api import YouTubeAnalyticsApi
 
 logger = logging.getLogger(__name__)
 
@@ -156,21 +166,22 @@ _SETTINGS_AUTOSTART_YOUTUBE = "startup/auto_start_youtube"
 _SETTINGS_GAME_MODE = "ui/game_mode"
 _SETTINGS_TTS_GAIN_DB = "audio/tts_gain_db"
 _TTS_ENGINE_GOOGLE = "google"
-_TTS_ENGINE_PIPER = "piper"
+_TTS_ENGINE_EDGE = "edge"
 _SETTINGS_TTS_ENGINE = "tts/engine"
-_SETTINGS_PIPER_MODEL = "tts/piper_model_path"
 _SETTINGS_TTS_LANG = "tts/output_language"
-_SETTINGS_PIPER_CUDA = "tts/piper_use_cuda"
-_SETTINGS_RVC_ENABLED = "tts/rvc_enabled"
-_SETTINGS_RVC_MODEL = "tts/rvc_model_path"
-_SETTINGS_RVC_INDEX = "tts/rvc_index_path"
-_SETTINGS_RVC_CUDA = "tts/rvc_use_cuda"
-_LEGACY_RVC_ENABLED = "tts/piper_rvc_enabled"
-_LEGACY_RVC_MODEL = "tts/piper_rvc_model_path"
-_LEGACY_RVC_INDEX = "tts/piper_rvc_index_path"
+_SETTINGS_EDGE_VOICE_BY_LANG = "tts/edge_voice_by_lang"
+
+# Languages supported by the UI TTS language picker (Google/Edge backends).
+TTS_LANG_OPTIONS: tuple[str, ...] = ("uk-UA", "en-US", "en-GB", "de-DE", "pl-PL")
 _SETTINGS_TTS_CHAT_TWITCH = "tts_chat/twitch_enabled"
 _SETTINGS_TTS_CHAT_YOUTUBE = "tts_chat/youtube_enabled"
 _SETTINGS_TTS_CHAT_TIKTOK = "tts_chat/tiktok_enabled"
+
+_SETTINGS_TELEGRAM_ENABLED = "telegram/enabled"
+_SETTINGS_TELEGRAM_ADMIN_ID = "telegram/admin_id"
+_SETTINGS_TELEGRAM_SONG_REQUESTS_ENABLED = "telegram/song_requests_enabled"
+
+_SETTINGS_MUSIC_BACKEND = "music/backend"  # "app" | "mpv"
 
 
 class UiBridge(QObject):
@@ -198,7 +209,215 @@ class QtLogHandler(logging.Handler):
             self.handleError(record)
 
 
-class MainWindow(QWidget):
+class _TitleBar(QFrame):
+    def __init__(self, owner: QWidget) -> None:
+        super().__init__(owner)
+        self.setObjectName("appTitleBar")
+        self.setFixedHeight(44)
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(12, 10, 12, 10)
+        row.setSpacing(10)
+
+        self._title = QLabel()
+        self._title.setObjectName("titleBarTitle")
+        self._title.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        row.addWidget(self._title, stretch=1, alignment=Qt.AlignmentFlag.AlignVCenter)
+
+        def _mk_btn(*, glyph: str, danger: bool = False) -> QToolButton:
+            b = QToolButton()
+            b.setObjectName("titleBarBtnDanger" if danger else "titleBarBtn")
+            b.setText(glyph)
+            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.setFixedSize(34, 28)
+            return b
+
+        self.btn_min = _mk_btn(glyph="—")
+        self.btn_max = _mk_btn(glyph="□")
+        self.btn_close = _mk_btn(glyph="×", danger=True)
+        row.addWidget(self.btn_min, 0, Qt.AlignmentFlag.AlignVCenter)
+        row.addWidget(self.btn_max, 0, Qt.AlignmentFlag.AlignVCenter)
+        row.addWidget(self.btn_close, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self.setStyleSheet(
+            """
+            QFrame#appTitleBar {
+              background: #121620;
+              border-bottom: 1px solid #2a3142;
+            }
+            QLabel#titleBarTitle {
+              color: #e8eaed;
+              font-size: 13px;
+              font-weight: 600;
+            }
+            QToolButton#titleBarBtn, QToolButton#titleBarBtnDanger {
+              background: #1c2434;
+              border: 1px solid #2a3142;
+              border-radius: 8px;
+              color: #e8eaed;
+              padding: 0px;
+            }
+            QToolButton#titleBarBtn:hover, QToolButton#titleBarBtn[ncHover="true"] {
+              background: #263246;
+              border-color: #3b4458;
+            }
+            QToolButton#titleBarBtn:pressed, QToolButton#titleBarBtn[ncPressed="true"] {
+              background: #303a50;
+            }
+            QToolButton#titleBarBtnDanger:hover, QToolButton#titleBarBtnDanger[ncHover="true"] {
+              background: #991b1b;
+              border-color: #3b4458;
+            }
+            QToolButton#titleBarBtnDanger:pressed, QToolButton#titleBarBtnDanger[ncPressed="true"] {
+              background: #7f1d1d;
+            }
+            """,
+        )
+
+    def set_title(self, text: str) -> None:
+        self._title.setText(text or "")
+
+    def mouseDoubleClickEvent(self, e) -> None:  # type: ignore[override]
+        w = self.window()
+        if isinstance(w, QWidget):
+            if w.isMaximized():
+                w.showNormal()
+            else:
+                w.showMaximized()
+        e.accept()
+
+    def mousePressEvent(self, e) -> None:  # type: ignore[override]
+        if e.button() == Qt.MouseButton.LeftButton:
+            w = self.window()
+            try:
+                w.windowHandle().startSystemMove()  # type: ignore[union-attr]
+                e.accept()
+                return
+            except (AttributeError, RuntimeError):
+                pass
+        super().mousePressEvent(e)
+
+
+class _CheremshaTitleBar(StandardTitleBar):
+    def __init__(self, owner: QWidget) -> None:
+        super().__init__(owner)
+        self.setObjectName("cheremshaTitleBar")
+        self.setFixedHeight(44)
+
+        self.titleLabel.setStyleSheet(
+            """
+            QLabel{
+                background: transparent;
+                color: #e8eaed;
+                font-size: 13px;
+                font-weight: 600;
+                padding: 0 6px;
+            }
+            """,
+        )
+
+        # Make caption buttons visible on dark chrome.
+        ink = QColor("#e8eaed")
+        self.minBtn.setNormalColor(ink)
+        self.minBtn.setHoverColor(ink)
+        self.minBtn.setPressedColor(ink)
+        self.maxBtn.setNormalColor(ink)
+        self.maxBtn.setHoverColor(ink)
+        self.maxBtn.setPressedColor(ink)
+        self.closeBtn.setNormalColor(ink)
+
+        # Settings button (moved from footer).
+        self.settingsBtn = QToolButton(self)
+        self.settingsBtn.setObjectName("titleSettings")
+        self.settingsBtn.setAutoRaise(True)
+        st_path = _asset_path("settings.png")
+        if st_path.is_file():
+            self.settingsBtn.setIcon(QIcon(str(st_path)))
+        else:
+            self.settingsBtn.setIcon(
+                QIcon.fromTheme(
+                    "preferences-system",
+                    self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogInfoView),
+                ),
+            )
+        self.settingsBtn.setIconSize(QSize(18, 18))
+        self.settingsBtn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.settingsBtn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.settingsBtn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.settingsBtn.setToolTip("Налаштування")
+        self.settingsBtn.clicked.connect(
+            lambda: self.window()._set_main_page(self.window()._IX_SETTINGS),  # noqa: SLF001
+        )
+
+        # Insert right before min/max/close buttons.
+        self.hBoxLayout.insertWidget(
+            self.hBoxLayout.count() - 3,
+            self.settingsBtn,
+            0,
+            Qt.AlignRight,
+        )
+
+        self.setStyleSheet(
+            """
+            QWidget#cheremshaTitleBar {
+              background: #121620;
+              border-bottom: 1px solid #2a3142;
+            }
+
+            QToolButton#titleSettings {
+              background: rgba(0, 0, 0, 0);
+              border: none;
+              border-radius: 8px;
+              padding: 0px;
+              margin-right: 4px;
+            }
+            QToolButton#titleSettings:hover { background: #263246; }
+            QToolButton#titleSettings:pressed { background: #303a50; }
+
+            TitleBarButton {
+              qproperty-normalColor: #e8eaed;
+              qproperty-hoverColor: #e8eaed;
+              qproperty-pressedColor: #e8eaed;
+              qproperty-normalBackgroundColor: rgba(0, 0, 0, 0);
+              qproperty-hoverBackgroundColor: #263246;
+              qproperty-pressedBackgroundColor: #303a50;
+            }
+
+            CloseButton {
+              qproperty-normalColor: #e8eaed;
+              qproperty-hoverColor: #e8eaed;
+              qproperty-pressedColor: #e8eaed;
+              qproperty-normalBackgroundColor: rgba(0, 0, 0, 0);
+              qproperty-hoverBackgroundColor: #991b1b;
+              qproperty-pressedBackgroundColor: #7f1d1d;
+            }
+            """,
+        )
+
+    def canDrag(self, pos):  # type: ignore[override]
+        # Avoid starting system move when interacting with the settings button.
+        try:
+            if self.settingsBtn.isVisible() and self.settingsBtn.geometry().contains(pos):
+                return False
+        except RuntimeError:
+            return False
+        return super().canDrag(pos)
+
+    def paintEvent(self, e) -> None:  # type: ignore[override]
+        # Force a non-transparent dark chrome background regardless of the app-wide
+        # stylesheet (which sets QWidget backgrounds to transparent).
+        p = QPainter(self)
+        p.fillRect(self.rect(), QColor("#121620"))
+        pen = QPen(QColor("#2a3142"))
+        pen.setCosmetic(True)
+        p.setPen(pen)
+        y = self.height() - 1
+        p.drawLine(0, y, self.width(), y)
+        super().paintEvent(e)
+
+
+class MainWindow(FramelessWindow):
     """MVP: stacked panes (connections, settings, chat, audio, logs) + status."""
 
     startup_finished = Signal()
@@ -210,6 +429,10 @@ class MainWindow(QWidget):
     _IX_AUDIO = 3
     _IX_LOGS = 4
     _IX_DONATIONS = 5
+    _IX_WIDGETS = 6
+    _IX_DOCKS = 7
+    _IX_ACTIONS = 8
+    _IX_MUSIC = 9
 
     @staticmethod
     def _external_link_label(html: str) -> QLabel:
@@ -225,6 +448,15 @@ class MainWindow(QWidget):
         lab.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         lab.setMinimumWidth(_FORM_LABEL_MIN_WIDTH)
         lab.setWordWrap(True)
+        return lab
+
+    @staticmethod
+    def _obs_settings_label(text: str) -> QLabel:
+        """Narrow settings form: short right-aligned labels (OBS host/port/password)."""
+        lab = QLabel(text)
+        lab.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        lab.setWordWrap(True)
+        lab.setMinimumWidth(118)
         return lab
 
     @staticmethod
@@ -244,6 +476,7 @@ class MainWindow(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
+        self.setTitleBar(_CheremshaTitleBar(self))
         init_w, init_h = 1040, 780
         app_inst = QApplication.instance()
         if app_inst is not None:
@@ -263,19 +496,32 @@ class MainWindow(QWidget):
         app_ico = _asset_path("icon.png")
         if app_ico.is_file():
             self.setWindowIcon(QIcon(str(app_ico)))
+        self.titleBar.raise_()
+        self._win_anim_applied = False
         self._closing = False
-        self._rvc_toggle_busy = False
         self._tiktok_toggle_busy = False
         self._tiktok_enabled = False
         self._overlay_registry = OverlayRegistry()
-        self._overlay_server = OverlayServer(registry=self._overlay_registry, host="127.0.0.1", port=17171)
+        self._overlay_server = OverlayServer(
+            registry=self._overlay_registry,
+            host="127.0.0.1",
+            port=17171,
+        )
+        self._asyncio_loop: asyncio.AbstractEventLoop | None = None
+        self._music_queue = MusicQueueController(instance="main")
+        self._music_player: MusicPlayer | None = None
+        self._music_title_cache: dict[str, str] = {}
+        self._telegram: TelegramBotService | None = None
         self._status_app = l10n.tr(self._locale, "status.app_idle")
+        self._edge_voices_refresh_lock = asyncio.Lock()
         self._status_twitch = "—"
         self._status_youtube = "—"
         self._status_tiktok = "—"
         self._tts_chat_platform_enabled: dict[ChatPlatform, bool] = {
             ChatPlatform.TWITCH: bool(self._settings.value(_SETTINGS_TTS_CHAT_TWITCH, True, bool)),
-            ChatPlatform.YOUTUBE: bool(self._settings.value(_SETTINGS_TTS_CHAT_YOUTUBE, True, bool)),
+            ChatPlatform.YOUTUBE: bool(
+                self._settings.value(_SETTINGS_TTS_CHAT_YOUTUBE, True, bool),
+            ),
             ChatPlatform.TIKTOK: bool(self._settings.value(_SETTINGS_TTS_CHAT_TIKTOK, True, bool)),
         }
 
@@ -285,7 +531,6 @@ class MainWindow(QWidget):
 
         self._tts = self._construct_initial_tts()
         self._sink = QtAudioSink(self)
-        self._rvc_runtime = RvcRuntime()
         self._coordinator = StreamCoordinator(
             tts=self._tts,
             audio_sink=self._sink,
@@ -293,29 +538,63 @@ class MainWindow(QWidget):
             on_status=self._on_user_status,
             should_tts=self._should_tts_for_message,
             get_locale=self._get_locale,
-            rvc_runtime=self._rvc_runtime,
         )
         self._twitch = TwitchSource(
             self._coordinator,
             on_status=self._on_user_status,
             get_locale=self._get_locale,
         )
+        self._twitch_analytics = TwitchAnalyticsApi(self)
+        self._twitch_eventsub: TwitchEventSubClient | None = None
+        self._twitch_helix: TwitchHelixClient | None = None
+        self._twitch_viewers_task: asyncio.Task[None] | None = None
+        self._online_publish_task: asyncio.Task[None] | None = None
         self._youtube = YouTubeChatSource(
             self._coordinator,
             on_status=self._on_user_status,
+            on_analytics_event=self._on_youtube_analytics_event,
             get_locale=self._get_locale,
         )
+        self._youtube_analytics = YouTubeAnalyticsApi(self)
+        self._tiktok_analytics = TikTokAnalyticsApi(self)
         self._tiktok = TikTokChatSource(
             self._coordinator,
             on_status=self._on_user_status,
             on_gift=self._on_tiktok_gift,
             get_locale=self._get_locale,
+            on_room_viewers_current=self._tiktok_analytics.on_room_viewers_current,
+            on_room_viewers_total=self._tiktok_analytics.on_room_viewers_total,
+            on_follow=self._on_tiktok_follow_any,
+            on_join=self._on_tiktok_join_any,
+            on_paid_sub=self._on_tiktok_paid_sub_any,
+            on_gift_analytics=self._on_tiktok_gift_analytics_any,
+            on_like=self._on_tiktok_like_any,
+            on_share=self._on_tiktok_share_any,
+            on_stream_start=self._on_tiktok_stream_start,
         )
+        self._like_share_agg = LikeShareAggregator(window_sec=7.0)
         self._tiktok_username = QLineEdit()
+        self._obs_ws_host = QLineEdit()
+        self._obs_ws_port = QLineEdit()
+        self._obs_ws_password = QLineEdit()
+        self._obs_ws_password.setEchoMode(QLineEdit.EchoMode.Password)
+        self._tg_enabled = QCheckBox()
+        self._tg_token = QLineEdit()
+        self._tg_token.setEchoMode(QLineEdit.EchoMode.Password)
+        self._tg_admin_id = QLineEdit()
+        self._tg_song_requests_enabled = QCheckBox()
+
+        self._music_use_mpv = QCheckBox()
+        self._lbl_music_backend_hint = QLabel()
+        self._btn_mpv_check = QPushButton()
+        self._lbl_mpv_check_result = QLabel()
         self._actions_qml_api = ActionsQmlApi(self)
-        self._qml_actions: QQuickView | None = None
+        self._qml_actions: QQuickWidget | None = None
         self._widgets_qml_api: WidgetsQmlApi | None = None
-        self._qml_widgets: QQuickView | None = None
+        self._docks_qml_api: DocksQmlApi | None = None
+        self._qml_widgets_win: QQuickView | None = None
+        self._qml_widgets: QQuickWidget | None = None
+        self._qml_docks: QQuickWidget | None = None
         self._actions_engines: dict[tuple[str, str], PlatformActionsEngine] = {}
         self._chat_ic_tw: str | None = None
         self._chat_ic_yt: str | None = None
@@ -340,6 +619,50 @@ class MainWindow(QWidget):
 
         # Apply game mode after UI is constructed and settings are loaded.
         self._apply_game_mode_from_settings()
+
+    def nativeEvent(self, eventType, message):  # type: ignore[override]
+        # Delegate to PySideSix-Frameless-Window native handler on Windows.
+        return super().nativeEvent(eventType, message)
+
+    def showEvent(self, e) -> None:  # type: ignore[override]
+        super().showEvent(e)
+        if self._win_anim_applied:
+            return
+        self._win_anim_applied = True
+        # Apply window-animation styles after the HWND exists and Qt finished
+        # applying its own flags; otherwise Qt may overwrite the style.
+        QTimer.singleShot(0, self._apply_windows_animation_if_possible)
+
+    def _apply_windows_animation_if_possible(self) -> None:
+        if os.name != "nt":
+            return
+        h = int(self.winId())
+        if h == 0:
+            return
+        try:
+            import win32con  # type: ignore[import-not-found]
+            import win32gui  # type: ignore[import-not-found]
+        except ImportError:
+            return
+
+        # qframelesswindow already has windowEffect; re-apply to ensure styles are set.
+        try:
+            self.windowEffect.addWindowAnimation(h)  # type: ignore[attr-defined]
+        except AttributeError:
+            return
+
+        win32gui.SetWindowPos(
+            h,
+            None,
+            0,
+            0,
+            0,
+            0,
+            win32con.SWP_NOMOVE
+            | win32con.SWP_NOSIZE
+            | win32con.SWP_NOZORDER
+            | win32con.SWP_FRAMECHANGED,
+        )
 
     def _get_locale(self) -> str:
         return self._locale
@@ -374,40 +697,8 @@ class MainWindow(QWidget):
                 return d.strip()
         return self._tts_language_from_settings()
 
-    def _migrate_rvc_from_legacy_if_needed(self) -> None:
-        if self._settings.value("tts/rvc_did_migrate", False, bool):
-            return
-        self._settings.setValue("tts/rvc_did_migrate", True)
-        if not str(self._settings.value(_SETTINGS_RVC_MODEL, "", str)).strip():
-            lm = str(self._settings.value(_LEGACY_RVC_MODEL, "", str)).strip()
-            if lm:
-                self._settings.setValue(_SETTINGS_RVC_MODEL, lm)
-        if not str(self._settings.value(_SETTINGS_RVC_INDEX, "", str)).strip():
-            lix = str(self._settings.value(_LEGACY_RVC_INDEX, "", str)).strip()
-            if lix:
-                self._settings.setValue(_SETTINGS_RVC_INDEX, lix)
-        if bool(self._settings.value(_LEGACY_RVC_ENABLED, False, bool)):
-            self._settings.setValue(_SETTINGS_RVC_ENABLED, True)
-
-    def _rebuild_rvc_chain(self) -> None:
-        from stream_cheremsha.tts.rvc_wav import RvcChainRebuildParams, rvc_rebuild_chain
-
-        self._migrate_rvc_from_legacy_if_needed()
-        params = RvcChainRebuildParams(
-            enabled=bool(self._settings.value(_SETTINGS_RVC_ENABLED, False, bool)),
-            model_pth=str(self._settings.value(_SETTINGS_RVC_MODEL, "", str)).strip(),
-            index_path=str(self._settings.value(_SETTINGS_RVC_INDEX, "", str)).strip(),
-            use_cuda=bool(self._settings.value(_SETTINGS_RVC_CUDA, False, bool)),
-        )
-        prev = self._rvc_runtime.chain
-        self._rvc_runtime.chain = None
-        new_chain, err = rvc_rebuild_chain(prev, params)
-        self._rvc_runtime.chain = new_chain
-        if err is not None:
-            logger.warning("RVC chain: %s", err)
-
     def _construct_initial_tts(self) -> TextToSpeech:
-        """Lightweight TTS for startup; Piper loads in :meth:`run_startup` if selected."""
+        """Lightweight TTS for startup; other engines load in :meth:`run_startup` if selected."""
         lang = self._tts_language_from_settings()
         return GoogleTranslateTts(language=lang)
 
@@ -424,10 +715,12 @@ class MainWindow(QWidget):
         qml_p = _qml_path("ConnectionsView.qml")
         if not qml_p.is_file():
             logger.error("QML not found: %s", qml_p)
-        self._qml_conn.engine().rootContext().setContextProperty("api", self._qml_api)
+        ctx_conn = self._qml_conn.engine().rootContext()
+        ctx_conn.setContextProperty("api", self._qml_api)
+        ctx_conn.setContextProperty("tiktokAnalytics", self._tiktok_analytics)
+        ctx_conn.setContextProperty("twitchAnalytics", self._twitch_analytics)
+        ctx_conn.setContextProperty("youtubeAnalytics", self._youtube_analytics)
         self._qml_conn.setSource(QUrl.fromLocalFile(str(qml_p)))
-
-        # Actions editor window (created lazily).
 
         self._donations_qml_api = DonationsQmlApi(self)
         self._qml_donations = QQuickWidget(self)
@@ -441,9 +734,54 @@ class MainWindow(QWidget):
         don_ctx.setContextProperty("donApi", self._donations_qml_api)
         self._qml_donations.setSource(QUrl.fromLocalFile(str(qml_don)))
 
+        self._widgets_qml_api = WidgetsQmlApi(pubsub=self._overlay_server.pubsub())
+        self._qml_widgets = QQuickWidget(self)
+        self._qml_widgets.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
+        self._qml_widgets.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self._qml_widgets.setClearColor(QColor(10, 11, 14))
+        qml_widgets = _qml_path("WidgetsView.qml")
+        if not qml_widgets.is_file():
+            logger.error("QML not found: %s", qml_widgets)
+        wctx = self._qml_widgets.engine().rootContext()
+        wctx.setContextProperty("api", self._widgets_qml_api)
+        wctx.setContextProperty("navApi", self._qml_api)
+        self._qml_widgets.setSource(QUrl.fromLocalFile(str(qml_widgets)))
+
+        self._docks_qml_api = DocksQmlApi()
+        self._qml_docks = QQuickWidget(self)
+        self._qml_docks.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
+        self._qml_docks.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self._qml_docks.setClearColor(QColor(10, 11, 14))
+        qml_docks = _qml_path("DocksView.qml")
+        if not qml_docks.is_file():
+            logger.error("QML not found: %s", qml_docks)
+        dctx = self._qml_docks.engine().rootContext()
+        dctx.setContextProperty("dockApi", self._docks_qml_api)
+        dctx.setContextProperty("navApi", self._qml_api)
+        self._qml_docks.setSource(QUrl.fromLocalFile(str(qml_docks)))
+
+        self._qml_actions = QQuickWidget(self)
+        self._qml_actions.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
+        self._qml_actions.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self._qml_actions.setClearColor(QColor(10, 11, 14))
+        qml_actions_p = _qml_path("ActionsView.qml")
+        if not qml_actions_p.is_file():
+            logger.error("QML not found: %s", qml_actions_p)
+        act_ctx = self._qml_actions.engine().rootContext()
+        act_ctx.setContextProperty("api", self._qml_api)
+        act_ctx.setContextProperty("actApi", self._actions_qml_api)
+        act_ctx.setContextProperty("navApi", self._qml_api)
+        self._qml_actions.setSource(QUrl.fromLocalFile(str(qml_actions_p)))
+        ro_actions = self._qml_actions.rootObject()
+        if ro_actions is not None:
+            ro_actions.setProperty("platform", "tiktok")
+            ro_actions.setProperty("accountKey", constants.TIKTOK_ACTIONS_ACCOUNT_KEY)
+
         root = QVBoxLayout(self)
         root.setSpacing(0)
-        root.setContentsMargins(0, 0, 0, 0)
+        # qframelesswindow title bar is drawn on top of the client area
+        # (not managed by layouts), so we reserve vertical space for it.
+        root.setContentsMargins(0, int(self.titleBar.height()), 0, 0)
 
         self._stack = QStackedWidget()
         self._apply_dark_chrome()
@@ -455,6 +793,10 @@ class MainWindow(QWidget):
         self._stack.addWidget(self._build_audio_tab())
         self._stack.addWidget(self._build_logs_tab())
         self._stack.addWidget(self._qml_donations)
+        self._stack.addWidget(self._qml_widgets)
+        self._stack.addWidget(self._qml_docks)
+        self._stack.addWidget(self._qml_actions)
+        self._stack.addWidget(self._build_music_tab())
 
         self._footer_frame = QFrame()
         self._footer_frame.setObjectName("appFooter")
@@ -467,11 +809,17 @@ class MainWindow(QWidget):
         self._status_label.setObjectName("footerStatus")
         _foot.addWidget(self._status_label, stretch=1, alignment=Qt.AlignmentFlag.AlignTop)
 
+        def _footer_icon(asset_name: str, fallback: QStyle.StandardPixmap) -> QIcon:
+            p = _asset_path(asset_name)
+            if p.is_file():
+                return QIcon(str(p))
+            return self.style().standardIcon(fallback)
+
         self._btn_footer_logs = QToolButton()
         self._btn_footer_logs.setObjectName("footerNav")
         self._btn_footer_logs.setProperty("navId", "navLogs")
         self._btn_footer_logs.setIcon(
-            self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView),
+            _footer_icon("logs.png", QStyle.StandardPixmap.SP_FileDialogDetailedView),
         )
         self._btn_footer_logs.setIconSize(QSize(18, 18))
         self._btn_footer_logs.setToolButtonStyle(
@@ -484,7 +832,7 @@ class MainWindow(QWidget):
         self._btn_footer_home.setObjectName("footerNav")
         self._btn_footer_home.setProperty("navId", "navHome")
         self._btn_footer_home.setIcon(
-            self.style().standardIcon(QStyle.StandardPixmap.SP_DirHomeIcon),
+            _footer_icon("home.png", QStyle.StandardPixmap.SP_DirHomeIcon),
         )
         self._btn_footer_home.setIconSize(QSize(18, 18))
         self._btn_footer_home.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
@@ -497,7 +845,7 @@ class MainWindow(QWidget):
         self._btn_footer_donations.setObjectName("footerNav")
         self._btn_footer_donations.setProperty("navId", "navDonations")
         self._btn_footer_donations.setIcon(
-            self.style().standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton),
+            _footer_icon("donate.png", QStyle.StandardPixmap.SP_DialogApplyButton),
         )
         self._btn_footer_donations.setIconSize(QSize(18, 18))
         self._btn_footer_donations.setToolButtonStyle(
@@ -508,11 +856,24 @@ class MainWindow(QWidget):
         self._btn_footer_donations.clicked.connect(
             lambda: self._set_main_page(self._IX_DONATIONS),
         )
+        self._btn_footer_actions = QToolButton()
+        self._btn_footer_actions.setObjectName("footerNav")
+        self._btn_footer_actions.setProperty("navId", "navActions")
+        self._btn_footer_actions.setIcon(
+            _footer_icon("actions.png", QStyle.StandardPixmap.SP_FileDialogContentsView),
+        )
+        self._btn_footer_actions.setIconSize(QSize(18, 18))
+        self._btn_footer_actions.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextBesideIcon,
+        )
+        self._btn_footer_actions.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._btn_footer_actions.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_footer_actions.clicked.connect(self.open_actions)
         self._btn_footer_widgets = QToolButton()
         self._btn_footer_widgets.setObjectName("footerNav")
         self._btn_footer_widgets.setProperty("navId", "navWidgets")
         self._btn_footer_widgets.setIcon(
-            self.style().standardIcon(QStyle.StandardPixmap.SP_DesktopIcon),
+            _footer_icon("widgets.png", QStyle.StandardPixmap.SP_DesktopIcon),
         )
         self._btn_footer_widgets.setIconSize(QSize(18, 18))
         self._btn_footer_widgets.setToolButtonStyle(
@@ -520,7 +881,36 @@ class MainWindow(QWidget):
         )
         self._btn_footer_widgets.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._btn_footer_widgets.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_footer_widgets.clicked.connect(self.open_widgets)
+        self._btn_footer_widgets.clicked.connect(lambda: self._set_main_page(self._IX_WIDGETS))
+
+        self._btn_footer_docks = QToolButton()
+        self._btn_footer_docks.setObjectName("footerNav")
+        self._btn_footer_docks.setProperty("navId", "navDocks")
+        self._btn_footer_docks.setIcon(
+            _footer_icon("docks.png", QStyle.StandardPixmap.SP_TitleBarUnshadeButton),
+        )
+        self._btn_footer_docks.setIconSize(QSize(18, 18))
+        self._btn_footer_docks.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextBesideIcon,
+        )
+        self._btn_footer_docks.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._btn_footer_docks.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_footer_docks.clicked.connect(lambda: self._set_main_page(self._IX_DOCKS))
+
+        self._btn_footer_music = QToolButton()
+        self._btn_footer_music.setObjectName("footerNav")
+        self._btn_footer_music.setProperty("navId", "navMusic")
+        self._btn_footer_music.setIcon(
+            _footer_icon("tts.png", QStyle.StandardPixmap.SP_MediaPlay),
+        )
+        self._btn_footer_music.setIconSize(QSize(18, 18))
+        self._btn_footer_music.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextBesideIcon,
+        )
+        self._btn_footer_music.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._btn_footer_music.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_footer_music.clicked.connect(lambda: self._set_main_page(self._IX_MUSIC))
+
         _foot.addWidget(
             self._btn_footer_home,
             0,
@@ -532,7 +922,22 @@ class MainWindow(QWidget):
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
         )
         _foot.addWidget(
+            self._btn_footer_actions,
+            0,
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+        )
+        _foot.addWidget(
             self._btn_footer_widgets,
+            0,
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+        )
+        _foot.addWidget(
+            self._btn_footer_docks,
+            0,
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+        )
+        _foot.addWidget(
+            self._btn_footer_music,
             0,
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
         )
@@ -542,32 +947,21 @@ class MainWindow(QWidget):
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
         )
 
-        self._btn_footer_settings = QToolButton()
-        self._btn_footer_settings.setObjectName("footerSettings")
-        self._btn_footer_settings.setAutoRaise(True)
-        st_ico = QIcon.fromTheme(
-            "preferences-system",
-            self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogInfoView),
-        )
-        self._btn_footer_settings.setIcon(st_ico)
-        self._btn_footer_settings.setIconSize(QSize(20, 20))
-        self._btn_footer_settings.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        self._btn_footer_settings.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._btn_footer_settings.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_footer_settings.clicked.connect(
-            lambda: self._set_main_page(self._IX_SETTINGS),
-        )
-        _foot.addWidget(
-            self._btn_footer_settings,
-            0,
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-        )
-
         self._btn_footer_chat = QToolButton()
         self._btn_footer_tts = QToolButton()
         for b, name in ((self._btn_footer_chat, "navChat"), (self._btn_footer_tts, "navTts")):
             b.setObjectName("footerNav")
             b.setProperty("navId", name)
+            b.setIcon(
+                _footer_icon(
+                    "chat.png" if name == "navChat" else "tts.png",
+                    QStyle.StandardPixmap.SP_MessageBoxInformation,
+                ),
+            )
+            b.setIconSize(QSize(18, 18))
+            b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_footer_chat.clicked.connect(
             lambda: self._set_main_page(self._IX_CHAT),
         )
@@ -591,6 +985,12 @@ class MainWindow(QWidget):
         self._stack.currentChanged.connect(self._sync_footer_nav)
         self._sync_footer_nav()
 
+    def _toggle_maximized(self) -> None:
+        if self.isMaximized():
+            self.showNormal()
+        else:
+            self.showMaximized()
+
     def _set_main_page(self, index: int) -> None:
         if not hasattr(self, "_stack") or not (0 <= index < self._stack.count()):
             return
@@ -605,14 +1005,17 @@ class MainWindow(QWidget):
         on_tts = self._stack.currentIndex() == self._IX_AUDIO
         on_logs = self._stack.currentIndex() == self._IX_LOGS
         on_don = self._stack.currentIndex() == self._IX_DONATIONS
-        on_widgets = (
-            getattr(self, "_qml_widgets", None) is not None
-            and bool(getattr(self._qml_widgets, "isVisible", lambda: False)())
-        )
+        on_actions = self._stack.currentIndex() == self._IX_ACTIONS
+        on_widgets = self._stack.currentIndex() == self._IX_WIDGETS
+        on_docks = self._stack.currentIndex() == self._IX_DOCKS
+        on_music = self._stack.currentIndex() == self._IX_MUSIC
         for b, active in (
             (getattr(self, "_btn_footer_home", None), on_conn),
             (getattr(self, "_btn_footer_donations", None), on_don),
+            (getattr(self, "_btn_footer_actions", None), on_actions),
             (getattr(self, "_btn_footer_widgets", None), on_widgets),
+            (getattr(self, "_btn_footer_docks", None), on_docks),
+            (getattr(self, "_btn_footer_music", None), on_music),
             (getattr(self, "_btn_footer_logs", None), on_logs),
             (self._btn_footer_chat, on_chat),
             (self._btn_footer_tts, on_tts),
@@ -634,9 +1037,6 @@ class MainWindow(QWidget):
             self._btn_footer_tts.setText(self._tr("ui.nav_tts"))
             self._btn_footer_chat.setToolTip(self._tr("ui.nav_chat_hint"))
             self._btn_footer_tts.setToolTip(self._tr("ui.nav_tts_hint"))
-        if hasattr(self, "_btn_footer_settings"):
-            self._btn_footer_settings.setToolTip(self._tr("ui.open_settings_hint"))
-            self._btn_footer_settings.setAccessibleName(self._tr("ui.open_settings"))
         if hasattr(self, "_btn_footer_logs"):
             tl = self._tr("ui.nav_logs")
             self._btn_footer_logs.setText(tl)
@@ -647,11 +1047,25 @@ class MainWindow(QWidget):
             self._btn_footer_donations.setText(td)
             self._btn_footer_donations.setToolTip(self._tr("ui.nav_donations_hint"))
             self._btn_footer_donations.setAccessibleName(td)
+        if hasattr(self, "_btn_footer_actions"):
+            ta = self._tr("ui.nav_actions")
+            self._btn_footer_actions.setText(ta)
+            self._btn_footer_actions.setToolTip(self._tr("ui.nav_actions_hint"))
+            self._btn_footer_actions.setAccessibleName(ta)
         if hasattr(self, "_btn_footer_widgets"):
             tw = self._tr("ui.nav_widgets")
             self._btn_footer_widgets.setText(tw)
             self._btn_footer_widgets.setToolTip(self._tr("ui.nav_widgets_hint"))
             self._btn_footer_widgets.setAccessibleName(tw)
+        if hasattr(self, "_btn_footer_docks"):
+            td = self._tr("ui.nav_docks")
+            self._btn_footer_docks.setText(td)
+            self._btn_footer_docks.setToolTip(self._tr("ui.nav_docks_hint"))
+            self._btn_footer_docks.setAccessibleName(td)
+        if hasattr(self, "_btn_footer_music"):
+            self._btn_footer_music.setText("Music")
+            self._btn_footer_music.setToolTip("Music queue")
+            self._btn_footer_music.setAccessibleName("Music")
 
     def _apply_dark_chrome(self) -> None:
         self.setStyleSheet(
@@ -660,9 +1074,6 @@ class MainWindow(QWidget):
             "QFrame#appFooter { background-color: #080a0e; border: none; "
             "border-top: 1px solid #1e2430; }"
             "QLabel#footerStatus { color: #b8c0ce; font-size: 11px; }"
-            "QToolButton#footerSettings { min-width: 36px; min-height: 36px; background: #121720; "
-            "color: #e2e8f0; border: 1px solid #2a3142; border-radius: 10px; padding: 4px; }"
-            "QToolButton#footerSettings:hover { background: #1a2030; border-color: #3b4458; }"
             "QToolButton#footerNav { min-width: 64px; min-height: 36px; background: #121720; "
             "color: #e2e8f0; border: 1px solid #2a3142; border-radius: 10px; font-weight: 600; "
             "font-size: 12px; padding: 4px 10px; }"
@@ -751,6 +1162,170 @@ class MainWindow(QWidget):
         self._cb_game_mode.stateChanged.connect(self._persist_game_mode)
         lay.addWidget(self._cb_game_mode)
 
+        self._gb_obs = QGroupBox()
+        self._gb_obs.setMaximumWidth(560)
+        obs_outer = QVBoxLayout(self._gb_obs)
+        obs_outer.setContentsMargins(14, 14, 14, 18)
+        obs_outer.setSpacing(12)
+
+        self._lbl_obs_help = self._external_link_label("")
+        self._lbl_obs_help.setWordWrap(True)
+        self._lbl_obs_help.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Minimum,
+        )
+
+        obs_grid = QGridLayout()
+        obs_grid.setContentsMargins(0, 0, 0, 0)
+        obs_grid.setHorizontalSpacing(14)
+        obs_grid.setVerticalSpacing(10)
+        obs_grid.setColumnStretch(1, 1)
+        obs_grid.setColumnMinimumWidth(0, 124)
+
+        row = 0
+        obs_grid.addWidget(self._lbl_obs_help, row, 0, 1, 2)
+        row += 1
+
+        self._lbl_obs_host = MainWindow._obs_settings_label("")
+        self._lbl_obs_host.setBuddy(self._obs_ws_host)
+        obs_grid.addWidget(self._lbl_obs_host, row, 0)
+        obs_grid.addWidget(self._stretch_field(self._obs_ws_host), row, 1)
+        row += 1
+
+        self._lbl_obs_port = MainWindow._obs_settings_label("")
+        self._lbl_obs_port.setBuddy(self._obs_ws_port)
+        self._obs_ws_port.setMaximumWidth(120)
+        port_cell = QWidget()
+        port_cell_lay = QHBoxLayout(port_cell)
+        port_cell_lay.setContentsMargins(0, 0, 0, 0)
+        port_cell_lay.setSpacing(0)
+        port_cell_lay.addWidget(self._obs_ws_port, stretch=0)
+        port_cell_lay.addStretch(1)
+        obs_grid.addWidget(self._lbl_obs_port, row, 0)
+        obs_grid.addWidget(port_cell, row, 1)
+        row += 1
+
+        self._lbl_obs_password = MainWindow._obs_settings_label("")
+        self._lbl_obs_password.setBuddy(self._obs_ws_password)
+        obs_grid.addWidget(self._lbl_obs_password, row, 0)
+        obs_grid.addWidget(self._stretch_field(self._obs_ws_password), row, 1)
+        row += 1
+
+        self._btn_obs_ws_test = QPushButton()
+        self._btn_obs_ws_test.setMinimumHeight(36)
+        self._btn_obs_ws_test.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+        self._btn_obs_ws_test.clicked.connect(
+            lambda: asyncio.ensure_future(self._obs_test_connection_async()),
+        )
+        obs_grid.addWidget(self._btn_obs_ws_test, row, 0, 1, 2, Qt.AlignmentFlag.AlignLeft)
+        row += 1
+
+        self._lbl_obs_test_hint = QLabel()
+        self._lbl_obs_test_hint.setWordWrap(True)
+        self._lbl_obs_test_hint.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Minimum,
+        )
+        self._lbl_obs_test_hint.setStyleSheet("color: #8b95a5; font-size: 11px;")
+        obs_grid.addWidget(self._lbl_obs_test_hint, row, 0, 1, 2)
+        row += 1
+
+        self._lbl_obs_test_result = QLabel()
+        self._lbl_obs_test_result.setWordWrap(True)
+        self._lbl_obs_test_result.setMinimumHeight(1)
+        self._lbl_obs_test_result.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Minimum,
+        )
+        self._lbl_obs_test_result.setContentsMargins(0, 2, 0, 4)
+        obs_grid.addWidget(self._lbl_obs_test_result, row, 0, 1, 2)
+
+        obs_outer.addLayout(obs_grid)
+
+        lay.addWidget(self._gb_obs, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        self._obs_ws_host.editingFinished.connect(self._persist_obs_ws_host)
+        self._obs_ws_port.editingFinished.connect(self._persist_obs_ws_port)
+        self._obs_ws_password.editingFinished.connect(self._persist_obs_ws_password)
+
+        self._gb_telegram = QGroupBox()
+        self._gb_telegram.setMaximumWidth(560)
+        tg_outer = QVBoxLayout(self._gb_telegram)
+        tg_outer.setContentsMargins(14, 14, 14, 18)
+        tg_outer.setSpacing(12)
+
+        tg_grid = QGridLayout()
+        tg_grid.setContentsMargins(0, 0, 0, 0)
+        tg_grid.setHorizontalSpacing(14)
+        tg_grid.setVerticalSpacing(10)
+        tg_grid.setColumnStretch(1, 1)
+        tg_grid.setColumnMinimumWidth(0, 124)
+
+        tg_row = 0
+        tg_grid.addWidget(self._tg_enabled, tg_row, 0, 1, 2)
+        tg_row += 1
+
+        self._lbl_tg_token = MainWindow._obs_settings_label("")
+        self._lbl_tg_token.setBuddy(self._tg_token)
+        tg_grid.addWidget(self._lbl_tg_token, tg_row, 0)
+        tg_grid.addWidget(self._stretch_field(self._tg_token), tg_row, 1)
+        tg_row += 1
+
+        self._lbl_tg_admin_id = MainWindow._obs_settings_label("")
+        self._lbl_tg_admin_id.setBuddy(self._tg_admin_id)
+        self._tg_admin_id.setMaximumWidth(220)
+        tg_grid.addWidget(self._lbl_tg_admin_id, tg_row, 0)
+        tg_grid.addWidget(self._stretch_field(self._tg_admin_id), tg_row, 1)
+        tg_row += 1
+
+        tg_grid.addWidget(self._tg_song_requests_enabled, tg_row, 0, 1, 2)
+        tg_row += 1
+
+        tg_outer.addLayout(tg_grid)
+        lay.addWidget(self._gb_telegram, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        self._tg_enabled.stateChanged.connect(self._persist_telegram_enabled)
+        self._tg_token.editingFinished.connect(self._persist_telegram_token)
+        self._tg_admin_id.editingFinished.connect(self._persist_telegram_admin_id)
+        self._tg_song_requests_enabled.stateChanged.connect(self._persist_telegram_song_requests_enabled)
+
+        self._gb_music = QGroupBox()
+        self._gb_music.setMaximumWidth(560)
+        music_outer = QVBoxLayout(self._gb_music)
+        music_outer.setContentsMargins(14, 14, 14, 18)
+        music_outer.setSpacing(12)
+
+        music_grid = QGridLayout()
+        music_grid.setContentsMargins(0, 0, 0, 0)
+        music_grid.setHorizontalSpacing(14)
+        music_grid.setVerticalSpacing(8)
+        music_grid.setColumnStretch(1, 1)
+        music_grid.setColumnMinimumWidth(0, 124)
+
+        mr = 0
+        music_grid.addWidget(self._music_use_mpv, mr, 0, 1, 2)
+        mr += 1
+        self._lbl_music_backend_hint.setWordWrap(True)
+        self._lbl_music_backend_hint.setStyleSheet("color: #8b95a5; font-size: 11px;")
+        music_grid.addWidget(self._lbl_music_backend_hint, mr, 0, 1, 2)
+        mr += 1
+
+        self._btn_mpv_check.setMinimumHeight(34)
+        self._btn_mpv_check.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+        music_grid.addWidget(self._btn_mpv_check, mr, 0, 1, 2, Qt.AlignmentFlag.AlignLeft)
+        mr += 1
+
+        self._lbl_mpv_check_result.setWordWrap(True)
+        self._lbl_mpv_check_result.setStyleSheet("color: #8b95a5; font-size: 11px;")
+        music_grid.addWidget(self._lbl_mpv_check_result, mr, 0, 1, 2)
+        mr += 1
+
+        music_outer.addLayout(music_grid)
+        lay.addWidget(self._gb_music, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        self._music_use_mpv.stateChanged.connect(self._persist_music_backend)
+        self._btn_mpv_check.clicked.connect(self._check_mpv_installed)
+
         lay.addStretch()
         self._apply_settings_tab_texts()
         return w
@@ -782,6 +1357,156 @@ class MainWindow(QWidget):
         enabled = bool(self._cb_game_mode.isChecked())
         self._settings.setValue(_SETTINGS_GAME_MODE, enabled)
         self._apply_game_mode_enabled(enabled)
+
+    def _persist_obs_ws_host(self) -> None:
+        vv = (self._obs_ws_host.text() or "").strip() or "127.0.0.1"
+        self._obs_ws_host.setText(vv)
+        self._settings.setValue(constants.SETTINGS_OBS_WS_HOST, vv)
+
+    def _persist_obs_ws_port(self) -> None:
+        raw = (self._obs_ws_port.text() or "").strip() or "4455"
+        try:
+            p = int(raw)
+        except ValueError:
+            p = 4455
+        p = max(1, min(65535, p))
+        self._obs_ws_port.setText(str(p))
+        self._settings.setValue(constants.SETTINGS_OBS_WS_PORT, p)
+
+    def _persist_obs_ws_password(self) -> None:
+        vv = self._obs_ws_password.text() or ""
+        if vv.strip():
+            keyring_store.set_password(constants.KEY_OBS_WEBSOCKET_PASSWORD, vv)
+        else:
+            keyring_store.delete_password(constants.KEY_OBS_WEBSOCKET_PASSWORD)
+
+    @Slot(int)
+    def _persist_telegram_enabled(self, _state: int) -> None:
+        enabled = bool(self._tg_enabled.isChecked())
+        self._settings.setValue(_SETTINGS_TELEGRAM_ENABLED, enabled)
+        asyncio.ensure_future(self._apply_telegram_from_settings())
+
+    def _persist_telegram_token(self) -> None:
+        vv = self._tg_token.text() or ""
+        if vv.strip():
+            keyring_store.set_password(constants.KEY_TELEGRAM_BOT_TOKEN, vv)
+        else:
+            keyring_store.delete_password(constants.KEY_TELEGRAM_BOT_TOKEN)
+        asyncio.ensure_future(self._apply_telegram_from_settings())
+
+    def _persist_telegram_admin_id(self) -> None:
+        raw = (self._tg_admin_id.text() or "").strip()
+        if raw and not raw.isdigit():
+            raw = "".join([c for c in raw if c.isdigit()])
+        self._tg_admin_id.setText(raw)
+        self._settings.setValue(_SETTINGS_TELEGRAM_ADMIN_ID, raw)
+        asyncio.ensure_future(self._apply_telegram_from_settings())
+
+    @Slot(int)
+    def _persist_telegram_song_requests_enabled(self, _state: int) -> None:
+        enabled = bool(self._tg_song_requests_enabled.isChecked())
+        self._settings.setValue(_SETTINGS_TELEGRAM_SONG_REQUESTS_ENABLED, enabled)
+        asyncio.ensure_future(self._apply_telegram_from_settings())
+
+    @Slot(int)
+    def _persist_music_backend(self, _state: int) -> None:
+        backend = "mpv" if bool(self._music_use_mpv.isChecked()) else "app"
+        self._settings.setValue(_SETTINGS_MUSIC_BACKEND, backend)
+        self._refresh_mpv_check_label()
+        asyncio.ensure_future(self._apply_music_backend_from_settings())
+
+    @Slot(int)
+    def _persist_music_volume(self, value: int) -> None:
+        v = max(0, min(100, int(value)))
+        self._settings.setValue("music/volume_percent", v)
+        mp = self._music_player
+        if mp is not None:
+            mp.set_volume_percent(v)
+
+    async def _music_toggle_pause(self) -> None:
+        mp = self._music_player
+        if mp is None:
+            return
+        await mp.toggle_pause()
+
+    async def _music_next(self) -> None:
+        mp = self._music_player
+        if mp is None:
+            await self._music_queue.skip()
+            return
+        await mp.skip_now()
+
+    def _refresh_music_tab(self) -> None:
+        # IMPORTANT: do not read queue state synchronously (races with asyncio tasks).
+        # Always fetch via the async API to get a consistent view.
+        if not hasattr(self, "_music_queue_list") or self._closing:
+            return
+        if getattr(self, "_music_refresh_inflight", False):
+            return
+        self._music_refresh_inflight = True
+        asyncio.ensure_future(self._refresh_music_tab_async())
+
+    async def _refresh_music_tab_async(self) -> None:
+        try:
+            cur, q = await self._music_queue.list_queue(limit=50)
+            now_line = "Now: —"
+            if cur is not None:
+                title = (cur.title or "").strip()
+                vid = (cur.video_id or "").strip()
+                rb = (cur.requested_by or "").strip()
+                show = title or vid or "—"
+                now_line = f"Now: {show}" + (f" (by {rb})" if rb else "")
+            if hasattr(self, "_music_now"):
+                self._music_now.setText(now_line)
+
+            if hasattr(self, "_music_queue_list"):
+                self._music_queue_list.clear()
+                for i, t in enumerate(q[:50], start=1):
+                    title = (t.title or "").strip()
+                    vid = (t.video_id or "").strip()
+                    rb = (t.requested_by or "").strip()
+                    text = f"{i}. {title or vid}"
+                    if rb:
+                        text += f" — {rb}"
+                    self._music_queue_list.addItem(text)
+        finally:
+            self._music_refresh_inflight = False
+
+    @Slot()
+    def _check_mpv_installed(self) -> None:
+        self._refresh_mpv_check_label(force=True)
+
+    def _refresh_mpv_check_label(self, *, force: bool = False) -> None:
+        if not hasattr(self, "_lbl_mpv_check_result"):
+            return
+        want_mpv = bool(getattr(self, "_music_use_mpv", None) and self._music_use_mpv.isChecked())
+        mpv_path = shutil.which("mpv")
+        if mpv_path:
+            self._lbl_mpv_check_result.setText(f"mpv: OK ({mpv_path})")
+            return
+        if want_mpv or force:
+            self._lbl_mpv_check_result.setText("mpv: НЕ знайдено. Встанови mpv і додай його в PATH.")
+        else:
+            self._lbl_mpv_check_result.setText("")
+
+    async def _fetch_music_title_for_track(self, track_id: str, video_id: str) -> None:
+        vid = (video_id or "").strip()
+        if not vid:
+            return
+        cached = self._music_title_cache.get(vid)
+        if cached:
+            await self._music_queue.set_track_title(track_id, cached)
+            return
+        try:
+            title = await asyncio.to_thread(fetch_youtube_title, vid)
+        except (OSError, ValueError, RuntimeError) as e:
+            logger.debug("Music title fetch failed: %s", e)
+            return
+        title = (title or "").strip()
+        if not title:
+            return
+        self._music_title_cache[vid] = title
+        await self._music_queue.set_track_title(track_id, title)
 
     def _build_connections_tab(self) -> QWidget:
         w = QWidget()
@@ -940,6 +1665,27 @@ class MainWindow(QWidget):
         self._cb_autostart_youtube.setText(self._tr("settings.autostart_youtube"))
         # No l10n key yet: keep explicit UA-focused label.
         self._cb_game_mode.setText("Game mode (менше навантаження на GPU / менше просідань FPS)")
+        self._gb_obs.setTitle(self._tr("settings.obs_group"))
+        self._lbl_obs_help.setText(self._tr("settings.obs_help_html"))
+        self._lbl_obs_host.setText(self._tr("settings.obs_host"))
+        self._lbl_obs_port.setText(self._tr("settings.obs_port"))
+        self._lbl_obs_password.setText(self._tr("settings.obs_password"))
+        self._btn_obs_ws_test.setText(self._tr("settings.obs_test"))
+        self._lbl_obs_test_hint.setText(self._tr("settings.obs_test_hint"))
+
+        self._gb_telegram.setTitle("Telegram")
+        self._tg_enabled.setText("Enable Telegram bot")
+        self._lbl_tg_token.setText("Bot token")
+        self._lbl_tg_admin_id.setText("Admin id")
+        self._tg_song_requests_enabled.setText("Enable song requests")
+
+        self._gb_music.setTitle("Music")
+        self._music_use_mpv.setText("Open in mpv (instead of playing in app)")
+        self._lbl_music_backend_hint.setText(
+            "Потрібно встановити mpv і додати його в PATH. "
+            "Якщо вимкнено — трек грає в самій програмі (yt-dlp + ffmpeg).",
+        )
+        self._btn_mpv_check.setText("Check mpv")
 
     def _apply_connections_tab_texts(self) -> None:
         self._gb_twitch.setTitle(self._tr("tw.group"))
@@ -1031,6 +1777,7 @@ class MainWindow(QWidget):
 
     async def _async_logout_twitch(self) -> None:
         await self._twitch.stop()
+        await self._stop_twitch_analytics()
         twitch_credentials.clear_twitch_session()
         self._twitch_token.clear()
         self._on_user_status(self._tr("status.logout_twitch"))
@@ -1042,6 +1789,7 @@ class MainWindow(QWidget):
 
     async def _async_logout_youtube(self) -> None:
         await self._youtube.stop()
+        self._youtube_analytics.resetSession()
         clear_youtube_user_session()
         self._on_user_status(self._tr("status.logout_youtube"))
         self._refresh_connection_panels()
@@ -1142,6 +1890,49 @@ class MainWindow(QWidget):
         self._log_view.setFont(lf)
         lay.addWidget(self._log_view, stretch=1)
         self._apply_logs_tab_texts()
+        return w
+
+    def _build_music_tab(self) -> QWidget:
+        w = QWidget()
+        w.setObjectName("musicPageRoot")
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(14, 14, 14, 14)
+        lay.setSpacing(12)
+
+        title = QLabel("Music")
+        title.setStyleSheet("color: #e8eaed; font-size: 18px; font-weight: 600;")
+        lay.addWidget(title)
+
+        self._music_now = QLabel("Now: —")
+        self._music_now.setWordWrap(True)
+        lay.addWidget(self._music_now)
+
+        self._music_queue_list = QListWidget()
+        self._music_queue_list.setMinimumHeight(220)
+        lay.addWidget(self._music_queue_list, stretch=1)
+
+        controls = QHBoxLayout()
+        self._btn_music_play_pause = QPushButton("Play/Pause")
+        self._btn_music_next = QPushButton("Next")
+        self._btn_music_play_pause.clicked.connect(lambda: asyncio.ensure_future(self._music_toggle_pause()))
+        self._btn_music_next.clicked.connect(lambda: asyncio.ensure_future(self._music_next()))
+        controls.addWidget(self._btn_music_play_pause)
+        controls.addWidget(self._btn_music_next)
+        controls.addStretch(1)
+
+        self._music_vol = QSlider(Qt.Orientation.Horizontal)
+        self._music_vol.setMinimum(0)
+        self._music_vol.setMaximum(100)
+        self._music_vol.setValue(int(self._settings.value("music/volume_percent", 100)))
+        self._music_vol.valueChanged.connect(self._persist_music_volume)
+        controls.addWidget(QLabel("Volume"))
+        controls.addWidget(self._music_vol, stretch=1)
+        lay.addLayout(controls)
+
+        self._music_refresh_timer = QTimer(self)
+        self._music_refresh_timer.timeout.connect(self._refresh_music_tab)
+        self._music_refresh_timer.start(700)
+        self._refresh_music_tab()
         return w
 
     def _apply_logs_tab_texts(self) -> None:
@@ -1339,7 +2130,7 @@ class MainWindow(QWidget):
         t_body.addWidget(self._btn_audio_speak)
         main_lay.addWidget(_t_card)
 
-        # --- TTS language & engine (always visible — must not live inside Piper-only card) ---
+        # --- TTS language & engine ---
         self._frm_audio_tts, tts_body, self._lbl_audio_tts_card_h = self._make_audio_card(
             "#38bdf8",
         )
@@ -1351,19 +2142,12 @@ class MainWindow(QWidget):
         self._lbl_tts_engine = QLabel()
         self._combo_tts_engine = QComboBox()
         self._combo_tts_engine.addItem("", _TTS_ENGINE_GOOGLE)
-        self._combo_tts_engine.addItem("", _TTS_ENGINE_PIPER)
+        self._combo_tts_engine.addItem("", _TTS_ENGINE_EDGE)
         self._combo_tts_engine.currentIndexChanged.connect(self._on_tts_engine_changed)
         self._engine_row = QWidget()
         er = QHBoxLayout(self._engine_row)
         er.setContentsMargins(0, 0, 0, 0)
         er.addWidget(self._combo_tts_engine, stretch=1)
-        self._btn_piper_help = QToolButton()
-        self._btn_piper_help.setAutoRaise(True)
-        self._btn_piper_help.setIcon(
-            self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxQuestion),
-        )
-        self._btn_piper_help.clicked.connect(self._show_piper_help_dialog)
-        er.addWidget(self._btn_piper_help)
         f_lang = QFormLayout()
         f_lang.setContentsMargins(0, 0, 0, 0)
         f_lang.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
@@ -1392,87 +2176,26 @@ class MainWindow(QWidget):
         self._btn_audio_flush_queues.setAutoDefault(False)
         self._btn_audio_flush_queues.setDefault(False)
         self._btn_audio_flush_queues.clicked.connect(
-            lambda: asyncio.ensure_future(self._flush_tts_and_rvc_queues()),
+            lambda: asyncio.ensure_future(self._flush_tts_queues()),
         )
         tts_body.addWidget(self._btn_audio_flush_queues)
         main_lay.addWidget(self._frm_audio_tts)
 
-        # --- Piper card (voice model + CUDA only) ---
-        self._frm_piper_voice, piper_body, self._lbl_audio_piper_card_h = self._make_audio_card(
-            "#7c3aed",
+        # --- Edge card (voice selection per language) ---
+        self._frm_edge_voice, edge_body, self._lbl_audio_edge_card_h = self._make_audio_card(
+            "#22c55e",
         )
-        self._btn_piper_download = QPushButton()
-        self._btn_piper_download.setAutoDefault(False)
-        self._btn_piper_download.setDefault(False)
-        self._btn_piper_download.clicked.connect(self._schedule_piper_voice_download)
-        piper_body.addWidget(self._btn_piper_download)
-        self._piper_model_edit = QLineEdit()
-        self._piper_model_edit.setPlaceholderText("voice.onnx")
-        self._piper_model_edit.editingFinished.connect(self._on_piper_model_commit)
-        self._btn_piper_browse = QPushButton()
-        self._btn_piper_browse.setAutoDefault(False)
-        self._btn_piper_browse.setDefault(False)
-        self._btn_piper_browse.clicked.connect(self._browse_piper_model)
-        self._piper_browse_lbl = QLabel()
-        pm_row = QHBoxLayout()
-        pm_row.setSpacing(8)
-        pm_row.addWidget(self._piper_browse_lbl)
-        pm_row.addWidget(self._piper_model_edit, stretch=1)
-        pm_row.addWidget(self._btn_piper_browse)
-        self._piper_model_wrap = QWidget()
-        self._piper_model_wrap.setLayout(pm_row)
-        piper_body.addWidget(self._piper_model_wrap)
-        self._cb_piper_cuda = QCheckBox()
-        self._cb_piper_cuda.toggled.connect(self._on_piper_cuda_toggled)
-        piper_body.addWidget(self._cb_piper_cuda)
-
-        main_lay.addWidget(self._frm_piper_voice)
-        self._setup_piper_loading_overlay()
-
-        # --- RVC card ---
-        self._frm_rvc, rvc_body, self._lbl_audio_rvc_card_h = self._make_audio_card("#f472b6")
-        rvc_form_w = QWidget()
-        rvc_form = QFormLayout(rvc_form_w)
-        rvc_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-        rvc_form.setVerticalSpacing(6)
-        rvc_form.setContentsMargins(0, 0, 0, 0)
-        self._cb_rvc = QCheckBox()
-        self._cb_rvc.toggled.connect(self._on_rvc_toggled)
-        rvc_form.addRow(self._cb_rvc)
-        self._lbl_rvc_model = self._form_label("")
-        rvc_m_row = QHBoxLayout()
-        self._rvc_model_edit = QLineEdit()
-        self._rvc_model_edit.setPlaceholderText("model.pth")
-        self._rvc_model_edit.editingFinished.connect(self._on_rvc_model_commit)
-        self._btn_rvc_browse = QPushButton()
-        self._btn_rvc_browse.setAutoDefault(False)
-        self._btn_rvc_browse.setDefault(False)
-        self._btn_rvc_browse.clicked.connect(self._browse_rvc_model)
-        rvc_m_row.addWidget(self._rvc_model_edit, stretch=1)
-        rvc_m_row.addWidget(self._btn_rvc_browse)
-        rvc_mw = QWidget()
-        rvc_mw.setLayout(rvc_m_row)
-        rvc_form.addRow(self._lbl_rvc_model, rvc_mw)
-        self._lbl_rvc_index = self._form_label("")
-        rvc_i_row = QHBoxLayout()
-        self._rvc_index_edit = QLineEdit()
-        self._rvc_index_edit.setPlaceholderText("model.index")
-        self._rvc_index_edit.editingFinished.connect(self._on_rvc_index_commit)
-        self._btn_rvc_index_browse = QPushButton()
-        self._btn_rvc_index_browse.setAutoDefault(False)
-        self._btn_rvc_index_browse.setDefault(False)
-        self._btn_rvc_index_browse.clicked.connect(self._browse_rvc_index)
-        rvc_i_row.addWidget(self._rvc_index_edit, stretch=1)
-        rvc_i_row.addWidget(self._btn_rvc_index_browse)
-        rvc_iw = QWidget()
-        rvc_iw.setLayout(rvc_i_row)
-        rvc_form.addRow(self._lbl_rvc_index, rvc_iw)
-        self._cb_rvc_cuda = QCheckBox()
-        self._cb_rvc_cuda.toggled.connect(self._on_rvc_cuda_toggled)
-        rvc_form.addRow(self._cb_rvc_cuda)
-        rvc_body.addWidget(rvc_form_w)
-        main_lay.addWidget(self._frm_rvc)
-        self._setup_rvc_loading_overlay()
+        self._lbl_edge_voice = QLabel()
+        self._combo_edge_voice = QComboBox()
+        self._combo_edge_voice.currentIndexChanged.connect(self._on_edge_voice_changed)
+        edge_form = QFormLayout()
+        edge_form.setContentsMargins(0, 0, 0, 0)
+        edge_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        edge_form.setHorizontalSpacing(10)
+        edge_form.setVerticalSpacing(8)
+        edge_form.addRow(self._lbl_edge_voice, self._combo_edge_voice)
+        edge_body.addLayout(edge_form)
+        main_lay.addWidget(self._frm_edge_voice)
 
         # --- Output & levels card ---
         _lv_card, lv_body, self._lbl_audio_levels_card_h = self._make_audio_card("#0ea5e9")
@@ -1540,48 +2263,13 @@ class MainWindow(QWidget):
                 self._combo_tts_lang.setItemText(i, self._tr(key))
         self._lbl_tts_engine.setText(self._tr("audio.tts_engine"))
         self._combo_tts_engine.setItemText(0, self._tr("audio.tts_engine_google"))
-        self._combo_tts_engine.setItemText(1, self._tr("audio.tts_engine_piper"))
-        self._btn_piper_help.setToolTip(self._tr("audio.piper_help_tooltip"))
+        self._combo_tts_engine.setItemText(1, self._tr("audio.tts_engine_edge"))
         self._btn_audio_flush_queues.setText(self._tr("audio.flush_queues"))
         self._btn_audio_flush_queues.setToolTip(self._tr("audio.flush_queues_hint"))
         self._lbl_audio_tts_card_h.setText(self._tr("audio.card_tts_title"))
-        self._lbl_audio_piper_card_h.setText(self._tr("audio.piper_voice_group"))
-        self._frm_piper_voice.setToolTip(
-            "\n\n".join(
-                [
-                    self._tr("audio.piper_voice_intro"),
-                    self._tr("audio.piper_option_download"),
-                    self._tr("audio.piper_option_file"),
-                ],
-            ),
-        )
-        self._btn_piper_download.setText(self._tr("audio.piper_download"))
-        self._btn_piper_download.setToolTip(self._tr("audio.piper_option_download"))
-        self._piper_browse_lbl.setText(self._tr("audio.piper_path_short"))
-        self._btn_piper_browse.setText(self._tr("audio.piper_browse"))
-        self._cb_piper_cuda.setText(self._tr("audio.piper_cuda"))
-        self._cb_piper_cuda.setToolTip(self._tr("audio.piper_cuda_tip"))
-        self._lbl_audio_rvc_card_h.setText(self._tr("audio.rvc_group"))
-        self._frm_rvc.setToolTip(self._tr("audio.rvc_intro"))
-        self._cb_rvc.setText(self._tr("audio.rvc_enable"))
-        self._lbl_rvc_model.setText(self._tr("audio.rvc_model"))
-        self._lbl_rvc_index.setText(self._tr("audio.rvc_index"))
-        self._cb_rvc_cuda.setText(self._tr("audio.rvc_cuda"))
-        self._cb_rvc_cuda.setToolTip(self._tr("audio.rvc_cuda_tip"))
-        self._btn_rvc_browse.setText(self._tr("audio.piper_browse"))
-        self._btn_rvc_index_browse.setText(self._tr("audio.piper_browse"))
-        if (
-            hasattr(self, "_lbl_rvc_overlay_status")
-            and hasattr(self, "_rvc_overlay")
-            and self._rvc_overlay.isVisible()
-        ):
-            self._lbl_rvc_overlay_status.setText(
-                self._tr("audio.rvc_loading")
-                if getattr(self, "_rvc_overlay_enabling", True)
-                else self._tr("audio.rvc_unloading"),
-            )
-        self._update_piper_related_visibility()
-        self._update_rvc_field_enabled()
+        self._lbl_audio_edge_card_h.setText(self._tr("audio.edge_voice_group"))
+        self._lbl_edge_voice.setText(self._tr("audio.edge_voice_label"))
+        self._update_tts_engine_related_visibility()
         self._lbl_audio_volume.setText(self._tr("audio.volume"))
         self._lbl_audio_tts_gain.setText(self._tr("audio.tts_gain"))
         _gain_help = f"{self._tr('audio.tts_gain_tip')}\n\n{self._tr('audio.tts_hint')}"
@@ -1600,423 +2288,147 @@ class MainWindow(QWidget):
         ):
             self._test_phrase.setText(self._tr("audio.test_phrase_default"))
 
-    def _update_piper_related_visibility(self) -> None:
-        use_piper = self._combo_tts_engine.currentData() == _TTS_ENGINE_PIPER
-        self._frm_piper_voice.setVisible(use_piper)
-        self._btn_piper_help.setVisible(use_piper)
-
-    def _update_rvc_field_enabled(self) -> None:
-        if not hasattr(self, "_cb_rvc"):
-            return
-        on = self._cb_rvc.isChecked()
-        for w in (
-            self._lbl_rvc_model,
-            self._rvc_model_edit,
-            self._btn_rvc_browse,
-            self._lbl_rvc_index,
-            self._rvc_index_edit,
-            self._btn_rvc_index_browse,
-            self._cb_rvc_cuda,
-        ):
-            w.setEnabled(on)
+    def _update_tts_engine_related_visibility(self) -> None:
+        eng = self._combo_tts_engine.currentData()
+        use_edge = eng == _TTS_ENGINE_EDGE
+        self._frm_edge_voice.setVisible(use_edge)
 
     def _sync_tts_engine_combo_to_backend(self) -> None:
-        """Combo reflects saved engine (not live ``self._tts`` — Piper may load later)."""
+        """Combo reflects saved engine (not live ``self._tts``)."""
         raw_eng = str(self._settings.value(_SETTINGS_TTS_ENGINE, _TTS_ENGINE_GOOGLE, str))
         gid = raw_eng.strip().lower()
         self._combo_tts_engine.blockSignals(True)
-        self._combo_tts_engine.setCurrentIndex(1 if gid == _TTS_ENGINE_PIPER else 0)
+        idx = 1 if gid == _TTS_ENGINE_EDGE else 0
+        self._combo_tts_engine.setCurrentIndex(idx)
         self._combo_tts_engine.blockSignals(False)
-        self._update_piper_related_visibility()
+        self._update_tts_engine_related_visibility()
 
     @Slot(int)
     def _on_tts_engine_changed(self, _index: int) -> None:
         eng = self._combo_tts_engine.currentData()
         self._settings.setValue(_SETTINGS_TTS_ENGINE, eng)
-        self._update_piper_related_visibility()
+        self._update_tts_engine_related_visibility()
+        if eng == _TTS_ENGINE_EDGE:
+            asyncio.ensure_future(self._refresh_edge_voices_for_current_language())
         asyncio.ensure_future(self._swap_tts_backend())
-
-    @Slot()
-    def _on_piper_model_commit(self) -> None:
-        self._settings.setValue(_SETTINGS_PIPER_MODEL, self._piper_model_edit.text().strip())
-        if self._combo_tts_engine.currentData() == _TTS_ENGINE_PIPER:
-            asyncio.ensure_future(self._swap_tts_backend())
-
-    @Slot()
-    def _browse_piper_model(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            self._tr("audio.piper_model"),
-            str(Path.home()),
-            "ONNX (*.onnx);;All files (*)",
-        )
-        if path:
-            self._piper_model_edit.setText(path)
-            self._settings.setValue(_SETTINGS_PIPER_MODEL, path)
-            if self._combo_tts_engine.currentData() == _TTS_ENGINE_PIPER:
-                asyncio.ensure_future(self._swap_tts_backend())
 
     @Slot(int)
     def _on_tts_language_changed(self, _index: int) -> None:
         tag = self._combo_tts_lang.currentData()
         if isinstance(tag, str) and tag.strip():
             self._settings.setValue(_SETTINGS_TTS_LANG, tag.strip())
-        if self._combo_tts_engine.currentData() == _TTS_ENGINE_GOOGLE:
+        eng = self._combo_tts_engine.currentData()
+        if eng == _TTS_ENGINE_EDGE:
+            asyncio.ensure_future(self._refresh_edge_voices_for_current_language())
+            asyncio.ensure_future(self._swap_tts_backend())
+            return
+        if eng == _TTS_ENGINE_GOOGLE:
             asyncio.ensure_future(self._swap_tts_backend())
 
-    @Slot(bool)
-    def _on_piper_cuda_toggled(self, checked: bool) -> None:
-        self._settings.setValue(_SETTINGS_PIPER_CUDA, bool(checked))
-        if self._combo_tts_engine.currentData() == _TTS_ENGINE_PIPER:
-            asyncio.ensure_future(self._swap_tts_backend())
+    def _load_edge_voice_map(self) -> dict[str, str]:
+        raw = str(self._settings.value(_SETTINGS_EDGE_VOICE_BY_LANG, "{}", str) or "").strip()
+        if not raw:
+            return {}
+        try:
+            data = json.loads(raw)
+        except (TypeError, ValueError):
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        out: dict[str, str] = {}
+        for k, v in data.items():
+            if isinstance(k, str) and isinstance(v, str) and k.strip() and v.strip():
+                out[k.strip()] = v.strip()
+        return out
 
-    @Slot(bool)
-    def _on_rvc_toggled(self, checked: bool) -> None:
-        if checked:
-            from stream_cheremsha.tts.rvc_wav import is_rvc_stack_available, rvc_stack_import_error
+    def _save_edge_voice_map(self, m: dict[str, str]) -> None:
+        cleaned: dict[str, str] = {}
+        for k, v in m.items():
+            if isinstance(k, str) and isinstance(v, str) and k.strip() and v.strip():
+                cleaned[k.strip()] = v.strip()
+        payload = json.dumps(cleaned, ensure_ascii=False)
+        self._settings.setValue(_SETTINGS_EDGE_VOICE_BY_LANG, payload)
 
-            if not is_rvc_stack_available():
-                self._cb_rvc.blockSignals(True)
-                self._cb_rvc.setChecked(False)
-                self._cb_rvc.blockSignals(False)
-                self._update_rvc_field_enabled()
-                detail = rvc_stack_import_error()
-                msg = (
-                    self._tr("dlg.rvc_missing_detail", detail=detail)
-                    if detail
-                    else self._tr("dlg.rvc_missing")
+    async def _refresh_edge_voices_for_current_language(self) -> None:
+        if not hasattr(self, "_combo_edge_voice"):
+            return
+        async with self._edge_voices_refresh_lock:
+            lang = self._current_tts_language()
+            self._combo_edge_voice.setEnabled(False)
+            self._combo_edge_voice.blockSignals(True)
+            self._combo_edge_voice.clear()
+            self._combo_edge_voice.blockSignals(False)
+            prev_pipeline = self._status_app
+            self._on_user_status(self._tr("status.edge_voices_loading"))
+            try:
+                all_voices = await list_edge_voices_cached()
+                voices = filter_edge_voices_for_locale(all_voices, lang)
+            except (ImportError, OSError, RuntimeError, ValueError) as e:
+                logger.warning(
+                    "Edge voices UI refresh failed (locale=%r): %s: %s",
+                    lang,
+                    type(e).__name__,
+                    e,
+                    exc_info=True,
                 )
-                QMessageBox.information(self, self._tr("dlg.tts"), msg)
+                self._on_user_status(self._tr("status.edge_voices_failed"))
+                self._combo_edge_voice.setEnabled(False)
                 return
-        asyncio.ensure_future(self._async_rvc_toggle_apply(checked))
 
-    def _setup_rvc_loading_overlay(self) -> None:
-        self._rvc_overlay = QFrame(self._frm_rvc)
-        self._rvc_overlay.setObjectName("rvcLoadingOverlay")
-        self._rvc_overlay.hide()
-        ol = QVBoxLayout(self._rvc_overlay)
-        ol.setContentsMargins(16, 16, 16, 16)
-        ol.addStretch(1)
-        mid = QHBoxLayout()
-        mid.addStretch(1)
-        col = QVBoxLayout()
-        col.setSpacing(12)
-        pulse_path = _asset_path("pulse.svg")
-        self._rvc_overlay_pulse = QSvgWidget(str(pulse_path))
-        self._rvc_overlay_pulse.setObjectName("rvcOverlayPulse")
-        self._rvc_overlay_pulse.setFixedSize(46, 46)
-        self._lbl_rvc_overlay_status = QLabel()
-        self._lbl_rvc_overlay_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._lbl_rvc_overlay_status.setWordWrap(True)
-        self._lbl_rvc_overlay_status.setObjectName("rvcOverlayStatus")
-
-        self._rvc_overlay_pulse_anim = QVariantAnimation(self)
-        self._rvc_overlay_pulse_anim.setDuration(900)
-        self._rvc_overlay_pulse_anim.setLoopCount(-1)
-        self._rvc_overlay_pulse_anim.setStartValue(0.55)
-        self._rvc_overlay_pulse_anim.setEndValue(1.15)
-
-        def _apply_pulse(v: object) -> None:
-            try:
-                x = float(v)
-            except (TypeError, ValueError):
-                x = 1.0
-            size = int(46 * x)
-            size = max(22, min(size, 90))
-            self._rvc_overlay_pulse.setFixedSize(size, size)
-            a = 1.0 - (x - 0.55) / (1.15 - 0.55)
-            a = max(0.0, min(a, 1.0))
-            self._rvc_overlay_pulse.setStyleSheet(
-                f"color: rgba(232, 234, 237, {a:.3f});",
+            logger.info(
+                "Edge voices for locale %r: %d in combo (of %d total from API)",
+                lang,
+                len(voices),
+                len(all_voices),
             )
+            if not voices and all_voices:
+                logger.warning(
+                    "Edge TTS: no voices match locale %r; check TTS language vs Edge locale tag",
+                    lang,
+                )
 
-        self._rvc_overlay_pulse_anim.valueChanged.connect(_apply_pulse)
-        _apply_pulse(self._rvc_overlay_pulse_anim.startValue())
-
-        col.addWidget(self._rvc_overlay_pulse, alignment=Qt.AlignmentFlag.AlignHCenter)
-        col.addWidget(self._lbl_rvc_overlay_status)
-        mid.addLayout(col)
-        mid.addStretch(1)
-        ol.addLayout(mid)
-        ol.addStretch(1)
-        self._rvc_overlay.setStyleSheet(
-            "QFrame#rvcLoadingOverlay { background-color: rgba(10, 12, 18, 0.82); "
-            "border-radius: 14px; }"
-            "QLabel#rvcOverlayStatus { color: #e8eaed; font-weight: 600; }",
-        )
-        self._frm_rvc.installEventFilter(self)
-
-    def _setup_piper_loading_overlay(self) -> None:
-        self._piper_overlay = QFrame(self._frm_piper_voice)
-        self._piper_overlay.setObjectName("piperLoadingOverlay")
-        self._piper_overlay.hide()
-        ol = QVBoxLayout(self._piper_overlay)
-        ol.setContentsMargins(16, 16, 16, 16)
-        ol.addStretch(1)
-        mid = QHBoxLayout()
-        mid.addStretch(1)
-        col = QVBoxLayout()
-        col.setSpacing(12)
-        pulse_path = _asset_path("pulse.svg")
-        self._piper_overlay_pulse = QSvgWidget(str(pulse_path))
-        self._piper_overlay_pulse.setObjectName("piperOverlayPulse")
-        self._piper_overlay_pulse.setFixedSize(46, 46)
-        self._lbl_piper_overlay_status = QLabel()
-        self._lbl_piper_overlay_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._lbl_piper_overlay_status.setWordWrap(True)
-        self._lbl_piper_overlay_status.setObjectName("piperOverlayStatus")
-
-        self._piper_overlay_pulse_anim = QVariantAnimation(self)
-        self._piper_overlay_pulse_anim.setDuration(900)
-        self._piper_overlay_pulse_anim.setLoopCount(-1)
-        self._piper_overlay_pulse_anim.setStartValue(0.55)
-        self._piper_overlay_pulse_anim.setEndValue(1.15)
-
-        def _apply_pulse(v: object) -> None:
+            self._combo_edge_voice.blockSignals(True)
             try:
-                x = float(v)
-            except (TypeError, ValueError):
-                x = 1.0
-            size = int(46 * x)
-            size = max(22, min(size, 90))
-            self._piper_overlay_pulse.setFixedSize(size, size)
-            a = 1.0 - (x - 0.55) / (1.15 - 0.55)
-            a = max(0.0, min(a, 1.0))
-            self._piper_overlay_pulse.setStyleSheet(
-                f"color: rgba(232, 234, 237, {a:.3f});",
-            )
+                for v in voices:
+                    self._combo_edge_voice.addItem(v.label, v.short_name)
+            finally:
+                self._combo_edge_voice.blockSignals(False)
 
-        self._piper_overlay_pulse_anim.valueChanged.connect(_apply_pulse)
-        _apply_pulse(self._piper_overlay_pulse_anim.startValue())
+            m = self._load_edge_voice_map()
+            want = m.get(lang, "")
+            idx = 0
+            if want:
+                for i in range(self._combo_edge_voice.count()):
+                    if self._combo_edge_voice.itemData(i) == want:
+                        idx = i
+                        break
+            self._combo_edge_voice.setCurrentIndex(idx if self._combo_edge_voice.count() else -1)
+            chosen = self._combo_edge_voice.currentData()
+            if isinstance(chosen, str) and chosen.strip():
+                m[lang] = chosen.strip()
+                self._save_edge_voice_map(m)
+            self._combo_edge_voice.setEnabled(self._combo_edge_voice.count() > 0)
+            self._on_user_status(prev_pipeline)
 
-        col.addWidget(self._piper_overlay_pulse, alignment=Qt.AlignmentFlag.AlignHCenter)
-        col.addWidget(self._lbl_piper_overlay_status)
-        mid.addLayout(col)
-        mid.addStretch(1)
-        ol.addLayout(mid)
-        ol.addStretch(1)
-        self._piper_overlay.setStyleSheet(
-            "QFrame#piperLoadingOverlay { background-color: rgba(10, 12, 18, 0.82); "
-            "border-radius: 14px; }"
-            "QLabel#piperOverlayStatus { color: #e8eaed; font-weight: 600; }",
-        )
-        self._frm_piper_voice.installEventFilter(self)
-
-    def _sync_piper_overlay_geometry(self) -> None:
-        if hasattr(self, "_piper_overlay"):
-            self._piper_overlay.setGeometry(self._frm_piper_voice.rect())
-
-    def _sync_rvc_overlay_geometry(self) -> None:
-        if hasattr(self, "_rvc_overlay"):
-            self._rvc_overlay.setGeometry(self._frm_rvc.rect())
+    @Slot(int)
+    def _on_edge_voice_changed(self, _index: int) -> None:
+        if not hasattr(self, "_combo_edge_voice"):
+            return
+        voice = self._combo_edge_voice.currentData()
+        if not isinstance(voice, str) or not voice.strip():
+            return
+        lang = self._current_tts_language()
+        m = self._load_edge_voice_map()
+        m[lang] = voice.strip()
+        self._save_edge_voice_map(m)
+        if self._combo_tts_engine.currentData() == _TTS_ENGINE_EDGE:
+            asyncio.ensure_future(self._swap_tts_backend())
 
     def eventFilter(self, watched: QObject, event: QEvent | None) -> bool:  # noqa: N802
-        if (
-            watched is getattr(self, "_frm_rvc", None)
-            and event is not None
-            and event.type() == QEvent.Type.Resize
-            and hasattr(self, "_rvc_overlay")
-        ):
-            self._rvc_overlay.setGeometry(self._frm_rvc.rect())
-        if (
-            watched is getattr(self, "_frm_piper_voice", None)
-            and event is not None
-            and event.type() == QEvent.Type.Resize
-            and hasattr(self, "_piper_overlay")
-        ):
-            self._piper_overlay.setGeometry(self._frm_piper_voice.rect())
         return super().eventFilter(watched, event)
 
-    async def _async_rvc_toggle_apply(self, checked: bool) -> None:
-        if self._rvc_toggle_busy:
-            return
-        from stream_cheremsha.tts.rvc_wav import RvcChainRebuildParams, rvc_rebuild_chain
-
-        self._rvc_toggle_busy = True
-        self._rvc_overlay_enabling = bool(checked)
-        self._lbl_rvc_overlay_status.setText(
-            self._tr("audio.rvc_loading") if checked else self._tr("audio.rvc_unloading"),
-        )
-        self._sync_rvc_overlay_geometry()
-        self._rvc_overlay_pulse_anim.start()
-        self._rvc_overlay.show()
-        self._rvc_overlay.raise_()
-        self._cb_rvc.setEnabled(False)
-        try:
-            await rvc_runtime_stop_dispatcher(self._rvc_runtime)
-            rvc_runtime_cancel_pending(
-                self._rvc_runtime,
-                RuntimeError("RVC is restarting"),
-            )
-            self._migrate_rvc_from_legacy_if_needed()
-            self._settings.setValue(_SETTINGS_RVC_ENABLED, bool(checked))
-            params = RvcChainRebuildParams(
-                enabled=bool(checked),
-                model_pth=str(self._settings.value(_SETTINGS_RVC_MODEL, "", str)).strip(),
-                index_path=str(self._settings.value(_SETTINGS_RVC_INDEX, "", str)).strip(),
-                use_cuda=bool(self._settings.value(_SETTINGS_RVC_CUDA, False, bool)),
-            )
-            prev = self._rvc_runtime.chain
-            self._rvc_runtime.chain = None
-            try:
-                new_chain, err = await asyncio.to_thread(rvc_rebuild_chain, prev, params)
-            except Exception as e:
-                logger.exception("RVC toggle (worker thread)")
-                try:
-                    if prev is not None:
-                        prev.close()
-                except Exception:
-                    logger.exception("RVC: cleanup after toggle failure")
-                self._settings.setValue(_SETTINGS_RVC_ENABLED, not bool(checked))
-                self._cb_rvc.blockSignals(True)
-                self._cb_rvc.setChecked(not bool(checked))
-                self._cb_rvc.blockSignals(False)
-                QMessageBox.warning(
-                    self,
-                    self._tr("dlg.tts"),
-                    self._tr("dlg.rvc_toggle_failed", detail=str(e)),
-                )
-                self._rebuild_rvc_chain()
-            else:
-                self._rvc_runtime.chain = new_chain
-                if err is not None:
-                    self._settings.setValue(_SETTINGS_RVC_ENABLED, not bool(checked))
-                    self._cb_rvc.blockSignals(True)
-                    self._cb_rvc.setChecked(not bool(checked))
-                    self._cb_rvc.blockSignals(False)
-                    QMessageBox.warning(
-                        self,
-                        self._tr("dlg.tts"),
-                        self._tr("dlg.rvc_toggle_failed", detail=str(err)),
-                    )
-            self._update_rvc_field_enabled()
-        finally:
-            self._rvc_overlay.hide()
-            self._rvc_overlay_pulse_anim.stop()
-            self._cb_rvc.setEnabled(True)
-            self._rvc_toggle_busy = False
-
-    @Slot(bool)
-    def _on_rvc_cuda_toggled(self, checked: bool) -> None:
-        self._settings.setValue(_SETTINGS_RVC_CUDA, bool(checked))
-        if bool(self._settings.value(_SETTINGS_RVC_ENABLED, False, bool)):
-            self._rebuild_rvc_chain()
-
-    @Slot()
-    def _on_rvc_model_commit(self) -> None:
-        self._settings.setValue(_SETTINGS_RVC_MODEL, self._rvc_model_edit.text().strip())
-        if bool(self._settings.value(_SETTINGS_RVC_ENABLED, False, bool)):
-            self._rebuild_rvc_chain()
-
-    @Slot()
-    def _on_rvc_index_commit(self) -> None:
-        self._settings.setValue(_SETTINGS_RVC_INDEX, self._rvc_index_edit.text().strip())
-        if bool(self._settings.value(_SETTINGS_RVC_ENABLED, False, bool)):
-            self._rebuild_rvc_chain()
-
-    @Slot()
-    def _browse_rvc_model(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            self._tr("audio.rvc_model"),
-            str(Path.home()),
-            "PyTorch (*.pth);;All files (*)",
-        )
-        if path:
-            self._rvc_model_edit.setText(path)
-            self._settings.setValue(_SETTINGS_RVC_MODEL, path)
-            if bool(self._settings.value(_SETTINGS_RVC_ENABLED, False, bool)):
-                self._rebuild_rvc_chain()
-
-    @Slot()
-    def _browse_rvc_index(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            self._tr("audio.rvc_index"),
-            str(Path.home()),
-            "RVC index (*.index);;All files (*)",
-        )
-        if path:
-            self._rvc_index_edit.setText(path)
-            self._settings.setValue(_SETTINGS_RVC_INDEX, path)
-            if bool(self._settings.value(_SETTINGS_RVC_ENABLED, False, bool)):
-                self._rebuild_rvc_chain()
-
-    @Slot()
-    def _show_piper_help_dialog(self) -> None:
-        dlg = QDialog(self)
-        dlg.setWindowTitle(self._tr("audio.piper_help_title"))
-        layout = QVBoxLayout(dlg)
-        browser = QTextBrowser()
-        browser.setReadOnly(True)
-        browser.setOpenExternalLinks(True)
-        browser.setHtml(self._tr("help.piper_html"))
-        layout.addWidget(browser)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
-        buttons.accepted.connect(dlg.accept)
-        layout.addWidget(buttons)
-        if not restore_window_geometry(KEY_PIPER_HELP_DIALOG, dlg):
-            dlg.resize(560, 440)
-
-        def _save_piper_help_geometry() -> None:
-            save_window_geometry(KEY_PIPER_HELP_DIALOG, dlg)
-
-        dlg.finished.connect(_save_piper_help_geometry)
-        dlg.exec()
-
-    @Slot()
-    def _schedule_piper_voice_download(self) -> None:
-        asyncio.ensure_future(self._run_piper_voice_download())
-
-    async def _run_piper_voice_download(self) -> None:
-        from stream_cheremsha.tts.piper_download import download_piper_voice
-        from stream_cheremsha.tts.piper_voices import (
-            default_piper_download_root,
-            piper_voice_id_for_tts_language,
-        )
-
-        lang = self._current_tts_language()
-        voice = piper_voice_id_for_tts_language(lang)
-        if not voice:
-            QMessageBox.information(
-                self,
-                self._tr("dlg.tts"),
-                self._tr("dlg.piper_voice_unknown"),
-            )
-            return
-        self._lbl_piper_overlay_status.setText(self._tr("audio.piper_downloading"))
-        self._sync_piper_overlay_geometry()
-        self._piper_overlay_pulse_anim.start()
-        self._piper_overlay.show()
-        self._piper_overlay.raise_()
-        self._btn_piper_download.setEnabled(False)
-        self._piper_model_edit.setEnabled(False)
-        self._btn_piper_browse.setEnabled(False)
-        self._cb_piper_cuda.setEnabled(False)
-        self._on_user_status(self._tr("status.piper_download_start", voice=voice))
-        cache = default_piper_download_root()
-        try:
-            onnx = await download_piper_voice(voice, cache)
-        except (OSError, RuntimeError) as e:
-            QMessageBox.warning(self, self._tr("dlg.piper_download_failed"), str(e))
-            return
-        finally:
-            self._piper_overlay.hide()
-            self._piper_overlay_pulse_anim.stop()
-            self._btn_piper_download.setEnabled(True)
-            self._piper_model_edit.setEnabled(True)
-            self._btn_piper_browse.setEnabled(True)
-            self._cb_piper_cuda.setEnabled(True)
-        self._piper_model_edit.setText(str(onnx))
-        self._settings.setValue(_SETTINGS_PIPER_MODEL, str(onnx))
-        self._on_user_status(self._tr("status.piper_download_ok", path=str(onnx)))
-        if self._combo_tts_engine.currentData() == _TTS_ENGINE_PIPER:
-            await self._swap_tts_backend()
-
     async def _swap_tts_backend(self) -> None:
-        from stream_cheremsha.tts.bundled_piper import effective_piper_onnx_path
         from stream_cheremsha.tts.google_translate_tts import GoogleTranslateTts
-        from stream_cheremsha.tts.piper_tts import PiperTts, is_piper_package_installed
 
         eng = self._combo_tts_engine.currentData()
         new_tts: TextToSpeech
@@ -2026,33 +2438,24 @@ class MainWindow(QWidget):
             self._combo_tts_engine.setCurrentIndex(0)
             self._combo_tts_engine.blockSignals(False)
             self._settings.setValue(_SETTINGS_TTS_ENGINE, _TTS_ENGINE_GOOGLE)
-            self._update_piper_related_visibility()
+            self._update_tts_engine_related_visibility()
 
         lang = self._current_tts_language()
-        use_cuda = self._cb_piper_cuda.isChecked() if hasattr(self, "_cb_piper_cuda") else False
-
-        if eng == _TTS_ENGINE_PIPER:
-            raw = self._piper_model_edit.text()
-            eff = effective_piper_onnx_path(raw, lang)
-            if eff is not None and raw.strip() != str(eff):
-                self._piper_model_edit.setText(str(eff))
-                self._settings.setValue(_SETTINGS_PIPER_MODEL, str(eff))
-            path = str(eff) if eff is not None else ""
-            file_ok = bool(path) and Path(path).expanduser().is_file()
-            if not file_ok:
-                self._on_user_status(self._tr("status.piper_need_model"))
-                new_tts = GoogleTranslateTts(language=lang)
-            elif not is_piper_package_installed():
-                QMessageBox.warning(
-                    self,
-                    self._tr("dlg.tts"),
-                    self._tr("dlg.piper_not_installed"),
-                )
-                _revert_to_google_combo()
+        if eng == _TTS_ENGINE_EDGE:
+            voice = None
+            if hasattr(self, "_combo_edge_voice"):
+                cd = self._combo_edge_voice.currentData()
+                if isinstance(cd, str) and cd.strip():
+                    voice = cd.strip()
+            if not voice:
+                m = self._load_edge_voice_map()
+                voice = (m.get(lang, "") or "").strip() or None
+            if not voice:
+                self._on_user_status(self._tr("status.edge_voices_failed"))
                 new_tts = GoogleTranslateTts(language=lang)
             else:
                 try:
-                    new_tts = PiperTts(path, use_cuda=use_cuda)
+                    new_tts = EdgeTts(voice)
                 except (ImportError, ValueError, OSError) as e:
                     QMessageBox.warning(self, self._tr("dlg.tts"), str(e))
                     _revert_to_google_combo()
@@ -2068,11 +2471,8 @@ class MainWindow(QWidget):
             new_lang = getattr(new_tts, "language", None)
             if old_lang == new_lang:
                 return
-        if oid == nid == _TTS_ENGINE_PIPER:
-            if (
-                getattr(old, "model_path", None) == getattr(new_tts, "model_path", None)
-                and getattr(old, "use_cuda", False) == getattr(new_tts, "use_cuda", False)
-            ):
+        if oid == nid == _TTS_ENGINE_EDGE:
+            if getattr(old, "voice", None) == getattr(new_tts, "voice", None):
                 return
 
         self._coordinator.set_tts(new_tts)
@@ -2110,7 +2510,9 @@ class MainWindow(QWidget):
 
         if hasattr(self, "_cb_game_mode"):
             self._cb_game_mode.blockSignals(True)
-            self._cb_game_mode.setChecked(bool(self._settings.value(_SETTINGS_GAME_MODE, False, bool)))
+            self._cb_game_mode.setChecked(
+                bool(self._settings.value(_SETTINGS_GAME_MODE, False, bool)),
+            )
             self._cb_game_mode.blockSignals(False)
 
         self._combo_locale.blockSignals(True)
@@ -2129,25 +2531,10 @@ class MainWindow(QWidget):
             self._combo_tts_lang.setCurrentIndex(lang_idx)
             self._combo_tts_lang.blockSignals(False)
 
-        if hasattr(self, "_cb_piper_cuda"):
-            self._cb_piper_cuda.blockSignals(True)
-            cuda_on = bool(self._settings.value(_SETTINGS_PIPER_CUDA, False, bool))
-            self._cb_piper_cuda.setChecked(cuda_on)
-            self._cb_piper_cuda.blockSignals(False)
-
         if hasattr(self, "_combo_tts_engine"):
-            from stream_cheremsha.tts.bundled_piper import effective_piper_onnx_path
-
-            raw = str(self._settings.value(_SETTINGS_PIPER_MODEL, "", str))
-            want_lang = self._tts_language_from_settings()
-            eff = effective_piper_onnx_path(raw, want_lang)
-            if eff is not None and raw.strip() != str(eff):
-                self._settings.setValue(_SETTINGS_PIPER_MODEL, str(eff))
-            pm = str(eff) if eff is not None else raw.strip()
-            self._piper_model_edit.blockSignals(True)
-            self._piper_model_edit.setText(pm)
-            self._piper_model_edit.blockSignals(False)
             self._sync_tts_engine_combo_to_backend()
+            if self._combo_tts_engine.currentData() == _TTS_ENGINE_EDGE:
+                asyncio.ensure_future(self._refresh_edge_voices_for_current_language())
 
         if hasattr(self, "_tts_gain_spin"):
             gv = int(self._settings.value(_SETTINGS_TTS_GAIN_DB, 14))
@@ -2155,25 +2542,44 @@ class MainWindow(QWidget):
             self._tts_gain_spin.setValue(max(0, min(36, gv)))
             self._tts_gain_spin.blockSignals(False)
             self._sink.set_tts_gain_db(self._tts_gain_spin.value())
-
-        if hasattr(self, "_cb_rvc"):
-            self._migrate_rvc_from_legacy_if_needed()
-            self._cb_rvc.blockSignals(True)
-            self._cb_rvc.setChecked(bool(self._settings.value(_SETTINGS_RVC_ENABLED, False, bool)))
-            self._cb_rvc.blockSignals(False)
-            self._rvc_model_edit.blockSignals(True)
-            self._rvc_model_edit.setText(str(self._settings.value(_SETTINGS_RVC_MODEL, "", str)))
-            self._rvc_model_edit.blockSignals(False)
-            self._rvc_index_edit.blockSignals(True)
-            self._rvc_index_edit.setText(str(self._settings.value(_SETTINGS_RVC_INDEX, "", str)))
-            self._rvc_index_edit.blockSignals(False)
-            self._cb_rvc_cuda.blockSignals(True)
-            rvc_cuda = bool(self._settings.value(_SETTINGS_RVC_CUDA, False, bool))
-            self._cb_rvc_cuda.setChecked(rvc_cuda)
-            self._cb_rvc_cuda.blockSignals(False)
-            self._update_rvc_field_enabled()
         self._load_chat_font_from_settings()
-        self._rebuild_rvc_chain()
+
+        obs_host = str(
+            self._settings.value(constants.SETTINGS_OBS_WS_HOST, "127.0.0.1", str) or "",
+        ).strip()
+        self._obs_ws_host.setText(obs_host or "127.0.0.1")
+        obs_port_raw = self._settings.value(constants.SETTINGS_OBS_WS_PORT, 4455)
+        try:
+            obs_port_i = int(obs_port_raw)
+        except (TypeError, ValueError):
+            obs_port_i = 4455
+        obs_port_i = max(1, min(65535, obs_port_i))
+        self._obs_ws_port.setText(str(obs_port_i))
+        obs_pw = keyring_store.get_password(constants.KEY_OBS_WEBSOCKET_PASSWORD) or ""
+        self._obs_ws_password.setText(obs_pw)
+
+        tg_enabled = bool(self._settings.value(_SETTINGS_TELEGRAM_ENABLED, False, bool))
+        self._tg_enabled.blockSignals(True)
+        self._tg_enabled.setChecked(tg_enabled)
+        self._tg_enabled.blockSignals(False)
+
+        tg_admin_raw = self._settings.value(_SETTINGS_TELEGRAM_ADMIN_ID, "")
+        self._tg_admin_id.setText(str(tg_admin_raw or "").strip())
+
+        tg_tok = keyring_store.get_password(constants.KEY_TELEGRAM_BOT_TOKEN) or ""
+        self._tg_token.setText(tg_tok)
+
+        tg_songs = bool(self._settings.value(_SETTINGS_TELEGRAM_SONG_REQUESTS_ENABLED, True, bool))
+        self._tg_song_requests_enabled.blockSignals(True)
+        self._tg_song_requests_enabled.setChecked(tg_songs)
+        self._tg_song_requests_enabled.blockSignals(False)
+
+        backend = str(self._settings.value(_SETTINGS_MUSIC_BACKEND, "app", str) or "").strip()
+        use_mpv = backend == "mpv"
+        self._music_use_mpv.blockSignals(True)
+        self._music_use_mpv.setChecked(use_mpv)
+        self._music_use_mpv.blockSignals(False)
+        self._refresh_mpv_check_label()
 
     @Slot(int)
     def _on_tts_gain_changed(self, value: int) -> None:
@@ -2215,7 +2621,6 @@ class MainWindow(QWidget):
         if getattr(self, "_qml_donations", None) is not None and self._qml_donations.isVisible():
             self._qml_api.refresh()
             return
-        # Separate Actions window is a QQuickView (not in the stack).
         if getattr(self, "_qml_actions", None) is not None and self._qml_actions.isVisible():
             self._qml_api.refresh()
 
@@ -2277,7 +2682,6 @@ class MainWindow(QWidget):
     def _refresh_footer(self) -> None:
         cq = self._coordinator.chat_in.qsize()
         tq = self._coordinator.tts_jobs.qsize()
-        rq = rvc_runtime_queue_size(self._rvc_runtime)
         e = html.escape
         tw_on = self._tr("footer.on") if self._twitch.running else self._tr("footer.off")
         yt_on = self._tr("footer.on") if self._youtube.running else self._tr("footer.off")
@@ -2292,7 +2696,6 @@ class MainWindow(QWidget):
         fq = e(self._tr("footer.queues"))
         fchat = e(self._tr("footer.chat"))
         ftts = e(self._tr("footer.tts"))
-        frvc = e(self._tr("footer.rvc"))
         h1 = (
             f'<span style="color:#4ade80">●</span> <span style="color:#cbd5e1;">{pl}:'
             f'</span> <span style="color:#f1f5f9;">{e(self._status_app)}</span>'
@@ -2316,8 +2719,7 @@ class MainWindow(QWidget):
             f'<span style="color:#e2e8f0;">{e(self._status_tiktok)}</span>'
         )
         h5 = (
-            f'<span style="color:#94a3b8;">{fq}: {fchat}={cq} &nbsp; {ftts}={tq}'
-            f" &nbsp; {frvc}={rq}</span>"
+            f'<span style="color:#94a3b8;">{fq}: {fchat}={cq} &nbsp; {ftts}={tq}</span>'
         )
         self._status_label.setText(f"{h1}<br/>{h2}<br/>{h3}<br/>{h4}<br/>{h5}")
         tw_btn = "tw.transport_stop" if self._twitch.running else "tw.transport_start"
@@ -2346,6 +2748,7 @@ class MainWindow(QWidget):
                 await self._start_tiktok()
             else:
                 await self._tiktok.stop()
+                self._tiktok_analytics.resetSession()
         finally:
             self._tiktok_toggle_busy = False
             self._qml_refresh_if_visible()
@@ -2354,17 +2757,25 @@ class MainWindow(QWidget):
     def _on_twitch_transport_clicked(self) -> None:
         self._qml_refresh_if_visible()
         if self._twitch.running:
-            asyncio.ensure_future(self._twitch.stop())
+            asyncio.ensure_future(self._async_stop_twitch_all())
         else:
             asyncio.ensure_future(self._start_twitch())
+
+    async def _async_stop_twitch_all(self) -> None:
+        await self._twitch.stop()
+        await self._stop_twitch_analytics()
 
     @Slot()
     def _on_youtube_transport_clicked(self) -> None:
         self._qml_refresh_if_visible()
         if self._youtube.running:
-            asyncio.ensure_future(self._youtube.stop())
+            asyncio.ensure_future(self._async_stop_youtube_all())
         else:
             asyncio.ensure_future(self._start_youtube())
+
+    async def _async_stop_youtube_all(self) -> None:
+        await self._youtube.stop()
+        self._youtube_analytics.resetSession()
 
     @Slot(str)
     def _append_chat(self, html_fragment: str) -> None:
@@ -2401,6 +2812,182 @@ class MainWindow(QWidget):
             # Ensure exceptions are retrieved to avoid "Task exception was never retrieved".
             t.add_done_callback(lambda _t: _t.exception())
         self._dispatch_actions_for_chat(message)
+
+    def _on_youtube_analytics_event(self, kind: str, user: str, detail: str, count: int) -> None:
+        self._youtube_analytics.enqueue_event(kind, user, detail, count)
+        k = (kind or "").strip().lower()
+        if k not in ("superchat", "supersticker", "member", "membership"):
+            return
+        it = ActivityItem(
+            platform="youtube",
+            kind=("member" if k == "membership" else k),  # type: ignore[arg-type]
+            user=(user or "").strip() or "?",
+            detail=(detail or "").strip(),
+            count=max(1, int(count) if isinstance(count, int) else 1),
+            icon_url="",
+            time_hms=now_hms(),
+        )
+        self._publish_activity_item(it)
+
+    def _publish_activity_item(self, item: ActivityItem) -> None:
+        if self._closing:
+            return
+        try:
+            ps = self._overlay_server.pubsub()
+        except RuntimeError:
+            return
+        t = asyncio.create_task(
+            ps.publish(
+                "overlay:activity:main",
+                activity_append_patch(item),
+            ),
+        )
+        t.add_done_callback(lambda _t: _t.exception())
+
+    def _on_tiktok_follow_any(self, user: str) -> None:
+        if self._closing:
+            return
+        eng = self._get_actions_engine(
+            ChatPlatform.TIKTOK.value,
+            constants.TIKTOK_ACTIONS_ACCOUNT_KEY,
+        )
+        asyncio.ensure_future(eng.on_tiktok_followed((user or "").strip(), datetime.now(UTC)))
+        self._tiktok_analytics.on_follow(user)
+        it = ActivityItem(
+            platform="tiktok",
+            kind="follow",
+            user=(user or "").strip() or "?",
+            detail="",
+            count=1,
+            icon_url="",
+            time_hms=now_hms(),
+        )
+        self._publish_activity_item(it)
+
+    def _on_tiktok_join_any(self, user: str) -> None:
+        if self._closing:
+            return
+        eng = self._get_actions_engine(
+            ChatPlatform.TIKTOK.value,
+            constants.TIKTOK_ACTIONS_ACCOUNT_KEY,
+        )
+        asyncio.ensure_future(eng.on_tiktok_joined((user or "").strip(), datetime.now(UTC)))
+        self._tiktok_analytics.on_join(user)
+        it = ActivityItem(
+            platform="tiktok",
+            kind="join",
+            user=(user or "").strip() or "?",
+            detail="",
+            count=1,
+            icon_url="",
+            time_hms=now_hms(),
+        )
+        self._publish_activity_item(it)
+
+    def _on_tiktok_gift_analytics_any(
+        self,
+        sender: str,
+        gift_id: str,
+        gift_name: str,
+        count: int,
+        diamonds: int,
+        icon_url: str,
+    ) -> None:
+        self._tiktok_analytics.on_gift_analytics(
+            sender,
+            gift_id,
+            gift_name,
+            count,
+            diamonds,
+            icon_url,
+        )
+        it = ActivityItem(
+            platform="tiktok",
+            kind="gift",
+            user=(sender or "").strip() or "?",
+            detail=(gift_name or "").strip() or (gift_id or "").strip(),
+            count=max(1, int(count) if isinstance(count, int) else 1),
+            icon_url=(icon_url or "").strip(),
+            time_hms=now_hms(),
+        )
+        self._publish_activity_item(it)
+
+    def _on_tiktok_like_any(self, user: str, n: int, profile_picture_url: str = "") -> None:
+        # Activity dock aggregates likes; actions engine evaluates tiktok_likes_received rules.
+        if self._closing:
+            return
+        try:
+            n_i = max(1, int(n))
+        except (TypeError, ValueError):
+            n_i = 1
+        eng = self._get_actions_engine(
+            ChatPlatform.TIKTOK.value,
+            constants.TIKTOK_ACTIONS_ACCOUNT_KEY,
+        )
+        asyncio.ensure_future(
+            eng.on_tiktok_likes_received(
+                (user or "").strip(),
+                n_i,
+                datetime.now(UTC),
+                profile_picture_url=(profile_picture_url or "").strip(),
+            ),
+        )
+        self._like_share_agg.ingest(
+            kind="like",
+            user=(user or "").strip(),
+            n=n_i,
+            now_mono=time.monotonic(),
+        )
+        for it in self._like_share_agg.flush_ready(now_mono=time.monotonic()):
+            self._publish_activity_item(it)
+
+    def _on_tiktok_stream_start(self) -> None:
+        """Reset per-stream counters when TikTokLive indicates a new stream has started."""
+        if self._closing:
+            return
+        eng = self._get_actions_engine(
+            ChatPlatform.TIKTOK.value,
+            constants.TIKTOK_ACTIONS_ACCOUNT_KEY,
+        )
+        eng.reset_tiktok_like_totals()
+
+    def _on_tiktok_share_any(self, user: str, n: int) -> None:
+        if self._closing:
+            return
+        eng = self._get_actions_engine(
+            ChatPlatform.TIKTOK.value,
+            constants.TIKTOK_ACTIONS_ACCOUNT_KEY,
+        )
+        asyncio.ensure_future(
+            eng.on_tiktok_shared((user or "").strip(), int(n), datetime.now(UTC)),
+        )
+        self._like_share_agg.ingest(
+            kind="share",
+            user=(user or "").strip(),
+            n=int(n),
+            now_mono=time.monotonic(),
+        )
+        for it in self._like_share_agg.flush_ready(now_mono=time.monotonic()):
+            self._publish_activity_item(it)
+
+    def _on_tiktok_paid_sub_any(self, user: str) -> None:
+        if self._closing:
+            return
+        eng = self._get_actions_engine(
+            ChatPlatform.TIKTOK.value,
+            constants.TIKTOK_ACTIONS_ACCOUNT_KEY,
+        )
+        asyncio.ensure_future(eng.on_tiktok_paid_subscribed((user or "").strip(), datetime.now(UTC)))
+        it = ActivityItem(
+            platform="tiktok",
+            kind="paid_sub",
+            user=(user or "").strip() or "?",
+            detail="",
+            count=1,
+            icon_url="",
+            time_hms=now_hms(),
+        )
+        self._publish_activity_item(it)
 
     def _actions_scope_key(self, platform: str, account_key: str) -> tuple[str, str]:
         return (platform.strip().lower(), account_key.strip())
@@ -2444,9 +3031,87 @@ class MainWindow(QWidget):
                 load_rules(k[0], k[1]),
                 status_callback=self._on_user_status,
                 tts_speak=self.speak_action_tts,
+                pubsub=self._overlay_server.pubsub(),
+                obs_execute=self._obs_execute_for_actions,
             )
             self._actions_engines[k] = eng
         return eng
+
+    async def _obs_execute_for_actions(self, payload: dict[str, Any]) -> None:
+        from stream_cheremsha.obs_ws.control import ObsControlError, run_obs_scene_action
+
+        host = (self._obs_ws_host.text() or "").strip() or "127.0.0.1"
+        port_s = (self._obs_ws_port.text() or "").strip() or "4455"
+        try:
+            port = int(port_s)
+        except ValueError:
+            port = 4455
+        port = max(1, min(65535, port))
+        pw = (self._obs_ws_password.text() or "").strip()
+        if not pw:
+            pw = keyring_store.get_password(constants.KEY_OBS_WEBSOCKET_PASSWORD) or ""
+        try:
+            await asyncio.to_thread(
+                run_obs_scene_action,
+                host,
+                port,
+                pw,
+                mode=str(payload.get("mode") or "program_scene"),
+                scene_name=str(payload.get("scene_name") or ""),
+                source_name=str(payload.get("source_name") or ""),
+                visible=bool(payload.get("visible", True)),
+                canvas_uuid=str(payload.get("canvas_uuid") or ""),
+            )
+        except ObsControlError as e:
+            self._on_user_status(f"OBS: {e}")
+
+    async def _obs_test_connection_async(self) -> None:
+        from stream_cheremsha.obs_ws.control import ObsControlError, obs_test_connection
+
+        btn = self._btn_obs_ws_test
+        old_btn_text = btn.text()
+        res = self._lbl_obs_test_result
+        btn.setEnabled(False)
+        btn.setText(self._tr("settings.obs_test_busy"))
+        res.clear()
+        res.setStyleSheet("")
+
+        host = (self._obs_ws_host.text() or "").strip() or "127.0.0.1"
+        port_s = (self._obs_ws_port.text() or "").strip() or "4455"
+        try:
+            port = int(port_s)
+        except ValueError:
+            port = 4455
+        port = max(1, min(65535, port))
+        pw = (self._obs_ws_password.text() or "").strip()
+        if not pw:
+            pw = keyring_store.get_password(constants.KEY_OBS_WEBSOCKET_PASSWORD) or ""
+
+        title = self._tr("settings.obs_group")
+        try:
+            ver = await asyncio.to_thread(obs_test_connection, host, port, pw)
+        except ObsControlError as e:
+            msg = self._tr("obs.test_fail", detail=str(e))
+            res.setText(msg)
+            res.setStyleSheet("color: #fca5a5;")
+            self._on_user_status(msg)
+            QMessageBox.warning(self, title, msg)
+        except (OSError, ValueError, TypeError) as e:
+            logger.exception("OBS WebSocket test failed")
+            msg = self._tr("obs.test_fail", detail=str(e))
+            res.setText(msg)
+            res.setStyleSheet("color: #fca5a5;")
+            self._on_user_status(msg)
+            QMessageBox.warning(self, title, msg)
+        else:
+            msg = self._tr("obs.test_ok", version=ver)
+            res.setText(msg)
+            res.setStyleSheet("color: #86efac;")
+            self._on_user_status(msg)
+            QMessageBox.information(self, title, msg)
+        finally:
+            btn.setEnabled(True)
+            btn.setText(old_btn_text)
 
     def _actions_reload_scope(self, platform: str, account_key: str) -> None:
         k = self._actions_scope_key(platform, account_key)
@@ -2464,10 +3129,20 @@ class MainWindow(QWidget):
             author=message.author,
             text=message.text,
             received_at=message.received_at,
+            profile_picture_url=(message.author_avatar_url or "").strip(),
         )
         asyncio.ensure_future(eng.on_chat_message(ev))
 
-    def _on_tiktok_gift(self, sender: str, gift_id: str, gift_name: str, count: int) -> None:
+    def _on_tiktok_gift(
+        self,
+        sender: str,
+        gift_id: str,
+        gift_name: str,
+        count: int,
+        icon_url: str = "",
+        sender_avatar_url: str = "",
+        tiktok_coin_each: int = 0,
+    ) -> None:
         logger.info(
             "TikTok gift dispatch: sender=%s gift_id=%s gift_name=%s count=%s enabled=%s user=%s",
             sender,
@@ -2487,63 +3162,25 @@ class MainWindow(QWidget):
             gift_id=gift_id,
             gift_name=gift_name,
             count=count,
+            gift_icon_url=str(icon_url or ""),
             received_at=datetime.now(UTC),
+            sender_avatar_url=str(sender_avatar_url or "").strip(),
+            tiktok_coin_each=int(tiktok_coin_each or 0),
         )
         asyncio.ensure_future(eng.on_gift_received(ev))
 
-    def _ensure_actions_window(self) -> QQuickView:
-        # Re-create on each open so QML reloads cleanly (avoids stale bindings during development,
-        # and simplifies ensuring fresh model state per platform/account_key).
-        if self._qml_actions is not None:
-            try:
-                self._qml_actions.close()
-            except RuntimeError:
-                pass
-            self._qml_actions = None
-        view = QQuickView()
-        # Helper/auxiliary window: only close, no minimize/maximize, tied to the main window.
-        view.setFlags(
-            Qt.WindowType.Tool
-            | Qt.WindowType.CustomizeWindowHint
-            | Qt.WindowType.WindowTitleHint
-            | Qt.WindowType.WindowCloseButtonHint,
-        )
-        try:
-            # Keep it associated with the main window so it doesn't randomly de-focus/minimize.
-            if self.windowHandle() is not None:
-                view.setTransientParent(self.windowHandle())
-        except RuntimeError:
-            pass
-        # Let the window drive the QML root size (adaptive on resize).
-        view.setResizeMode(QQuickView.ResizeMode.SizeRootObjectToView)
-        view.setMinimumSize(QSize(760, 520))
-        # Initial size; user can resize freely.
-        view.resize(QSize(980, 620))
-        ctx = view.engine().rootContext()
-        # Reuse main API for localization.
-        ctx.setContextProperty("api", self._qml_api)
-        ctx.setContextProperty("actApi", self._actions_qml_api)
-        qml_p = _qml_path("ActionsView.qml")
-        view.setSource(QUrl.fromLocalFile(str(qml_p)))
-        self._qml_actions = view
-        return view
-
     def _ensure_widgets_window(self) -> QQuickView:
-        if self._qml_widgets is not None:
+        if self._qml_widgets_win is not None:
             try:
-                self._qml_widgets.close()
+                self._qml_widgets_win.close()
             except RuntimeError:
                 pass
-            self._qml_widgets = None
+            self._qml_widgets_win = None
             self._widgets_qml_api = None
+            self._widgets_window_qml_api = None
 
         view = QQuickView()
-        view.setFlags(
-            Qt.WindowType.Tool
-            | Qt.WindowType.CustomizeWindowHint
-            | Qt.WindowType.WindowTitleHint
-            | Qt.WindowType.WindowCloseButtonHint,
-        )
+        view.setFlags(Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint)
         try:
             if self.windowHandle() is not None:
                 view.setTransientParent(self.windowHandle())
@@ -2557,33 +3194,32 @@ class MainWindow(QWidget):
             base_url = self._overlay_server.base_url()
         except RuntimeError:
             base_url = ""
-        self._widgets_qml_api = WidgetsQmlApi(overlay_base_url=base_url)
+        self._widgets_qml_api = WidgetsQmlApi(
+            overlay_base_url=base_url,
+            pubsub=self._overlay_server.pubsub(),
+        )
+        self._widgets_window_qml_api = WidgetsWindowQmlApi(view=view)
         ctx = view.engine().rootContext()
         ctx.setContextProperty("api", self._widgets_qml_api)
+        ctx.setContextProperty("winApi", self._widgets_window_qml_api)
         ctx.setContextProperty("widgetsWindow", view)
         qml_p = _qml_path("WidgetsView.qml")
         view.setSource(QUrl.fromLocalFile(str(qml_p)))
 
-        self._qml_widgets = view
+        self._qml_widgets_win = view
         return view
 
     def open_widgets(self) -> None:
-        v = self._ensure_widgets_window()
-        v.setTitle("Віджети")
-        v.show()
-        if _should_activate_window():
-            v.raise_()
+        self._set_main_page(self._IX_WIDGETS)
 
-    def _open_tiktok_actions(self) -> None:
-        v = self._ensure_actions_window()
-        root = v.rootObject()
-        if root is not None:
-            root.setProperty("platform", "tiktok")
-            root.setProperty("accountKey", constants.TIKTOK_ACTIONS_ACCOUNT_KEY)
-        v.setTitle(self._tr("actions.window_title"))
-        v.show()
-        if _should_activate_window():
-            v.raise_()
+    def open_actions(self) -> None:
+        if getattr(self, "_qml_actions", None) is not None:
+            root = self._qml_actions.rootObject()
+            if root is not None:
+                root.setProperty("platform", "tiktok")
+                root.setProperty("accountKey", constants.TIKTOK_ACTIONS_ACCOUNT_KEY)
+        self._set_main_page(self._IX_ACTIONS)
+        self._qml_api.refresh()
 
     @Slot()
     def _save_twitch_keys(self) -> None:
@@ -2663,6 +3299,160 @@ class MainWindow(QWidget):
             return
 
         await self._twitch.start(token, channel)
+        await self._start_twitch_analytics(
+            token=token,
+            client_id=client_id,
+            channel_login=channel,
+        )
+
+    async def _start_twitch_analytics(
+        self,
+        *,
+        token: str,
+        client_id: str,
+        channel_login: str,
+    ) -> None:
+        await self._stop_twitch_analytics()
+        tok = (token or "").strip()
+        cid = (client_id or "").strip()
+        login = (channel_login or "").strip().lstrip("#").lower()
+        if not (tok and cid and login):
+            return
+
+        helix = TwitchHelixClient(client_id=cid, access_token=tok)
+        self._twitch_helix = helix
+        try:
+            uid = await helix.get_user_id(login)
+        except (httpx.HTTPError, ValueError, RuntimeError) as exc:
+            self._on_user_status(f"Twitch Helix: {exc}")
+            await helix.aclose()
+            self._twitch_helix = None
+            return
+        if not uid:
+            self._on_user_status("Twitch Helix: cannot resolve broadcaster id")
+            await helix.aclose()
+            self._twitch_helix = None
+            return
+
+        self._twitch_viewers_task = asyncio.create_task(
+            self._twitch_poll_viewers(helix=helix, broadcaster_id=uid),
+            name="twitch-viewers",
+        )
+
+        def _on_follow(user: str) -> None:
+            self._twitch_analytics.on_follow(user)
+            it = ActivityItem(
+                platform="twitch",
+                kind="follow",
+                user=(user or "").strip() or "?",
+                detail="",
+                count=1,
+                icon_url="",
+                time_hms=now_hms(),
+            )
+            self._publish_activity_item(it)
+            ak_follow = (self._twitch_channel.text() or "").strip()
+            if ak_follow:
+                eng_f = self._get_actions_engine(ChatPlatform.TWITCH.value, ak_follow)
+                asyncio.ensure_future(
+                    eng_f.on_twitch_follow((user or "").strip(), datetime.now(UTC)),
+                )
+
+        def _on_sub(user: str, sub_type: str, months: int, message: str = "") -> None:
+            self._twitch_analytics.on_sub(user, sub_type, months, message)
+            st = (sub_type or "").strip()
+            if st not in ("sub", "resub", "gift"):
+                return
+            detail = ""
+            if st == "resub":
+                m = max(0, int(months))
+                detail = f"{m}m" if m else ""
+            it = ActivityItem(
+                platform="twitch",
+                kind=st,  # type: ignore[arg-type]
+                user=(user or "").strip() or "?",
+                detail=detail,
+                count=1,
+                icon_url="",
+                time_hms=now_hms(),
+            )
+            self._publish_activity_item(it)
+            ak_sub = (self._twitch_channel.text() or "").strip()
+            if not ak_sub:
+                return
+            eng_s = self._get_actions_engine(ChatPlatform.TWITCH.value, ak_sub)
+            u_sub = (user or "").strip()
+            mom = max(0, int(months))
+            msg_sub = (message or "").strip()
+            now_sub = datetime.now(UTC)
+            if st == "sub":
+                asyncio.ensure_future(eng_s.on_twitch_subscribe(u_sub, mom, now_sub))
+            elif st == "resub":
+                asyncio.ensure_future(eng_s.on_twitch_resub(u_sub, mom, msg_sub, now_sub))
+            elif st == "gift":
+                asyncio.ensure_future(eng_s.on_twitch_sub_gift(u_sub, mom, now_sub))
+
+        def _on_cheer(user: str, bits: int) -> None:
+            self._twitch_analytics.on_cheer(user, bits)
+            ak_ch = (self._twitch_channel.text() or "").strip()
+            if not ak_ch:
+                return
+            eng_ch = self._get_actions_engine(ChatPlatform.TWITCH.value, ak_ch)
+            asyncio.ensure_future(
+                eng_ch.on_twitch_cheer((user or "").strip(), int(bits), datetime.now(UTC)),
+            )
+
+        def _on_raid(frm: str, viewers: int) -> None:
+            self._twitch_analytics.on_raid(frm, viewers)
+            ak_rd = (self._twitch_channel.text() or "").strip()
+            if not ak_rd:
+                return
+            eng_rd = self._get_actions_engine(ChatPlatform.TWITCH.value, ak_rd)
+            asyncio.ensure_future(
+                eng_rd.on_twitch_raid((frm or "").strip(), int(viewers), datetime.now(UTC)),
+            )
+
+        cbs = TwitchEventSubCallbacks(
+            on_follow=_on_follow,
+            on_sub=_on_sub,
+            on_cheer=_on_cheer,
+            on_raid=_on_raid,
+            on_status=self._on_user_status,
+        )
+        es = TwitchEventSubClient(helix=helix, broadcaster_id=uid, callbacks=cbs)
+        self._twitch_eventsub = es
+        await es.start()
+
+    async def _stop_twitch_analytics(self) -> None:
+        t, self._twitch_viewers_task = self._twitch_viewers_task, None
+        if t is not None:
+            t.cancel()
+            await asyncio.gather(t, return_exceptions=True)
+
+        es, self._twitch_eventsub = self._twitch_eventsub, None
+        if es is not None:
+            await es.stop()
+
+        helix, self._twitch_helix = self._twitch_helix, None
+        if helix is not None:
+            await helix.aclose()
+
+        self._twitch_analytics.resetSession()
+
+    async def _twitch_poll_viewers(self, *, helix: TwitchHelixClient, broadcaster_id: str) -> None:
+        backoff = 5.0
+        while True:
+            try:
+                v = await helix.get_stream_viewers(broadcaster_id)
+                if v is not None:
+                    self._twitch_analytics.enqueue_viewers(v)
+                backoff = 10.0
+            except asyncio.CancelledError:
+                raise
+            except (httpx.HTTPError, RuntimeError, ValueError) as exc:
+                logger.debug("Twitch viewers poll error: %s", exc)
+                backoff = min(backoff * 1.6, 60.0)
+            await asyncio.sleep(backoff)
 
     @Slot()
     def _forget_youtube_client_config(self) -> None:
@@ -2726,6 +3516,7 @@ class MainWindow(QWidget):
 
     async def _start_youtube(self) -> None:
         url = self._yt_video.text().strip()
+        self._youtube_analytics.resetSession()
         await self._youtube.start(url if url else None)
 
     async def _start_tiktok(self) -> None:
@@ -2770,10 +3561,6 @@ class MainWindow(QWidget):
         self._apply_audio_device_selection()
         try:
             audio = await self._tts.synthesize(text)
-            try:
-                audio = await apply_rvc_if_active(self._rvc_runtime, audio, priority=0)
-            except (OSError, ValueError, RuntimeError) as e:
-                logger.warning("RVC donation TTS: %s", e)
             await self._sink.play_mp3(audio)
         except (OSError, ValueError) as e:
             logger.warning("Donation TTS: %s", e)
@@ -2785,10 +3572,6 @@ class MainWindow(QWidget):
             return
         self._apply_audio_device_selection()
         audio = await self._tts.synthesize(line)
-        try:
-            audio = await apply_rvc_if_active(self._rvc_runtime, audio, priority=0)
-        except (OSError, ValueError, RuntimeError) as e:
-            logger.warning("RVC action TTS: %s", e)
         await self._sink.play_mp3(audio)
 
     async def _test_tts(self) -> None:
@@ -2798,40 +3581,181 @@ class MainWindow(QWidget):
         self._apply_audio_device_selection()
         try:
             audio = await self._tts.synthesize(text)
-            try:
-                audio = await apply_rvc_if_active(self._rvc_runtime, audio, priority=0)
-            except (OSError, ValueError, RuntimeError) as e:
-                logger.warning("RVC test: %s", e)
             await self._sink.play_mp3(audio)
         except (OSError, ValueError) as e:
             QMessageBox.warning(self, self._tr("dlg.tts"), str(e))
 
-    async def _flush_tts_and_rvc_queues(self) -> None:
-        """Force-stop pending TTS/RVC work and current playback."""
+    async def _flush_tts_queues(self) -> None:
+        """Force-stop pending TTS work and current playback."""
         # Stop playback ASAP (even if synth is still running).
         try:
             self._sink.shutdown()
         except RuntimeError:
             # Qt objects may already be shutting down; ignore.
             pass
-        # Cancel in-flight TTS/RVC processing + drop queued work.
+        # Cancel in-flight TTS processing + drop queued work.
         await self._coordinator.flush_tts()
         self._on_user_status(self._tr("audio.flush_queues"))
 
     async def run_startup(self) -> None:
         try:
             self._on_user_status(self._tr("startup.workers"))
+            self._asyncio_loop = asyncio.get_running_loop()
+            self._music_queue.set_loop(self._asyncio_loop)
             await self._overlay_server.start()
             logger.info("Overlay server: %s", self._overlay_server.base_url())
+            self._music_player = MusicPlayer(
+                queue=self._music_queue,
+                sink=self._sink,
+                on_status=self._on_user_status,
+                backend=str(self._settings.value(_SETTINGS_MUSIC_BACKEND, "app", str) or "").strip(),
+            )
+            self._music_player.set_volume_percent(
+                int(self._settings.value("music/volume_percent", 100)),
+            )
+            await self._music_player.start()
+            if self._online_publish_task is None:
+                self._online_publish_task = asyncio.create_task(
+                    self._publish_online_loop(),
+                    name="online-publish",
+                )
+            if self._widgets_qml_api is not None:
+                self._widgets_qml_api.set_overlay_base_url(self._overlay_server.base_url())
+            if self._docks_qml_api is not None:
+                self._docks_qml_api.set_base_url(self._overlay_server.base_url())
             await self._swap_tts_backend()
             await self._coordinator.start_workers()
             vol = int(self._settings.value("audio/volume", 100))
             self._sink.set_volume(vol / 100.0)
             self._apply_audio_device_selection()
             self._on_user_status(self._tr("startup.ready"))
+            await self._apply_music_backend_from_settings()
+            await self._apply_telegram_from_settings()
             await self._maybe_auto_start_platforms()
         finally:
             self.startup_finished.emit()
+
+    async def _apply_telegram_from_settings(self) -> None:
+        if self._closing:
+            return
+        enabled = bool(self._settings.value(_SETTINGS_TELEGRAM_ENABLED, False, bool))
+        songs_enabled = bool(
+            self._settings.value(_SETTINGS_TELEGRAM_SONG_REQUESTS_ENABLED, True, bool),
+        )
+        tok = (keyring_store.get_password(constants.KEY_TELEGRAM_BOT_TOKEN) or "").strip()
+        admin_raw = str(self._settings.value(_SETTINGS_TELEGRAM_ADMIN_ID, "", str) or "").strip()
+        try:
+            admin_id = int(admin_raw) if admin_raw else 0
+        except ValueError:
+            admin_id = 0
+
+        if not enabled:
+            if self._telegram is not None:
+                self._telegram.stop()
+                self._telegram = None
+            return
+
+        if not tok or admin_id <= 0:
+            # Settings incomplete; keep disabled without crashing startup.
+            if self._telegram is not None:
+                self._telegram.stop()
+                self._telegram = None
+            return
+
+        # Restart if config changed.
+        if self._telegram is not None:
+            self._telegram.stop()
+            self._telegram = None
+
+        loop = self._asyncio_loop
+        if loop is None:
+            return
+
+        def call_on_main_loop(fn) -> None:
+            asyncio.run_coroutine_threadsafe(fn(), loop)
+
+        async def enqueue_song(video_id: str, requested_by: str) -> None:
+            tr = await self._music_queue.enqueue(video_id=video_id, requested_by=requested_by)
+            asyncio.create_task(self._fetch_music_title_for_track(tr.id, tr.video_id))
+
+        async def skip_song() -> None:
+            mp = self._music_player
+            if mp is not None:
+                await mp.skip_now()
+                return
+            await self._music_queue.skip()
+
+        async def remove_song_by_id(tid: str) -> bool:
+            tr = await self._music_queue.remove_by_id(tid)
+            return tr is not None
+
+        async def list_queue(limit: int) -> tuple[dict[str, str] | None, list[dict[str, str]]]:
+            cur, q = await self._music_queue.list_queue(limit=limit)
+            cur_map = None
+            if cur is not None:
+                cur_map = {"id": cur.id, "video_id": cur.video_id, "requested_by": cur.requested_by}
+            q_maps = [
+                {"id": t.id, "video_id": t.video_id, "requested_by": t.requested_by}
+                for t in q
+            ]
+            return (cur_map, q_maps)
+
+        self._telegram = TelegramBotService(
+            token=tok,
+            admin_id=admin_id,
+            song_requests_enabled=songs_enabled,
+            call_on_main_loop=call_on_main_loop,
+            enqueue_song=enqueue_song,
+            skip_song=skip_song,
+            remove_song_by_id=remove_song_by_id,
+            list_queue=list_queue,
+        )
+        self._telegram.start()
+
+    async def _apply_music_backend_from_settings(self) -> None:
+        if self._closing:
+            return
+        mp = self._music_player
+        if mp is None:
+            return
+        backend = str(self._settings.value(_SETTINGS_MUSIC_BACKEND, "app", str) or "").strip()
+        mp.set_backend("mpv" if backend == "mpv" else "app")
+        mp.set_volume_percent(int(self._settings.value("music/volume_percent", 100)))
+
+    async def _publish_online_loop(self) -> None:
+        while True:
+            try:
+                if not self._closing:
+                    ps = self._overlay_server.pubsub()
+                    state = {
+                        "twitch": {
+                            "current": int(self._twitch_analytics.viewersCurrent),
+                            "peak": int(self._twitch_analytics.viewersPeak),
+                        },
+                        "tiktok": {
+                            "current": int(self._tiktok_analytics.onlineViewersCurrent),
+                            "total": int(self._tiktok_analytics.onlineViewersTotal),
+                            "gifts": int(self._tiktok_analytics.giftUnitsTotal),
+                            "diamonds": int(self._tiktok_analytics.diamondsTotal),
+                        },
+                        "youtube": {
+                            "messages": int(self._youtube_analytics.messagesSession),
+                            "unique": int(self._youtube_analytics.uniqueChattersSession),
+                            "superchats": int(self._youtube_analytics.superChatsSession),
+                            "memberships": int(self._youtube_analytics.membershipsSession),
+                        },
+                        "updated_at": online_now_hms(),
+                    }
+                    t = asyncio.create_task(
+                        ps.publish("overlay:online:main", online_state_patch(state)),  # type: ignore[arg-type]
+                    )
+                    t.add_done_callback(lambda _t: _t.exception())
+            except asyncio.CancelledError:
+                raise
+            except RuntimeError:
+                # Overlay server may not be ready or may be shutting down.
+                pass
+            await asyncio.sleep(5.0)
 
     async def _maybe_auto_start_platforms(self) -> None:
         if (
@@ -2852,6 +3776,10 @@ class MainWindow(QWidget):
             event.accept()
             return
         save_window_geometry(KEY_MAIN_WINDOW, self)
+        try:
+            self._settings.sync()
+        except (RuntimeError, OSError):
+            pass
         self._closing = True
         # We run an async shutdown sequence; hide immediately so the user doesn't
         # need to click close twice while teardown runs in the background.
@@ -2864,18 +3792,6 @@ class MainWindow(QWidget):
         event.ignore()
         asyncio.ensure_future(self._async_shutdown())
 
-    def _release_rvc_gpu(self) -> None:
-        """Unload RVC / torch weights so CUDA threads do not keep the process alive."""
-        rvc_runtime_cancel_pending(self._rvc_runtime)
-        chain = self._rvc_runtime.chain
-        if chain is None:
-            return
-        try:
-            chain.close()
-        except (OSError, RuntimeError, TypeError, ValueError) as e:
-            logger.debug("RVC release: %s", e)
-        self._rvc_runtime.chain = None
-
     async def _async_shutdown(self) -> None:
         """Tear down chat, workers, TTS, audio, GPU; always quit Qt even on errors."""
         app = QApplication.instance()
@@ -2883,6 +3799,11 @@ class MainWindow(QWidget):
         watchdog.daemon = True
         watchdog.start()
         try:
+            t, self._online_publish_task = self._online_publish_task, None
+            if t is not None:
+                t.cancel()
+                await asyncio.gather(t, return_exceptions=True)
+
             try:
                 self._queue_timer.stop()
             except RuntimeError:
@@ -2893,6 +3814,21 @@ class MainWindow(QWidget):
             except RuntimeError:
                 logger.debug("Shutdown: log handler already uninstalled")
 
+            if self._telegram is not None:
+                try:
+                    self._telegram.stop()
+                except (OSError, RuntimeError, ValueError, TypeError) as e:
+                    logger.exception("Shutdown step failed (telegram.stop): %s", e)
+                self._telegram = None
+
+            mp = self._music_player
+            self._music_player = None
+            if mp is not None:
+                try:
+                    await mp.stop()
+                except (OSError, RuntimeError, ValueError, TypeError) as e:
+                    logger.exception("Shutdown step failed (music_player.stop): %s", e)
+
             for name, coro in (
                 ("overlay_server.stop", self._overlay_server.stop()),
                 ("twitch.stop", self._twitch.stop()),
@@ -2900,7 +3836,6 @@ class MainWindow(QWidget):
                 ("tiktok.stop", self._tiktok.stop()),
                 ("coordinator.stop_workers", self._coordinator.stop_workers()),
                 ("tts.aclose", self._tts.aclose()),
-                ("rvc.stop_dispatcher", rvc_runtime_stop_dispatcher(self._rvc_runtime)),
             ):
                 try:
                     await coro
@@ -2908,11 +3843,6 @@ class MainWindow(QWidget):
                     logger.exception("Shutdown step failed (%s): %s", name, e)
                 except asyncio.CancelledError:
                     raise
-
-            try:
-                self._release_rvc_gpu()
-            except (OSError, RuntimeError, ValueError, TypeError) as e:
-                logger.exception("Shutdown step failed (rvc.release): %s", e)
 
             try:
                 self._sink.shutdown()

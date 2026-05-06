@@ -18,8 +18,17 @@ _TWITCH_DEVICE: Final[str] = "https://id.twitch.tv/oauth2/device"
 _TWITCH_TOKEN: Final[str] = "https://id.twitch.tv/oauth2/token"
 _TWITCH_VALIDATE: Final[str] = "https://id.twitch.tv/oauth2/validate"
 
-# IRC read-only for the account that authorizes the app
-_DEFAULT_SCOPES: Final[str] = "chat:read"
+# IRC + Helix/EventSub scopes for the account that authorizes the app.
+# Note: changing scopes requires the user to re-run OAuth once.
+_DEFAULT_SCOPES: Final[str] = " ".join(
+    [
+        "chat:read",
+        # EventSub: channel.follow requires moderator privileges; broadcaster can act as moderator.
+        "moderator:read:followers",
+        "channel:read:subscriptions",
+        "bits:read",
+    ],
+)
 
 
 def _lower_message(payload: dict[str, Any] | None, text: str) -> str:

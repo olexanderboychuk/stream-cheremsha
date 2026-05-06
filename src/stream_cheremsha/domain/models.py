@@ -17,3 +17,4 @@ class ChatMessage:
     text: str
     platform: ChatPlatform
     received_at: datetime
+    author_avatar_url: str = ""

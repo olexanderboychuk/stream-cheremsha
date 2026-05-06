@@ -72,6 +72,38 @@ def test_registry_has_chat_overlay() -> None:
     assert "config" in st
 
 
+def test_registry_has_activity_overlay() -> None:
+    reg = OverlayRegistry()
+    t = reg.get("activity")
+    assert t.type == "activity"
+    html = t.render_html({"instance": "main"})
+    assert "/ws" in html
+    st = t.initial_state({"instance": "main"})
+    assert "items" in st
+
+
+def test_registry_has_online_overlay() -> None:
+    reg = OverlayRegistry()
+    t = reg.get("online")
+    assert t.type == "online"
+    html = t.render_html({"instance": "main"})
+    assert "/ws" in html
+    st = t.initial_state({"instance": "main"})
+    assert "online" in st
+    assert "config" in st
+    assert st["config"].get("layout_mode") in ("combined", "per_platform")
+
+
+def test_registry_has_actions_overlay() -> None:
+    reg = OverlayRegistry()
+    t = reg.get("actions")
+    assert t.type == "actions"
+    html = t.render_html({"instance": "main"})
+    assert "/ws" in html
+    st = t.initial_state({"instance": "main"})
+    assert "config" in st
+
+
 def test_pubsub_publishes_to_subscribers() -> None:
     async def _run() -> dict[str, int]:
         ps = OverlayPubSub()

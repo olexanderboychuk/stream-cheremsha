@@ -3,7 +3,22 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from stream_cheremsha.actions.events import ChatMessageEvent, GiftReceivedEvent
+from stream_cheremsha.actions.events import (
+    ChatMessageEvent,
+    GiftReceivedEvent,
+    TikTokLikesReceivedEvent,
+    TikTokFirstActivityEvent,
+    TikTokFollowedEvent,
+    TikTokJoinedEvent,
+    TikTokPaidSubscribedEvent,
+    TikTokSharedEvent,
+    TwitchCheerEvent,
+    TwitchFollowEvent,
+    TwitchRaidEvent,
+    TwitchResubscribeEvent,
+    TwitchSubscribeEvent,
+    TwitchSubscriptionGiftEvent,
+)
 
 _PLACEHOLDER_RE = re.compile(r"\{([^{}]+)\}")
 _SIMPLE_TOKEN_RE = re.compile(r"^[a-zA-Z0-9_]+$")
@@ -182,6 +197,103 @@ def build_placeholder_context(ev: object) -> dict[str, str]:
         return {
             "author": ev.author or "",
             "text": ev.text or "",
+            "platform": _platform_str(ev.platform),
+        }
+    if isinstance(ev, TikTokLikesReceivedEvent):
+        batch = str(int(ev.likes_in_batch))
+        tot = str(int(ev.likes_total_for_scope))
+        u = ev.user or ""
+        return {
+            "sender": u,
+            "user": u,
+            "likebatch": batch,
+            "likes_batch": batch,
+            "likecount": batch,
+            "liketotal": tot,
+            "likes_total": tot,
+            "count": batch,
+            "platform": _platform_str(ev.platform),
+        }
+    if isinstance(
+        ev,
+        (
+            TikTokJoinedEvent,
+            TikTokFollowedEvent,
+            TikTokPaidSubscribedEvent,
+        ),
+    ):
+        u = ev.user or ""
+        return {
+            "sender": u,
+            "user": u,
+            "platform": _platform_str(ev.platform),
+        }
+    if isinstance(ev, TikTokSharedEvent):
+        u = ev.user or ""
+        c = str(int(ev.count))
+        return {
+            "sender": u,
+            "user": u,
+            "count": c,
+            "platform": _platform_str(ev.platform),
+        }
+    if isinstance(ev, TikTokFirstActivityEvent):
+        u = ev.user or ""
+        c = str(int(ev.count))
+        return {
+            "sender": u,
+            "user": u,
+            "count": c,
+            "kind": ev.kind or "",
+            "platform": _platform_str(ev.platform),
+        }
+    if isinstance(ev, TwitchFollowEvent):
+        u = ev.user or ""
+        return {
+            "sender": u,
+            "user": u,
+            "platform": _platform_str(ev.platform),
+        }
+    if isinstance(ev, (TwitchSubscribeEvent, TwitchSubscriptionGiftEvent)):
+        u = ev.user or ""
+        mo = str(int(ev.months))
+        return {
+            "sender": u,
+            "user": u,
+            "months": mo,
+            "platform": _platform_str(ev.platform),
+        }
+    if isinstance(ev, TwitchResubscribeEvent):
+        u = ev.user or ""
+        mo = str(int(ev.months))
+        msg = ev.message or ""
+        return {
+            "sender": u,
+            "user": u,
+            "months": mo,
+            "message": msg,
+            "text": msg,
+            "platform": _platform_str(ev.platform),
+        }
+    if isinstance(ev, TwitchCheerEvent):
+        u = ev.user or ""
+        b = str(int(ev.bits))
+        return {
+            "sender": u,
+            "user": u,
+            "bits": b,
+            "count": b,
+            "platform": _platform_str(ev.platform),
+        }
+    if isinstance(ev, TwitchRaidEvent):
+        r = ev.raider or ""
+        v = str(int(ev.viewers))
+        return {
+            "sender": r,
+            "user": r,
+            "raider": r,
+            "viewers": v,
+            "count": v,
             "platform": _platform_str(ev.platform),
         }
     return {}

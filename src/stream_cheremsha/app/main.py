@@ -24,6 +24,7 @@ def main() -> None:
     QQuickStyle.setStyle("Basic")
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(True)
+    app.setOrganizationName("stream-cheremsha")
     app.setApplicationName("Stream Cheremsha")
     app.setApplicationDisplayName("Stream Cheremsha")
     icon_path = Path(__file__).resolve().parent.parent / "assets" / "icon.png"

@@ -3,7 +3,6 @@
 import re
 from typing import Literal
 
-
 MatchMode = Literal["contains", "equals", "regex"]
 
 

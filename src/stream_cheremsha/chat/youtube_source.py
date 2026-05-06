@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import Any
@@ -12,9 +13,16 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+import httpx
 
 from stream_cheremsha import l10n
 from stream_cheremsha.chat.video_id import extract_youtube_video_id
+from stream_cheremsha.chat.youtube_chat_downloader import (
+    ChatDownloaderMessage,
+    iter_youtube_live_chat,
+    normalize_chat_downloader_item,
+)
+from stream_cheremsha.chat.youtube_rss import extract_video_ids_from_rss_xml
 from stream_cheremsha.config import keyring_store
 from stream_cheremsha.config.constants import KEY_YOUTUBE_OAUTH, YOUTUBE_READONLY_SCOPE
 from stream_cheremsha.domain.models import ChatMessage, ChatPlatform
@@ -41,6 +49,38 @@ def _http_error_is_quota_exceeded(err: HttpError) -> bool:
     else:
         text = str(raw)
     return "quotaExceeded" in text
+
+
+def _http_error_is_fallback_worthy(err: HttpError) -> bool:
+    """Return True when the Data API is effectively unusable for polling.
+
+    This is intentionally broader than quotaExceeded: in real user setups the API can be
+    disabled/misconfigured (403 accessNotConfigured), temporarily rate-limited (429), or
+    intermittently unavailable (5xx). For manual video URLs we can still read chat via
+    the non-API fallback reader.
+    """
+    resp = getattr(err, "resp", None)
+    status = getattr(resp, "status", None)
+    if status in (429, 500, 502, 503, 504):
+        return True
+    if status != 403:
+        return False
+    raw = getattr(err, "content", b"") or b""
+    if isinstance(raw, bytes):
+        text = raw.decode("utf-8", errors="replace")
+    else:
+        text = str(raw)
+    # Common 403 reasons that mean "API not usable right now".
+    return any(
+        reason in text
+        for reason in (
+            "quotaExceeded",
+            "dailyLimitExceeded",
+            "rateLimitExceeded",
+            "accessNotConfigured",
+            "forbidden",
+        )
+    )
 
 
 def _dedupe_strs(items: list[str]) -> list[str]:
@@ -71,6 +111,23 @@ def _oauth_channel_id(service: object) -> str | None:
     return cid if isinstance(cid, str) and cid else None
 
 
+def _channel_live_fallback_url(service: object) -> str | None:
+    cid = _oauth_channel_id(service)
+    return f"https://www.youtube.com/channel/{cid}/live" if cid else None
+
+
+_YOUTUBE_CHANNEL_VIDEO_RSS_TMPL = (
+    "https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+)
+
+
+def fetch_channel_video_ids_from_rss(channel_id: str) -> list[str]:
+    url = _YOUTUBE_CHANNEL_VIDEO_RSS_TMPL.format(channel_id=channel_id)
+    resp = httpx.get(url, timeout=httpx.Timeout(15.0))
+    resp.raise_for_status()
+    return _dedupe_strs(extract_video_ids_from_rss_xml(resp.text))
+
+
 def discover_my_live_chat_ids(service: object) -> list[str]:
     """Resolve live chat IDs for the OAuth user's current streams.
 
@@ -78,9 +135,8 @@ def discover_my_live_chat_ids(service: object) -> list[str]:
     incompatible with ``mine``) and ``part=snippet,status``, keeping rows whose
     ``status.lifeCycleStatus`` is ``live`` or ``testing``.
 
-    If none, fall back to ``channels.list(mine=true)`` then ``search.list`` with
-    ``channelId`` + ``eventType=live`` (``forMine`` + ``eventType`` returns 400) and
-    ``videos.list`` ``activeLiveChatId``.
+    If none, fall back to ``channels.list(mine=true)``, the channel's public video RSS
+    feed, then ``videos.list`` ``liveStreamingDetails.activeLiveChatId``.
     """
     chat_ids: list[str] = []
     page_token: str | None = None
@@ -113,36 +169,13 @@ def discover_my_live_chat_ids(service: object) -> list[str]:
     if not channel_id:
         return []
 
-    video_ids: list[str] = []
-    page_token = None
-    while True:
-        resp = (
-            service.search()
-            .list(
-                part="id",
-                channelId=channel_id,
-                type="video",
-                eventType="live",
-                maxResults=50,
-                pageToken=page_token,
-            )
-            .execute()
-        )
-        for item in resp.get("items", []):
-            vid = (item.get("id") or {}).get("videoId")
-            if isinstance(vid, str) and vid:
-                video_ids.append(vid)
-        page_token = resp.get("nextPageToken")
-        if not page_token:
-            break
-
-    video_ids = _dedupe_strs(video_ids)
+    video_ids = fetch_channel_video_ids_from_rss(channel_id)
     if not video_ids:
         return []
 
     out: list[str] = []
     for i in range(0, len(video_ids), 50):
-        chunk = video_ids[i : i + 50]
+        chunk = video_ids[i:i + 50]
         vresp = (
             service.videos()
             .list(part="liveStreamingDetails", id=",".join(chunk))
@@ -163,6 +196,7 @@ def is_google_account_linked() -> bool:
 
 def clear_youtube_user_session() -> None:
     keyring_store.delete_password(KEY_YOUTUBE_OAUTH)
+
 
 _SCOPES = [YOUTUBE_READONLY_SCOPE]
 
@@ -204,10 +238,12 @@ class YouTubeChatSource:
         self,
         coordinator: StreamCoordinator,
         on_status: Callable[[str], None],
+        on_analytics_event: Callable[[str, str, str, int], None] | None = None,
         get_locale: Callable[[], str] | None = None,
     ) -> None:
         self._coordinator = coordinator
         self._on_status = on_status
+        self._on_analytics_event = on_analytics_event
         self._get_locale = get_locale or (lambda: l10n.DEFAULT_LOCALE)
         self._task: asyncio.Task[None] | None = None
         self._running = False
@@ -294,15 +330,43 @@ class YouTubeChatSource:
                     lambda: build("youtube", "v3", credentials=creds, cache_discovery=False),
                 )
             except (HttpError, OSError) as e:
-                if isinstance(e, HttpError) and _http_error_is_quota_exceeded(e):
-                    self._on_status(
-                        l10n.tr(
-                            self._get_locale(),
-                            "yt.quota_backoff",
-                            min=YOUTUBE_QUOTA_BACKOFF_SEC / 60.0,
-                        ),
-                    )
-                    await asyncio.sleep(YOUTUBE_QUOTA_BACKOFF_SEC)
+                if video_id and isinstance(e, HttpError) and _http_error_is_fallback_worthy(e):
+                    if video_id:
+                        self._on_status(
+                            l10n.tr(self._get_locale(), "yt.fallback_switching"),
+                        )
+                        await self._run_fallback_for_video(video_id)
+                    else:
+                        # Unreachable: guarded by video_id above. Kept symmetrical with
+                        # the auto-discovery path below.
+                        self._on_status(
+                            l10n.tr(
+                                self._get_locale(),
+                                "yt.quota_backoff",
+                                min=YOUTUBE_QUOTA_BACKOFF_SEC / 60.0,
+                            ),
+                        )
+                        await asyncio.sleep(YOUTUBE_QUOTA_BACKOFF_SEC)
+                elif video_id and isinstance(e, OSError):
+                    # Data API init may fail due to networking/system errors; manual URL can
+                    # still proceed via fallback.
+                    self._on_status(l10n.tr(self._get_locale(), "yt.fallback_switching"))
+                    await self._run_fallback_for_video(video_id)
+                elif isinstance(e, HttpError) and _http_error_is_quota_exceeded(e):
+                    if video_id:
+                        self._on_status(
+                            l10n.tr(self._get_locale(), "yt.fallback_switching"),
+                        )
+                        await self._run_fallback_for_video(video_id)
+                    else:
+                        self._on_status(
+                            l10n.tr(
+                                self._get_locale(),
+                                "yt.quota_backoff",
+                                min=YOUTUBE_QUOTA_BACKOFF_SEC / 60.0,
+                            ),
+                        )
+                        await asyncio.sleep(YOUTUBE_QUOTA_BACKOFF_SEC)
                 else:
                     self._on_status(
                         l10n.tr(self._get_locale(), "yt.api_init_retry", err=str(e), sec=wait),
@@ -320,18 +384,43 @@ class YouTubeChatSource:
                 else:
                     live_chat_ids = await asyncio.to_thread(discover_my_live_chat_ids, service)
             except HttpError as e:
-                if _http_error_is_quota_exceeded(e):
-                    self._on_status(
-                        l10n.tr(
-                            self._get_locale(),
-                            "yt.quota_backoff",
-                            min=YOUTUBE_QUOTA_BACKOFF_SEC / 60.0,
-                        ),
-                    )
-                    await asyncio.sleep(YOUTUBE_QUOTA_BACKOFF_SEC)
+                if video_id and _http_error_is_fallback_worthy(e):
+                    if video_id:
+                        self._on_status(
+                            l10n.tr(self._get_locale(), "yt.fallback_switching"),
+                        )
+                        await self._run_fallback_for_video(video_id)
+                    else:
+                        self._on_status(
+                            l10n.tr(
+                                self._get_locale(),
+                                "yt.quota_backoff",
+                                min=YOUTUBE_QUOTA_BACKOFF_SEC / 60.0,
+                            ),
+                        )
+                        await asyncio.sleep(YOUTUBE_QUOTA_BACKOFF_SEC)
+                elif _http_error_is_quota_exceeded(e):
+                    if video_id:
+                        self._on_status(
+                            l10n.tr(self._get_locale(), "yt.fallback_switching"),
+                        )
+                        await self._run_fallback_for_video(video_id)
+                    else:
+                        self._on_status(
+                            l10n.tr(
+                                self._get_locale(),
+                                "yt.quota_backoff",
+                                min=YOUTUBE_QUOTA_BACKOFF_SEC / 60.0,
+                            ),
+                        )
+                        await asyncio.sleep(YOUTUBE_QUOTA_BACKOFF_SEC)
                 else:
                     self._on_status(l10n.tr(self._get_locale(), "yt.retry", err=str(e), sec=wait))
                     await asyncio.sleep(wait)
+                continue
+            except (httpx.RequestError, httpx.HTTPStatusError) as e:
+                self._on_status(l10n.tr(self._get_locale(), "yt.retry", err=str(e), sec=wait))
+                await asyncio.sleep(wait)
                 continue
             except ValueError as e:
                 self._on_status(l10n.tr(self._get_locale(), "yt.wait_live", err=str(e), sec=wait))
@@ -353,10 +442,77 @@ class YouTubeChatSource:
             else:
                 self._on_status(l10n.tr(self._get_locale(), "yt.multi_streams", n=n))
 
-            await self._poll_chats_round_robin(creds, live_chat_ids)
+            if video_id is not None:
+                fb_url = f"https://www.youtube.com/watch?v={video_id}"
+            else:
+                fb_url = await asyncio.to_thread(_channel_live_fallback_url, service)
+
+            await self._poll_chats_round_robin(creds, live_chat_ids, fb_url)
             break
 
-    async def _poll_chats_round_robin(self, creds: Credentials, live_chat_ids: list[str]) -> None:
+    async def _run_fallback_for_watch_url(self, watch_url: str) -> None:
+        self._on_status(l10n.tr(self._get_locale(), "yt.fallback_polling"))
+        loop = asyncio.get_running_loop()
+        q: asyncio.Queue[ChatDownloaderMessage | None] = asyncio.Queue()
+        stop = threading.Event()
+
+        def producer() -> None:
+            try:
+                for raw in iter_youtube_live_chat(watch_url):
+                    if not self._running or stop.is_set():
+                        break
+                    msg = normalize_chat_downloader_item(raw)
+                    if msg is None:
+                        continue
+                    loop.call_soon_threadsafe(q.put_nowait, msg)
+            except Exception as err:
+                logger.warning("YouTube fallback reader error: %s", err)
+
+                def emit(err_s: str = str(err)) -> None:
+                    self._on_status(
+                        l10n.tr(self._get_locale(), "yt.fallback_error", err=err_s),
+                    )
+
+                loop.call_soon_threadsafe(emit)
+            finally:
+                loop.call_soon_threadsafe(q.put_nowait, None)
+
+        worker = asyncio.create_task(asyncio.to_thread(producer))
+        try:
+            while True:
+                if not self._running:
+                    break
+                dm = await q.get()
+                if dm is None:
+                    break
+                cb = self._on_analytics_event
+                if cb is not None:
+                    cb("chat", dm.author, dm.text, 1)
+                chat_msg = ChatMessage(
+                    author=dm.author,
+                    text=dm.text,
+                    platform=ChatPlatform.YOUTUBE,
+                    received_at=dm.received_at,
+                )
+                await self._coordinator.enqueue_chat(chat_msg)
+        except asyncio.CancelledError:
+            raise
+        finally:
+            stop.set()
+            if not worker.done():
+                worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)
+
+    async def _run_fallback_for_video(self, video_id: str) -> None:
+        watch = f"https://www.youtube.com/watch?v={video_id.strip()}"
+        await self._run_fallback_for_watch_url(watch)
+
+    async def _poll_chats_round_robin(
+        self,
+        creds: Credentials,
+        live_chat_ids: list[str],
+        fallback_watch_url: str | None,
+    ) -> None:
         """One ``liveChatMessages.list`` at a time, rotating chats.
 
         Parallel loops per stream multiply quota (~N×); round-robin keeps total call rate ~1×.
@@ -367,7 +523,24 @@ class YouTubeChatSource:
             service = await asyncio.to_thread(
                 lambda: build("youtube", "v3", credentials=creds, cache_discovery=False),
             )
-        except (HttpError, OSError) as e:
+        except HttpError as e:
+            if _http_error_is_quota_exceeded(e):
+                self._on_status(l10n.tr(self._get_locale(), "yt.fallback_switching"))
+                if fallback_watch_url:
+                    await self._run_fallback_for_watch_url(fallback_watch_url)
+                    return
+                self._on_status(
+                    l10n.tr(
+                        self._get_locale(),
+                        "yt.quota_backoff",
+                        min=YOUTUBE_QUOTA_BACKOFF_SEC / 60.0,
+                    ),
+                )
+                await asyncio.sleep(YOUTUBE_QUOTA_BACKOFF_SEC)
+                return
+            self._on_status(l10n.tr(self._get_locale(), "yt.api_init", err=str(e)))
+            return
+        except OSError as e:
             self._on_status(l10n.tr(self._get_locale(), "yt.api_init", err=str(e)))
             return
 
@@ -389,18 +562,22 @@ class YouTubeChatSource:
                 raise
             except HttpError as e:
                 logger.warning("YouTube poll HTTP error: %s", e)
+                if _http_error_is_fallback_worthy(e):
+                    self._on_status(l10n.tr(self._get_locale(), "yt.fallback_switching"))
+                    if fallback_watch_url:
+                        await self._run_fallback_for_watch_url(fallback_watch_url)
+                    else:
+                        self._on_status(
+                            l10n.tr(
+                                self._get_locale(),
+                                "yt.quota_backoff",
+                                min=YOUTUBE_QUOTA_BACKOFF_SEC / 60.0,
+                            ),
+                        )
+                        await asyncio.sleep(YOUTUBE_QUOTA_BACKOFF_SEC)
+                    return
                 self._on_status(l10n.tr(self._get_locale(), "yt.http_error", err=str(e)))
-                if _http_error_is_quota_exceeded(e):
-                    self._on_status(
-                        l10n.tr(
-                            self._get_locale(),
-                            "yt.quota_backoff",
-                            min=YOUTUBE_QUOTA_BACKOFF_SEC / 60.0,
-                        ),
-                    )
-                    await asyncio.sleep(YOUTUBE_QUOTA_BACKOFF_SEC)
-                else:
-                    await asyncio.sleep(5.0)
+                await asyncio.sleep(5.0)
                 continue
             except OSError as e:
                 logger.warning("YouTube poll error: %s", e)
@@ -415,6 +592,7 @@ class YouTubeChatSource:
                 snippet = item.get("snippet") or {}
                 author = (item.get("authorDetails") or {}).get("displayName") or "unknown"
                 text = snippet.get("displayMessage") or ""
+                self._ingest_analytics_item(author=author, snippet=snippet, text=text)
                 msg = ChatMessage(
                     author=author,
                     text=text,
@@ -433,7 +611,7 @@ class YouTubeChatSource:
             return []
         out: list[str] = []
         for i in range(0, len(video_ids), 50):
-            chunk = video_ids[i : i + 50]
+            chunk = video_ids[i:i + 50]
             resp = (
                 service.videos()
                 .list(part="liveStreamingDetails", id=",".join(chunk))
@@ -452,7 +630,7 @@ class YouTubeChatSource:
         return _dedupe_strs(out)
 
     @staticmethod
-    def _list_messages(service: object, live_chat_id: str, page_token: str | None) -> dict:
+    def _list_messages(service: object, live_chat_id: str, page_token: str | None) -> dict[str, Any]:
         req = (
             service.liveChatMessages()
             .list(
@@ -463,3 +641,35 @@ class YouTubeChatSource:
             )
         )
         return req.execute()
+
+    def _ingest_analytics_item(self, *, author: str, snippet: Mapping[str, Any], text: str) -> None:
+        cb = self._on_analytics_event
+        if cb is None:
+            return
+        kind = snippet.get("type") or "textMessageEvent"
+        kind_s = kind if isinstance(kind, str) else "textMessageEvent"
+
+        if kind_s == "superChatEvent":
+            details = snippet.get("superChatDetails") or {}
+            amount = details.get("amountDisplayString") or ""
+            det = str(amount or "").strip()
+            msg = str(text or "").strip()
+            if msg:
+                det = f"{det} · {msg}" if det else msg
+            cb("superchat", str(author or ""), det, 1)
+            return
+        if kind_s == "superStickerEvent":
+            details = snippet.get("superStickerDetails") or {}
+            amount = details.get("amountDisplayString") or ""
+            det = str(amount or "").strip()
+            msg = str(text or "").strip()
+            if msg:
+                det = f"{det} · {msg}" if det else msg
+            cb("supersticker", str(author or ""), det, 1)
+            return
+        if kind_s in ("newSponsorEvent", "memberMilestoneChatEvent"):
+            cb("member", str(author or ""), "", 1)
+            return
+
+        # Default: count as chat message and keep the full message text as detail.
+        cb("chat", str(author or ""), str(text or ""), 1)

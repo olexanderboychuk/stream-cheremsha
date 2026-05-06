@@ -7,9 +7,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from aiohttp import WSCloseCode
-from aiohttp import web
+from aiohttp import WSCloseCode, web
 
+from stream_cheremsha.docks.activity_dock import render_activity_dock_html
+from stream_cheremsha.docks.multichat_dock import render_multichat_dock_html
+from stream_cheremsha.docks.online_dock import render_online_dock_html
+from stream_cheremsha.overlays.event_bus import OverlayEventBus
 from stream_cheremsha.overlays.models import (
     normalize_instance_id,
     overlays_initial_state_msg,
@@ -32,11 +35,13 @@ class OverlayServer:
         *,
         registry: OverlayRegistry,
         pubsub: OverlayPubSub | None = None,
+        events: OverlayEventBus | None = None,
         host: str = "127.0.0.1",
         port: int = 17171,
     ) -> None:
         self._registry = registry
         self._pubsub = pubsub or OverlayPubSub()
+        self._events = events or OverlayEventBus()
         self._host = str(host)
         self._port = int(port)
         self._running: _Running | None = None
@@ -49,14 +54,30 @@ class OverlayServer:
     def pubsub(self) -> OverlayPubSub:
         return self._pubsub
 
+    def events(self) -> OverlayEventBus:
+        return self._events
+
     async def start(self) -> None:
         if self._running is not None:
             return
 
-        app = web.Application()
+        @web.middleware
+        async def _security_headers_mw(
+            _req: web.Request,
+            handler: web.Handler,
+        ) -> web.StreamResponse:
+            resp = await handler(_req)
+            # Helps YouTube embeds behave consistently across browsers/CEF.
+            resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+            return resp
+
+        app = web.Application(middlewares=[_security_headers_mw])
         app.router.add_get("/health", self._health)
         app.router.add_get("/assets/{path:.*}", self._assets)
         app.router.add_get("/overlay/{overlay_type}", self._overlay_page)
+        app.router.add_get("/dock/multichat", self._dock_multichat)
+        app.router.add_get("/dock/activity", self._dock_activity)
+        app.router.add_get("/dock/online", self._dock_online)
         app.router.add_get("/ws", self._ws)
 
         runner = web.AppRunner(app)
@@ -100,7 +121,10 @@ class OverlayServer:
         ctype, _enc = mimetypes.guess_type(str(p))
         if p.suffix.lower() == ".svg":
             ctype = "image/svg+xml"
-        return web.FileResponse(path=p, headers={"Content-Type": ctype or "application/octet-stream"})
+        return web.FileResponse(
+            path=p,
+            headers={"Content-Type": ctype or "application/octet-stream"},
+        )
 
     async def _overlay_page(self, req: web.Request) -> web.Response:
         overlay_type = str(req.match_info.get("overlay_type") or "").strip()
@@ -118,6 +142,18 @@ class OverlayServer:
         html = t.render_html(params)
         return web.Response(text=html, content_type="text/html", charset="utf-8")
 
+    async def _dock_multichat(self, _req: web.Request) -> web.Response:
+        html = render_multichat_dock_html()
+        return web.Response(text=html, content_type="text/html", charset="utf-8")
+
+    async def _dock_activity(self, _req: web.Request) -> web.Response:
+        html = render_activity_dock_html()
+        return web.Response(text=html, content_type="text/html", charset="utf-8")
+
+    async def _dock_online(self, _req: web.Request) -> web.Response:
+        html = render_online_dock_html()
+        return web.Response(text=html, content_type="text/html", charset="utf-8")
+
     async def _ws(self, req: web.Request) -> web.WebSocketResponse:
         ws = web.WebSocketResponse()
         await ws.prepare(req)
@@ -126,7 +162,7 @@ class OverlayServer:
         try:
             try:
                 msg = await asyncio.wait_for(ws.receive(), timeout=5.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 await ws.close(code=WSCloseCode.POLICY_VIOLATION, message=b"subscribe timeout")
                 return ws
             if msg.type != web.WSMsgType.TEXT:
@@ -198,6 +234,43 @@ class OverlayServer:
             async for nxt in ws:
                 if nxt.type in (web.WSMsgType.CLOSE, web.WSMsgType.CLOSED, web.WSMsgType.ERROR):
                     break
+                if nxt.type != web.WSMsgType.TEXT:
+                    continue
+                try:
+                    obj = json.loads(nxt.data)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(obj, dict):
+                    continue
+                if obj.get("op") != "event":
+                    continue
+                if str(obj.get("type") or "").strip() != overlay_type:
+                    continue
+                try:
+                    inst2 = normalize_instance_id(str(obj.get("instance") or ""))
+                except ValueError:
+                    continue
+                if inst2 != instance:
+                    continue
+                event_name = str(obj.get("event") or "").strip()
+                if not event_name:
+                    continue
+                payload = obj.get("payload")
+                if payload is None:
+                    payload_obj: dict[str, Any] = {}
+                elif isinstance(payload, dict):
+                    payload_obj = dict(payload)
+                else:
+                    continue
+                self._events.publish_nowait(
+                    f"event:{overlay_type}:{instance}",
+                    {
+                        "event": event_name,
+                        "payload": payload_obj,
+                        "type": overlay_type,
+                        "instance": instance,
+                    },
+                )
         finally:
             if patch_task is not None:
                 patch_task.cancel()

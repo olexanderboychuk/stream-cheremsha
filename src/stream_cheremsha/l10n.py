@@ -71,11 +71,62 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Тут буде статистика по чату, TTS, активності й підключеннях.",
         "en": "Here you'll see chat, TTS, activity, and connection stats.",
     },
+    "connections.tiktok_analytics_title": {"uk": "TikTok — аналітика", "en": "TikTok analytics"},
+    "connections.tiktok_analytics_online": {"uk": "Онлайн", "en": "Live viewers"},
+    "connections.tiktok_analytics_total": {"uk": "Всього глядачів", "en": "Total viewers"},
+    "connections.tiktok_analytics_gifts": {"uk": "Подарунки (шт.)", "en": "Gifts (count)"},
+    "connections.tiktok_analytics_diamonds": {"uk": "Діаманти", "en": "Diamonds"},
+    "connections.tiktok_analytics_activity": {"uk": "Події", "en": "Events"},
+    "connections.tiktok_analytics_offline": {
+        "uk": "Увімкніть TikTok зліва, щоб збирати статистику за цей сеанс.",
+        "en": "Enable TikTok on the left to collect stats for this session.",
+    },
+    "connections.tiktok_analytics_follow": {"uk": "підписка", "en": "followed"},
+    "connections.tiktok_analytics_join": {"uk": "зайшов у ефір", "en": "joined"},
+    "connections.tiktok_analytics_gift_suffix": {"uk": "подарунок", "en": "gift"},
+    # Connections — Twitch analytics
+    "connections.twitch_analytics_title": {"uk": "Twitch — аналітика", "en": "Twitch analytics"},
+    "connections.twitch_analytics_offline": {
+        "uk": "Увімкніть Twitch зліва та виконайте OAuth, щоб збирати події й онлайн за цей сеанс.",
+        "en": "Enable Twitch on the left and run OAuth to collect events and viewers for this session.",
+    },
+    "connections.twitch_analytics_viewers": {"uk": "Онлайн", "en": "Live viewers"},
+    "connections.twitch_analytics_peak": {"uk": "Пік", "en": "Peak"},
+    "connections.twitch_analytics_follows": {"uk": "Фолови (сеанс)", "en": "Follows (session)"},
+    "connections.twitch_analytics_subs": {"uk": "Саби (сеанс)", "en": "Subs (session)"},
+    "connections.twitch_analytics_bits": {"uk": "Біти (сеанс)", "en": "Bits (session)"},
+    "connections.twitch_analytics_raids": {"uk": "Рейди (сеанс)", "en": "Raids (session)"},
+    "connections.twitch_analytics_activity": {"uk": "Події", "en": "Events"},
+    "connections.twitch_analytics_follow": {"uk": "зафоловив", "en": "followed"},
+    "connections.twitch_analytics_sub": {"uk": "саб", "en": "sub"},
+    "connections.twitch_analytics_cheer": {"uk": "біти", "en": "bits"},
+    "connections.twitch_analytics_raid": {"uk": "рейд", "en": "raid"},
+    # Connections — YouTube analytics
+    "connections.youtube_analytics_title": {"uk": "YouTube — аналітика", "en": "YouTube analytics"},
+    "connections.youtube_analytics_offline": {
+        "uk": "Увімкніть YouTube зліва та виконайте OAuth, щоб збирати статистику за цей сеанс.",
+        "en": "Enable YouTube on the left and run OAuth to collect stats for this session.",
+    },
+    "connections.youtube_analytics_messages": {"uk": "Повідомлення", "en": "Messages"},
+    "connections.youtube_analytics_unique": {"uk": "Унікальні", "en": "Unique chatters"},
+    "connections.youtube_analytics_superchats": {"uk": "Суперчати", "en": "Super Chats"},
+    "connections.youtube_analytics_memberships": {"uk": "Підписки", "en": "Memberships"},
+    "connections.youtube_analytics_activity": {"uk": "Події", "en": "Events"},
+    "connections.youtube_analytics_chat": {"uk": "чат", "en": "chat"},
+    "connections.youtube_analytics_superchat": {"uk": "суперчат", "en": "super chat"},
+    "connections.youtube_analytics_supersticker": {"uk": "стікер", "en": "sticker"},
+    "connections.youtube_analytics_member": {"uk": "учасник", "en": "member"},
+    "obs.test_ok": {"uk": "OBS: з’єднано, версія {version}", "en": "OBS: connected, version {version}"},
+    "obs.test_fail": {"uk": "OBS: помилка — {detail}", "en": "OBS: error — {detail}"},
     # Platform actions
     "actions.btn": {"uk": "Дії", "en": "Actions"},
     "actions.title": {"uk": "Дії", "en": "Actions"},
     "actions.window_title": {"uk": "Дії — Stream Cheremsha", "en": "Actions — Stream Cheremsha"},
     "actions.add_rule": {"uk": "+ Додати правило", "en": "+ Add rule"},
+    "actions.add_folder": {"uk": "+ Папка", "en": "+ Folder"},
+    "actions.folder_default_name": {"uk": "Нова папка", "en": "New folder"},
+    "actions.folder_delete": {"uk": "Видалити папку", "en": "Delete folder"},
+    "actions.drag_handle_tt": {"uk": "Перетягнути", "en": "Drag to reorder"},
     "actions.save": {"uk": "Зберегти", "en": "Save"},
     "actions.saved": {"uk": "Збережено", "en": "Saved"},
     "actions.close": {"uk": "Закрити", "en": "Close"},
@@ -93,17 +144,73 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     },
     "actions.edit": {"uk": "Редагування", "en": "Edit"},
     "actions.pick_rule_hint": {"uk": "Оберіть правило зліва.", "en": "Pick a rule on the left."},
+    "actions.trigger_platform_label": {"uk": "Платформа тригера", "en": "Trigger platform"},
+    "actions.trigger_kind_label": {"uk": "Тип події", "en": "Event type"},
+    "actions.trigger_platform_all": {"uk": "Усі платформи", "en": "All platforms"},
+    "actions.trigger_platform_tiktok": {"uk": "TikTok", "en": "TikTok"},
+    "actions.trigger_platform_twitch": {"uk": "Twitch", "en": "Twitch"},
+    "actions.trigger_platform_youtube": {"uk": "YouTube", "en": "YouTube"},
     "actions.event.chat_keyword": {"uk": "Певне слово в чаті", "en": "Chat keyword"},
     "actions.event.gift_received": {"uk": "Певний подарунок", "en": "Gift received"},
+    "actions.event.tiktok_any_gift_received": {
+        "uk": "Будь-який подарунок (за ціною)",
+        "en": "Any gift (by price)",
+    },
+    "actions.event.tiktok_likes_received": {"uk": "Отримані лайки TikTok", "en": "TikTok likes received"},
+    "actions.event.tiktok_joined": {"uk": "Приєднався", "en": "Joined"},
+    "actions.event.tiktok_followed": {"uk": "Підписався", "en": "Followed"},
+    "actions.event.tiktok_shared": {"uk": "Пошерив", "en": "Shared"},
+    "actions.event.tiktok_paid_subscribed": {"uk": "Платний саб", "en": "Paid sub"},
+    "actions.event.tiktok_first_activity": {"uk": "Перша активність", "en": "First activity"},
+    "actions.event.twitch_follow": {"uk": "Фоллов (Twitch)", "en": "Follow (Twitch)"},
+    "actions.event.twitch_subscribe": {"uk": "Нова підписка (Twitch)", "en": "New subscription (Twitch)"},
+    "actions.event.twitch_resub": {"uk": "Продовження підписки / повідомлення (Twitch)", "en": "Resub / sub message (Twitch)"},
+    "actions.event.twitch_sub_gift": {"uk": "Подарована підписка (Twitch)", "en": "Gift sub (Twitch)"},
+    "actions.event.twitch_cheer": {"uk": "Біти / cheer (Twitch)", "en": "Bits / cheer (Twitch)"},
+    "actions.event.twitch_raid": {"uk": "Рейд (Twitch)", "en": "Raid (Twitch)"},
+    "actions.twitch_min_bits": {"uk": "Мін. бітів", "en": "Min bits"},
+    "actions.twitch_min_viewers": {"uk": "Мін. глядачів у рейді", "en": "Min raid viewers"},
+    "actions.twitch_raider_filter": {"uk": "Канал рейдера (опційно)", "en": "Raider channel (optional)"},
+    "actions.likes_min_count": {"uk": "Кількість лайків для спрацювання", "en": "Like count to trigger"},
+    "actions.likes_scope_label": {"uk": "Рахувати", "en": "Count"},
+    "actions.likes_scope_all": {"uk": "Усі глядачі (сума за стрім)", "en": "All viewers (stream total)"},
+    "actions.likes_scope_user_stream": {
+        "uk": "Будь-який глядач (його сума за стрім)",
+        "en": "Any viewer (their total this stream)",
+    },
+    "actions.likes_scope_user_combo": {
+        "uk": "Один глядач (одне натискання / комбо)",
+        "en": "One viewer (single tap combo)",
+    },
+    "actions.likes_scope_user_every_n": {
+        "uk": "Один глядач (кожні N його лайків за стрім)",
+        "en": "One viewer (every N likes from them this stream)",
+    },
+    "actions.likes_user_label": {
+        "uk": "Ім'я глядача (як у TikTok), необов'язково",
+        "en": "Viewer name as in TikTok (optional)",
+    },
+    "actions.likes_user_ph": {"uk": "нікнейм…", "en": "nickname…"},
+    "actions.rule_likes_brief": {"uk": "Лайки", "en": "Likes"},
+    "actions.triggers": {"uk": "Тригери", "en": "Triggers"},
+    "actions.trigger_or_sep": {"uk": " або ", "en": " | "},
     "actions.keyword": {"uk": "Слово", "en": "Keyword"},
     "actions.keyword_ph": {"uk": "наприклад: привіт", "en": "e.g. hello"},
     "actions.gift_name": {"uk": "Назва подарунка", "en": "Gift name"},
     "actions.gift_name_ph": {"uk": "наприклад: Rose", "en": "e.g. Rose"},
     "actions.gift_pick": {"uk": "Подарунок", "en": "Gift"},
     "actions.min_count": {"uk": "Мін. кількість", "en": "Min count"},
+    "actions.min_price": {"uk": "Мін. ціна (🪙)", "en": "Min price (🪙)"},
+    "actions.user_filter": {"uk": "Користувач (необов'язково)", "en": "User (optional)"},
+    "actions.user_filter_ph": {"uk": "нікнейм…", "en": "nickname…"},
     "actions.actions": {"uk": "Дії", "en": "Actions"},
     "actions.play_sound": {"uk": "Програти звук", "en": "Play sound"},
     "actions.pick_mp3": {"uk": "Оберіть .mp3…", "en": "Pick .mp3…"},
+    "actions.play_sound_volume": {"uk": "Гучність (%)", "en": "Volume (%)"},
+    "actions.play_sound_skip_if_same_playing": {
+        "uk": "Грати тільки один раз унікально (не додавати в чергу, якщо цей файл уже грає або чекає)",
+        "en": "Play uniquely — skip if this file is already playing or queued",
+    },
     "actions.write_file": {"uk": "Запис у файл", "en": "Write to file"},
     "actions.write_mode": {"uk": "Режим запису", "en": "Write mode"},
     "actions.write_mode_overwrite": {"uk": "Перезаписати", "en": "Overwrite"},
@@ -117,12 +224,14 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "actions.program_args_ph": {"uk": "наприклад: --foo bar", "en": "e.g. --foo bar"},
     "actions.placeholders_hint": {
         "uk": (
-            "У фігурних дужках, напр. {giftcount}, {giftname}. "
-            "Подарунок: gift_id, sender, platform. Чат: author, text, platform."
+            "У фігурних дужках, напр. {giftcount}, {giftname}, {likebatch}, {liketotal}. "
+            "Подарунок: gift_id, sender, platform. Лайки TikTok: sender, likebatch, liketotal. "
+            "Чат: author, text, platform."
         ),
         "en": (
-            "Use braces, e.g. {giftcount}, {giftname}. "
-            "Gift: gift_id, sender, platform. Chat: author, text, platform."
+            "Use braces, e.g. {giftcount}, {giftname}, {likebatch}, {liketotal}. "
+            "Gift: gift_id, sender, platform. TikTok likes: sender, likebatch, liketotal. "
+            "Chat: author, text, platform."
         ),
     },
     "actions.pick_file": {"uk": "Оберіть файл…", "en": "Pick file…"},
@@ -131,6 +240,41 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "actions.browse": {"uk": "Огляд…", "en": "Browse…"},
     "actions.clear": {"uk": "Очистити", "en": "Clear"},
     "actions.add_action": {"uk": "+ Додати дію", "en": "+ Add action"},
+    "actions.show_overlay": {"uk": "Показати в оверлеї Actions", "en": "Show on Actions overlay"},
+    "actions.show_overlay_text": {"uk": "Текст", "en": "Text"},
+    "actions.show_overlay_text_ph": {
+        "uk": "наприклад: {sender} подарував {giftname} x{giftcount}",
+        "en": "e.g. {sender} sent {giftname} x{giftcount}",
+    },
+    "actions.show_overlay_seconds": {"uk": "Секунди", "en": "Seconds"},
+    "actions.obs_scene": {"uk": "OBS: сцена / видимість", "en": "OBS: scene / visibility"},
+    "actions.obs_mode": {"uk": "Режим", "en": "Mode"},
+    "actions.obs_mode_program": {"uk": "Перемкнути сцену програми (ефір)", "en": "Switch program scene (live)"},
+    "actions.obs_mode_source": {"uk": "Показати/сховати джерело у сцені", "en": "Show/hide source in scene"},
+    "actions.obs_scene_name": {"uk": "Назва сцени", "en": "Scene name"},
+    "actions.obs_scene_name_ph": {"uk": "наприклад: Game", "en": "e.g. Game"},
+    "actions.obs_source_name": {"uk": "Назва джерела (у списку сцени)", "en": "Source name (in scene list)"},
+    "actions.obs_source_name_ph": {"uk": "наприклад: Alert", "en": "e.g. Alert"},
+    "actions.obs_visible": {"uk": "Видимо", "en": "Visible"},
+    "actions.obs_canvas": {"uk": "Полотно (canvas)", "en": "Canvas"},
+    "actions.obs_canvas_default": {"uk": "Головне полотно", "en": "Main canvas"},
+    "actions.obs_refresh_from_obs": {"uk": "Оновити списки з OBS", "en": "Refresh lists from OBS"},
+    "actions.obs_scene_pick": {"uk": "Сцена з OBS", "en": "Scene from OBS"},
+    "actions.obs_source_pick": {"uk": "Джерело з OBS", "en": "Source from OBS"},
+    "actions.obs_manual_names_hint": {
+        "uk": "Нижче можна ввести назви вручну (підтримуються плейсхолдери).",
+        "en": "You can still type names below (placeholders supported).",
+    },
+    "actions.obs_revert_checkbox": {
+        "uk": "Повернути попередній стан видимості (як до дії)",
+        "en": "Revert visibility to how it was before",
+    },
+    "actions.obs_revert_after": {"uk": "Через", "en": "After"},
+    "actions.obs_revert_seconds_suffix": {"uk": "с", "en": "s"},
+    "actions.obs_revert_seconds_hint": {
+        "uk": "Після затримки OBS отримає протилежний стан (як до дії). Лише для режиму «джерело у сцені».",
+        "en": "After the delay, OBS applies the opposite visibility (as before the action). Source-in-scene mode only.",
+    },
     "ui.nav_chat": {"uk": "Чат", "en": "Chat"},
     "ui.nav_tts": {"uk": "TTS", "en": "TTS"},
     "ui.nav_chat_hint": {"uk": "Відкрити чат", "en": "Open chat"},
@@ -150,10 +294,20 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Донати з Donatik та інших сервісів",
         "en": "Donations from Donatik and other services",
     },
+    "ui.nav_actions": {"uk": "Дії", "en": "Actions"},
+    "ui.nav_actions_hint": {
+        "uk": "Правила за подіями TikTok: подарунки, чат, лайки…",
+        "en": "TikTok event rules: gifts, chat, likes…",
+    },
     "ui.nav_widgets": {"uk": "Віджети", "en": "Widgets"},
     "ui.nav_widgets_hint": {
         "uk": "Налаштування віджетів (оверлеї, URL для OBS)",
         "en": "Widget settings (overlays, OBS URLs)",
+    },
+    "ui.nav_docks": {"uk": "Доки", "en": "Docks"},
+    "ui.nav_docks_hint": {
+        "uk": "Док-панелі для OBS (URL, мультичат)",
+        "en": "OBS dock panels (URLs, multichat)",
     },
     # Donations tab (Donatik)
     "donations.title_pick": {"uk": "Ваші донати", "en": "Your donations"},
@@ -259,6 +413,24 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "settings.autostart_youtube": {
         "uk": "Автозапуск YouTube при старті додатку (потрібен вхід у Google)",
         "en": "Auto-start YouTube on launch (requires Google sign-in)",
+    },
+    "settings.obs_group": {"uk": "OBS WebSocket", "en": "OBS WebSocket"},
+    "settings.obs_help_html": {
+        "uk": "Для дій «OBS» (перемикання сцени програми, видимість джерел).<br>"
+        "Пароль той самий, що в OBS: <b>Налаштування</b> → <b>Мережа</b> → <b>OBS WebSocket</b>.<br>"
+        '<a href="https://github.com/obsproject/obs-websocket/blob/master/docs/generated/protocol.md">Протокол obs-websocket</a>.',
+        "en": "For Actions (program scene, source visibility).<br>"
+        "Use the same password as in OBS: <b>Settings</b> → <b>Network</b> → <b>OBS WebSocket</b>.<br>"
+        '<a href="https://github.com/obsproject/obs-websocket/blob/master/docs/generated/protocol.md">obs-websocket protocol</a>.',
+    },
+    "settings.obs_host": {"uk": "Хост", "en": "Host"},
+    "settings.obs_port": {"uk": "Порт", "en": "Port"},
+    "settings.obs_password": {"uk": "Пароль WebSocket", "en": "WebSocket password"},
+    "settings.obs_test": {"uk": "Перевірити з’єднання з OBS", "en": "Test OBS connection"},
+    "settings.obs_test_busy": {"uk": "Перевірка…", "en": "Testing…"},
+    "settings.obs_test_hint": {
+        "uk": "Результат з’явиться тут і у вікні повідомлення.",
+        "en": "The result appears here and in a message box.",
     },
     # Connections — TikTok
     "tk.username": {"uk": "Юзернейм", "en": "Username"},
@@ -378,85 +550,15 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "audio.refresh": {"uk": "Оновити пристрої", "en": "Refresh devices"},
     "audio.tts_engine": {"uk": "Рушій TTS", "en": "TTS engine"},
     "audio.tts_engine_google": {"uk": "Google Translate (мережа)", "en": "Google Translate (online)"},
-    "audio.tts_engine_piper": {"uk": "Piper (локально, piper-tts)", "en": "Piper (local, piper-tts)"},
-    "audio.piper_voice_group": {"uk": "Piper — голос (.onnx)", "en": "Piper — voice (.onnx)"},
-    "audio.piper_path_short": {"uk": "Файл", "en": "File"},
-    "audio.piper_voice_intro": {
-        "uk": (
-            "Потрібен файл голосу. Оберіть один із варіантів (можна комбінувати: спочатку завантажити, "
-            "потім за потреби змінити шлях)."
-        ),
-        "en": (
-            "You need a voice file. Pick one approach (you can combine: download first, then adjust the path if "
-            "needed)."
-        ),
-    },
-    "audio.piper_option_download": {
-        "uk": "1) Завантажити з інтернету — для мови з поля «Мова озвучення (TTS)» вище. Потрібен інтернет.",
-        "en": (
-            "1) Download from the Internet — uses the “Speech language (TTS)” field above. Internet access is "
-            "required."
-        ),
-    },
-    "audio.piper_option_file": {
-        "uk": "2) Або вкажіть локальний файл .onnx (і зазвичай .onnx.json поруч), якщо модель уже є на диску:",
-        "en": "2) Or point to a local .onnx file (and usually a matching .onnx.json) if you already have the model:",
-    },
-    "audio.piper_model": {"uk": "Шлях до ONNX-моделі Piper", "en": "Piper ONNX model path"},
-    "audio.piper_browse": {"uk": "Огляд…", "en": "Browse…"},
+    "audio.tts_engine_edge": {"uk": "Edge TTS (мережа)", "en": "Edge TTS (online)"},
+    "audio.edge_voice_group": {"uk": "Edge — голос", "en": "Edge — voice"},
+    "audio.edge_voice_label": {"uk": "Голос", "en": "Voice"},
     "audio.tts_language": {"uk": "Мова озвучення (TTS)", "en": "Speech language (TTS)"},
     "tts_lang.uk_UA": {"uk": "Українська (uk-UA)", "en": "Ukrainian (uk-UA)"},
     "tts_lang.en_US": {"uk": "English US (en-US)", "en": "English US (en-US)"},
     "tts_lang.en_GB": {"uk": "English UK (en-GB)", "en": "English UK (en-GB)"},
     "tts_lang.de_DE": {"uk": "Німецька (de-DE)", "en": "German (de-DE)"},
     "tts_lang.pl_PL": {"uk": "Польська (pl-PL)", "en": "Polish (pl-PL)"},
-    "audio.piper_cuda": {"uk": "Використовувати GPU (CUDA)", "en": "Use GPU (CUDA)"},
-    "audio.piper_cuda_tip": {
-        "uk": "Потрібен відповідний драйвер NVIDIA. Якщо помилок немає — залишайте ввімкненим.",
-        "en": "Requires a suitable NVIDIA driver. If things work, leave it on.",
-    },
-    "audio.piper_download": {"uk": "Завантажити голос", "en": "Download voice"},
-    "audio.piper_help_tooltip": {"uk": "Довідка про Piper", "en": "Piper help"},
-    "audio.piper_help_title": {"uk": "Piper TTS — довідка", "en": "Piper TTS — help"},
-    "audio.rvc_group": {
-        "uk": "RVC (тембр після TTS)",
-        "en": "RVC (timbre after TTS)",
-    },
-    "audio.rvc_intro": {
-        "uk": "RVC (Retrieval-based Voice Conversion) застосовується до вже синтезованого звуку (Google чи Piper) "
-        "і змінює тембр (мем, клон). У venv: `cheremsha-bootstrap-rvc` (див. README). "
-        "Для Google TTS звук тимчасово перетворюється в WAV (ffmpeg) перед RVC.",
-        "en": (
-            "RVC (Retrieval-based Voice Conversion) runs on synthesized audio (Google or Piper) to change timbre. "
-            "Run `cheremsha-bootstrap-rvc` in the venv (see README). Google TTS (MP3) is decoded to WAV via ffmpeg "
-            "before RVC."
-        ),
-    },
-    "audio.rvc_enable": {
-        "uk": "Увімкнути RVC (після будь-якого TTS)",
-        "en": "Enable RVC (after any TTS engine)",
-    },
-    "audio.rvc_model": {"uk": "Модель (.pth)", "en": "Model (.pth)"},
-    "audio.rvc_index": {
-        "uk": "Індекс (.index, за бажанням)",
-        "en": "Index (.index, optional)",
-    },
-    "audio.rvc_cuda": {
-        "uk": "Використовувати GPU (CUDA)",
-        "en": "Use GPU (CUDA)",
-    },
-    "audio.rvc_cuda_tip": {
-        "uk": "RVC важчий за Piper; на GPU зазвичай швидше. Повний опис — у підказці для блоку RVC.",
-        "en": "RVC is heavier than Piper; GPU is usually faster. Full details: tooltip on the RVC group.",
-    },
-    "audio.rvc_loading": {
-        "uk": "Завантаження RVC…",
-        "en": "Loading RVC…",
-    },
-    "audio.rvc_unloading": {
-        "uk": "Вимкнення RVC…",
-        "en": "Stopping RVC…",
-    },
     "audio.volume": {"uk": "Гучність", "en": "Volume"},
     "audio.volume_tip": {
         "uk": "Гучність виходу програми (колонки / гарнітура).",
@@ -470,15 +572,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     },
     "audio.tts_hint": {
         "uk": "Google: часто тихий — підніміть гучність; ffmpeg підсилює перед відтворенням "
-        "(MP3 або WAV). Piper: локальний синтез; модель голосу може бути вже в збірці "
-        "або її вказують/завантажують у блоці «Модель голосу Piper» вище. "
-        "RVC (опційно) змінює тембр після TTS. "
+        "(MP3 або WAV). "
         "Для фонемізації в системі зазвичай потрібен espeak-ng. "
         "У «Логах» після тесту — «TTS: ffmpeg ok» або попередження.",
         "en": "Google: often quiet — raise volume; ffmpeg boosts before playback (MP3 or WAV). "
-        "Piper: local synthesis; the voice model may be bundled with the app, or you set it "
-        "in the “Piper voice model” section above (download or browse). "
-        "Optional RVC remaps timbre after synthesis. "
         "espeak-ng is usually required on the system for phonemization. "
         "After a test, Logs shows «TTS: ffmpeg ok» or a warning.",
     },
@@ -498,7 +595,6 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "footer.off": {"uk": "вимк", "en": "off"},
     "footer.chat": {"uk": "чат", "en": "chat"},
     "footer.tts": {"uk": "tts", "en": "tts"},
-    "footer.rvc": {"uk": "rvc", "en": "rvc"},
     # Main-window status messages (exact match routing uses all locales)
     "status.logout_twitch": {"uk": "Вийшли з Twitch.", "en": "Signed out of Twitch."},
     "status.logout_youtube": {"uk": "Вийшли з Google (YouTube).", "en": "Signed out of Google (YouTube)."},
@@ -515,18 +611,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "Ready — connect Twitch and/or YouTube",
     },
     "status.app_idle": {"uk": "Готово", "en": "Ready"},
-    "status.piper_download_start": {
-        "uk": "Piper: завантаження голосу {voice}…",
-        "en": "Piper: downloading voice {voice}…",
-    },
-    "status.piper_download_ok": {"uk": "Piper: модель збережено — {path}", "en": "Piper: model saved — {path}"},
-    "audio.piper_downloading": {"uk": "Завантаження голосу…", "en": "Downloading voice…"},
-    "status.piper_need_model": {
-        "uk": (
-            "Piper: немає .onnx — натисніть «Завантажити голос» або «Огляд…»; "
-            "до цього використовується Google TTS."
-        ),
-        "en": "Piper: no .onnx yet — use “Download voice” or “Browse…”; Google TTS is used until a model is set.",
+    "status.edge_voices_loading": {"uk": "Edge: завантажую голоси…", "en": "Edge: loading voices…"},
+    "status.edge_voices_failed": {
+        "uk": "Edge: не вдалося отримати список голосів",
+        "en": "Edge: failed to fetch voices",
     },
     # Coordinator
     "coord.chat_queue_full": {
@@ -606,6 +694,18 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "YouTube: знайдено {n} ефірів — чати по черзі (менше витрата квоти)…",
         "en": "YouTube: found {n} streams — rotating chats (lower API quota use)…",
     },
+    "yt.fallback_switching": {
+        "uk": "YouTube: квота API вичерпана — перехід на фоллбек читання чату…",
+        "en": "YouTube: API quota exhausted — switching to fallback chat reader…",
+    },
+    "yt.fallback_polling": {
+        "uk": "YouTube: фоллбек — читаємо чат без API…",
+        "en": "YouTube: fallback — reading chat without the API…",
+    },
+    "yt.fallback_error": {
+        "uk": "YouTube: помилка фоллбек-чату: {err}",
+        "en": "YouTube: fallback chat error: {err}",
+    },
     "yt.quota_backoff": {
         "uk": "YouTube: квота API вичерпана — пауза ~{min:.0f} хв без запитів…",
         "en": "YouTube: API quota exhausted — pausing ~{min:.0f} min without requests…",
@@ -638,103 +738,7 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "Select Google OAuth client JSON (one-time)",
     },
     "dlg.tts": {"uk": "TTS", "en": "TTS"},
-    "dlg.piper_not_installed": {
-        "uk": (
-            "Рушій Piper у цій збірці недоступний. Спробуйте перевстановити додаток або зверніться до автора збірки."
-        ),
-        "en": "The bundled Piper engine is not available. Try reinstalling the app or contact the packager.",
-    },
-    "dlg.rvc_missing": {
-        "uk": (
-            "RVC: стек не зібрано. У venv виконайте `cheremsha-bootstrap-rvc` (див. README), перезапустіть додаток. "
-            "GPU — PyTorch (CUDA)."
-        ),
-        "en": (
-            "RVC stack is not available. In the same venv run `cheremsha-bootstrap-rvc` (see README), then restart. "
-            "For GPU use a CUDA PyTorch build."
-        ),
-    },
-    "dlg.rvc_missing_detail": {
-        "uk": (
-            "RVC: стек не зібрано. Деталі:\n{detail}\n\nУ venv виконайте `cheremsha-bootstrap-rvc` (див. README), "
-            "перезапустіть додаток."
-        ),
-        "en": (
-            "RVC stack is not available. Details:\n{detail}\n\nIn the same venv run `cheremsha-bootstrap-rvc` "
-            "(see README), then restart."
-        ),
-    },
-    "dlg.rvc_toggle_failed": {
-        "uk": "Помилка RVC:\n{detail}",
-        "en": "RVC error:\n{detail}",
-    },
-    "dlg.piper_download_failed": {"uk": "Завантаження голосу Piper", "en": "Piper voice download"},
-    "dlg.piper_voice_unknown": {
-        "uk": "Для цієї мови немає вбудованого id голосу Piper — оберіть .onnx вручну.",
-        "en": "No bundled Piper voice id for this language — pick an .onnx file manually.",
-    },
     "dlg.json_filter": {"uk": "JSON (*.json);;Усі файли (*)", "en": "JSON (*.json);;All files (*)"},
-    "help.piper_html": {
-        "uk": (
-            "<h2>Piper TTS</h2>"
-            "<p><b>Piper</b> — локальний нейромережевий синтез мовлення. У збірці додатка рушій вже вбудований; "
-            "кожен голос — це файли <code>.onnx</code> і зазвичай <code>.onnx.json</code> поруч.</p>"
-            "<h3>Що варто знати</h3>"
-            "<ul>"
-            "<li><b>Голос</b> може бути вже в поставці додатка, або доданий кнопками «Завантажити голос» / «Огляд…» "
-            "у блоці «Модель голосу Piper» на вкладці «Аудіо».</li>"
-            "<li>Для <b>фонемізації</b> у системі зазвичай має бути <b>espeak-ng</b> — без нього Piper на частині "
-            "систем може не стартувати.</li>"
-            "<li><b>CUDA</b>: за потреби встановіть драйвер NVIDIA, потім увімкніть у додатку "
-            "«Прискорення GPU (CUDA)» — важливо мати поєднання: відеокарта, драйвер і збірка додатка з підтримкою GPU."
-            "</li>"
-            "</ul>"
-            "<h3>Модель і мова</h3>"
-            "<p>«Мова озвучення (TTS)» впливає на Google TTS і на те, <i>який голос завантажиться</i> для Piper. "
-            "За «Завантажити голос» файли зберігаються, зазвичай під "
-            "<code>~/.local/share/stream-cheremsha/piper-voices/</code> "
-            "або <code>$XDG_DATA_HOME/stream-cheremsha/piper-voices/</code>.</p>"
-            "<h3>Вимоги до ПК</h3>"
-            "<ul>"
-            "<li><b>CPU</b>: голоси «medium» зазвичай нормально на сучасному 4+ ядерному CPU; «x_low» легші.</li>"
-            "<li><b>GPU</b>: з CUDA менше навантаження на CPU; потрібна підтримувана відеокарта NVIDIA у цьому "
-            "режимі.</li>"
-            "<li><b>Диск</b>: одна модель — порядку десятків–сотень МБ.</li>"
-            "</ul>"
-            "<p>Документація: "
-            '<a href="https://github.com/OHF-Voice/piper1-gpl">OHF-Voice/piper1-gpl</a>, '
-            'каталог голосів: <a href="https://huggingface.co/rhasspy/piper-voices">rhasspy/piper-voices</a>.</p>'
-        ),
-        "en": (
-            "<h2>Piper TTS</h2>"
-            "<p><b>Piper</b> is a local neural TTS engine. The app ships the engine; each voice is an "
-            "<code>.onnx</code> file (and usually a matching <code>.onnx.json</code> next to it).</p>"
-            "<h3>Good to know</h3>"
-            "<ul>"
-            "<li><b>Voices</b> may be bundled with the app, or you add one via “Download voice” / “Browse…” in the "
-            "“Piper voice model” block on the Audio tab.</li>"
-            "<li><b>espeak-ng</b> is usually required on the system for phonemization; without it, Piper may fail to "
-            "start on some setups.</li>"
-            "<li><b>CUDA</b>: install a suitable NVIDIA driver, then turn on “GPU (CUDA)” in the app. "
-            "The GPU build of the app must match your environment (driver + a GPU-enabled build).</li>"
-            "</ul>"
-            "<h3>Model & language</h3>"
-            "<p>“Speech language (TTS)” affects both Google and <i>which voice is fetched</i> for Piper. "
-            "“Download voice” stores files, typically under "
-            "<code>~/.local/share/stream-cheremsha/piper-voices/</code> or "
-            "<code>$XDG_DATA_HOME/stream-cheremsha/piper-voices/</code>.</p>"
-            "<h3>Hardware</h3>"
-            "<ul>"
-            "<li><b>CPU</b>: “medium” voices are usually fine on a modern 4+ core CPU; “x_low” is lighter.</li>"
-            "<li><b>GPU</b>: CUDA reduces CPU load; a supported NVIDIA GPU and a compatible app build are needed."
-            "</li>"
-            "<li><b>Disk</b>: one voice is on the order of tens–hundreds of MB.</li>"
-            "</ul>"
-            "<p>Docs: "
-            '<a href="https://github.com/OHF-Voice/piper1-gpl">OHF-Voice/piper1-gpl</a>, '
-            'voice catalog: <a href="https://huggingface.co/rhasspy/piper-voices">rhasspy/piper-voices</a>.</p>'
-        ),
-    },
 }
 
 

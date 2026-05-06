@@ -10,7 +10,6 @@ _QSETTINGS_APP = "cheremsha"
 
 KEY_MAIN_WINDOW = "ui/main_window_geometry"
 KEY_CHAT_POPOUT = "ui/chat_popout_geometry"
-KEY_PIPER_HELP_DIALOG = "ui/piper_help_dialog_geometry"
 
 
 def _as_qbytearray(v: object) -> QByteArray | None:

@@ -12,7 +12,6 @@ from stream_cheremsha.domain.models import ChatMessage
 from stream_cheremsha.domain.protocols import AudioSink, TextToSpeech
 from stream_cheremsha.pipeline.chunking import chunk_text, merge_short_subchunks
 from stream_cheremsha.pipeline.filters import filter_for_tts
-from stream_cheremsha.tts.rvc_wav import RvcRuntime, apply_rvc_if_active
 
 logger = logging.getLogger(__name__)
 
@@ -28,11 +27,9 @@ class StreamCoordinator:
         on_status: Callable[[str], None],
         should_tts: Callable[[ChatMessage], bool] | None = None,
         get_locale: Callable[[], str] | None = None,
-        rvc_runtime: RvcRuntime | None = None,
     ) -> None:
         self._tts = tts
         self._sink = audio_sink
-        self._rvc: RvcRuntime = rvc_runtime or RvcRuntime()
         self._on_chat = on_chat
         self._on_status = on_status
         self._should_tts = should_tts or (lambda _msg: True)
@@ -47,7 +44,7 @@ class StreamCoordinator:
         self._on_status(msg)
 
     def set_tts(self, tts: TextToSpeech) -> None:
-        """Swap the TTS backend (e.g. Google vs Piper) while workers keep running."""
+        """Swap the TTS backend while workers keep running."""
         self._tts = tts
 
     def set_should_tts(self, predicate: Callable[[ChatMessage], bool]) -> None:
@@ -144,10 +141,6 @@ class StreamCoordinator:
                 raise
             try:
                 audio = await self._tts.synthesize(chunk)
-                try:
-                    audio = await apply_rvc_if_active(self._rvc, audio)
-                except (OSError, ValueError, RuntimeError, ImportError) as e:
-                    logger.warning("RVC post-process failed, playing raw TTS: %s", e)
                 await self._sink.play_mp3(audio)
             except OSError as e:
                 logger.warning("Audio playback failed: %s", e)

@@ -4,11 +4,8 @@ MVP desktop tool: **Twitch** and **YouTube Live** chat → bounded queues → **
 
 ## Requirements
 
-- Python **3.11** (the project is pinned to the 3.11 line for compatibility, including optional RVC).
+- Python **3.11** (the project is pinned to the 3.11 line for compatibility).
 - Fedora/Linux: Qt Multimedia backends (e.g. GStreamer plugins for MP3) as provided by your distro’s PySide6 packages.
-- **Optional `[rvc]` (Linux):** `pyworld` has no manylinux wheel on PyPI, so `pip` **builds it from source** and you need a compiler plus CPython headers. On Fedora, install before `pip install -e ".[rvc]"` for example:  
-  `sudo dnf install python3.11-devel gcc-c++`  
-  (Debian/Ubuntu: `python3.11-dev` and `g++`.) If you see `Python.h: No such file or directory`, the devel package is missing.
 
 ## Virtual environment
 
@@ -20,50 +17,6 @@ pip install -e ".[dev]"
 ```
 
 If `keyring` reports **No recommended backend** (common in minimal containers), install a backend such as [`keyrings.alt`](https://pypi.org/project/keyrings.alt/) or use your desktop’s Secret Service / KWallet integration.
-
-### Optional: RVC (voice conversion)
-
-Install **devel** headers first on Linux (see **Requirements** above) so `pyworld` can compile.
-
-On **Windows**, the `[rvc]` extra installs `fairseq-fixed`, which **builds native extensions** and therefore requires a working MSVC toolchain + Windows SDK. Install **Visual Studio Build Tools** (or full Visual Studio) with:
-
-- **Workload**: Desktop development with C++
-- **Components**: MSVC (v143 or newer) and Windows 10/11 SDK
-
-#### CUDA (NVIDIA)
-
-If you have an NVIDIA GPU and want RVC to run on **CUDA**, you must install a **CUDA-enabled** PyTorch wheel. If `torch` prints `+cpu` (for example `2.11.0+cpu`) then RVC will fall back to CPU.
-
-Prereqs:
-
-- NVIDIA driver (verify in terminal: `nvidia-smi`)
-- Windows only (recommended): Microsoft Visual C++ Redistributable 2015–2022 (x64) — helps avoid DLL load errors like `c10_cuda.dll` / `WinError 126`
-
-Install CUDA PyTorch into the active venv (Linux/Windows example: CUDA 12.8 wheels):
-
-```bash
-pip uninstall -y torch torchaudio
-pip install --index-url https://download.pytorch.org/whl/cu128 torch torchaudio
-```
-
-Verify:
-
-```bash
-python -c "import torch; print(torch.__version__); print('cuda', torch.version.cuda, 'available', torch.cuda.is_available())"
-```
-
-The `[rvc]` extra uses **[fairseq-fixed](https://pypi.org/project/fairseq-fixed/)** (same `import fairseq` as the original) because **fairseq 0.12.2** from PyPI **crashes on Python 3.11** (`dataclasses` / mutable defaults). If you previously installed the old `fairseq` package, remove it first: `pip uninstall -y fairseq`.
-
-`rvc-python` on PyPI still conflicts with this app’s `numpy` pins, so it is installed **with `--no-deps`** after the rest. Install the project in editable mode so the helper script exists (e.g. `pip install -e ".[dev]"`), then:
-
-```bash
-cheremsha-bootstrap-rvc
-# or: python -m stream_cheremsha.bootstrap_rvc
-```
-
-**Manual:** `pip install -e ".[rvc]"` then `cheremsha-install-rvc` (or `python -m stream_cheremsha.install_rvc`).
-
-For **CUDA** PyTorch, use the [PyTorch](https://pytorch.org/get-started/locally/) wheels first, then the commands above.
 
 Run:
 
@@ -95,6 +48,49 @@ Register a Twitch Developer application and note the **Client ID** (and **Client
 Playback uses an **undocumented** Google Translate TTS endpoint. It may break or rate-limit; the code isolates TTS behind a small interface so you can swap engines later.
 
 ## Development
+
+### Memory profiling (RSS / leak hunting)
+
+Install the optional profiling dependencies:
+
+```bash
+pip install -e ".[profile]"
+# For mprof plot:
+pip install -e ".[profile-plot]"
+```
+
+Run the app under `memory_profiler`/`mprof`:
+
+```bash
+# Line-by-line RSS output in console (shows when profiled functions run)
+python -m memory_profiler scripts/profile_memory_run.py
+
+# Timeline plot-friendly run (writes an .dat file)
+mprof run python scripts/profile_memory_run.py
+mprof plot
+```
+
+Lightweight long-run metrics (good for 2–12h streams):
+
+```bash
+# Periodic RSS + queue sizes in logs (no line-by-line spam)
+set CHEREMSHA_METRICS=1
+set CHEREMSHA_METRICS_SEC=5
+python scripts/profile_memory_run.py
+```
+
+What is profiled by default:
+- `StreamCheremshaQmlApi.refresh()` (QML “refreshCounter” invalidation trigger)
+- `QtAudioSink.play_mp3()` (ffmpeg + temp file + QMediaPlayer path)
+- TikTok analytics feed ingestion: `TikTokAnalyticsFeedModel.prepend()`, `TikTokAnalyticsApi._apply_*()`
+- Donations live polling: `DonationsQmlApi._async_*poll*()`
+- Overlays pubsub: `OverlayPubSub.publish()/subscribe()`
+- Pipeline: `StreamCoordinator.enqueue_chat()`, `StreamCoordinator._tts_loop()`
+
+Tips for interpretation:
+- If RSS grows steadily while **idle** (no incoming events), suspect a leak (tasks/timers/queues, QML image cache, signals).
+- If RSS grows during bursts and then stabilizes, it may be a cache (Qt Quick image/texture cache, Python module caches).
+- For GPU VRAM spikes, `memory_profiler` won’t see VRAM — correlate with Task Manager GPU memory and reduce QML invalidations / image churn.
 
 ```bash
 source .venv/bin/activate
@@ -130,11 +126,9 @@ Notes:
 
 - Linux audio: the build includes Qt plugins for **QML + QtMultimedia**. If your system lacks codecs/backends
   (e.g. GStreamer plugins for MP3 on Fedora), install them via your distro packages.
-- **Windows**: install **ffmpeg** and ensure `ffmpeg.exe` is in `PATH` for the built app (Google TTS → WAV for RVC).
-- **RVC**: build in an environment where you already ran `cheremsha-bootstrap-rvc` (so `rvc_python` is installed);
-  the build script force-includes the RVC stack into the standalone dist.
+- **Windows**: install **ffmpeg** and ensure `ffmpeg.exe` is in `PATH` for the built app.
 - **Nuitka version**: pinned to `<4.0` because 4.x is known to crash on some dependency graphs (e.g. librosa).
-- **PyTorch/RVC in standalone**: the build uses `--python-flag=isolated` to avoid importing external site-packages
+- **PyTorch in standalone**: the build uses `--python-flag=isolated` to avoid importing external site-packages
   at runtime (fixes duplicate torch extension loads like `RpcBackendOptions already defined`).
 
 Tips:
