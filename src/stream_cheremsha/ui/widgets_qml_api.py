@@ -66,7 +66,10 @@ class WidgetsQmlApi(QObject):
         if QGuiApplication.instance() is None:
             return list(_FONT_FALLBACK_NO_GUI_APP)
         if self._system_font_families is None:
-            self._system_font_families = _sorted_system_font_families()
+            families = _sorted_system_font_families()
+            # Some headless/test environments still create a QGuiApplication but expose no fonts.
+            # Keep the picker usable (and tests stable) by falling back in that case too.
+            self._system_font_families = families if families else list(_FONT_FALLBACK_NO_GUI_APP)
         return list(self._system_font_families)
 
     chatOverlayUrlChanged = Signal()
