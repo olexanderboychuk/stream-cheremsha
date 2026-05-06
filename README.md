@@ -1,13 +1,110 @@
-# stream-cheremsha
+# Cheremsha — Ukrainian Streamer Assistant for Twitch, YouTube & TikTok
 
-MVP desktop tool: **Twitch** and **YouTube Live** chat → bounded queues → **Ukrainian** Google Translate–style TTS → **Qt** audio on a chosen output device (for OBS / virtual cables).
+**Cheremsha** is a free, open-source desktop application for Ukrainian-speaking streamers. It aggregates live chat from **Twitch**, **YouTube**, and **TikTok** in real time, reads messages aloud using **Ukrainian Text-to-Speech (TTS)**, manages a music queue via a **Telegram bot**, displays beautiful **OBS browser source overlays**, integrates with **OBS WebSocket**, and handles **donations** from Donatik and Donatello — all in one app.
+
+> **Keywords:** Ukrainian TTS streamer tool · Twitch Ukrainian TTS · YouTube chat reader · TikTok live chat · OBS overlay Ukrainian · donation alert Ukraine · music queue Telegram bot · multi-platform streamer assistant · stream helper Ukrainian · Черемша стрімер
+
+---
+
+## Why Cheremsha?
+
+Most streamer tools are English-only and spread across many separate apps. Cheremsha solves that for **Ukrainian streamers** by combining everything in a single Qt-based desktop app:
+
+- Unified chat from Twitch + YouTube + TikTok
+- High-quality **Ukrainian TTS** that reads chat messages and donation alerts aloud
+- Music request system via a **Telegram bot** with an audio queue
+- Live **OBS overlays** (Browser Source) for chat, music, activity, and viewer count
+- **OBS Studio WebSocket** remote control (scene switch, source visibility)
+- Donation tracking from **Donatik** and **Donatello**
+- Playback to any output device (perfect for **OBS virtual cable**)
+- Runs on **Windows** and **Linux**
+
+---
+
+## Features
+
+### Multi-Platform Live Chat Aggregation
+- **Twitch** — connects via twitchio IRC WebSocket with device-code OAuth; auto-reconnects on drops
+- **YouTube Live** — uses YouTube Data API v3 with OAuth2; auto-discovers active broadcasts
+- **TikTok Live** — connects via TikTokLive library; just enter a username
+
+### Ukrainian Text-to-Speech (TTS)
+- Multiple TTS engines: **Edge TTS** (Microsoft, high quality) and Google Translate TTS
+- Audio normalization and gain via **ffmpeg**
+- Plays to any system audio output device — compatible with OBS virtual audio cables
+- Bounded queues prevent message pile-up during busy streams
+
+### Music Player & Queue
+- Downloads and plays music from YouTube via **yt-dlp**
+- **Telegram bot** (`python-telegram-bot`) lets viewers request songs directly in chat
+- Queue management: skip, clear, view now-playing
+- `ffmpeg` used for normalization and smooth playback
+
+### OBS Browser Source Overlays
+Local overlay server on `http://127.0.0.1:17171` — add these as OBS Browser Sources:
+
+| Overlay | URL |
+|---------|-----|
+| Chat overlay | `http://127.0.0.1:17171/overlay/chat?instance=main` |
+| Music now-playing | `http://127.0.0.1:17171/overlay/music?instance=main` |
+| Activity feed | `http://127.0.0.1:17171/overlay/activity?instance=main` |
+| Online / viewer count | `http://127.0.0.1:17171/overlay/online?instance=main` |
+| Actions / alerts | `http://127.0.0.1:17171/overlay/actions?instance=main` |
+
+OBS Docks (custom browser panels inside OBS):
+
+| Dock | URL |
+|------|-----|
+| Multi-chat | `http://127.0.0.1:17171/dock/multichat` |
+| Activity | `http://127.0.0.1:17171/dock/activity` |
+| Online | `http://127.0.0.1:17171/dock/online` |
+
+Healthcheck: `http://127.0.0.1:17171/health`
+
+### OBS Studio WebSocket Integration
+- Connects to **OBS WebSocket v5** (via `obsws-python`)
+- Remote control: scene switching, source visibility toggle
+- Default: `127.0.0.1:4455`; password stored securely in OS keyring
+
+### Donation Alerts (Donatik & Donatello)
+- Polls **Donatik** and **Donatello** donation APIs
+- Reads donation amounts and messages aloud via Ukrainian TTS
+- Tokens stored locally in the OS keyring (never sent anywhere)
+
+### Secure Credential Storage
+All secrets live in the **OS keyring** (Windows Credential Manager / Secret Service / KWallet) — never in plain-text files:
+
+- Twitch: access token, Client ID, Client secret, channel name
+- YouTube: OAuth client JSON + token
+- TikTok: username
+- Donatik / Donatello: API tokens
+- OBS WebSocket: password
+- Telegram: bot token
+
+ENV override available: `STREAM_CHEREMSHA_TWITCH_CLIENT_ID`
+
+---
 
 ## Requirements
 
-- Python **3.11** (the project is pinned to the 3.11 line for compatibility).
-- Fedora/Linux: Qt Multimedia backends (e.g. GStreamer plugins for MP3) as provided by your distro’s PySide6 packages.
+- **Python 3.11** (`>=3.11,<3.12`)
+- **ffmpeg** in `PATH` (for TTS normalization and music via yt-dlp)
+- On Linux: system backends/codecs for QtMultimedia (distro-dependent)
 
-## Virtual environment
+---
+
+## Installation
+
+### Windows (PowerShell)
+
+```powershell
+cd D:\dev\stream-cheremsha
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+```
+
+### Linux / macOS (bash)
 
 ```bash
 cd /path/to/stream-cheremsha
@@ -16,9 +113,11 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-If `keyring` reports **No recommended backend** (common in minimal containers), install a backend such as [`keyrings.alt`](https://pypi.org/project/keyrings.alt/) or use your desktop’s Secret Service / KWallet integration.
+> If `keyring` reports **No recommended backend**, install [`keyrings.alt`](https://pypi.org/project/keyrings.alt/) or use your OS integration (Secret Service / KWallet).
 
-Run:
+---
+
+## Running
 
 ```bash
 cheremsha
@@ -26,112 +125,130 @@ cheremsha
 python -m stream_cheremsha
 ```
 
-## Twitch (twitchio 2.x IRC)
+---
 
-The app pins **`twitchio>=2.10,<3`** so chat stays on classic **IRC WebSocket** (simpler MVP than twitchio 3’s EventSub-only model).
+## Platform Setup Guides
 
-Register a Twitch Developer application and note the **Client ID** (and **Client secret** if your app is confidential—helps token refresh).
+### Twitch
+1. Click **Sign in with Twitch** — device-code OAuth flow opens in the browser
+2. Tokens are saved to the OS keyring automatically
+3. The channel name can be inferred from the login
+4. Alternative: paste an access token manually
 
-- **Sign in with Twitch (browser)** runs Twitch’s **device-code OAuth** (opens the browser; approve access on twitch.tv). Tokens are stored in the OS **keyring**. The **channel** field is prefilled from the validated token login when possible.
-- **Manual token** remains optional if you prefer to paste an access token yourself. **Save Twitch app to keyring** persists Client ID, optional secret, channel, and optional manual token.
-- **Enable Twitch** opens **IRC** to that channel’s chat; the broadcast does **not** need to be live. If the connection drops or fails to open, the client **retries every 15 seconds** until you press Stop or it stays connected.
+### YouTube Live
+1. In [Google Cloud Console](https://console.cloud.google.com/), enable **YouTube Data API v3**
+2. Create a **Desktop** OAuth client and download the JSON (`"installed"` block)
+3. In the app: **Sign in with Google** — first run asks for the JSON file, then uses keyring
+4. Optional: set `GOOGLE_OAUTH_CLIENT_JSON` (full JSON string) to skip the file picker
+5. **Start YouTube**: leave the field empty to auto-discover active broadcasts, or paste a video URL/ID
 
-## YouTube
+### TikTok Live
+Enter a username (with or without `@`) — the app connects via `TikTokLive` and forwards comments and events into the pipeline.
 
-1. In [Google Cloud Console](https://console.cloud.google.com/), enable **YouTube Data API v3** and create an OAuth client of type **Desktop**; download the JSON (it contains an `"installed"` block).
-2. In the app: **Sign in with Google (browser)** — the **first** time only, a file picker asks for that JSON; it is stored in the OS keyring. Later, login is just the button and the browser (same idea as many desktop apps that ship or cache OAuth client metadata).
-3. Optional: set env **`GOOGLE_OAUTH_CLIENT_JSON`** to the full JSON string to skip the file picker (e.g. CI or advanced setups).
-4. **Start YouTube** with the field **empty** to auto-detect every **active** live broadcast on the signed-in channel (via `liveBroadcasts.list`, with a `search`+`videos` fallback), or paste one **live** / VOD URL (or 11-character video ID) to pin a single stream. If nothing is live yet, the app **re-checks about every 45 seconds** until a live chat exists or you press Stop. Several simultaneous lives **share one poll cadence** (round-robin) so quota use stays closer to a single chat. `liveChatMessages.list` uses `maxResults=2000`, a **minimum 5 s** gap between calls, and the API’s `pollingIntervalMillis` when higher — see [YouTube Data API](https://developers.google.com/youtube/v3/getting-started).
+### Telegram Bot (Music Requests)
+1. Create a bot via [@BotFather](https://t.me/BotFather) and copy the token
+2. Paste the token in the app (saved to keyring)
+3. Viewers can send `/play <song name or YouTube URL>` to request music
 
-## TTS disclaimer
+### OBS WebSocket
+1. In OBS: **Tools → WebSocket Server Settings** → enable, set port `4455` and a password
+2. Enter the password in the app (saved to keyring)
+3. Control scenes and sources directly from Cheremsha
 
-Playback uses an **undocumented** Google Translate TTS endpoint. It may break or rate-limit; the code isolates TTS behind a small interface so you can swap engines later.
+---
 
 ## Development
 
-### Memory profiling (RSS / leak hunting)
-
-Install the optional profiling dependencies:
-
 ```bash
-pip install -e ".[profile]"
-# For mprof plot:
-pip install -e ".[profile-plot]"
-```
-
-Run the app under `memory_profiler`/`mprof`:
-
-```bash
-# Line-by-line RSS output in console (shows when profiled functions run)
-python -m memory_profiler scripts/profile_memory_run.py
-
-# Timeline plot-friendly run (writes an .dat file)
-mprof run python scripts/profile_memory_run.py
-mprof plot
-```
-
-Lightweight long-run metrics (good for 2–12h streams):
-
-```bash
-# Periodic RSS + queue sizes in logs (no line-by-line spam)
-set CHEREMSHA_METRICS=1
-set CHEREMSHA_METRICS_SEC=5
-python scripts/profile_memory_run.py
-```
-
-What is profiled by default:
-- `StreamCheremshaQmlApi.refresh()` (QML “refreshCounter” invalidation trigger)
-- `QtAudioSink.play_mp3()` (ffmpeg + temp file + QMediaPlayer path)
-- TikTok analytics feed ingestion: `TikTokAnalyticsFeedModel.prepend()`, `TikTokAnalyticsApi._apply_*()`
-- Donations live polling: `DonationsQmlApi._async_*poll*()`
-- Overlays pubsub: `OverlayPubSub.publish()/subscribe()`
-- Pipeline: `StreamCoordinator.enqueue_chat()`, `StreamCoordinator._tts_loop()`
-
-Tips for interpretation:
-- If RSS grows steadily while **idle** (no incoming events), suspect a leak (tasks/timers/queues, QML image cache, signals).
-- If RSS grows during bursts and then stabilizes, it may be a cache (Qt Quick image/texture cache, Python module caches).
-- For GPU VRAM spikes, `memory_profiler` won’t see VRAM — correlate with Task Manager GPU memory and reduce QML invalidations / image churn.
-
-```bash
-source .venv/bin/activate
 ruff check src tests
 pytest
 ```
 
-## Binary builds (Nuitka)
+### Memory Profiling
 
-Install build dependencies:
+```bash
+pip install -e ".[profile]"
+# Optional plot support:
+pip install -e ".[profile-plot]"
+
+python -m stream_cheremsha.profile_memory
+```
+
+Runtime metrics (periodic RSS + queue sizes in logs):
+
+```powershell
+$env:CHEREMSHA_METRICS="1"
+$env:CHEREMSHA_METRICS_SEC="5"
+python -m stream_cheremsha.profile_memory
+```
+
+---
+
+## Binary Build (Nuitka — Windows Standalone .exe)
 
 ```bash
 pip install -e ".[build]"
-```
-
-Build a **standalone** binary:
-
-```bash
 cheremsha-build
 ```
 
-Artifacts will be placed under `dist/nuitka/`.
+Artifacts output to `dist/nuitka/`.
 
-Notes:
+Additional flags:
 
-- **CUDA build (NVIDIA)**: the Nuitka build will bundle whichever `torch` you have installed in the build venv.
-  For a CUDA-enabled build, install CUDA wheels **before** running `cheremsha-build` (example: CUDA 12.8):
+| Flag | Description |
+|------|-------------|
+| `--onefile` | Single `.exe` (slower startup) |
+| `--debug` | Slower build, more diagnostics |
+| `--console` | Windows: show console window |
 
-  ```bash
-  pip uninstall -y torch torchaudio
-  pip install --index-url https://download.pytorch.org/whl/cu128 torch torchaudio
-  ```
+---
 
-- Linux audio: the build includes Qt plugins for **QML + QtMultimedia**. If your system lacks codecs/backends
-  (e.g. GStreamer plugins for MP3 on Fedora), install them via your distro packages.
-- **Windows**: install **ffmpeg** and ensure `ffmpeg.exe` is in `PATH` for the built app.
-- **Nuitka version**: pinned to `<4.0` because 4.x is known to crash on some dependency graphs (e.g. librosa).
-- **PyTorch in standalone**: the build uses `--python-flag=isolated` to avoid importing external site-packages
-  at runtime (fixes duplicate torch extension loads like `RpcBackendOptions already defined`).
+## Tech Stack
 
-Tips:
+| Component | Library |
+|-----------|---------|
+| Desktop UI | PySide6 (Qt 6) + PySide6-Frameless-Window |
+| Twitch chat | twitchio 2.x (IRC WebSocket) |
+| YouTube API | google-api-python-client + google-auth-oauthlib |
+| TikTok Live | TikTokLive |
+| TTS | edge-tts (Microsoft Edge) + Google Translate TTS |
+| Music download | yt-dlp |
+| Telegram bot | python-telegram-bot |
+| OBS control | obsws-python (WebSocket v5) |
+| Overlay server | aiohttp |
+| HTTP client | httpx |
+| Async Qt bridge | qasync |
+| Credentials | keyring |
+| Audio processing | ffmpeg |
 
-- Use `--debug` only when diagnosing build/runtime issues (it is **much slower**).
-- `--onefile` is also slower to build and slower to start; prefer standalone dir for iteration.
+---
+
+## Frequently Asked Questions
+
+**Q: Does Cheremsha support Ukrainian language TTS?**  
+Yes. Ukrainian TTS is the primary language. Edge TTS provides high-quality Ukrainian voices.
+
+**Q: Can I use Cheremsha with OBS Studio?**  
+Absolutely. Browser source overlays, OBS Docks, and OBS WebSocket v5 remote control are all built in.
+
+**Q: Does it work with virtual audio cables?**  
+Yes. You can select any system audio output device — perfect for routing TTS and music through a virtual cable into OBS.
+
+**Q: Is it free?**  
+Yes, Cheremsha is free and open-source.
+
+**Q: What platforms does the chat aggregation support?**  
+Twitch, YouTube Live, and TikTok Live simultaneously.
+
+**Q: How are my API tokens stored?**  
+All credentials are stored in your OS keyring (Windows Credential Manager on Windows, Secret Service on Linux). Nothing is stored in plain text.
+
+---
+
+## License
+
+See [LICENSE](LICENSE) for details.
+
+---
+
+*Cheremsha — стрімерський асистент для україномовних стрімерів: Twitch, YouTube, TikTok, TTS, OBS, донати, музика.*
