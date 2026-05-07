@@ -235,6 +235,7 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "actions.user_filter_ph": {"uk": "нікнейм…", "en": "nickname…"},
     "actions.actions": {"uk": "Дії", "en": "Actions"},
     "actions.play_sound": {"uk": "Програти звук", "en": "Play sound"},
+    "actions.play_random_myinstants_ua": {"uk": "Випадковий MyInstants UA", "en": "Random MyInstants UA"},
     "actions.pick_mp3": {"uk": "Оберіть .mp3…", "en": "Pick .mp3…"},
     "actions.play_sound_volume": {"uk": "Гучність (%)", "en": "Volume (%)"},
     "actions.play_sound_skip_if_same_playing": {
@@ -468,10 +469,16 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "settings.obs_help_html": {
         "uk": "Для дій «OBS» (перемикання сцени програми, видимість джерел).<br>"
         "Пароль той самий, що в OBS: <b>Налаштування</b> → <b>Мережа</b> → <b>OBS WebSocket</b>.<br>"
-        '<a href="https://github.com/obsproject/obs-websocket/blob/master/docs/generated/protocol.md">Протокол obs-websocket</a>.',
+        (
+            '<a href="https://github.com/obsproject/obs-websocket/blob/master/docs/generated/protocol.md">'
+            "Протокол obs-websocket</a>."
+        ),
         "en": "For Actions (program scene, source visibility).<br>"
         "Use the same password as in OBS: <b>Settings</b> → <b>Network</b> → <b>OBS WebSocket</b>.<br>"
-        '<a href="https://github.com/obsproject/obs-websocket/blob/master/docs/generated/protocol.md">obs-websocket protocol</a>.',
+        (
+            '<a href="https://github.com/obsproject/obs-websocket/blob/master/docs/generated/protocol.md">'
+            "obs-websocket protocol</a>."
+        ),
     },
     "settings.obs_host": {"uk": "Хост", "en": "Host"},
     "settings.obs_port": {"uk": "Порт", "en": "Port"},
