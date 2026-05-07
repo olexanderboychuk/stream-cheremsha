@@ -1,3 +1,4 @@
-"""Stream Cheremsha — live chat to Ukrainian TTS MVP."""
+﻿"""Stream Cheremsha вЂ” live chat to Ukrainian TTS MVP."""
 
-__version__ = "0.1.4"
+__version__ = "0.1.5"
+
