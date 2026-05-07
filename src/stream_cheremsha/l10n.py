@@ -62,6 +62,43 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     },
     "tab.audio": {"uk": "Аудіо", "en": "Audio"},
     "tab.logs": {"uk": "Логи", "en": "Logs"},
+    # Updates
+    "dlg.update": {"uk": "Оновлення", "en": "Update"},
+    "settings.updates_group": {"uk": "Оновлення", "en": "Updates"},
+    "settings.updates_check_on_startup": {
+        "uk": "Перевіряти оновлення при запуску",
+        "en": "Check for updates on startup",
+    },
+    "settings.updates_check_now": {"uk": "Перевірити оновлення", "en": "Check for updates"},
+    "updates.up_to_date": {"uk": "У вас остання версія ({version}).", "en": "You're up to date ({version})."},
+    "updates.redirect_releases": {
+        "uk": "Оновлення для Linux поки вручну: відкриваємо сторінку релізів.",
+        "en": "Linux updates are manual for now: opening the Releases page.",
+    },
+    "updates.available": {
+        "uk": "Доступна нова версія: <b>{latest}</b> (у вас {current}).<br/><a href=\"{url}\">Changelog</a>",
+        "en": "A new version is available: <b>{latest}</b> (you have {current}).<br/><a href=\"{url}\">Changelog</a>",
+    },
+    "updates.btn_update": {"uk": "Оновити", "en": "Update"},
+    "updates.btn_not_now": {"uk": "Не зараз", "en": "Not now"},
+    "updates.ignore_this_version": {
+        "uk": "Більше не нагадувати цю версію",
+        "en": "Don’t remind me for this version",
+    },
+    "updates.no_windows_asset": {
+        "uk": "Для цього релізу немає Windows інсталятора.",
+        "en": "This release has no Windows installer asset.",
+    },
+    "updates.downloading": {"uk": "Завантаження інсталятора…", "en": "Downloading installer…"},
+    "updates.ready_to_install": {"uk": "Готово до встановлення.", "en": "Ready to install."},
+    "updates.sha_mismatch": {
+        "uk": "Помилка безпеки: SHA-256 не збігається. Оновлення скасовано.",
+        "en": "Security error: SHA-256 mismatch. Update aborted.",
+    },
+    "updates.signature_invalid": {
+        "uk": "Помилка безпеки: підпис інсталятора недійсний. Оновлення скасовано.",
+        "en": "Security error: invalid installer signature. Update aborted.",
+    },
     "ui.settings_tooltip": {"uk": "Налаштування", "en": "Settings"},
     "ui.nav_music": {"uk": "Музика", "en": "Music"},
     "ui.nav_music_hint": {"uk": "Черга музики", "en": "Music queue"},
