@@ -85,7 +85,16 @@ jobs:
           $tagVersion = $tag
           if ($tagVersion.StartsWith("v")) { $tagVersion = $tagVersion.Substring(1) }
           $out = "dist/release/Cheremsha-Setup-$tag.exe"
-          & makensis `
+          $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          if (-not (Test-Path $makensis)) {
+            $cmd = Get-Command makensis -ErrorAction SilentlyContinue
+            if ($cmd) { $makensis = $cmd.Source }
+          }
+          if (-not (Test-Path $makensis)) {
+            Write-Error "makensis not found after NSIS install"
+            exit 1
+          }
+          & $makensis `
             "/DAPP_VERSION=$tagVersion" `
             "/DINPUT_DIR=${{ steps.nuitka.outputs.dist_dir }}" `
             "/DOUTPUT_EXE=$out" `
