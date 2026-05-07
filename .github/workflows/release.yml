@@ -84,7 +84,8 @@ jobs:
           $tag = "${{ github.ref_name }}"
           $tagVersion = $tag
           if ($tagVersion.StartsWith("v")) { $tagVersion = $tagVersion.Substring(1) }
-          $out = "dist/release/Cheremsha-Setup-$tag.exe"
+          New-Item -ItemType Directory -Force -Path "dist/release" | Out-Null
+          $out = Join-Path (Resolve-Path "dist/release").Path "Cheremsha-Setup-$tag.exe"
           $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
           if (-not (Test-Path $makensis)) {
             $cmd = Get-Command makensis -ErrorAction SilentlyContinue
