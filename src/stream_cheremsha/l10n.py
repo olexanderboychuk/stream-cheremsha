@@ -467,15 +467,15 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     },
     "settings.obs_group": {"uk": "OBS WebSocket", "en": "OBS WebSocket"},
     "settings.obs_help_html": {
-        "uk": "Для дій «OBS» (перемикання сцени програми, видимість джерел).<br>"
-        "Пароль той самий, що в OBS: <b>Налаштування</b> → <b>Мережа</b> → <b>OBS WebSocket</b>.<br>"
-        (
+        "uk": (
+            "Для дій «OBS» (перемикання сцени програми, видимість джерел).<br>"
+            "Пароль той самий, що в OBS: <b>Налаштування</b> → <b>Мережа</b> → <b>OBS WebSocket</b>.<br>"
             '<a href="https://github.com/obsproject/obs-websocket/blob/master/docs/generated/protocol.md">'
             "Протокол obs-websocket</a>."
         ),
-        "en": "For Actions (program scene, source visibility).<br>"
-        "Use the same password as in OBS: <b>Settings</b> → <b>Network</b> → <b>OBS WebSocket</b>.<br>"
-        (
+        "en": (
+            "For Actions (program scene, source visibility).<br>"
+            "Use the same password as in OBS: <b>Settings</b> → <b>Network</b> → <b>OBS WebSocket</b>.<br>"
             '<a href="https://github.com/obsproject/obs-websocket/blob/master/docs/generated/protocol.md">'
             "obs-websocket protocol</a>."
         ),
