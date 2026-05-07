@@ -17,9 +17,9 @@ import httpx
 from stream_cheremsha.actions.actions_play_sound import play_sound_from_file
 from stream_cheremsha.domain.protocols import AudioSink
 
-_INSTANT_PATH_RE = re.compile(
-    r'href\s*=\s*(?:"|\')(?P<path>/en/instant/[^"\']+)(?:"|\')',
-    re.IGNORECASE,
+_INSTANT_ANCHOR_RE = re.compile(
+    r'<a[^>]+href\s*=\s*(?:"|\')(?P<path>/en/instant/[^"\']+)(?:"|\')[^>]*>(?P<title>.*?)</a>',
+    re.IGNORECASE | re.DOTALL,
 )
 _MP3_URL_RE = re.compile(
     r'(?P<url>https?://[^\s"\']+?\.mp3(?:[?#][^\s"\']*)?)',
@@ -33,17 +33,58 @@ def extract_instant_page_paths_from_ua_index_html(html: str) -> list[str]:
 
     paths: list[str] = []
     seen: set[str] = set()
-    for m in _INSTANT_PATH_RE.finditer(html):
-        p = (m.group("path") or "").strip()
-        if not p:
+    for path, _title in extract_instant_entries_from_ua_index_html(html):
+        if path in seen:
             continue
-        if not p.startswith("/en/instant/"):
+        seen.add(path)
+        paths.append(path)
+    return paths
+
+
+def extract_instant_entries_from_ua_index_html(html: str) -> list[tuple[str, str]]:
+    if not html or not isinstance(html, str):
+        return []
+
+    out: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for m in _INSTANT_ANCHOR_RE.finditer(html):
+        p = (m.group("path") or "").strip()
+        if not p or not p.startswith("/en/instant/"):
             continue
         if p in seen:
             continue
+        t = re.sub(r"<[^>]+>", " ", str(m.group("title") or ""))
+        title = " ".join(t.split()).strip()
         seen.add(p)
-        paths.append(p)
-    return paths
+        out.append((p, title))
+    return out
+
+
+def _parse_skip_words(raw: object) -> list[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        parts = [str(x) for x in raw]
+    else:
+        parts = re.split(r"[,\n\r\t;]+", str(raw))
+    out: list[str] = []
+    seen: set[str] = set()
+    for p in parts:
+        w = (p or "").strip().casefold()
+        if not w or w in seen:
+            continue
+        seen.add(w)
+        out.append(w)
+    return out
+
+
+def _title_matches_skip_words(title: str, skip_words: list[str]) -> bool:
+    if not skip_words:
+        return False
+    t = (title or "").casefold()
+    if not t:
+        return False
+    return any(w in t for w in skip_words)
 
 
 def extract_mp3_url_from_instant_page_html(html: str) -> str:
@@ -116,6 +157,7 @@ async def play_random_myinstants_ua(
     skip_queue_if_same: bool,
     max_duration_seconds: float,
     max_page: int,
+    skip_words: object,
     status: Callable[[str], None],
 ) -> None:
     try:
@@ -125,6 +167,7 @@ async def play_random_myinstants_ua(
         mp = int(max_page)
         if mp < 1:
             mp = 1
+        sw = _parse_skip_words(skip_words)
 
         status("myinstants: fetching UA index…")
         headers = {
@@ -151,22 +194,25 @@ async def play_random_myinstants_ua(
             )
             index_resp = await client.get(index_url)
             index_resp.raise_for_status()
-            paths = extract_instant_page_paths_from_ua_index_html(index_resp.text)
-            if not paths:
+            entries = extract_instant_entries_from_ua_index_html(index_resp.text)
+            if not entries:
                 raise ValueError("No MyInstants UA instant paths found")
 
-            remaining = list(paths)
+            remaining = list(entries)
             cache_path: Path | None = None
             data: bytes | None = None
 
-            max_attempts = min(20, len(remaining))
+            max_attempts = min(40, len(remaining))
             for attempt in range(max_attempts):
-                chosen_path = pick_random_instant_path(remaining, rng=rng)
+                chosen_path, chosen_title = rng.choice(list(remaining))
                 try:
-                    remaining.remove(chosen_path)
+                    remaining.remove((chosen_path, chosen_title))
                 except ValueError:
                     # Shouldn't happen, but keep the loop robust.
                     pass
+                if _title_matches_skip_words(chosen_title, sw):
+                    status("myinstants: skipped (word filter)…")
+                    continue
 
                 instant_page_url = f"https://www.myinstants.com{chosen_path}"
                 status("myinstants: fetching instant page…")

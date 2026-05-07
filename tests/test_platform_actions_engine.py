@@ -191,6 +191,7 @@ def test_engine_executes_play_random_myinstants_ua_action(monkeypatch) -> None:
         skip_queue_if_same: bool,
         max_duration_seconds: float,
         max_page: int,
+        skip_words: object,
         status,
     ) -> None:
         _ = status
@@ -201,6 +202,7 @@ def test_engine_executes_play_random_myinstants_ua_action(monkeypatch) -> None:
                 "skip_queue_if_same": bool(skip_queue_if_same),
                 "max_duration_seconds": float(max_duration_seconds),
                 "max_page": int(max_page),
+                "skip_words": str(skip_words),
             }
         )
 
@@ -219,6 +221,7 @@ def test_engine_executes_play_random_myinstants_ua_action(monkeypatch) -> None:
                         "skip_if_same_playing": True,
                         "max_duration_seconds": 5,
                         "max_page": 3,
+                        "skip_words": "siren, loud",
                     },
                 }
             ],
@@ -240,6 +243,7 @@ def test_engine_executes_play_random_myinstants_ua_action(monkeypatch) -> None:
             "skip_queue_if_same": True,
             "max_duration_seconds": 5.0,
             "max_page": 3,
+            "skip_words": "siren, loud",
         },
     ]
 

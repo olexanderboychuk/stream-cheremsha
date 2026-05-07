@@ -6,6 +6,7 @@ from pathlib import Path
 
 from stream_cheremsha.actions.actions_play_random_myinstants_ua import (
     _enforce_cache_max_files,
+    extract_instant_entries_from_ua_index_html,
     extract_instant_page_paths_from_ua_index_html,
     extract_mp3_url_from_instant_page_html,
     pick_random_instant_path,
@@ -19,12 +20,14 @@ def _read_fixture(name: str) -> str:
 
 def test_extract_instant_page_paths_from_ua_index_html() -> None:
     html = _read_fixture("myinstants_ua_index.html")
+    entries = extract_instant_entries_from_ua_index_html(html)
+    assert len(entries) >= 5
     paths = extract_instant_page_paths_from_ua_index_html(html)
     assert len(paths) >= 5
     assert all(p.startswith("/en/instant/") for p in paths)
     assert extract_instant_page_paths_from_ua_index_html(None) == []
     assert extract_instant_page_paths_from_ua_index_html("") == []
-    one = 'href = "/en/instant/abc/"'
+    one = '<a href = "/en/instant/abc/">X</a>'
     assert extract_instant_page_paths_from_ua_index_html(one) == ["/en/instant/abc/"]
 
 

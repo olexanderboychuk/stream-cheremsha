@@ -92,7 +92,10 @@ TIKTOK_GIFTS_FALLBACK: Final[list[TikTokGift]] = [
 ]
 
 
-TIKTOK_GIFTS: Final[list[TikTokGift]] = _load_packaged_catalog() or _load_streamtoearn_ua() or TIKTOK_GIFTS_FALLBACK
+TIKTOK_GIFTS: Final[list[TikTokGift]] = next(
+    (gifts for gifts in (_load_streamtoearn_ua(),) if gifts),
+    TIKTOK_GIFTS_FALLBACK,
+)
 
 
 def tiktok_catalog_gift_image_url(*, gift_id: str = "", gift_name: str = "") -> str:

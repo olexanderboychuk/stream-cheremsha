@@ -3300,7 +3300,8 @@ Item {
                                                 volume_percent: 100,
                                                 skip_if_same_playing: false,
                                                 max_duration_seconds: 0,
-                                                max_page: 1
+                                                max_page: 1,
+                                                skip_words: ""
                                             };
                                             if (t === "write_file") aa[aIdx].params = { file_path: "", text: "", mode: "overwrite" };
                                             if (t === "run_program") aa[aIdx].params = { program_path: "", arguments: "" };
@@ -3467,6 +3468,37 @@ Item {
                                             aa[aIdx].params.skip_if_same_playing = playRandomMyinstantsUaSkipDupCb.checked;
                                             page.actionsModel = aa;
                                             page._scheduleCommitSelectedRuleActions();
+                                        }
+                                    }
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+                                        Text {
+                                            text: api ? api.loc("actions.myinstants_skip_words") : "Skip words"
+                                            color: muted
+                                            font.pixelSize: 12
+                                        }
+                                        TextField {
+                                            id: playRandomMyinstantsUaSkipWords
+                                            Layout.fillWidth: true
+                                            color: ink
+                                            placeholderTextColor: muted
+                                            placeholderText: api ? api.loc("actions.myinstants_skip_words_ph") : "e.g. meme, loud, siren"
+                                            text: (modelData && modelData.params && modelData.params.skip_words !== undefined) ? ("" + modelData.params.skip_words) : ""
+                                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                            onActiveFocusChanged: {
+                                                page.isActionTextEditing = activeFocus;
+                                                if (!activeFocus) page._commitSelectedRuleActions(false);
+                                            }
+                                            onTextEdited: {
+                                                var aa = page.actionsModel;
+                                                if (!aa || aIdx < 0 || aIdx >= aa.length) return;
+                                                if (!aa[aIdx].params) aa[aIdx].params = {};
+                                                aa[aIdx].params.skip_words = text;
+                                                page.actionsModel = aa;
+                                                page._scheduleCommitSelectedRuleActions();
+                                            }
                                         }
                                     }
 
