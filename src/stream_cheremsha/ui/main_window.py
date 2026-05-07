@@ -6,6 +6,8 @@ import json
 import logging
 import os
 import shutil
+import subprocess
+import sys
 import threading
 import time
 from collections import deque
@@ -27,7 +29,16 @@ from PySide6.QtCore import (
     Signal,
     Slot,
 )
-from PySide6.QtGui import QCloseEvent, QColor, QFont, QIcon, QPainter, QPen, QTextCursor
+from PySide6.QtGui import (
+    QCloseEvent,
+    QColor,
+    QDesktopServices,
+    QFont,
+    QIcon,
+    QPainter,
+    QPen,
+    QTextCursor,
+)
 from PySide6.QtQuick import QQuickView
 from PySide6.QtQuickWidgets import QQuickWidget
 from PySide6.QtWidgets import (
@@ -189,6 +200,14 @@ _SETTINGS_TELEGRAM_SONG_REQUESTS_ENABLED = "telegram/song_requests_enabled"
 
 _SETTINGS_MUSIC_BACKEND = "music/backend"  # "app" | "mpv"
 _SETTINGS_MUSIC_MAX_DURATION_MIN = "music/max_duration_minutes"
+
+_SETTINGS_UPDATES_CHECK_ON_STARTUP = "updates/check_on_startup"
+_SETTINGS_UPDATES_IGNORED_VERSION = "updates/ignored_version"
+_SETTINGS_UPDATES_LAST_CHECKED_AT = "updates/last_checked_at_utc"
+
+# If you don't have an Authenticode cert yet, keep this off.
+_UPDATES_REQUIRE_SIGNATURE = False
+_UPDATES_EXPECTED_PUBLISHER_SUBJECT_CONTAINS = "Cheremsha"
 
 
 class UiBridge(QObject):
@@ -1491,6 +1510,43 @@ class MainWindow(FramelessWindow):
         self._btn_mpv_check.clicked.connect(self._check_mpv_installed)
         self._music_max_duration_min.valueChanged.connect(self._persist_music_max_duration_min)
 
+        # Updates (Windows: download+launch installer; Linux: redirect to releases).
+        self._gb_updates = QGroupBox()
+        upd_outer = QVBoxLayout(self._gb_updates)
+        upd_outer.setContentsMargins(6, 10, 6, 8)
+        upd_outer.setSpacing(10)
+
+        upd_grid = QGridLayout()
+        upd_grid.setContentsMargins(0, 0, 0, 0)
+        upd_grid.setHorizontalSpacing(14)
+        upd_grid.setVerticalSpacing(8)
+        upd_grid.setColumnStretch(1, 1)
+        upd_grid.setColumnMinimumWidth(0, 124)
+
+        self._cb_updates_check_on_startup = QCheckBox()
+        self._cb_updates_check_on_startup.setChecked(
+            bool(self._settings.value(_SETTINGS_UPDATES_CHECK_ON_STARTUP, True, bool)),
+        )
+        self._cb_updates_check_on_startup.stateChanged.connect(self._persist_updates_check_on_startup)
+        upd_grid.addWidget(self._cb_updates_check_on_startup, 0, 0, 1, 2)
+
+        self._btn_updates_check_now = QPushButton()
+        self._btn_updates_check_now.setMinimumHeight(34)
+        self._btn_updates_check_now.setSizePolicy(
+            QSizePolicy.Policy.Maximum,
+            QSizePolicy.Policy.Fixed,
+        )
+        self._btn_updates_check_now.clicked.connect(self._updates_check_now_clicked)
+        upd_grid.addWidget(self._btn_updates_check_now, 1, 0, 1, 2, Qt.AlignmentFlag.AlignLeft)
+
+        self._lbl_updates_status = QLabel()
+        self._lbl_updates_status.setWordWrap(True)
+        self._lbl_updates_status.setStyleSheet("color: #8b95a5; font-size: 11px;")
+        upd_grid.addWidget(self._lbl_updates_status, 2, 0, 1, 2)
+
+        upd_outer.addLayout(upd_grid)
+        lay.addWidget(self._gb_updates)
+
         scroll.setWidget(body)
         center_row.addWidget(scroll)
         page_lay.addLayout(center_row, stretch=1)
@@ -1550,6 +1606,179 @@ class MainWindow(FramelessWindow):
             keyring_store.set_password(constants.KEY_OPENAI_API_KEY, vv)
         else:
             keyring_store.delete_password(constants.KEY_OPENAI_API_KEY)
+
+    @Slot(int)
+    def _persist_updates_check_on_startup(self, _state: int) -> None:
+        self._settings.setValue(
+            _SETTINGS_UPDATES_CHECK_ON_STARTUP,
+            bool(self._cb_updates_check_on_startup.isChecked()),
+        )
+
+    @Slot()
+    def _updates_check_now_clicked(self) -> None:
+        asyncio.ensure_future(self._check_for_updates(interactive=True))
+
+    async def _check_for_updates(self, interactive: bool) -> None:
+        """
+        Windows: prompt and download installer.
+        Linux: redirect to releases page (manual update).
+        """
+        from stream_cheremsha.updates.client import fetch_latest_manifest, is_newer_version
+
+        current = self._app_version()
+        title = self._tr("dlg.update")
+        try:
+            manifest = await asyncio.to_thread(fetch_latest_manifest)
+        except (OSError, ValueError, httpx.HTTPError, RuntimeError, TypeError) as e:
+            if interactive:
+                QMessageBox.warning(self, title, str(e))
+            return
+
+        latest = manifest.version
+        ignored = str(
+            self._settings.value(_SETTINGS_UPDATES_IGNORED_VERSION, "", str) or "",
+        ).strip()
+        self._settings.setValue(
+            _SETTINGS_UPDATES_LAST_CHECKED_AT,
+            datetime.now(tz=UTC).isoformat(),
+        )
+
+        try:
+            newer = is_newer_version(latest, current)
+        except ValueError:
+            newer = False
+
+        if not newer:
+            if interactive:
+                QMessageBox.information(
+                    self,
+                    title,
+                    self._tr("updates.up_to_date", version=current),
+                )
+            return
+        if ignored and ignored == latest and not interactive:
+            return
+
+        if sys.platform.startswith("win"):
+            await self._prompt_and_update_windows(manifest, current=current, latest=latest)
+        else:
+            rel = (
+                manifest.platforms.linux.releases_url
+                if manifest.platforms.linux is not None
+                else ""
+            )
+            if interactive and rel:
+                QDesktopServices.openUrl(QUrl(rel))
+            elif interactive:
+                QMessageBox.information(self, title, self._tr("updates.redirect_releases"))
+
+    def _app_version(self) -> str:
+        try:
+            import importlib.metadata
+
+            return str(importlib.metadata.version("stream-cheremsha"))
+        except (ImportError, ModuleNotFoundError, RuntimeError):
+            return "0.0.0"
+
+    async def _prompt_and_update_windows(self, manifest, current: str, latest: str) -> None:
+        from stream_cheremsha.updates.downloader import download_file, sha256_file
+
+        title = self._tr("dlg.update")
+        msg = self._tr(
+            "updates.available",
+            current=current,
+            latest=latest,
+            url=manifest.changelog_url,
+        )
+
+        dlg = QMessageBox(self)
+        dlg.setIcon(QMessageBox.Icon.Information)
+        dlg.setWindowTitle(title)
+        dlg.setText(msg)
+        dlg.setTextFormat(Qt.TextFormat.RichText)
+        btn_update = dlg.addButton(
+            self._tr("updates.btn_update"),
+            QMessageBox.ButtonRole.AcceptRole,
+        )
+        dlg.addButton(self._tr("updates.btn_not_now"), QMessageBox.ButtonRole.RejectRole)
+        dlg.setDefaultButton(btn_update)
+
+        cb_ignore = QCheckBox(self._tr("updates.ignore_this_version"))
+        dlg.setCheckBox(cb_ignore)
+
+        dlg.exec()
+        clicked = dlg.clickedButton()
+        if clicked != btn_update:
+            if cb_ignore.isChecked():
+                self._settings.setValue(_SETTINGS_UPDATES_IGNORED_VERSION, latest)
+            return
+
+        win = manifest.platforms.windows
+        if win is None:
+            QMessageBox.warning(self, title, self._tr("updates.no_windows_asset"))
+            return
+
+        local_app_data = (os.getenv("LOCALAPPDATA") or "").strip()
+        base = Path(local_app_data) if local_app_data else Path.home()
+        updates_dir = base / "stream-cheremsha" / "updates"
+        installer_path = updates_dir / f"Cheremsha-Setup-{manifest.tag}.exe"
+
+        try:
+            self._btn_updates_check_now.setEnabled(False)
+            self._lbl_updates_status.setText(self._tr("updates.downloading"))
+            await asyncio.to_thread(download_file, win.installer.url, installer_path)
+            got = await asyncio.to_thread(sha256_file, installer_path)
+            if got.lower() != win.installer.sha256.lower():
+                try:
+                    installer_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                QMessageBox.critical(self, title, self._tr("updates.sha_mismatch"))
+                return
+
+            if _UPDATES_REQUIRE_SIGNATURE and not self._verify_windows_installer_signature(
+                str(installer_path),
+            ):
+                try:
+                    installer_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                QMessageBox.critical(self, title, self._tr("updates.signature_invalid"))
+                return
+
+            self._lbl_updates_status.setText(self._tr("updates.ready_to_install"))
+        finally:
+            self._btn_updates_check_now.setEnabled(True)
+
+        subprocess.Popen([str(installer_path)], close_fds=True)
+        self.close()
+
+    def _verify_windows_installer_signature(self, exe_path: str) -> bool:
+        if not sys.platform.startswith("win"):
+            return True
+        escaped = exe_path.replace("'", "''")
+        ps = (
+            "$sig = Get-AuthenticodeSignature -FilePath "
+            + f"'{escaped}'"
+            + ";"
+            + "$ok = ($sig.Status -eq 'Valid');"
+            + "$sub = '';"
+            + "if ($sig.SignerCertificate -ne $null) { $sub = $sig.SignerCertificate.Subject }"
+            + ";"
+            + f"$pubOk = ($sub -like '*{_UPDATES_EXPECTED_PUBLISHER_SUBJECT_CONTAINS}*');"
+            + "if ($ok -and $pubOk) { exit 0 } else { exit 1 }"
+        )
+        try:
+            r = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+                capture_output=True,
+                text=True,
+                timeout=8,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError, ValueError):
+            return False
+        return r.returncode == 0
 
     def _persist_telegram_token(self) -> None:
         vv = self._tg_token.text() or ""
@@ -1857,6 +2086,11 @@ class MainWindow(FramelessWindow):
         self._lbl_music_max_duration.setText(self._tr("settings.music_max_duration"))
         self._lbl_music_max_duration_hint.setText(self._tr("settings.music_max_duration_hint"))
         self._btn_mpv_check.setText(self._tr("settings.music_check_mpv"))
+
+        self._gb_updates.setTitle(self._tr("settings.updates_group"))
+        self._cb_updates_check_on_startup.setText(self._tr("settings.updates_check_on_startup"))
+        self._btn_updates_check_now.setText(self._tr("settings.updates_check_now"))
+        self._lbl_updates_status.setText("")
 
     def _apply_connections_tab_texts(self) -> None:
         self._gb_twitch.setTitle(self._tr("tw.group"))
@@ -3897,6 +4131,11 @@ class MainWindow(FramelessWindow):
             await self._apply_music_backend_from_settings()
             await self._apply_telegram_from_settings()
             await self._maybe_auto_start_platforms()
+            if bool(self._settings.value(_SETTINGS_UPDATES_CHECK_ON_STARTUP, True, bool)):
+                asyncio.create_task(
+                    self._check_for_updates(interactive=False),
+                    name="updates-startup-check",
+                )
         finally:
             self.startup_finished.emit()
 

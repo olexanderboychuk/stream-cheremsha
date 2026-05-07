@@ -105,6 +105,19 @@ jobs:
             exit 1
           }
 
+      - name: Generate latest.json manifest
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $installer = "dist/release/Cheremsha-Setup-$tag.exe"
+          $zip = "dist/release/Cheremsha-$tag-windows-x64-portable.zip"
+          uv run --frozen python scripts/ci/generate_latest_json.py `
+            --tag "$tag" `
+            --repo "${{ github.repository }}" `
+            --installer-path "$installer" `
+            --portable-zip-path "$zip" `
+            --out "dist/release/latest.json"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -113,3 +126,4 @@ jobs:
           files: |
             dist/release/*.zip
             dist/release/*.exe
+            dist/release/latest.json
