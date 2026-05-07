@@ -180,6 +180,55 @@ def test_engine_executes_play_sound_action(tmp_path: Path) -> None:
     assert sink.mp3_calls == [b"mp3-bytes"]
 
 
+def test_engine_executes_play_random_myinstants_ua_action(monkeypatch) -> None:
+    sink = FakeSink()
+    calls: list[dict[str, object]] = []
+
+    async def stub(
+        *,
+        sink,
+        volume_percent: int,
+        skip_queue_if_same: bool,
+        status,
+    ) -> None:
+        _ = status
+        calls.append(
+            {
+                "sink": sink,
+                "volume_percent": int(volume_percent),
+                "skip_queue_if_same": bool(skip_queue_if_same),
+            }
+        )
+
+    monkeypatch.setattr("stream_cheremsha.actions.engine.play_random_myinstants_ua", stub)
+
+    rules = [
+        RuleV1(
+            id="r1",
+            enabled=True,
+            events=({"type": "chat_keyword", "params": {"keyword": "hello"}},),
+            actions=[
+                {
+                    "type": "play_random_myinstants_ua",
+                    "params": {"volume_percent": 999, "skip_if_same_playing": True},
+                }
+            ],
+        ),
+    ]
+    engine = PlatformActionsEngine(sink, rules, status_callback=lambda _m: None)
+    ev = ChatMessageEvent(
+        platform=ChatPlatform.TWITCH,
+        author="alice",
+        text="hello world",
+        received_at=datetime.now(tz=UTC),
+    )
+    asyncio.run(engine.on_chat_message(ev))
+
+    assert calls == [
+        {"sink": sink, "volume_percent": 100, "skip_queue_if_same": True},
+    ]
+
+
 def test_engine_play_sound_two_same_file_without_skip_plays_twice(tmp_path: Path) -> None:
     p = tmp_path / "a.mp3"
     p.write_bytes(b"mp3-bytes")
