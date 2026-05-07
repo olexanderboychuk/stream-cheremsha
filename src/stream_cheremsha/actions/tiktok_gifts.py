@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from importlib import resources
 from pathlib import Path
 from typing import Final, TypedDict
 
@@ -15,6 +16,33 @@ class TikTokGift(TypedDict, total=False):
 def _repo_root() -> Path:
     # .../src/stream_cheremsha/actions/tiktok_gifts.py -> repo root
     return Path(__file__).resolve().parents[3]
+
+
+def _load_packaged_catalog() -> list[TikTokGift]:
+    """Load the bundled TikTok gift catalog from package assets (preferred)."""
+    try:
+        p = resources.files("stream_cheremsha").joinpath("assets/tiktok_gifts_ua_streamtoearn.json")
+        raw = json.loads(p.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ModuleNotFoundError, json.JSONDecodeError):
+        return []
+    if not isinstance(raw, list):
+        return []
+    out: list[TikTokGift] = []
+    for it in raw:
+        if not isinstance(it, dict):
+            continue
+        name = it.get("name")
+        price = it.get("price")
+        image_url = it.get("image_url")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        if not isinstance(price, int):
+            continue
+        gift: TikTokGift = {"id": "", "name": name.strip(), "price": price}
+        if isinstance(image_url, str) and image_url.strip():
+            gift["image_url"] = image_url.strip()
+        out.append(gift)
+    return out
 
 
 def _load_streamtoearn_ua() -> list[TikTokGift]:
@@ -64,7 +92,7 @@ TIKTOK_GIFTS_FALLBACK: Final[list[TikTokGift]] = [
 ]
 
 
-TIKTOK_GIFTS: Final[list[TikTokGift]] = _load_streamtoearn_ua() or TIKTOK_GIFTS_FALLBACK
+TIKTOK_GIFTS: Final[list[TikTokGift]] = _load_packaged_catalog() or _load_streamtoearn_ua() or TIKTOK_GIFTS_FALLBACK
 
 
 def tiktok_catalog_gift_image_url(*, gift_id: str = "", gift_name: str = "") -> str:
