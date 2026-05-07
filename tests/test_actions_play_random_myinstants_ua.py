@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import os
+import random
 from pathlib import Path
 
 from stream_cheremsha.actions.actions_play_random_myinstants_ua import (
     _enforce_cache_max_files,
     extract_instant_page_paths_from_ua_index_html,
     extract_mp3_url_from_instant_page_html,
+    pick_random_instant_path,
 )
 
 
@@ -53,3 +55,14 @@ def test_enforce_cache_max_files(tmp_path: Path) -> None:
 
     remaining = sorted(p.name for p in cache_dir.glob("*.mp3") if p.is_file())
     assert remaining == ["3.mp3", "4.mp3"]
+
+
+def test_pick_random_instant_path_is_deterministic() -> None:
+    paths = [
+        "/en/instant/a/",
+        "/en/instant/b/",
+        "/en/instant/c/",
+        "/en/instant/d/",
+    ]
+    rng = random.Random(123)
+    assert pick_random_instant_path(paths, rng=rng) == "/en/instant/a/"
