@@ -190,6 +190,7 @@ def test_engine_executes_play_random_myinstants_ua_action(monkeypatch) -> None:
         volume_percent: int,
         skip_queue_if_same: bool,
         max_duration_seconds: float,
+        max_page: int,
         status,
     ) -> None:
         _ = status
@@ -199,6 +200,7 @@ def test_engine_executes_play_random_myinstants_ua_action(monkeypatch) -> None:
                 "volume_percent": int(volume_percent),
                 "skip_queue_if_same": bool(skip_queue_if_same),
                 "max_duration_seconds": float(max_duration_seconds),
+                "max_page": int(max_page),
             }
         )
 
@@ -216,6 +218,7 @@ def test_engine_executes_play_random_myinstants_ua_action(monkeypatch) -> None:
                         "volume_percent": 999,
                         "skip_if_same_playing": True,
                         "max_duration_seconds": 5,
+                        "max_page": 3,
                     },
                 }
             ],
@@ -236,6 +239,7 @@ def test_engine_executes_play_random_myinstants_ua_action(monkeypatch) -> None:
             "volume_percent": 100,
             "skip_queue_if_same": True,
             "max_duration_seconds": 5.0,
+            "max_page": 3,
         },
     ]
 

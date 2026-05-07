@@ -243,6 +243,7 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "Play uniquely — skip if this file is already playing or queued",
     },
     "actions.max_duration_seconds": {"uk": "Макс. тривалість (сек)", "en": "Max duration (sec)"},
+    "actions.myinstants_max_page": {"uk": "Макс. сторінка", "en": "Max page"},
     "actions.write_file": {"uk": "Запис у файл", "en": "Write to file"},
     "actions.write_mode": {"uk": "Режим запису", "en": "Write mode"},
     "actions.write_mode_overwrite": {"uk": "Перезаписати", "en": "Overwrite"},

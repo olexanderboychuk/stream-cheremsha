@@ -3299,7 +3299,8 @@ Item {
                                             if (t === "play_random_myinstants_ua") aa[aIdx].params = {
                                                 volume_percent: 100,
                                                 skip_if_same_playing: false,
-                                                max_duration_seconds: 0
+                                                max_duration_seconds: 0,
+                                                max_page: 1
                                             };
                                             if (t === "write_file") aa[aIdx].params = { file_path: "", text: "", mode: "overwrite" };
                                             if (t === "run_program") aa[aIdx].params = { program_path: "", arguments: "" };
@@ -3493,6 +3494,36 @@ Item {
                                                 var v = parseFloat(text);
                                                 if (isNaN(v) || v < 0) v = 0;
                                                 aa[aIdx].params.max_duration_seconds = v;
+                                                page.actionsModel = aa;
+                                                page._scheduleCommitSelectedRuleActions();
+                                            }
+                                        }
+                                    }
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+                                        Text {
+                                            text: api ? api.loc("actions.myinstants_max_page") : "Max page"
+                                            color: muted
+                                            font.pixelSize: 12
+                                        }
+                                        TextField {
+                                            id: playRandomMyinstantsUaMaxPage
+                                            Layout.preferredWidth: 120
+                                            color: ink
+                                            placeholderTextColor: muted
+                                            placeholderText: "1"
+                                            inputMethodHints: Qt.ImhDigitsOnly
+                                            text: (modelData && modelData.params && modelData.params.max_page !== undefined) ? ("" + modelData.params.max_page) : "1"
+                                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                            onTextEdited: {
+                                                var aa = page.actionsModel;
+                                                if (!aa || aIdx < 0 || aIdx >= aa.length) return;
+                                                if (!aa[aIdx].params) aa[aIdx].params = {};
+                                                var v = parseInt(text);
+                                                if (isNaN(v) || v < 1) v = 1;
+                                                aa[aIdx].params.max_page = v;
                                                 page.actionsModel = aa;
                                                 page._scheduleCommitSelectedRuleActions();
                                             }

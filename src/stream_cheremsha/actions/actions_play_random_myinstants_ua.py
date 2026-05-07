@@ -115,12 +115,16 @@ async def play_random_myinstants_ua(
     volume_percent: int,
     skip_queue_if_same: bool,
     max_duration_seconds: float,
+    max_page: int,
     status: Callable[[str], None],
 ) -> None:
     try:
         max_s = float(max_duration_seconds)
         if max_s < 0:
             max_s = 0.0
+        mp = int(max_page)
+        if mp < 1:
+            mp = 1
 
         status("myinstants: fetching UA index…")
         headers = {
@@ -134,14 +138,19 @@ async def play_random_myinstants_ua(
         }
         timeout = httpx.Timeout(connect=10.0, read=20.0, write=20.0, pool=10.0)
         async with httpx.AsyncClient(headers=headers, timeout=timeout, follow_redirects=True) as client:
-            index_url = "https://www.myinstants.com/en/index/ua/"
+            rng = random.SystemRandom()
+            page_n = rng.randint(1, mp)
+            index_url = (
+                "https://www.myinstants.com/en/index/ua/"
+                if page_n == 1
+                else f"https://www.myinstants.com/en/index/ua/?page={page_n}"
+            )
             index_resp = await client.get(index_url)
             index_resp.raise_for_status()
             paths = extract_instant_page_paths_from_ua_index_html(index_resp.text)
             if not paths:
                 raise ValueError("No MyInstants UA instant paths found")
 
-            rng = random.SystemRandom()
             remaining = list(paths)
             cache_path: Path | None = None
             data: bytes | None = None

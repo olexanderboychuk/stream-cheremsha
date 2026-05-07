@@ -1111,9 +1111,16 @@ class PlatformActionsEngine:
                         max_d = 0.0
                     if max_d < 0:
                         max_d = 0.0
+                    mp_raw = params.get("max_page", 1)
+                    try:
+                        mp = int(mp_raw)
+                    except (TypeError, ValueError):
+                        mp = 1
+                    if mp < 1:
+                        mp = 1
 
                     async def _play_random_myinstants_ua(
-                        v: int = vol, s: bool = skip_dup, md: float = max_d
+                        v: int = vol, s: bool = skip_dup, md: float = max_d, mpage: int = mp
                     ) -> None:
                         try:
                             await play_random_myinstants_ua(
@@ -1121,6 +1128,7 @@ class PlatformActionsEngine:
                                 volume_percent=v,
                                 skip_queue_if_same=s,
                                 max_duration_seconds=md,
+                                max_page=mpage,
                                 status=self._status_callback,
                             )
                         except (httpx.HTTPError, OSError, ValueError) as e:
