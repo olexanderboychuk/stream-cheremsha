@@ -3487,6 +3487,10 @@ Item {
                                             placeholderText: api ? api.loc("actions.myinstants_skip_words_ph") : "e.g. meme, loud, siren"
                                             text: (modelData && modelData.params && modelData.params.skip_words !== undefined) ? ("" + modelData.params.skip_words) : ""
                                             background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                            onActiveFocusChanged: {
+                                                page.isActionTextEditing = activeFocus;
+                                                if (!activeFocus) page._commitSelectedRuleActions(false);
+                                            }
                                             onTextEdited: {
                                                 var aa = page.actionsModel;
                                                 if (!aa || aIdx < 0 || aIdx >= aa.length) return;
