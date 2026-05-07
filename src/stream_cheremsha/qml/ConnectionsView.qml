@@ -26,7 +26,14 @@ Item {
     readonly property color tkBar: "#0ea5e9"
     readonly property color tkHi: "#7dd3fc"
     readonly property int footerPad: root.platformCardsHidden ? 102 : 0
-    Rectangle { anchors.fill: parent; color: base }
+    Rectangle {
+        anchors.fill: parent
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: "#0f172a" }
+            GradientStop { position: 0.55; color: "#0b1220" }
+            GradientStop { position: 1.0; color: "#070910" }
+        }
+    }
 
     component CollapseHandle: Item {
         id: h

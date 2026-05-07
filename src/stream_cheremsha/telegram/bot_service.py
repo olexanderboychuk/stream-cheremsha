@@ -51,7 +51,7 @@ class TelegramBotService:
         admin_id: int,
         song_requests_enabled: bool,
         call_on_main_loop: MainLoopCall,
-        enqueue_song: Callable[[str, str], Awaitable[None]],
+        enqueue_song: Callable[[str, str], Awaitable[str | None]],
         skip_song: Callable[[], Awaitable[None]],
         remove_song_by_id: Callable[[str], Awaitable[bool]],
         list_queue: Callable[
@@ -258,7 +258,7 @@ class TelegramBotService:
             if not is_admin:
                 await q.message.reply_text("Недостатньо прав.")
                 return
-            tid = data[len(_CB_RM_PREFIX) :].strip()
+            tid = data[len(_CB_RM_PREFIX):].strip()
             if not tid:
                 await q.message.reply_text("Невірна команда.")
                 return
@@ -348,13 +348,26 @@ class TelegramBotService:
             return
         who = _safe_user_display(update)
 
+        fut: asyncio.Future[str | None] = asyncio.get_running_loop().create_future()
+
         async def _enqueue() -> None:
-            await self._enqueue_song(vid, who)
+            err = await self._enqueue_song(vid, who)
+            fut.set_result(err)
 
         self._call_on_main_loop(_enqueue)
+        err = await fut
         is_admin = int(update.effective_user.id) == int(self._admin_id)
+        if err:
+            await update.effective_chat.send_message(
+                f"❌ {err}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=self._main_menu_markup(is_admin=is_admin),
+                disable_web_page_preview=True,
+            )
+            return
         await update.effective_chat.send_message(
             f"✅ Додано в чергу: <code>{vid}</code>",
             parse_mode=ParseMode.HTML,
             reply_markup=self._main_menu_markup(is_admin=is_admin),
+            disable_web_page_preview=True,
         )

@@ -364,6 +364,25 @@ def _tiktok_any_gift_received_min_price_if_matches(
     if not isinstance(params, dict):
         status(f"Rule {rule_id}: event.params must be an object")
         return None
+    exclude_raw = params.get("exclude_gifts", params.get("exclude", []))
+    exclude: list[str] = []
+    if isinstance(exclude_raw, str):
+        s = exclude_raw.strip()
+        if s:
+            exclude = [s]
+    elif isinstance(exclude_raw, list):
+        for it in exclude_raw:
+            if not isinstance(it, str):
+                continue
+            s = it.strip()
+            if s:
+                exclude.append(s)
+    if exclude:
+        gid = (ev.gift_id or "").strip()
+        nm_cf = (ev.gift_name or "").strip().casefold()
+        ex_cf = {x.casefold() for x in exclude}
+        if (gid and gid in exclude) or (nm_cf and nm_cf in ex_cf):
+            return None
     min_price_raw = params.get("min_price", 1)
     try:
         min_price = int(min_price_raw)

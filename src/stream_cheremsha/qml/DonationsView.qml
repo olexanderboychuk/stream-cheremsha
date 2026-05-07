@@ -42,7 +42,14 @@ Item {
         return _iso(d)
     }
 
-    Rectangle { anchors.fill: parent; color: base }
+    Rectangle {
+        anchors.fill: parent
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: "#0f172a" }
+            GradientStop { position: 0.55; color: "#0b1220" }
+            GradientStop { position: 1.0; color: "#070910" }
+        }
+    }
 
     component PillButton: Button {
         id: pb

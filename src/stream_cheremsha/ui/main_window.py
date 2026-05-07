@@ -86,7 +86,7 @@ from stream_cheremsha.domain.models import ChatMessage, ChatPlatform
 from stream_cheremsha.domain.protocols import TextToSpeech
 from stream_cheremsha.music.player import MusicPlayer
 from stream_cheremsha.music.queue_controller import MusicQueueController
-from stream_cheremsha.music.yt_dlp_resolver import fetch_youtube_title
+from stream_cheremsha.music.yt_dlp_resolver import fetch_youtube_meta, fetch_youtube_title
 from stream_cheremsha.online.models import now_hms as online_now_hms
 from stream_cheremsha.online.models import online_state_patch
 from stream_cheremsha.openai_moderation import openai_moderation_flagged
@@ -188,6 +188,7 @@ _SETTINGS_TELEGRAM_ADMIN_ID = "telegram/admin_id"
 _SETTINGS_TELEGRAM_SONG_REQUESTS_ENABLED = "telegram/song_requests_enabled"
 
 _SETTINGS_MUSIC_BACKEND = "music/backend"  # "app" | "mpv"
+_SETTINGS_MUSIC_MAX_DURATION_MIN = "music/max_duration_minutes"
 
 
 class UiBridge(QObject):
@@ -351,7 +352,8 @@ class _CheremshaTitleBar(StandardTitleBar):
         self.settingsBtn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.settingsBtn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.settingsBtn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.settingsBtn.setToolTip("Налаштування")
+        # Locale is initialized later by MainWindow; set translated tooltip after init.
+        self.settingsBtn.setToolTip("Settings")
         self.settingsBtn.clicked.connect(
             lambda: self.window()._set_main_page(self.window()._IX_SETTINGS),  # noqa: SLF001
         )
@@ -454,6 +456,7 @@ class MainWindow(FramelessWindow):
         lab.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         lab.setMinimumWidth(_FORM_LABEL_MIN_WIDTH)
         lab.setWordWrap(True)
+        lab.setContentsMargins(0, 0, 6, 0)
         return lab
 
     @staticmethod
@@ -463,6 +466,7 @@ class MainWindow(FramelessWindow):
         lab.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         lab.setWordWrap(True)
         lab.setMinimumWidth(118)
+        lab.setContentsMargins(0, 0, 6, 0)
         return lab
 
     @staticmethod
@@ -597,6 +601,9 @@ class MainWindow(FramelessWindow):
         self._lbl_music_backend_hint = QLabel()
         self._btn_mpv_check = QPushButton()
         self._lbl_mpv_check_result = QLabel()
+        self._lbl_music_max_duration = MainWindow._obs_settings_label("")
+        self._music_max_duration_min = QSpinBox()
+        self._lbl_music_max_duration_hint = QLabel()
         self._actions_qml_api = ActionsQmlApi(self)
         self._qml_actions: QQuickWidget | None = None
         self._widgets_qml_api: WidgetsQmlApi | None = None
@@ -1089,6 +1096,11 @@ class MainWindow(FramelessWindow):
                 b.update()
 
     def _apply_in_app_chrome_texts(self) -> None:
+        if hasattr(self, "titleBar") and hasattr(self.titleBar, "settingsBtn"):
+            try:
+                self.titleBar.settingsBtn.setToolTip(self._tr("ui.settings_tooltip"))
+            except RuntimeError:
+                pass
         if hasattr(self, "_btn_footer_home"):
             th = self._tr("ui.nav_home")
             self._btn_footer_home.setText(th)
@@ -1125,14 +1137,31 @@ class MainWindow(FramelessWindow):
             self._btn_footer_docks.setToolTip(self._tr("ui.nav_docks_hint"))
             self._btn_footer_docks.setAccessibleName(td)
         if hasattr(self, "_btn_footer_music"):
-            self._btn_footer_music.setText("Music")
-            self._btn_footer_music.setToolTip("Music queue")
-            self._btn_footer_music.setAccessibleName("Music")
+            self._btn_footer_music.setText(self._tr("ui.nav_music"))
+            self._btn_footer_music.setToolTip(self._tr("ui.nav_music_hint"))
+            self._btn_footer_music.setAccessibleName(self._tr("ui.nav_music"))
 
     def _apply_dark_chrome(self) -> None:
         self.setStyleSheet(
+            # Keep most widgets transparent; paint page roots explicitly for a cohesive backdrop.
             "MainWindow { background-color: #0d0f14; }"
             "QWidget { background-color: transparent; color: #e6e6e6; }"
+            "QWidget#connectionsPageRoot { "
+            "background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+            "stop:0 #0f172a, stop:0.55 #0b1220, stop:1 #070910); }"
+            "QWidget#settingsPageRoot { "
+            "background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+            "stop:0 #0f172a, stop:0.55 #0b1220, stop:1 #070910); }"
+            "QWidget#chatPageRoot { "
+            "background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+            "stop:0 #0f172a, stop:0.55 #0b1220, stop:1 #070910); }"
+            "QWidget#musicPageRoot { "
+            "background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+            "stop:0 #0f172a, stop:0.55 #0b1220, stop:1 #070910); }"
+            "QWidget#logsPageRoot { "
+            "background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+            "stop:0 #0f172a, stop:0.55 #0b1220, stop:1 #070910); }"
+            "QWidget#settingsScrollBody { background-color: transparent; }"
             "QFrame#appFooter { background-color: #080a0e; border: none; "
             "border-top: 1px solid #1e2430; }"
             "QLabel#footerStatus { color: #b8c0ce; font-size: 11px; }"
@@ -1142,11 +1171,12 @@ class MainWindow(FramelessWindow):
             "QToolButton#footerNav:hover { background: #1a2030; border-color: #3b4458; }"
             'QToolButton#footerNav[activeNav="on"] { background: #1a2540; '
             "border-color: #3d4f6a; }"
-            "QGroupBox { border: 1px solid #2a3142; border-radius: 10px; margin-top: 18px; "
-            "padding-top: 8px; padding-bottom: 12px; padding-left: 12px; padding-right: 12px; "
-            "font-weight: 600; background-color: #0c0e14; }"
+            "QGroupBox { border: 1px solid #2a3142; border-radius: 12px; margin-top: 16px; "
+            "padding-top: 10px; padding-bottom: 12px; padding-left: 14px; padding-right: 14px; "
+            "font-weight: 600; background-color: rgba(18, 22, 32, 210); }"
             "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; "
-            "left: 12px; padding: 2px 8px; color: #e8eaed; }"
+            "left: 12px; padding: 1px 8px; color: #e8eaed; font-size: 12px; "
+            "background: rgba(8, 10, 14, 170); border-radius: 8px; }"
             "QScrollArea { border: none; background: transparent; }"
             "QScrollBar:vertical { width: 10px; background: #0f1219; margin: 4px 2px 4px 0; "
             "border-radius: 5px; border: 1px solid #1e2430; }"
@@ -1175,12 +1205,17 @@ class MainWindow(FramelessWindow):
             "QLabel#audioMutedCaption { color: #8b95a5; font-size: 12px; }"
             "QLineEdit, QComboBox, QSpinBox, QTextEdit, QPlainTextEdit {"
             " background: #10141c; color: #e6e6e6; border: 1px solid #2a3142; "
-            "border-radius: 8px; padding: 6px; }"
-            "QTextEdit#chatMessageView { background-color: #070910; color: #e2e8f0; "
+            "border-radius: 10px; padding: 7px 10px; min-height: 36px; }"
+            "QComboBox::drop-down { border: none; width: 26px; }"
+            "QComboBox::down-arrow { image: none; }"
+            "QLabel { color: #d7deea; }"
+            "QPushButton { min-height: 36px; }"
+            "QCheckBox { min-height: 28px; }"
+            "QTextEdit#chatMessageView { background-color: rgba(7, 9, 16, 210); color: #e2e8f0; "
             "border: none; border-radius: 0; padding: 6px 8px; "
             "selection-background-color: #1e3a5f; selection-color: #f8fafc; }"
-            "QWidget#chatToolbar { background-color: #0a0b0e; border-bottom: 1px solid #1e2430; "
-            "padding: 6px 10px; }"
+            "QWidget#chatToolbar { background-color: rgba(10, 11, 14, 200); "
+            "border-bottom: 1px solid #1e2430; padding: 6px 10px; }"
             "QPushButton { background-color: #1a2130; color: #e6e6e6; "
             "border: 1px solid #2f3a4d; border-radius: 8px; padding: 8px 14px; }"
             "QPushButton:hover { background-color: #202a3a; border-color: #3b4458; }"
@@ -1207,25 +1242,24 @@ class MainWindow(FramelessWindow):
 
         center_row = QHBoxLayout()
         center_row.setContentsMargins(12, 12, 12, 12)
-        center_row.addStretch(1)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
         body = QWidget()
         body.setObjectName("settingsScrollBody")
-        body.setMaximumWidth(640)
+        body.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         lay = QVBoxLayout(body)
-        lay.setSpacing(16)
+        lay.setSpacing(14)
         lay.setContentsMargins(0, 0, 0, 0)
 
         self._gb_settings_general = QGroupBox()
         gen_outer = QVBoxLayout(self._gb_settings_general)
-        gen_outer.setContentsMargins(2, 6, 2, 4)
-        gen_outer.setSpacing(12)
+        gen_outer.setContentsMargins(6, 10, 6, 8)
+        gen_outer.setSpacing(10)
 
         lang_row = QHBoxLayout()
         self._lbl_locale = QLabel()
@@ -1257,8 +1291,8 @@ class MainWindow(FramelessWindow):
 
         self._gb_obs = QGroupBox()
         obs_outer = QVBoxLayout(self._gb_obs)
-        obs_outer.setContentsMargins(2, 6, 2, 4)
-        obs_outer.setSpacing(12)
+        obs_outer.setContentsMargins(6, 10, 6, 8)
+        obs_outer.setSpacing(10)
 
         self._lbl_obs_help = self._external_link_label("")
         self._lbl_obs_help.setWordWrap(True)
@@ -1269,8 +1303,8 @@ class MainWindow(FramelessWindow):
 
         obs_grid = QGridLayout()
         obs_grid.setContentsMargins(0, 0, 0, 0)
-        obs_grid.setHorizontalSpacing(14)
-        obs_grid.setVerticalSpacing(10)
+        obs_grid.setHorizontalSpacing(12)
+        obs_grid.setVerticalSpacing(8)
         obs_grid.setColumnStretch(1, 1)
         obs_grid.setColumnMinimumWidth(0, 124)
 
@@ -1342,13 +1376,13 @@ class MainWindow(FramelessWindow):
 
         self._gb_telegram = QGroupBox()
         tg_outer = QVBoxLayout(self._gb_telegram)
-        tg_outer.setContentsMargins(2, 6, 2, 4)
-        tg_outer.setSpacing(12)
+        tg_outer.setContentsMargins(6, 10, 6, 8)
+        tg_outer.setSpacing(10)
 
         tg_grid = QGridLayout()
         tg_grid.setContentsMargins(0, 0, 0, 0)
-        tg_grid.setHorizontalSpacing(14)
-        tg_grid.setVerticalSpacing(10)
+        tg_grid.setHorizontalSpacing(12)
+        tg_grid.setVerticalSpacing(8)
         tg_grid.setColumnStretch(1, 1)
         tg_grid.setColumnMinimumWidth(0, 124)
 
@@ -1377,12 +1411,12 @@ class MainWindow(FramelessWindow):
 
         self._gb_openai = QGroupBox()
         openai_outer = QVBoxLayout(self._gb_openai)
-        openai_outer.setContentsMargins(2, 6, 2, 4)
-        openai_outer.setSpacing(12)
+        openai_outer.setContentsMargins(6, 10, 6, 8)
+        openai_outer.setSpacing(10)
         openai_grid = QGridLayout()
         openai_grid.setContentsMargins(0, 0, 0, 0)
-        openai_grid.setHorizontalSpacing(14)
-        openai_grid.setVerticalSpacing(10)
+        openai_grid.setHorizontalSpacing(12)
+        openai_grid.setVerticalSpacing(8)
         openai_grid.setColumnStretch(1, 1)
         openai_grid.setColumnMinimumWidth(0, 124)
         o_row = 0
@@ -1409,8 +1443,8 @@ class MainWindow(FramelessWindow):
 
         self._gb_music = QGroupBox()
         music_outer = QVBoxLayout(self._gb_music)
-        music_outer.setContentsMargins(2, 6, 2, 4)
-        music_outer.setSpacing(12)
+        music_outer.setContentsMargins(6, 10, 6, 8)
+        music_outer.setSpacing(10)
 
         music_grid = QGridLayout()
         music_grid.setContentsMargins(0, 0, 0, 0)
@@ -1437,15 +1471,28 @@ class MainWindow(FramelessWindow):
         music_grid.addWidget(self._lbl_mpv_check_result, mr, 0, 1, 2)
         mr += 1
 
+        self._lbl_music_max_duration.setBuddy(self._music_max_duration_min)
+        music_grid.addWidget(self._lbl_music_max_duration, mr, 0)
+        self._music_max_duration_min.setMinimum(0)
+        self._music_max_duration_min.setMaximum(240)
+        self._music_max_duration_min.setSingleStep(1)
+        self._music_max_duration_min.setMinimumHeight(30)
+        music_grid.addWidget(self._stretch_field(self._music_max_duration_min), mr, 1)
+        mr += 1
+        self._lbl_music_max_duration_hint.setWordWrap(True)
+        self._lbl_music_max_duration_hint.setStyleSheet("color: #8b95a5; font-size: 11px;")
+        music_grid.addWidget(self._lbl_music_max_duration_hint, mr, 0, 1, 2)
+        mr += 1
+
         music_outer.addLayout(music_grid)
         lay.addWidget(self._gb_music)
 
         self._music_use_mpv.stateChanged.connect(self._persist_music_backend)
         self._btn_mpv_check.clicked.connect(self._check_mpv_installed)
+        self._music_max_duration_min.valueChanged.connect(self._persist_music_max_duration_min)
 
         scroll.setWidget(body)
         center_row.addWidget(scroll)
-        center_row.addStretch(1)
         page_lay.addLayout(center_row, stretch=1)
 
         self._apply_settings_tab_texts()
@@ -1630,6 +1677,7 @@ class MainWindow(FramelessWindow):
 
     def _build_connections_tab(self) -> QWidget:
         w = QWidget()
+        w.setObjectName("connectionsPageRoot")
         layout = QVBoxLayout(w)
         layout.setSpacing(16)
 
@@ -1793,23 +1841,22 @@ class MainWindow(FramelessWindow):
         self._btn_obs_ws_test.setText(self._tr("settings.obs_test"))
         self._lbl_obs_test_hint.setText(self._tr("settings.obs_test_hint"))
 
-        self._gb_telegram.setTitle("Telegram")
-        self._tg_enabled.setText("Enable Telegram bot")
-        self._lbl_tg_token.setText("Bot token")
-        self._lbl_tg_admin_id.setText("Admin id")
-        self._tg_song_requests_enabled.setText("Enable song requests")
+        self._gb_telegram.setTitle(self._tr("settings.telegram_group"))
+        self._tg_enabled.setText(self._tr("settings.telegram_enabled"))
+        self._lbl_tg_token.setText(self._tr("settings.telegram_token"))
+        self._lbl_tg_admin_id.setText(self._tr("settings.telegram_admin_id"))
+        self._tg_song_requests_enabled.setText(self._tr("settings.telegram_song_requests"))
 
         self._gb_openai.setTitle(self._tr("settings.openai_group"))
         self._lbl_openai_api_key.setText(self._tr("settings.openai_api_key"))
         self._lbl_openai_api_hint.setText(self._tr("settings.openai_api_key_hint"))
 
-        self._gb_music.setTitle("Music")
-        self._music_use_mpv.setText("Open in mpv (instead of playing in app)")
-        self._lbl_music_backend_hint.setText(
-            "Потрібно встановити mpv і додати його в PATH. "
-            "Якщо вимкнено — трек грає в самій програмі (yt-dlp + ffmpeg).",
-        )
-        self._btn_mpv_check.setText("Check mpv")
+        self._gb_music.setTitle(self._tr("settings.music_group"))
+        self._music_use_mpv.setText(self._tr("settings.music_open_in_mpv"))
+        self._lbl_music_backend_hint.setText(self._tr("settings.music_backend_hint"))
+        self._lbl_music_max_duration.setText(self._tr("settings.music_max_duration"))
+        self._lbl_music_max_duration_hint.setText(self._tr("settings.music_max_duration_hint"))
+        self._btn_mpv_check.setText(self._tr("settings.music_check_mpv"))
 
     def _apply_connections_tab_texts(self) -> None:
         self._gb_twitch.setTitle(self._tr("tw.group"))
@@ -1861,6 +1908,7 @@ class MainWindow(FramelessWindow):
         self._apply_audio_tab_texts()
         self._apply_logs_tab_texts()
         self._apply_chat_tab_texts()
+        self._apply_music_tab_texts()
         self._apply_in_app_chrome_texts()
         if hasattr(self, "_qml_api"):
             self._qml_api.refresh()
@@ -1935,6 +1983,7 @@ class MainWindow(FramelessWindow):
 
     def _build_chat_tab(self) -> QWidget:
         w = QWidget()
+        w.setObjectName("chatPageRoot")
         lay = QVBoxLayout(w)
         lay.setSpacing(0)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -1995,6 +2044,7 @@ class MainWindow(FramelessWindow):
 
     def _build_logs_tab(self) -> QWidget:
         w = QWidget()
+        w.setObjectName("logsPageRoot")
         lay = QVBoxLayout(w)
         self._logs_hint = QLabel()
         self._logs_hint.setWordWrap(True)
@@ -2023,9 +2073,9 @@ class MainWindow(FramelessWindow):
         lay.setContentsMargins(14, 14, 14, 14)
         lay.setSpacing(12)
 
-        title = QLabel("Music")
-        title.setStyleSheet("color: #e8eaed; font-size: 18px; font-weight: 600;")
-        lay.addWidget(title)
+        self._music_title_label = QLabel(self._tr("music.title"))
+        self._music_title_label.setStyleSheet("color: #e8eaed; font-size: 18px; font-weight: 600;")
+        lay.addWidget(self._music_title_label)
 
         self._music_now = QLabel("Now: —")
         self._music_now.setWordWrap(True)
@@ -2036,8 +2086,8 @@ class MainWindow(FramelessWindow):
         lay.addWidget(self._music_queue_list, stretch=1)
 
         controls = QHBoxLayout()
-        self._btn_music_play_pause = QPushButton("Play/Pause")
-        self._btn_music_next = QPushButton("Next")
+        self._btn_music_play_pause = QPushButton(self._tr("music.play_pause"))
+        self._btn_music_next = QPushButton(self._tr("music.next"))
         self._btn_music_play_pause.clicked.connect(
             lambda: asyncio.ensure_future(self._music_toggle_pause())
         )
@@ -2051,7 +2101,7 @@ class MainWindow(FramelessWindow):
         self._music_vol.setMaximum(100)
         self._music_vol.setValue(int(self._settings.value("music/volume_percent", 100)))
         self._music_vol.valueChanged.connect(self._persist_music_volume)
-        controls.addWidget(QLabel("Volume"))
+        controls.addWidget(QLabel(self._tr("music.volume")))
         controls.addWidget(self._music_vol, stretch=1)
         lay.addLayout(controls)
 
@@ -2059,7 +2109,18 @@ class MainWindow(FramelessWindow):
         self._music_refresh_timer.timeout.connect(self._refresh_music_tab)
         self._music_refresh_timer.start(700)
         self._refresh_music_tab()
+        self._apply_music_tab_texts()
         return w
+
+    def _apply_music_tab_texts(self) -> None:
+        if not hasattr(self, "_btn_music_play_pause"):
+            return
+        if hasattr(self, "_music_title_label"):
+            self._music_title_label.setText(self._tr("music.title"))
+        if hasattr(self, "_btn_music_play_pause"):
+            self._btn_music_play_pause.setText(self._tr("music.play_pause"))
+        if hasattr(self, "_btn_music_next"):
+            self._btn_music_next.setText(self._tr("music.next"))
 
     def _apply_logs_tab_texts(self) -> None:
         self._logs_hint.setText(self._tr("logs.hint"))
@@ -2744,6 +2805,23 @@ class MainWindow(FramelessWindow):
         self._music_use_mpv.blockSignals(False)
         self._refresh_mpv_check_label()
 
+        if hasattr(self, "_music_max_duration_min"):
+            raw = self._settings.value(_SETTINGS_MUSIC_MAX_DURATION_MIN, 5)
+            try:
+                mm = int(raw)
+            except (TypeError, ValueError):
+                mm = 5
+            mm = max(0, min(240, mm))
+            self._music_max_duration_min.blockSignals(True)
+            self._music_max_duration_min.setValue(mm)
+            self._music_max_duration_min.blockSignals(False)
+
+    @Slot(int)
+    def _persist_music_max_duration_min(self, _value: int) -> None:
+        mm = int(self._music_max_duration_min.value())
+        mm = max(0, min(240, mm))
+        self._settings.setValue(_SETTINGS_MUSIC_MAX_DURATION_MIN, mm)
+
     @Slot(int)
     def _on_tts_gain_changed(self, value: int) -> None:
         self._settings.setValue(_SETTINGS_TTS_GAIN_DB, value)
@@ -2811,7 +2889,7 @@ class MainWindow(FramelessWindow):
                 "YouTube:",
             ):
                 if msg.startswith(prefix):
-                    self._status_youtube = msg[len(prefix) :].strip(" :") or msg
+                    self._status_youtube = msg[len(prefix):].strip(" :") or msg
                     return
             self._status_youtube = msg.removeprefix("YouTube:").strip() or msg
             return
@@ -3861,9 +3939,38 @@ class MainWindow(FramelessWindow):
         def call_on_main_loop(fn) -> None:
             asyncio.run_coroutine_threadsafe(fn(), loop)
 
-        async def enqueue_song(video_id: str, requested_by: str) -> None:
-            tr = await self._music_queue.enqueue(video_id=video_id, requested_by=requested_by)
-            asyncio.create_task(self._fetch_music_title_for_track(tr.id, tr.video_id))
+        async def enqueue_song(video_id: str, requested_by: str) -> str | None:
+            vid = (video_id or "").strip()
+            if not vid:
+                return "Порожнє посилання."
+            max_min_raw = self._settings.value(_SETTINGS_MUSIC_MAX_DURATION_MIN, 5)
+            try:
+                max_min = int(max_min_raw)
+            except (TypeError, ValueError):
+                max_min = 5
+            max_min = max(0, max_min)
+
+            title = ""
+            if max_min > 0:
+                try:
+                    meta = await asyncio.to_thread(fetch_youtube_meta, vid)
+                except (OSError, ValueError, RuntimeError) as e:
+                    logger.debug("Music duration fetch failed: %s", e)
+                    return "Не вдалося визначити тривалість відео."
+                dur = meta.duration_seconds
+                title = (meta.title or "").strip()
+                if dur is None:
+                    return "Не вдалося визначити тривалість відео."
+                if dur > int(max_min) * 60:
+                    mins = max(1, (dur + 59) // 60)
+                    return f"Відео задовге: ~{mins} хв (ліміт {int(max_min)} хв)."
+
+            tr = await self._music_queue.enqueue(video_id=vid, requested_by=requested_by)
+            if title:
+                asyncio.create_task(self._music_queue.set_track_title(tr.id, title))
+            else:
+                asyncio.create_task(self._fetch_music_title_for_track(tr.id, tr.video_id))
+            return None
 
         async def skip_song() -> None:
             mp = self._music_player

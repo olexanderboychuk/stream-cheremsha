@@ -13,6 +13,12 @@ class YtDlpResolveResult:
     audio_bytes: bytes
 
 
+@dataclass(slots=True)
+class YtDlpVideoMeta:
+    title: str
+    duration_seconds: int | None
+
+
 def _watch_url(video_id_or_url: str) -> str:
     s = (video_id_or_url or "").strip()
     if not s:
@@ -85,3 +91,31 @@ def fetch_youtube_title(video_id_or_url: str) -> str:
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
         return str((info or {}).get("title") or "").strip()
+
+
+def fetch_youtube_meta(video_id_or_url: str) -> YtDlpVideoMeta:
+    """Best-effort: fetch title + duration (seconds) without downloading media.
+
+    Notes:
+    - For live streams / premieres yt-dlp may not provide duration. In that case
+      duration_seconds is None.
+    """
+    url = _watch_url(video_id_or_url)
+    ydl_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "skip_download": True,
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False) or {}
+        title = str(info.get("title") or "").strip()
+        dur_raw = info.get("duration")
+        duration_seconds: int | None
+        try:
+            duration_seconds = int(dur_raw) if dur_raw is not None else None
+        except (TypeError, ValueError):
+            duration_seconds = None
+        if duration_seconds is not None and duration_seconds <= 0:
+            duration_seconds = None
+        return YtDlpVideoMeta(title=title, duration_seconds=duration_seconds)

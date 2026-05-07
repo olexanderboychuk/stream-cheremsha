@@ -15,7 +15,14 @@ Item {
     readonly property color muted: "#8b95a5"
     readonly property color fieldBg: "#0c0f16"
 
-    Rectangle { anchors.fill: parent; color: base }
+    Rectangle {
+        anchors.fill: parent
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: "#0f172a" }
+            GradientStop { position: 0.55; color: "#0b1220" }
+            GradientStop { position: 1.0; color: "#070910" }
+        }
+    }
 
     // SpinBox/controls can emit value signals after the first frame; keep autosave blocked longer.
     Timer {

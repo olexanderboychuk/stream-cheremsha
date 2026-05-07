@@ -779,16 +779,23 @@ class ActionsQmlApi(QObject):
             params = ev0.get("params") or {}
             min_price = 1
             user_s = "preview"
+            ex = []
             if isinstance(params, dict):
                 try:
                     min_price = int(params.get("min_price", 1))
                 except (TypeError, ValueError):
                     min_price = 1
                 user_s = str(params.get("user") or "preview").strip() or "preview"
+                ex = params.get("exclude_gifts") or []
             if min_price < 1:
                 min_price = 1
             # Prefer a known priced gift; unknown gifts won't match min_price rules.
             gift_name = "Unknown Gift"
+            ex_cf = set()
+            if isinstance(ex, list):
+                for it in ex:
+                    if isinstance(it, str) and it.strip():
+                        ex_cf.add(it.strip().casefold())
             for g in TIKTOK_GIFTS:
                 if not isinstance(g, dict):
                     continue
@@ -796,6 +803,10 @@ class ActionsQmlApi(QObject):
                 name = g.get("name")
                 name_ok = isinstance(name, str) and bool(name.strip())
                 if isinstance(price, int) and price >= min_price and name_ok:
+                    nm = name.strip()
+                    gid = str(g.get("id") or "").strip()
+                    if (gid and gid.casefold() in ex_cf) or (nm.casefold() in ex_cf):
+                        continue
                     gift_name = name.strip()
                     break
             ev = GiftReceivedEvent(

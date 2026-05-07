@@ -62,6 +62,9 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     },
     "tab.audio": {"uk": "Аудіо", "en": "Audio"},
     "tab.logs": {"uk": "Логи", "en": "Logs"},
+    "ui.settings_tooltip": {"uk": "Налаштування", "en": "Settings"},
+    "ui.nav_music": {"uk": "Музика", "en": "Music"},
+    "ui.nav_music_hint": {"uk": "Черга музики", "en": "Music queue"},
     # App chrome (QML + shell)
     "ui.app_header_title": {"uk": "Stream Cheremsha", "en": "Stream Cheremsha"},
     "ui.twitch_head": {"uk": "Twitch", "en": "Twitch"},
@@ -127,6 +130,38 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "OBS: connected, version {version}",
     },
     "obs.test_fail": {"uk": "OBS: помилка — {detail}", "en": "OBS: error — {detail}"},
+    # Settings — Telegram / Music
+    "settings.telegram_group": {"uk": "Telegram", "en": "Telegram"},
+    "settings.telegram_enabled": {"uk": "Увімкнути Telegram-бота", "en": "Enable Telegram bot"},
+    "settings.telegram_token": {"uk": "Токен бота", "en": "Bot token"},
+    "settings.telegram_admin_id": {"uk": "Admin id", "en": "Admin id"},
+    "settings.telegram_song_requests": {
+        "uk": "Увімкнути запити пісень",
+        "en": "Enable song requests",
+    },
+    "settings.music_group": {"uk": "Музика", "en": "Music"},
+    "settings.music_open_in_mpv": {
+        "uk": "Відкривати в mpv (замість програвання в додатку)",
+        "en": "Open in mpv (instead of playing in app)",
+    },
+    "settings.music_backend_hint": {
+        "uk": "Потрібно встановити mpv і додати його в PATH. Якщо вимкнено — трек грає в самій програмі (yt-dlp + ffmpeg).",
+        "en": "mpv must be installed and available in PATH. If disabled, the track plays inside the app (yt-dlp + ffmpeg).",
+    },
+    "settings.music_max_duration": {
+        "uk": "Макс. тривалість (хв)",
+        "en": "Max duration (min)",
+    },
+    "settings.music_max_duration_hint": {
+        "uk": "0 = без ліміту. Якщо тривалість невідома (live/премʼєра) — посилання буде відхилено.",
+        "en": "0 = no limit. If duration is unknown (live/premiere) the link will be rejected.",
+    },
+    "settings.music_check_mpv": {"uk": "Перевірити mpv", "en": "Check mpv"},
+    # Music page
+    "music.title": {"uk": "Музика", "en": "Music"},
+    "music.play_pause": {"uk": "Пауза/Відтворити", "en": "Play/Pause"},
+    "music.next": {"uk": "Далі", "en": "Next"},
+    "music.volume": {"uk": "Гучність", "en": "Volume"},
     # Platform actions
     "actions.btn": {"uk": "Дії", "en": "Actions"},
     "actions.title": {"uk": "Дії", "en": "Actions"},
@@ -231,6 +266,11 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "actions.gift_pick": {"uk": "Подарунок", "en": "Gift"},
     "actions.min_count": {"uk": "Мін. кількість", "en": "Min count"},
     "actions.min_price": {"uk": "Мін. ціна (🪙)", "en": "Min price (🪙)"},
+    "actions.exclude_gifts": {"uk": "Виключити подарунки (не спрацьовувати)", "en": "Exclude gifts (do not fire)"},
+    "actions.exclude_gifts_ph": {
+        "uk": "Оберіть подарунок або введіть назву/ID…",
+        "en": "Select a gift or type a name/id…",
+    },
     "actions.user_filter": {"uk": "Користувач (необов'язково)", "en": "User (optional)"},
     "actions.user_filter_ph": {"uk": "нікнейм…", "en": "nickname…"},
     "actions.actions": {"uk": "Дії", "en": "Actions"},

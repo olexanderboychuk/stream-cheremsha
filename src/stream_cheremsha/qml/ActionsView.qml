@@ -21,7 +21,14 @@ Item {
     readonly property color muted: "#8b95a5"
     readonly property color fieldBg: "#0c0f16"
 
-    Rectangle { anchors.fill: parent; color: base }
+    Rectangle {
+        anchors.fill: parent
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: "#0f172a" }
+            GradientStop { position: 0.55; color: "#0b1220" }
+            GradientStop { position: 1.0; color: "#070910" }
+        }
+    }
 
     property var rulesModel: []
     property var rulesUiTree: []
@@ -1738,12 +1745,23 @@ Item {
         var plat = "tiktok";
         if (p.platform != null && ("" + p.platform).trim() !== "")
             plat = ("" + p.platform).trim().toLowerCase();
+        var ex = [];
+        if (p.exclude_gifts && p.exclude_gifts.length) {
+            for (var i = 0; i < p.exclude_gifts.length; i++) {
+                if (p.exclude_gifts[i] !== undefined && p.exclude_gifts[i] !== null) {
+                    var s = ("" + p.exclude_gifts[i]).trim();
+                    if (s !== "")
+                        ex.push(s);
+                }
+            }
+        }
         return {
             type: "tiktok_any_gift_received",
             platform: plat,
             params: {
                 min_price: p.min_price !== undefined && p.min_price !== null ? p.min_price : 1,
-                user: p.user != null && p.user !== undefined ? ("" + p.user) : ""
+                user: p.user != null && p.user !== undefined ? ("" + p.user) : "",
+                exclude_gifts: ex
             }
         };
     }
@@ -2911,7 +2929,8 @@ Item {
                                 var r = root._patchSelectedTrigger(root._tiktokAnyGiftEvent({
                                     platform: root._platformForEdits(),
                                     min_price: v,
-                                    user: ep.user || ""
+                                    user: ep.user || "",
+                                    exclude_gifts: ep.exclude_gifts || []
                                 }));
                                 if (r == null) return;
                                 root._setRule(root.selectedIdx, r);
@@ -2932,11 +2951,186 @@ Item {
                                 var r = root._patchSelectedTrigger(root._tiktokAnyGiftEvent({
                                     platform: root._platformForEdits(),
                                     min_price: ep.min_price || 1,
-                                    user: text || ""
+                                    user: text || "",
+                                    exclude_gifts: ep.exclude_gifts || []
                                 }));
                                 if (r == null) return;
                                 root._setRule(root.selectedIdx, r);
                                 root._save();
+                            }
+                        }
+
+                        Text {
+                            text: (api ? api.loc("actions.exclude_gifts") : "") || "Exclude gifts (do not fire)"
+                            color: muted
+                            font.pixelSize: 12
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            ComboBox {
+                                id: tiktokExcludeGiftCombo
+                                Layout.fillWidth: true
+                                model: root.giftOptions || []
+                                textRole: "name"
+                                editable: true
+                                currentIndex: -1
+                                property string placeholderText: (api ? api.loc("actions.exclude_gifts_ph") : "") || "Select a gift or type a name/id…"
+                                displayText: currentIndex >= 0 && model && model[currentIndex] && model[currentIndex].name
+                                    ? model[currentIndex].name
+                                    : editText
+                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                contentItem: Text {
+                                    text: (tiktokExcludeGiftCombo.displayText && ("" + tiktokExcludeGiftCombo.displayText).trim() !== "")
+                                        ? tiktokExcludeGiftCombo.displayText
+                                        : tiktokExcludeGiftCombo.placeholderText
+                                    color: ink
+                                    verticalAlignment: Text.AlignVCenter
+                                    elide: Text.ElideRight
+                                    leftPadding: 10
+                                    rightPadding: 10
+                                }
+                                delegate: ItemDelegate {
+                                    width: tiktokExcludeGiftCombo.width
+                                    contentItem: RowLayout {
+                                        spacing: 8
+                                        Image {
+                                            Layout.preferredWidth: 24
+                                            Layout.preferredHeight: 24
+                                            source: modelData && modelData.image_url ? modelData.image_url : ""
+                                            fillMode: Image.PreserveAspectFit
+                                            asynchronous: true
+                                            cache: true
+                                            visible: source !== ""
+                                        }
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: modelData && modelData.name ? modelData.name : ""
+                                            color: root.ink
+                                            font.pixelSize: 13
+                                            elide: Text.ElideRight
+                                        }
+                                        Text {
+                                            text: modelData && modelData.price ? (modelData.price + " 🪙") : ""
+                                            color: root.muted
+                                            font.pixelSize: 12
+                                        }
+                                    }
+                                }
+                            }
+
+                            ToolButton {
+                                text: "+"
+                                Layout.preferredWidth: 44
+                                background: Rectangle {
+                                    radius: 8
+                                    color: fieldBg
+                                    border.width: 1
+                                    border.color: cardEdge
+                                }
+                                onClicked: {
+                                    if (root.selectedRule === null) return;
+                                    var ep = (root.editingTrigger && root.editingTrigger.params) || {};
+                                    var ex = ep.exclude_gifts || [];
+                                    var v = "";
+                                    if (tiktokExcludeGiftCombo.currentIndex >= 0 && tiktokExcludeGiftCombo.model
+                                            && tiktokExcludeGiftCombo.model[tiktokExcludeGiftCombo.currentIndex]) {
+                                        var g = tiktokExcludeGiftCombo.model[tiktokExcludeGiftCombo.currentIndex];
+                                        v = (g && g.id) ? ("" + g.id).trim() : (g && g.name) ? ("" + g.name).trim() : "";
+                                    }
+                                    if (v === "")
+                                        v = ("" + (tiktokExcludeGiftCombo.editText || "")).trim();
+                                    if (v === "")
+                                        return;
+                                    var next = [];
+                                    for (var i = 0; i < ex.length; i++)
+                                        next.push(ex[i]);
+                                    var exists = false;
+                                    for (var j = 0; j < next.length; j++) {
+                                        if (("" + next[j]).trim().toLowerCase() === v.toLowerCase()) {
+                                            exists = true;
+                                            break;
+                                        }
+                                    }
+                                    if (!exists)
+                                        next.push(v);
+                                    var r = root._patchSelectedTrigger(root._tiktokAnyGiftEvent({
+                                        platform: root._platformForEdits(),
+                                        min_price: ep.min_price || 1,
+                                        user: ep.user || "",
+                                        exclude_gifts: next
+                                    }));
+                                    if (r == null) return;
+                                    root._setRule(root.selectedIdx, r);
+                                    root._save();
+                                    tiktokExcludeGiftCombo.editText = "";
+                                    tiktokExcludeGiftCombo.currentIndex = -1;
+                                }
+                            }
+                        }
+
+                        Flow {
+                            Layout.fillWidth: true
+                            spacing: 6
+                            Repeater {
+                                model: root.editingTrigger && root.editingTrigger.params && root.editingTrigger.params.exclude_gifts
+                                    ? root.editingTrigger.params.exclude_gifts
+                                    : []
+                                delegate: Rectangle {
+                                    radius: 10
+                                    color: "#182033"
+                                    border.width: 1
+                                    border.color: cardEdge
+                                    height: 26
+                                    width: chipRow.implicitWidth + 18
+                                    RowLayout {
+                                        id: chipRow
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 8
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: 8
+                                        spacing: 8
+                                        Text {
+                                            text: ("" + modelData)
+                                            color: ink
+                                            font.pixelSize: 12
+                                            elide: Text.ElideRight
+                                        }
+                                        ToolButton {
+                                            text: "×"
+                                            padding: 0
+                                            background: Rectangle { color: "transparent" }
+                                            contentItem: Text {
+                                                text: "×"
+                                                color: muted
+                                                font.pixelSize: 14
+                                                verticalAlignment: Text.AlignVCenter
+                                                horizontalAlignment: Text.AlignHCenter
+                                            }
+                                            onClicked: {
+                                                if (root.selectedRule === null) return;
+                                                var ep = (root.editingTrigger && root.editingTrigger.params) || {};
+                                                var ex = ep.exclude_gifts || [];
+                                                var next = [];
+                                                for (var i = 0; i < ex.length; i++) {
+                                                    if (i === index) continue;
+                                                    next.push(ex[i]);
+                                                }
+                                                var r = root._patchSelectedTrigger(root._tiktokAnyGiftEvent({
+                                                    platform: root._platformForEdits(),
+                                                    min_price: ep.min_price || 1,
+                                                    user: ep.user || "",
+                                                    exclude_gifts: next
+                                                }));
+                                                if (r == null) return;
+                                                root._setRule(root.selectedIdx, r);
+                                                root._save();
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
