@@ -1118,9 +1118,14 @@ class PlatformActionsEngine:
                         mp = 1
                     if mp < 1:
                         mp = 1
+                    sw = params.get("skip_words", "")
 
                     async def _play_random_myinstants_ua(
-                        v: int = vol, s: bool = skip_dup, md: float = max_d, mpage: int = mp
+                        v: int = vol,
+                        s: bool = skip_dup,
+                        md: float = max_d,
+                        mpage: int = mp,
+                        skip_words: object = sw,
                     ) -> None:
                         try:
                             await play_random_myinstants_ua(
@@ -1129,6 +1134,7 @@ class PlatformActionsEngine:
                                 skip_queue_if_same=s,
                                 max_duration_seconds=md,
                                 max_page=mpage,
+                                skip_words=skip_words,
                                 status=self._status_callback,
                             )
                         except (httpx.HTTPError, OSError, ValueError) as e:

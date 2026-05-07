@@ -244,6 +244,11 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     },
     "actions.max_duration_seconds": {"uk": "Макс. тривалість (сек)", "en": "Max duration (sec)"},
     "actions.myinstants_max_page": {"uk": "Макс. сторінка", "en": "Max page"},
+    "actions.myinstants_skip_words": {"uk": "Фільтр слів", "en": "Word filter"},
+    "actions.myinstants_skip_words_ph": {
+        "uk": "через кому: сирена, рингтон…",
+        "en": "comma-separated: siren, ringtone…",
+    },
     "actions.write_file": {"uk": "Запис у файл", "en": "Write to file"},
     "actions.write_mode": {"uk": "Режим запису", "en": "Write mode"},
     "actions.write_mode_overwrite": {"uk": "Перезаписати", "en": "Overwrite"},
