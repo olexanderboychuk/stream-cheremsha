@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 import hashlib
 import json
 import os
@@ -8,7 +9,6 @@ import re
 import shutil
 import subprocess
 import tempfile
-from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -137,7 +137,11 @@ async def play_random_myinstants_ua(
             "Accept-Language": "en-US,en;q=0.9,uk-UA,uk;q=0.8",
         }
         timeout = httpx.Timeout(connect=10.0, read=20.0, write=20.0, pool=10.0)
-        async with httpx.AsyncClient(headers=headers, timeout=timeout, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            headers=headers,
+            timeout=timeout,
+            follow_redirects=True,
+        ) as client:
             rng = random.SystemRandom()
             page_n = rng.randint(1, mp)
             index_url = (

@@ -24,7 +24,8 @@ def test_extract_instant_page_paths_from_ua_index_html() -> None:
     assert all(p.startswith("/en/instant/") for p in paths)
     assert extract_instant_page_paths_from_ua_index_html(None) == []
     assert extract_instant_page_paths_from_ua_index_html("") == []
-    assert extract_instant_page_paths_from_ua_index_html('href = "/en/instant/abc/"') == ["/en/instant/abc/"]
+    one = 'href = "/en/instant/abc/"'
+    assert extract_instant_page_paths_from_ua_index_html(one) == ["/en/instant/abc/"]
 
 
 def test_extract_mp3_url_from_instant_page_html() -> None:
