@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 import hashlib
 import json
 import os
@@ -9,6 +8,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlparse
 
