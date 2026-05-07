@@ -20,13 +20,16 @@ def test_extract_instant_page_paths_from_ua_index_html() -> None:
     paths = extract_instant_page_paths_from_ua_index_html(html)
     assert len(paths) >= 5
     assert all(p.startswith("/en/instant/") for p in paths)
+    assert extract_instant_page_paths_from_ua_index_html(None) == []
+    assert extract_instant_page_paths_from_ua_index_html("") == []
+    assert extract_instant_page_paths_from_ua_index_html('href = "/en/instant/abc/"') == ["/en/instant/abc/"]
 
 
 def test_extract_mp3_url_from_instant_page_html() -> None:
     html = _read_fixture("myinstants_instant_page.html")
     url = extract_mp3_url_from_instant_page_html(html)
     assert url.startswith("https://")
-    assert url.endswith(".mp3")
+    assert ".mp3" in url
     assert "myinstants" in url
 
 
@@ -49,4 +52,4 @@ def test_enforce_cache_max_files(tmp_path: Path) -> None:
     _enforce_cache_max_files(cache_dir, max_files=2)
 
     remaining = sorted(p.name for p in cache_dir.glob("*.mp3") if p.is_file())
-    assert len(remaining) == 2
+    assert remaining == ["3.mp3", "4.mp3"]

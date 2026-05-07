@@ -4,13 +4,19 @@ import re
 from pathlib import Path
 
 
-_INSTANT_PATH_RE = re.compile(r'href=(?:"|\')(?P<path>/en/instant/[^"\']+)(?:"|\')', re.IGNORECASE)
-_MP3_URL_RE = re.compile(r"(?P<url>https?://[^\s\"']+?\.mp3)\b", re.IGNORECASE)
+_INSTANT_PATH_RE = re.compile(
+    r'href\s*=\s*(?:"|\')(?P<path>/en/instant/[^"\']+)(?:"|\')',
+    re.IGNORECASE,
+)
+_MP3_URL_RE = re.compile(
+    r'(?P<url>https?://[^\s"\']+?\.mp3(?:[?#][^\s"\']*)?)',
+    re.IGNORECASE,
+)
 
 
 def extract_instant_page_paths_from_ua_index_html(html: str) -> list[str]:
-    if not isinstance(html, str):
-        raise TypeError("html must be a str")
+    if not html or not isinstance(html, str):
+        return []
 
     paths: list[str] = []
     seen: set[str] = set()
@@ -28,8 +34,8 @@ def extract_instant_page_paths_from_ua_index_html(html: str) -> list[str]:
 
 
 def extract_mp3_url_from_instant_page_html(html: str) -> str:
-    if not isinstance(html, str):
-        raise TypeError("html must be a str")
+    if not html or not isinstance(html, str):
+        raise ValueError("No myinstants .mp3 URL found in HTML")
 
     for m in _MP3_URL_RE.finditer(html):
         url = (m.group("url") or "").strip()
