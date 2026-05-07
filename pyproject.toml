@@ -1,10 +1,10 @@
-﻿[build-system]
+[build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "stream-cheremsha"
-version = "0.1.5"
+version = "0.1.6"
 description = "MVP Twitch/YouTube live chat to Ukrainian TTS for streamers"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
