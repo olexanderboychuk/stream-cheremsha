@@ -1104,13 +1104,23 @@ class PlatformActionsEngine:
                     if vol > 100:
                         vol = 100
                     skip_dup = _obs_bool_flag(params.get("skip_if_same_playing"), default=False)
+                    max_d_raw = params.get("max_duration_seconds", 0)
+                    try:
+                        max_d = float(max_d_raw)
+                    except (TypeError, ValueError):
+                        max_d = 0.0
+                    if max_d < 0:
+                        max_d = 0.0
 
-                    async def _play_random_myinstants_ua(v: int = vol, s: bool = skip_dup) -> None:
+                    async def _play_random_myinstants_ua(
+                        v: int = vol, s: bool = skip_dup, md: float = max_d
+                    ) -> None:
                         try:
                             await play_random_myinstants_ua(
                                 sink=self._sink,
                                 volume_percent=v,
                                 skip_queue_if_same=s,
+                                max_duration_seconds=md,
                                 status=self._status_callback,
                             )
                         except (httpx.HTTPError, OSError, ValueError) as e:

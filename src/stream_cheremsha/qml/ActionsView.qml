@@ -3298,7 +3298,8 @@ Item {
                                             };
                                             if (t === "play_random_myinstants_ua") aa[aIdx].params = {
                                                 volume_percent: 100,
-                                                skip_if_same_playing: false
+                                                skip_if_same_playing: false,
+                                                max_duration_seconds: 0
                                             };
                                             if (t === "write_file") aa[aIdx].params = { file_path: "", text: "", mode: "overwrite" };
                                             if (t === "run_program") aa[aIdx].params = { program_path: "", arguments: "" };
@@ -3465,6 +3466,36 @@ Item {
                                             aa[aIdx].params.skip_if_same_playing = playRandomMyinstantsUaSkipDupCb.checked;
                                             page.actionsModel = aa;
                                             page._scheduleCommitSelectedRuleActions();
+                                        }
+                                    }
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+                                        Text {
+                                            text: api ? api.loc("actions.max_duration_seconds") : "Max duration (sec)"
+                                            color: muted
+                                            font.pixelSize: 12
+                                        }
+                                        TextField {
+                                            id: playRandomMyinstantsUaMaxDur
+                                            Layout.preferredWidth: 120
+                                            color: ink
+                                            placeholderTextColor: muted
+                                            placeholderText: "0"
+                                            inputMethodHints: Qt.ImhDigitsOnly
+                                            text: (modelData && modelData.params && modelData.params.max_duration_seconds !== undefined) ? ("" + modelData.params.max_duration_seconds) : "0"
+                                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                            onTextEdited: {
+                                                var aa = page.actionsModel;
+                                                if (!aa || aIdx < 0 || aIdx >= aa.length) return;
+                                                if (!aa[aIdx].params) aa[aIdx].params = {};
+                                                var v = parseFloat(text);
+                                                if (isNaN(v) || v < 0) v = 0;
+                                                aa[aIdx].params.max_duration_seconds = v;
+                                                page.actionsModel = aa;
+                                                page._scheduleCommitSelectedRuleActions();
+                                            }
                                         }
                                     }
                                 }

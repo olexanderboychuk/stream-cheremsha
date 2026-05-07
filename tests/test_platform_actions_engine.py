@@ -189,6 +189,7 @@ def test_engine_executes_play_random_myinstants_ua_action(monkeypatch) -> None:
         sink,
         volume_percent: int,
         skip_queue_if_same: bool,
+        max_duration_seconds: float,
         status,
     ) -> None:
         _ = status
@@ -197,6 +198,7 @@ def test_engine_executes_play_random_myinstants_ua_action(monkeypatch) -> None:
                 "sink": sink,
                 "volume_percent": int(volume_percent),
                 "skip_queue_if_same": bool(skip_queue_if_same),
+                "max_duration_seconds": float(max_duration_seconds),
             }
         )
 
@@ -210,7 +212,11 @@ def test_engine_executes_play_random_myinstants_ua_action(monkeypatch) -> None:
             actions=[
                 {
                     "type": "play_random_myinstants_ua",
-                    "params": {"volume_percent": 999, "skip_if_same_playing": True},
+                    "params": {
+                        "volume_percent": 999,
+                        "skip_if_same_playing": True,
+                        "max_duration_seconds": 5,
+                    },
                 }
             ],
         ),
@@ -225,7 +231,12 @@ def test_engine_executes_play_random_myinstants_ua_action(monkeypatch) -> None:
     asyncio.run(engine.on_chat_message(ev))
 
     assert calls == [
-        {"sink": sink, "volume_percent": 100, "skip_queue_if_same": True},
+        {
+            "sink": sink,
+            "volume_percent": 100,
+            "skip_queue_if_same": True,
+            "max_duration_seconds": 5.0,
+        },
     ]
 
 

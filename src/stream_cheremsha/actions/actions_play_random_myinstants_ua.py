@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import random
 import re
+import shutil
+import subprocess
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -111,9 +114,14 @@ async def play_random_myinstants_ua(
     sink: AudioSink,
     volume_percent: int,
     skip_queue_if_same: bool,
+    max_duration_seconds: float,
     status: Callable[[str], None],
 ) -> None:
     try:
+        max_s = float(max_duration_seconds)
+        if max_s < 0:
+            max_s = 0.0
+
         status("myinstants: fetching UA index…")
         headers = {
             "User-Agent": (
@@ -133,22 +141,74 @@ async def play_random_myinstants_ua(
             if not paths:
                 raise ValueError("No MyInstants UA instant paths found")
 
-            chosen_path = pick_random_instant_path(paths, rng=random.SystemRandom())
-            instant_page_url = f"https://www.myinstants.com{chosen_path}"
+            rng = random.SystemRandom()
+            remaining = list(paths)
+            cache_path: Path | None = None
+            data: bytes | None = None
 
-            status("myinstants: fetching instant page…")
-            page_resp = await client.get(instant_page_url)
-            page_resp.raise_for_status()
-            mp3_url = extract_mp3_url_from_instant_page_html(page_resp.text)
+            max_attempts = min(20, len(remaining))
+            for attempt in range(max_attempts):
+                chosen_path = pick_random_instant_path(remaining, rng=rng)
+                try:
+                    remaining.remove(chosen_path)
+                except ValueError:
+                    # Shouldn't happen, but keep the loop robust.
+                    pass
 
-            cache_path = _cache_path_for_mp3_url(mp3_url)
-            if cache_path.exists() and cache_path.is_file():
+                instant_page_url = f"https://www.myinstants.com{chosen_path}"
+                status("myinstants: fetching instant page…")
+                page_resp = await client.get(instant_page_url)
+                page_resp.raise_for_status()
+                mp3_url = extract_mp3_url_from_instant_page_html(page_resp.text)
+
+                cache_path = _cache_path_for_mp3_url(mp3_url)
+                if cache_path.exists() and cache_path.is_file():
+                    if max_s > 0:
+                        dur = _probe_mp3_duration_seconds(cache_path)
+                        if dur is not None and dur > max_s:
+                            status(
+                                f"myinstants: skipped (duration {dur:.1f}s > max {max_s:.1f}s)…"
+                            )
+                            continue
+                        if dur is None:
+                            status("myinstants: duration unknown (no ffprobe/ffmpeg); playing…")
+                    try:
+                        os.utime(cache_path, None)
+                    except OSError:
+                        pass
+                    status("myinstants: playing cached mp3…")
+                    _enforce_cache_max_files(cache_path.parent, max_files=200)
+                    await play_sound_from_file(
+                        str(cache_path),
+                        sink=sink,
+                        volume_percent=volume_percent,
+                        skip_queue_if_same=skip_queue_if_same,
+                    )
+                    return
+
+                status("myinstants: downloading mp3…")
+                mp3_resp = await client.get(mp3_url)
+                mp3_resp.raise_for_status()
+                data = mp3_resp.content
+                if not data:
+                    raise ValueError("Downloaded mp3 is empty")
+
+                _atomic_write_bytes(cache_path, data)
                 try:
                     os.utime(cache_path, None)
                 except OSError:
                     pass
-                status("myinstants: playing cached mp3…")
                 _enforce_cache_max_files(cache_path.parent, max_files=200)
+
+                if max_s > 0:
+                    dur = _probe_mp3_duration_seconds(cache_path)
+                    if dur is not None and dur > max_s:
+                        status(f"myinstants: skipped (duration {dur:.1f}s > max {max_s:.1f}s)…")
+                        continue
+                    if dur is None:
+                        status("myinstants: duration unknown (no ffprobe/ffmpeg); playing…")
+
+                status("myinstants: playing mp3…")
                 await play_sound_from_file(
                     str(cache_path),
                     sink=sink,
@@ -157,30 +217,81 @@ async def play_random_myinstants_ua(
                 )
                 return
 
-            status("myinstants: downloading mp3…")
-            mp3_resp = await client.get(mp3_url)
-            mp3_resp.raise_for_status()
-            data = mp3_resp.content
-            if not data:
-                raise ValueError("Downloaded mp3 is empty")
+            raise ValueError("No MyInstants sound matched duration filter")
 
-        _atomic_write_bytes(cache_path, data)
-        try:
-            os.utime(cache_path, None)
-        except OSError:
-            pass
-        _enforce_cache_max_files(cache_path.parent, max_files=200)
-
-        status("myinstants: playing mp3…")
-        await play_sound_from_file(
-            str(cache_path),
-            sink=sink,
-            volume_percent=volume_percent,
-            skip_queue_if_same=skip_queue_if_same,
-        )
     except (httpx.HTTPError, OSError, ValueError) as e:
         status(f"myinstants: failed: {e}")
         return
+
+
+def _probe_mp3_duration_seconds(path: Path) -> float | None:
+    p = Path(path)
+    if not p.exists() or not p.is_file():
+        return None
+
+    ffprobe = shutil.which("ffprobe")
+    if ffprobe:
+        try:
+            proc = subprocess.run(
+                [
+                    ffprobe,
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "json",
+                    str(p),
+                ],
+                capture_output=True,
+                timeout=15,
+                check=False,
+                text=True,
+                encoding="utf-8",
+            )
+        except OSError:
+            proc = None
+        if proc and proc.returncode == 0 and proc.stdout:
+            try:
+                payload = json.loads(proc.stdout)
+            except json.JSONDecodeError:
+                payload = None
+            if isinstance(payload, dict):
+                fmt = payload.get("format")
+                if isinstance(fmt, dict):
+                    d = fmt.get("duration")
+                    try:
+                        v = float(d)
+                    except (TypeError, ValueError):
+                        v = None
+                    if v is not None and v >= 0:
+                        return v
+
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        return None
+    try:
+        proc2 = subprocess.run(
+            [ffmpeg, "-hide_banner", "-loglevel", "error", "-i", str(p), "-f", "null", "-"],
+            capture_output=True,
+            timeout=20,
+            check=False,
+            text=True,
+            encoding="utf-8",
+        )
+    except OSError:
+        return None
+    s = (proc2.stderr or "") + "\n" + (proc2.stdout or "")
+    m = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", s)
+    if not m:
+        return None
+    try:
+        hh = int(m.group(1))
+        mm = int(m.group(2))
+        ss = float(m.group(3))
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, (hh * 3600.0) + (mm * 60.0) + ss)
 
 
 def _enforce_cache_max_files(cache_dir: Path, *, max_files: int) -> None:
