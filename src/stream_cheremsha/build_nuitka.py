@@ -108,14 +108,20 @@ def _nuitka_cmd(
         "--nofollow-import-to=Cython",
         # Nuitka 4.0.8 can crash optimizing librosa on some graphs; keep it as bytecode.
         "--nofollow-import-to=librosa",
-        # TikTokLive protobuf modules are imported at runtime by TikTokLive.
-        # Default: compile them normally (required for correct runtime behavior).
-        # If you hit MSVC C1002 out-of-heap, try `--low-memory --jobs 1` or
-        # use `--exclude-tiktok-proto` as a last resort (will break TikTokLive).
+        # yt-dlp: one auto-generated module (`lazy_extractors`) is enormous; compiling it
+        # to C can hit MSVC fatal error C1002 (compiler out of heap) on GitHub runners.
+        # Do not compile it; runtime still loads it as Python bytecode in the dist.
+        "--nofollow-import-to=yt_dlp.extractor.lazy_extractors",
+        # Do NOT `--nofollow-import-to=TikTokLive`: Nuitka treats that as the whole package
+        # *tree* (submodules are "below namespace"), which blocks `--include-package` scans
+        # and triggers "Did not follow import to unused 'TikTokLive'". TikTok chat needs the
+        # package included normally. If MSVC C1002 appears on a specific submodule, add a
+        # narrow nofollow (e.g. one file), not the top-level package name.
+        # If you hit MSVC C1002 elsewhere, try `--low-memory --jobs 1`.
+        # `--exclude-tiktok-proto` skips TikTokLive.proto (breaks TikTok chat); last resort only.
         # Some stacks do not need distributed/RPC, but it can crash in standalone builds
         # with duplicate type registration (e.g. RpcBackendOptions already defined).
         "--nofollow-import-to=torch.distributed",
-        # Ensure TikTokLive package is present even when we don't compile its proto modules.
         "--include-package=TikTokLive",
         # OBS actions use obsws-python (obsws_python); it pulls websocket-client as `websocket`.
         # These are imported from UI callbacks and can be missed by module graph heuristics.
