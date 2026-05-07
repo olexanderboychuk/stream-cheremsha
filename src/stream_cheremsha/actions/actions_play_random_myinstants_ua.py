@@ -17,7 +17,6 @@ import httpx
 from stream_cheremsha.actions.actions_play_sound import play_sound_from_file
 from stream_cheremsha.domain.protocols import AudioSink
 
-
 _INSTANT_PATH_RE = re.compile(
     r'href\s*=\s*(?:"|\')(?P<path>/en/instant/[^"\']+)(?:"|\')',
     re.IGNORECASE,
