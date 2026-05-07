@@ -889,6 +889,7 @@ Item {
 
     readonly property var actionTypeModel: [
         { text: api ? api.loc("actions.play_sound") : "Play sound", value: "play_sound" },
+        { text: api ? api.loc("actions.play_random_myinstants_ua") : "Random MyInstants UA", value: "play_random_myinstants_ua" },
         { text: api ? api.loc("actions.write_file") : "Write to file", value: "write_file" },
         { text: api ? api.loc("actions.run_program") : "Run program", value: "run_program" },
         { text: api ? api.loc("actions.speak_tts") : "Speak text (TTS)", value: "speak_tts" },
@@ -3295,6 +3296,12 @@ Item {
                                                 volume_percent: 100,
                                                 skip_if_same_playing: false
                                             };
+                                            if (t === "play_random_myinstants_ua") aa[aIdx].params = {
+                                                volume_percent: 100,
+                                                skip_if_same_playing: false,
+                                                max_duration_seconds: 0,
+                                                max_page: 1
+                                            };
                                             if (t === "write_file") aa[aIdx].params = { file_path: "", text: "", mode: "overwrite" };
                                             if (t === "run_program") aa[aIdx].params = { program_path: "", arguments: "" };
                                             if (t === "speak_tts") aa[aIdx].params = { text: "" };
@@ -3412,6 +3419,114 @@ Item {
                                             aa[aIdx].params.skip_if_same_playing = playSoundSkipDupCb.checked;
                                             page.actionsModel = aa;
                                             page._scheduleCommitSelectedRuleActions();
+                                        }
+                                    }
+                                }
+
+                                // Random MyInstants UA config
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+                                    visible: aType === "play_random_myinstants_ua"
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+                                        Text {
+                                            text: api ? api.loc("actions.play_sound_volume") : "Volume (%)"
+                                            color: muted
+                                            font.pixelSize: 12
+                                        }
+                                        Slider {
+                                            id: playRandomMyinstantsUaVolume
+                                            Layout.fillWidth: true
+                                            from: 0
+                                            to: 100
+                                            stepSize: 1
+                                            value: (modelData && modelData.params && modelData.params.volume_percent !== undefined) ? Number(modelData.params.volume_percent) : 100
+                                            onMoved: {
+                                                var aa = page.actionsModel;
+                                                if (!aa || aIdx < 0 || aIdx >= aa.length) return;
+                                                if (!aa[aIdx].params) aa[aIdx].params = {};
+                                                aa[aIdx].params.volume_percent = Math.round(value);
+                                                page.actionsModel = aa;
+                                                page._scheduleCommitSelectedRuleActions();
+                                            }
+                                        }
+                                    }
+
+                                    CheckBox {
+                                        id: playRandomMyinstantsUaSkipDupCb
+                                        text: api ? api.loc("actions.play_sound_skip_if_same_playing") : "Skip if this file is already playing or queued"
+                                        checked: !!(modelData && modelData.params && modelData.params.skip_if_same_playing)
+                                        onCheckedChanged: {
+                                            var aa = page.actionsModel;
+                                            if (!aa || aIdx < 0 || aIdx >= aa.length) return;
+                                            if (!aa[aIdx].params) aa[aIdx].params = {};
+                                            if (aa[aIdx].params.skip_if_same_playing === playRandomMyinstantsUaSkipDupCb.checked) return;
+                                            aa[aIdx].params.skip_if_same_playing = playRandomMyinstantsUaSkipDupCb.checked;
+                                            page.actionsModel = aa;
+                                            page._scheduleCommitSelectedRuleActions();
+                                        }
+                                    }
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+                                        Text {
+                                            text: api ? api.loc("actions.max_duration_seconds") : "Max duration (sec)"
+                                            color: muted
+                                            font.pixelSize: 12
+                                        }
+                                        TextField {
+                                            id: playRandomMyinstantsUaMaxDur
+                                            Layout.preferredWidth: 120
+                                            color: ink
+                                            placeholderTextColor: muted
+                                            placeholderText: "0"
+                                            inputMethodHints: Qt.ImhFormattedNumbersOnly
+                                            text: (modelData && modelData.params && modelData.params.max_duration_seconds !== undefined) ? ("" + modelData.params.max_duration_seconds) : "0"
+                                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                            onTextEdited: {
+                                                var aa = page.actionsModel;
+                                                if (!aa || aIdx < 0 || aIdx >= aa.length) return;
+                                                if (!aa[aIdx].params) aa[aIdx].params = {};
+                                                var v = parseFloat(text);
+                                                if (isNaN(v) || v < 0) v = 0;
+                                                aa[aIdx].params.max_duration_seconds = v;
+                                                page.actionsModel = aa;
+                                                page._scheduleCommitSelectedRuleActions();
+                                            }
+                                        }
+                                    }
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+                                        Text {
+                                            text: api ? api.loc("actions.myinstants_max_page") : "Max page"
+                                            color: muted
+                                            font.pixelSize: 12
+                                        }
+                                        TextField {
+                                            id: playRandomMyinstantsUaMaxPage
+                                            Layout.preferredWidth: 120
+                                            color: ink
+                                            placeholderTextColor: muted
+                                            placeholderText: "1"
+                                            inputMethodHints: Qt.ImhDigitsOnly
+                                            text: (modelData && modelData.params && modelData.params.max_page !== undefined) ? ("" + modelData.params.max_page) : "1"
+                                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                            onTextEdited: {
+                                                var aa = page.actionsModel;
+                                                if (!aa || aIdx < 0 || aIdx >= aa.length) return;
+                                                if (!aa[aIdx].params) aa[aIdx].params = {};
+                                                var v = parseInt(text);
+                                                if (isNaN(v) || v < 1) v = 1;
+                                                aa[aIdx].params.max_page = v;
+                                                page.actionsModel = aa;
+                                                page._scheduleCommitSelectedRuleActions();
+                                            }
                                         }
                                     }
                                 }

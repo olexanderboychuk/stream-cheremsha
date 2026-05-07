@@ -10,6 +10,7 @@ import httpx
 
 from stream_cheremsha.actions.action_placeholders import apply_action_placeholders
 from stream_cheremsha.actions.actions_launch_program import launch_program
+from stream_cheremsha.actions.actions_play_random_myinstants_ua import play_random_myinstants_ua
 from stream_cheremsha.actions.actions_play_sound import play_sound_from_file
 from stream_cheremsha.actions.actions_write_file import write_text_to_file
 from stream_cheremsha.actions.events import (
@@ -1090,6 +1091,52 @@ class PlatformActionsEngine:
                             self._status_callback(f"Rule {rule.id}: play_sound failed: {e}")
 
                     coros.append(_play())
+                    continue
+
+                if t == "play_random_myinstants_ua":
+                    vol_raw = params.get("volume_percent", 100)
+                    try:
+                        vol = int(vol_raw)
+                    except (TypeError, ValueError):
+                        vol = 100
+                    if vol < 0:
+                        vol = 0
+                    if vol > 100:
+                        vol = 100
+                    skip_dup = _obs_bool_flag(params.get("skip_if_same_playing"), default=False)
+                    max_d_raw = params.get("max_duration_seconds", 0)
+                    try:
+                        max_d = float(max_d_raw)
+                    except (TypeError, ValueError):
+                        max_d = 0.0
+                    if max_d < 0:
+                        max_d = 0.0
+                    mp_raw = params.get("max_page", 1)
+                    try:
+                        mp = int(mp_raw)
+                    except (TypeError, ValueError):
+                        mp = 1
+                    if mp < 1:
+                        mp = 1
+
+                    async def _play_random_myinstants_ua(
+                        v: int = vol, s: bool = skip_dup, md: float = max_d, mpage: int = mp
+                    ) -> None:
+                        try:
+                            await play_random_myinstants_ua(
+                                sink=self._sink,
+                                volume_percent=v,
+                                skip_queue_if_same=s,
+                                max_duration_seconds=md,
+                                max_page=mpage,
+                                status=self._status_callback,
+                            )
+                        except (httpx.HTTPError, OSError, ValueError) as e:
+                            self._status_callback(
+                                f"Rule {rule.id}: play_random_myinstants_ua failed: {e}"
+                            )
+
+                    coros.append(_play_random_myinstants_ua())
                     continue
 
                 if t == "write_file":
