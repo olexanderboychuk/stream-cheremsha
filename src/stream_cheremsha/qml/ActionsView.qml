@@ -3484,7 +3484,7 @@ Item {
                                             color: ink
                                             placeholderTextColor: muted
                                             placeholderText: "0"
-                                            inputMethodHints: Qt.ImhDigitsOnly
+                                            inputMethodHints: Qt.ImhFormattedNumbersOnly
                                             text: (modelData && modelData.params && modelData.params.max_duration_seconds !== undefined) ? ("" + modelData.params.max_duration_seconds) : "0"
                                             background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
                                             onTextEdited: {

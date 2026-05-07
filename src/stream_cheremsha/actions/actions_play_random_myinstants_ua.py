@@ -52,7 +52,8 @@ def extract_mp3_url_from_instant_page_html(html: str) -> str:
 
     for m in _MP3_URL_RE.finditer(html):
         url = (m.group("url") or "").strip()
-        if "myinstants" not in url.lower():
+        host = (urlparse(url).hostname or "").strip().lower()
+        if host not in ("www.myinstants.com", "www.myinstantscdn.com"):
             continue
         return url
     raise ValueError("No myinstants .mp3 URL found in HTML")
@@ -261,7 +262,7 @@ def _probe_mp3_duration_seconds(path: Path) -> float | None:
                 text=True,
                 encoding="utf-8",
             )
-        except OSError:
+        except (OSError, subprocess.TimeoutExpired):
             proc = None
         if proc and proc.returncode == 0 and proc.stdout:
             try:
@@ -284,14 +285,14 @@ def _probe_mp3_duration_seconds(path: Path) -> float | None:
         return None
     try:
         proc2 = subprocess.run(
-            [ffmpeg, "-hide_banner", "-loglevel", "error", "-i", str(p), "-f", "null", "-"],
+            [ffmpeg, "-hide_banner", "-loglevel", "info", "-i", str(p), "-f", "null", "-"],
             capture_output=True,
             timeout=20,
             check=False,
             text=True,
             encoding="utf-8",
         )
-    except OSError:
+    except (OSError, subprocess.TimeoutExpired):
         return None
     s = (proc2.stderr or "") + "\n" + (proc2.stdout or "")
     m = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", s)
