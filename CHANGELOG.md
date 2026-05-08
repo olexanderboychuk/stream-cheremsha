@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] — 2026-05-08
+
+### Added
+
+- GitHub Releases auto-update flow (manifest generation and update client/downloader).
+- Pre-commit configuration.
+
+### Changed
+
+- Audio playback: Qt sink improvements and engine/playback hardening.
+
 ## [0.1.8] — 2026-05-07
 
 ### Added
@@ -38,5 +49,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Comment and formatting consistency in several modules after merging PR #5.
 
+[0.2.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.1.8...v0.2.0
 [0.1.8]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.1.7...v0.1.8
 [0.1.3]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.1.2...v0.1.3
