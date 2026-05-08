@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -155,6 +156,7 @@ async def play_random_myinstants_ua(
     sink: AudioSink,
     volume_percent: int,
     skip_queue_if_same: bool,
+    play_immediately: bool,
     max_duration_seconds: float,
     max_page: int,
     skip_words: object,
@@ -168,97 +170,96 @@ async def play_random_myinstants_ua(
         if mp < 1:
             mp = 1
         sw = _parse_skip_words(skip_words)
+        # NOTE: network + disk work is done in a worker thread to avoid blocking the Qt event loop
+        # in builds that run asyncio on the UI thread.
+        progress: list[str] = []
 
-        status("myinstants: fetching UA index…")
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0 Safari/537.36"
-            ),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9,uk-UA,uk;q=0.8",
-        }
-        timeout = httpx.Timeout(connect=10.0, read=20.0, write=20.0, pool=10.0)
-        async with httpx.AsyncClient(
-            headers=headers,
-            timeout=timeout,
-            follow_redirects=True,
-        ) as client:
-            rng = random.SystemRandom()
-            page_n = rng.randint(1, mp)
-            index_url = (
-                "https://www.myinstants.com/en/index/ua/"
-                if page_n == 1
-                else f"https://www.myinstants.com/en/index/ua/?page={page_n}"
-            )
-            index_resp = await client.get(index_url)
-            index_resp.raise_for_status()
-            entries = extract_instant_entries_from_ua_index_html(index_resp.text)
-            if not entries:
-                raise ValueError("No MyInstants UA instant paths found")
+        def _thread_status(msg: str) -> None:
+            # Keep status messages thread-safe; we'll flush them on the main loop later.
+            progress.append(str(msg))
 
-            remaining = list(entries)
-            cache_path: Path | None = None
-            data: bytes | None = None
+        cache_path = await asyncio.to_thread(
+            _prepare_random_myinstants_ua_mp3_sync,
+            max_s,
+            mp,
+            sw,
+            _thread_status,
+        )
+        for msg in progress:
+            status(msg)
 
-            max_attempts = min(40, len(remaining))
-            for attempt in range(max_attempts):
-                chosen_path, chosen_title = rng.choice(list(remaining))
-                try:
-                    remaining.remove((chosen_path, chosen_title))
-                except ValueError:
-                    # Shouldn't happen, but keep the loop robust.
-                    pass
-                if _title_matches_skip_words(chosen_title, sw):
-                    status("myinstants: skipped (word filter)…")
-                    continue
+        status("myinstants: playing mp3…")
+        await play_sound_from_file(
+            str(cache_path),
+            sink=sink,
+            volume_percent=volume_percent,
+            skip_queue_if_same=skip_queue_if_same,
+            play_immediately=play_immediately,
+        )
+        return
 
-                instant_page_url = f"https://www.myinstants.com{chosen_path}"
-                status("myinstants: fetching instant page…")
-                page_resp = await client.get(instant_page_url)
-                page_resp.raise_for_status()
-                mp3_url = extract_mp3_url_from_instant_page_html(page_resp.text)
+    except (httpx.HTTPError, OSError, ValueError) as e:
+        status(f"myinstants: failed: {e}")
+        return
 
-                cache_path = _cache_path_for_mp3_url(mp3_url)
-                if cache_path.exists() and cache_path.is_file():
-                    if max_s > 0:
-                        dur = _probe_mp3_duration_seconds(cache_path)
-                        if dur is not None and dur > max_s:
-                            status(
-                                f"myinstants: skipped (duration {dur:.1f}s > max {max_s:.1f}s)…"
-                            )
-                            continue
-                        if dur is None:
-                            status("myinstants: duration unknown (no ffprobe/ffmpeg); playing…")
-                    try:
-                        os.utime(cache_path, None)
-                    except OSError:
-                        pass
-                    status("myinstants: playing cached mp3…")
-                    _enforce_cache_max_files(cache_path.parent, max_files=200)
-                    await play_sound_from_file(
-                        str(cache_path),
-                        sink=sink,
-                        volume_percent=volume_percent,
-                        skip_queue_if_same=skip_queue_if_same,
-                    )
-                    return
 
-                status("myinstants: downloading mp3…")
-                mp3_resp = await client.get(mp3_url)
-                mp3_resp.raise_for_status()
-                data = mp3_resp.content
-                if not data:
-                    raise ValueError("Downloaded mp3 is empty")
+def _prepare_random_myinstants_ua_mp3_sync(
+    max_duration_seconds: float,
+    max_page: int,
+    skip_words: list[str],
+    status: Callable[[str], None],
+) -> Path:
+    max_s = float(max_duration_seconds)
+    mp = int(max_page)
+    if mp < 1:
+        mp = 1
+    sw = list(skip_words or [])
 
-                _atomic_write_bytes(cache_path, data)
-                try:
-                    os.utime(cache_path, None)
-                except OSError:
-                    pass
-                _enforce_cache_max_files(cache_path.parent, max_files=200)
+    status("myinstants: fetching UA index…")
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9,uk-UA,uk;q=0.8",
+    }
+    timeout = httpx.Timeout(connect=10.0, read=20.0, write=20.0, pool=10.0)
+    with httpx.Client(headers=headers, timeout=timeout, follow_redirects=True) as client:
+        rng = random.SystemRandom()
+        page_n = rng.randint(1, mp)
+        index_url = (
+            "https://www.myinstants.com/en/index/ua/"
+            if page_n == 1
+            else f"https://www.myinstants.com/en/index/ua/?page={page_n}"
+        )
+        index_resp = client.get(index_url)
+        index_resp.raise_for_status()
+        entries = extract_instant_entries_from_ua_index_html(index_resp.text)
+        if not entries:
+            raise ValueError("No MyInstants UA instant paths found")
 
+        remaining = list(entries)
+        max_attempts = min(40, len(remaining))
+        for _attempt in range(max_attempts):
+            chosen_path, chosen_title = rng.choice(list(remaining))
+            try:
+                remaining.remove((chosen_path, chosen_title))
+            except ValueError:
+                pass
+            if _title_matches_skip_words(chosen_title, sw):
+                status("myinstants: skipped (word filter)…")
+                continue
+
+            instant_page_url = f"https://www.myinstants.com{chosen_path}"
+            status("myinstants: fetching instant page…")
+            page_resp = client.get(instant_page_url)
+            page_resp.raise_for_status()
+            mp3_url = extract_mp3_url_from_instant_page_html(page_resp.text)
+
+            cache_path = _cache_path_for_mp3_url(mp3_url)
+            if cache_path.exists() and cache_path.is_file():
                 if max_s > 0:
                     dur = _probe_mp3_duration_seconds(cache_path)
                     if dur is not None and dur > max_s:
@@ -266,21 +267,39 @@ async def play_random_myinstants_ua(
                         continue
                     if dur is None:
                         status("myinstants: duration unknown (no ffprobe/ffmpeg); playing…")
+                try:
+                    os.utime(cache_path, None)
+                except OSError:
+                    pass
+                status("myinstants: using cached mp3…")
+                _enforce_cache_max_files(cache_path.parent, max_files=200)
+                return cache_path
 
-                status("myinstants: playing mp3…")
-                await play_sound_from_file(
-                    str(cache_path),
-                    sink=sink,
-                    volume_percent=volume_percent,
-                    skip_queue_if_same=skip_queue_if_same,
-                )
-                return
+            status("myinstants: downloading mp3…")
+            mp3_resp = client.get(mp3_url)
+            mp3_resp.raise_for_status()
+            data = mp3_resp.content
+            if not data:
+                raise ValueError("Downloaded mp3 is empty")
 
-            raise ValueError("No MyInstants sound matched duration filter")
+            _atomic_write_bytes(cache_path, data)
+            try:
+                os.utime(cache_path, None)
+            except OSError:
+                pass
+            _enforce_cache_max_files(cache_path.parent, max_files=200)
 
-    except (httpx.HTTPError, OSError, ValueError) as e:
-        status(f"myinstants: failed: {e}")
-        return
+            if max_s > 0:
+                dur = _probe_mp3_duration_seconds(cache_path)
+                if dur is not None and dur > max_s:
+                    status(f"myinstants: skipped (duration {dur:.1f}s > max {max_s:.1f}s)…")
+                    continue
+                if dur is None:
+                    status("myinstants: duration unknown (no ffprobe/ffmpeg); playing…")
+
+            return cache_path
+
+    raise ValueError("No MyInstants sound matched duration filter")
 
 
 def _probe_mp3_duration_seconds(path: Path) -> float | None:

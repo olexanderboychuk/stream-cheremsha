@@ -329,3 +329,15 @@ def apply_action_placeholders(template: str, ev: object) -> str:
         return str(val)
 
     return _PLACEHOLDER_RE.sub(repl, template)
+
+
+def strip_unresolved_placeholders(text: str) -> str:
+    """Remove any leftover `{...}` tokens after placeholder substitution.
+
+    This is intended for user-facing speech (TTS) where unresolved placeholders should not
+    be read aloud.
+    """
+    if not text or "{" not in text:
+        return text
+    # Replace any `{...}` chunk with empty string.
+    return _PLACEHOLDER_RE.sub("", text)

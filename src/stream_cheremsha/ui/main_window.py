@@ -1527,7 +1527,9 @@ class MainWindow(FramelessWindow):
         self._cb_updates_check_on_startup.setChecked(
             bool(self._settings.value(_SETTINGS_UPDATES_CHECK_ON_STARTUP, True, bool)),
         )
-        self._cb_updates_check_on_startup.stateChanged.connect(self._persist_updates_check_on_startup)
+        self._cb_updates_check_on_startup.stateChanged.connect(
+            self._persist_updates_check_on_startup
+        )
         upd_grid.addWidget(self._cb_updates_check_on_startup, 0, 0, 1, 2)
 
         self._btn_updates_check_now = QPushButton()
@@ -3123,7 +3125,7 @@ class MainWindow(FramelessWindow):
                 "YouTube:",
             ):
                 if msg.startswith(prefix):
-                    self._status_youtube = msg[len(prefix):].strip(" :") or msg
+                    self._status_youtube = msg[len(prefix) :].strip(" :") or msg
                     return
             self._status_youtube = msg.removeprefix("YouTube:").strip() or msg
             return
@@ -3478,20 +3480,53 @@ class MainWindow(FramelessWindow):
         return None
 
     def _maybe_migrate_tiktok_actions(self) -> None:
-        """If the app-wide TikTok rules key is unset, copy from legacy .../tiktok/<nick>/."""
+        """If the app-wide TikTok rules key is unset, copy from legacy .../tiktok/<nick>/.
+
+        Older builds stored TikTok actions under the streamer username. Current builds use a
+        single app-wide key (`account_key="app"`). If we cannot resolve the username (or the
+        username has changed), fall back to scanning any legacy keys under `actions/tiktok/*`.
+        """
         if actions_rules_key_is_set("tiktok", constants.TIKTOK_ACTIONS_ACCOUNT_KEY):
             return
         user = (self._tiktok_username.text() or "").strip().lstrip("@").strip()
         if not user:
             t = keyring_store.get_password(constants.KEY_TIKTOK_USERNAME)
             user = (t or "").strip().lstrip("@").strip() if t else ""
-        if not user or user == constants.TIKTOK_ACTIONS_ACCOUNT_KEY:
+        legacy_candidates: list[str] = []
+        if user and user != constants.TIKTOK_ACTIONS_ACCOUNT_KEY:
+            legacy_candidates.append(user)
+
+        # Fallback: enumerate all legacy account keys under actions/tiktok/*.
+        try:
+            s = QSettings("stream-cheremsha", "cheremsha")
+            s.beginGroup("actions/tiktok")
+            for g in s.childGroups():
+                gg = (g or "").strip()
+                if not gg or gg == constants.TIKTOK_ACTIONS_ACCOUNT_KEY:
+                    continue
+                legacy_candidates.append(gg)
+        finally:
+            try:
+                s.endGroup()
+            except Exception:
+                # Defensive: endGroup can raise if beginGroup never happened.
+                pass
+
+        # De-dup (preserve order), then pick the first non-empty legacy ruleset.
+        seen: set[str] = set()
+        for ak in legacy_candidates:
+            if ak in seen:
+                continue
+            seen.add(ak)
+            try:
+                old = load_rules("tiktok", ak)
+            except ValueError:
+                continue
+            if not old:
+                continue
+            save_rules("tiktok", constants.TIKTOK_ACTIONS_ACCOUNT_KEY, old)
+            self._actions_reload_scope("tiktok", constants.TIKTOK_ACTIONS_ACCOUNT_KEY)
             return
-        old = load_rules("tiktok", user)
-        if not old:
-            return
-        save_rules("tiktok", constants.TIKTOK_ACTIONS_ACCOUNT_KEY, old)
-        self._actions_reload_scope("tiktok", constants.TIKTOK_ACTIONS_ACCOUNT_KEY)
 
     def _get_actions_engine(self, platform: str, account_key: str) -> PlatformActionsEngine:
         p, a = self._actions_scope_key(platform, account_key)
@@ -4056,7 +4091,6 @@ class MainWindow(FramelessWindow):
         who = (author or "").strip() or "?"
         line, replaced = await self._apply_openai_moderation_to_tts_text(line, who)
         line = self._maybe_strip_non_letters_for_tts(line, moderation_replaced=replaced)
-        line = self._maybe_prefix_tts_author(who, line, moderation_replaced=replaced)
         line = (line or "").strip()
         if not line:
             return

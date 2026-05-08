@@ -16,4 +16,3 @@ def test_is_newer_version_handles_multi_digit_patch() -> None:
 def test_is_newer_version_rejects_invalid_versions() -> None:
     with pytest.raises(ValueError):
         is_newer_version("0.1", "0.1.8")
-

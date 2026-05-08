@@ -151,23 +151,14 @@ Item {
     function _obsBrowseAutoRefreshTick() {
         var ix = root.selectedActionIdx;
         if (ix < 0) {
-            root._obsPickCanvases = [];
-            root._obsPickScenes = [];
-            root._obsPickSources = [];
             return;
         }
         var aa = root.actionsModel;
         if (!aa || ix >= aa.length) {
-            root._obsPickCanvases = [];
-            root._obsPickScenes = [];
-            root._obsPickSources = [];
             return;
         }
         var row = aa[ix];
         if (!row || ("" + (row.type || "")).trim() !== "obs_scene") {
-            root._obsPickCanvases = [];
-            root._obsPickScenes = [];
-            root._obsPickSources = [];
             return;
         }
         if (!actApi) return;
@@ -235,6 +226,10 @@ Item {
         var pr = aa[ix].params || {};
         var cu = (pr.canvas_uuid !== undefined && pr.canvas_uuid !== null) ? ("" + pr.canvas_uuid).trim() : "";
         var sn = (pr.scene_name !== undefined && pr.scene_name !== null) ? ("" + pr.scene_name).trim() : "";
+        if (!sn) {
+            root._obsPickSources = [];
+            return;
+        }
         var srcj = JSON.parse(actApi.obsListSceneSourcesJson(cu, sn));
         if (srcj.error) {
             root._obsPickSources = [];
@@ -274,7 +269,7 @@ Item {
             root._obsPickScenes = root._obsRowsToComboModel(scn.items || []);
         }
 
-        if (mode === "source_visible") {
+        if (mode === "source_visible" && sn) {
             var srcj = JSON.parse(actApi.obsListSceneSourcesJson(cu, sn));
             if (srcj.error) {
                 root._obsPickSources = [];
@@ -3451,7 +3446,9 @@ Item {
                             readonly property string aType: ((modelData && modelData.type) || "play_sound")
                             readonly property string aKind: (aType === "run_exe") ? "run_program" : aType
                             readonly property bool isOpen: index === page.selectedActionIdx
-                            readonly property bool obsBrowseUi: aType === "obs_scene" && isOpen
+                            // OBS pick lists are global (root._obsPickScenes/_obsPickSources), so do not
+                            // tie visibility to selection; selection can lag behind ComboBox popup open.
+                            readonly property bool obsBrowseUi: aType === "obs_scene"
 
                             // ListView delegates must have a reliable implicit height.
                             implicitHeight: cardLayout.implicitHeight + 20
@@ -3488,11 +3485,15 @@ Item {
                                             if (t === "play_sound") aa[aIdx].params = {
                                                 file_path: "",
                                                 volume_percent: 100,
-                                                skip_if_same_playing: false
+                                                skip_if_same_playing: false,
+                                                play_immediately: false,
+                                                respect_gift_combo: false
                                             };
                                             if (t === "play_random_myinstants_ua") aa[aIdx].params = {
                                                 volume_percent: 100,
                                                 skip_if_same_playing: false,
+                                                play_immediately: false,
+                                                respect_gift_combo: false,
                                                 max_duration_seconds: 0,
                                                 max_page: 1,
                                                 skip_words: ""
@@ -3559,19 +3560,38 @@ Item {
                                             onClicked: {
                                                 var apiRef = actionsList.rootApi;
                                                 if (apiRef.selectedRule === null) return;
-                                                var p = actApi.pickSoundFile();
-                                                if (!p) return;
-                                                var r = apiRef._copyRule(apiRef.selectedRule);
-                                                if (r == null) return;
-                                                var aa = apiRef.actionsModel.slice();
-                                                var ac = apiRef._copyRule(aa[aIdx]);
-                                                if (ac) aa[aIdx] = ac;
-                                                aa[aIdx].params = aa[aIdx].params || {};
-                                                aa[aIdx].params.file_path = p;
-                                                apiRef.actionsModel = aa;
-                                                r.actions = aa;
-                                                apiRef._setRule(apiRef.selectedIdx, r);
-                                                apiRef._save();
+
+                                                // Picking a file and/or resetting models can trigger delegate teardown.
+                                                // Defer mutations so this click handler can return before the UI rebuilds.
+                                                var pickedPath = actApi.pickSoundFile();
+                                                if (!pickedPath) return;
+
+                                                var selectedIdx = apiRef.selectedIdx;
+                                                var selectedRuleCopy = apiRef._copyRule(apiRef.selectedRule);
+                                                if (selectedRuleCopy == null) return;
+
+                                                var actionIndex = aIdx;
+                                                var currentActions = apiRef.actionsModel;
+                                                if (!currentActions || actionIndex < 0 || actionIndex >= currentActions.length) return;
+
+                                                Qt.callLater(function () {
+                                                    // Re-check target still makes sense after any intermediate UI changes.
+                                                    if (!apiRef) return;
+                                                    if (apiRef.selectedIdx !== selectedIdx) return;
+
+                                                    var aa = apiRef.actionsModel.slice();
+                                                    if (actionIndex < 0 || actionIndex >= aa.length) return;
+
+                                                    var ac = apiRef._copyRule(aa[actionIndex]);
+                                                    if (ac) aa[actionIndex] = ac;
+                                                    aa[actionIndex].params = aa[actionIndex].params || {};
+                                                    aa[actionIndex].params.file_path = pickedPath;
+
+                                                    apiRef.actionsModel = aa;
+                                                    selectedRuleCopy.actions = aa;
+                                                    apiRef._setRule(selectedIdx, selectedRuleCopy);
+                                                    apiRef._save();
+                                                });
                                             }
                                         }
                                     }
@@ -3612,6 +3632,36 @@ Item {
                                             if (!aa[aIdx].params) aa[aIdx].params = {};
                                             if (aa[aIdx].params.skip_if_same_playing === playSoundSkipDupCb.checked) return;
                                             aa[aIdx].params.skip_if_same_playing = playSoundSkipDupCb.checked;
+                                            page.actionsModel = aa;
+                                            page._scheduleCommitSelectedRuleActions();
+                                        }
+                                    }
+
+                                    CheckBox {
+                                        id: playSoundPlayNowCb
+                                        text: api ? api.loc("actions.play_immediately") : "Play immediately (ignore queue)"
+                                        checked: !!(modelData && modelData.params && modelData.params.play_immediately)
+                                        onCheckedChanged: {
+                                            var aa = page.actionsModel;
+                                            if (!aa || aIdx < 0 || aIdx >= aa.length) return;
+                                            if (!aa[aIdx].params) aa[aIdx].params = {};
+                                            if (aa[aIdx].params.play_immediately === playSoundPlayNowCb.checked) return;
+                                            aa[aIdx].params.play_immediately = playSoundPlayNowCb.checked;
+                                            page.actionsModel = aa;
+                                            page._scheduleCommitSelectedRuleActions();
+                                        }
+                                    }
+
+                                    CheckBox {
+                                        id: playSoundGiftComboCb
+                                        text: api ? (api.loc("actions.respect_gift_combo") || "Respect gift combo count") : "Respect gift combo count"
+                                        checked: !!(modelData && modelData.params && modelData.params.respect_gift_combo)
+                                        onCheckedChanged: {
+                                            var aa = page.actionsModel;
+                                            if (!aa || aIdx < 0 || aIdx >= aa.length) return;
+                                            if (!aa[aIdx].params) aa[aIdx].params = {};
+                                            if (aa[aIdx].params.respect_gift_combo === playSoundGiftComboCb.checked) return;
+                                            aa[aIdx].params.respect_gift_combo = playSoundGiftComboCb.checked;
                                             page.actionsModel = aa;
                                             page._scheduleCommitSelectedRuleActions();
                                         }
@@ -3660,6 +3710,36 @@ Item {
                                             if (!aa[aIdx].params) aa[aIdx].params = {};
                                             if (aa[aIdx].params.skip_if_same_playing === playRandomMyinstantsUaSkipDupCb.checked) return;
                                             aa[aIdx].params.skip_if_same_playing = playRandomMyinstantsUaSkipDupCb.checked;
+                                            page.actionsModel = aa;
+                                            page._scheduleCommitSelectedRuleActions();
+                                        }
+                                    }
+
+                                    CheckBox {
+                                        id: playRandomMyinstantsUaPlayNowCb
+                                        text: api ? (api.loc("actions.play_immediately") || "Play immediately (ignore queue)") : "Play immediately (ignore queue)"
+                                        checked: !!(modelData && modelData.params && modelData.params.play_immediately)
+                                        onCheckedChanged: {
+                                            var aa = page.actionsModel;
+                                            if (!aa || aIdx < 0 || aIdx >= aa.length) return;
+                                            if (!aa[aIdx].params) aa[aIdx].params = {};
+                                            if (aa[aIdx].params.play_immediately === playRandomMyinstantsUaPlayNowCb.checked) return;
+                                            aa[aIdx].params.play_immediately = playRandomMyinstantsUaPlayNowCb.checked;
+                                            page.actionsModel = aa;
+                                            page._scheduleCommitSelectedRuleActions();
+                                        }
+                                    }
+
+                                    CheckBox {
+                                        id: playRandomMyinstantsUaGiftComboCb
+                                        text: api ? (api.loc("actions.respect_gift_combo") || "Respect gift combo count") : "Respect gift combo count"
+                                        checked: !!(modelData && modelData.params && modelData.params.respect_gift_combo)
+                                        onCheckedChanged: {
+                                            var aa = page.actionsModel;
+                                            if (!aa || aIdx < 0 || aIdx >= aa.length) return;
+                                            if (!aa[aIdx].params) aa[aIdx].params = {};
+                                            if (aa[aIdx].params.respect_gift_combo === playRandomMyinstantsUaGiftComboCb.checked) return;
+                                            aa[aIdx].params.respect_gift_combo = playRandomMyinstantsUaGiftComboCb.checked;
                                             page.actionsModel = aa;
                                             page._scheduleCommitSelectedRuleActions();
                                         }
@@ -3821,19 +3901,35 @@ Item {
                                             onClicked: {
                                                 var apiRef = actionsList.rootApi;
                                                 if (apiRef.selectedRule === null) return;
-                                                var p = actApi.pickWriteFile();
-                                                if (!p) return;
-                                                var r = apiRef._copyRule(apiRef.selectedRule);
-                                                if (r == null) return;
-                                                var aa = apiRef.actionsModel.slice();
-                                                var ac = apiRef._copyRule(aa[aIdx]);
-                                                if (ac) aa[aIdx] = ac;
-                                                aa[aIdx].params = aa[aIdx].params || {};
-                                                aa[aIdx].params.file_path = p;
-                                                apiRef.actionsModel = aa;
-                                                r.actions = aa;
-                                                apiRef._setRule(apiRef.selectedIdx, r);
-                                                apiRef._save();
+                                                // Avoid deleting this delegate while handling the click.
+                                                var pickedPath = actApi.pickWriteFile();
+                                                if (!pickedPath) return;
+
+                                                var selectedIdx = apiRef.selectedIdx;
+                                                var selectedRuleCopy = apiRef._copyRule(apiRef.selectedRule);
+                                                if (selectedRuleCopy == null) return;
+
+                                                var actionIndex = aIdx;
+                                                var currentActions = apiRef.actionsModel;
+                                                if (!currentActions || actionIndex < 0 || actionIndex >= currentActions.length) return;
+
+                                                Qt.callLater(function () {
+                                                    if (!apiRef) return;
+                                                    if (apiRef.selectedIdx !== selectedIdx) return;
+
+                                                    var aa = apiRef.actionsModel.slice();
+                                                    if (actionIndex < 0 || actionIndex >= aa.length) return;
+
+                                                    var ac = apiRef._copyRule(aa[actionIndex]);
+                                                    if (ac) aa[actionIndex] = ac;
+                                                    aa[actionIndex].params = aa[actionIndex].params || {};
+                                                    aa[actionIndex].params.file_path = pickedPath;
+                                                    apiRef.actionsModel = aa;
+
+                                                    selectedRuleCopy.actions = aa;
+                                                    apiRef._setRule(selectedIdx, selectedRuleCopy);
+                                                    apiRef._save();
+                                                });
                                             }
                                         }
                                     }
@@ -4049,6 +4145,9 @@ Item {
                                     Layout.fillWidth: true
                                     spacing: 8
                                     visible: aType === "obs_scene"
+                                    Component.onCompleted: {
+                                        page._obsRefreshFromObs(aIdx, true);
+                                    }
 
                                     Text { text: api ? api.loc("actions.obs_mode") : "Mode"; color: muted; font.pixelSize: 12 }
                                     ConnComboBox {
@@ -4070,6 +4169,7 @@ Item {
                                             return (m === "source_visible") ? 1 : 0;
                                         }
                                         onActivated: function (idx) {
+                                            page.selectedActionIdx = aIdx;
                                             var aa = page.actionsModel;
                                             if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                             if (!aa[aIdx].params) aa[aIdx].params = {};
@@ -4088,7 +4188,10 @@ Item {
                                         ConnPillButton {
                                             text: api ? api.loc("actions.obs_refresh_from_obs") : "Load from OBS"
                                             pillFontSize: 12
-                                            onClicked: page._obsRefreshFromObs(aIdx)
+                                            onClicked: {
+                                                page.selectedActionIdx = aIdx;
+                                                page._obsRefreshFromObs(aIdx);
+                                            }
                                         }
                                     }
 
@@ -4112,6 +4215,7 @@ Item {
                                             return ix >= 0 ? ix : 0;
                                         }
                                         onActivated: function (idx) {
+                                            page.selectedActionIdx = aIdx;
                                             if (page._suppressObsBrowseCombos) return;
                                             if (idx < 0) return;
                                             var aa = page.actionsModel;
@@ -4147,6 +4251,7 @@ Item {
                                             return ix >= 0 ? ix : 0;
                                         }
                                         onActivated: function (idx) {
+                                            page.selectedActionIdx = aIdx;
                                             if (page._suppressObsBrowseCombos) return;
                                             if (idx < 0) return;
                                             var aa = page.actionsModel;
@@ -4182,6 +4287,7 @@ Item {
                                             return ix >= 0 ? ix : 0;
                                         }
                                         onActivated: function (idx) {
+                                            page.selectedActionIdx = aIdx;
                                             if (page._suppressObsBrowseCombos) return;
                                             if (idx < 0) return;
                                             var aa = page.actionsModel;

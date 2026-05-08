@@ -47,4 +47,3 @@ def test_latest_manifest_rejects_schema_mismatch() -> None:
     )
     with pytest.raises(ValueError, match="schema"):
         LatestManifest.from_json(raw)
-

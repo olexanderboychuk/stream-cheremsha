@@ -99,9 +99,7 @@ class Platforms:
         win_obj = d.get("windows")
         lin_obj = d.get("linux")
         windows = (
-            None
-            if win_obj is None
-            else WindowsPlatform.from_obj(win_obj, path=f"{path}.windows")
+            None if win_obj is None else WindowsPlatform.from_obj(win_obj, path=f"{path}.windows")
         )
         linux = None if lin_obj is None else LinuxPlatform.from_obj(lin_obj, path=f"{path}.linux")
         if windows is None and linux is None:

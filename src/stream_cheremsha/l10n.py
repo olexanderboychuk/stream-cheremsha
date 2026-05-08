@@ -70,14 +70,17 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "Check for updates on startup",
     },
     "settings.updates_check_now": {"uk": "Перевірити оновлення", "en": "Check for updates"},
-    "updates.up_to_date": {"uk": "У вас остання версія ({version}).", "en": "You're up to date ({version})."},
+    "updates.up_to_date": {
+        "uk": "У вас остання версія ({version}).",
+        "en": "You're up to date ({version}).",
+    },
     "updates.redirect_releases": {
         "uk": "Оновлення для Linux поки вручну: відкриваємо сторінку релізів.",
         "en": "Linux updates are manual for now: opening the Releases page.",
     },
     "updates.available": {
-        "uk": "Доступна нова версія: <b>{latest}</b> (у вас {current}).<br/><a href=\"{url}\">Changelog</a>",
-        "en": "A new version is available: <b>{latest}</b> (you have {current}).<br/><a href=\"{url}\">Changelog</a>",
+        "uk": 'Доступна нова версія: <b>{latest}</b> (у вас {current}).<br/><a href="{url}">Changelog</a>',
+        "en": 'A new version is available: <b>{latest}</b> (you have {current}).<br/><a href="{url}">Changelog</a>',
     },
     "updates.btn_update": {"uk": "Оновити", "en": "Update"},
     "updates.btn_not_now": {"uk": "Не зараз", "en": "Not now"},
@@ -303,7 +306,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "actions.gift_pick": {"uk": "Подарунок", "en": "Gift"},
     "actions.min_count": {"uk": "Мін. кількість", "en": "Min count"},
     "actions.min_price": {"uk": "Мін. ціна (🪙)", "en": "Min price (🪙)"},
-    "actions.exclude_gifts": {"uk": "Виключити подарунки (не спрацьовувати)", "en": "Exclude gifts (do not fire)"},
+    "actions.exclude_gifts": {
+        "uk": "Виключити подарунки (не спрацьовувати)",
+        "en": "Exclude gifts (do not fire)",
+    },
     "actions.exclude_gifts_ph": {
         "uk": "Оберіть подарунок або введіть назву/ID…",
         "en": "Select a gift or type a name/id…",
@@ -312,12 +318,23 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "actions.user_filter_ph": {"uk": "нікнейм…", "en": "nickname…"},
     "actions.actions": {"uk": "Дії", "en": "Actions"},
     "actions.play_sound": {"uk": "Програти звук", "en": "Play sound"},
-    "actions.play_random_myinstants_ua": {"uk": "Випадковий MyInstants UA", "en": "Random MyInstants UA"},
+    "actions.play_random_myinstants_ua": {
+        "uk": "Випадковий MyInstants UA",
+        "en": "Random MyInstants UA",
+    },
     "actions.pick_mp3": {"uk": "Оберіть .mp3…", "en": "Pick .mp3…"},
     "actions.play_sound_volume": {"uk": "Гучність (%)", "en": "Volume (%)"},
     "actions.play_sound_skip_if_same_playing": {
         "uk": "Грати тільки один раз унікально (не додавати в чергу, якщо цей файл уже грає або чекає)",
         "en": "Play uniquely — skip if this file is already playing or queued",
+    },
+    "actions.play_immediately": {
+        "uk": "Грати негайно (без черги)",
+        "en": "Play immediately (ignore queue)",
+    },
+    "actions.respect_gift_combo": {
+        "uk": "Враховувати комбо подарунків (повторити дію N разів)",
+        "en": "Respect gift combo count (repeat N times)",
     },
     "actions.max_duration_seconds": {"uk": "Макс. тривалість (сек)", "en": "Max duration (sec)"},
     "actions.myinstants_max_page": {"uk": "Макс. сторінка", "en": "Max page"},

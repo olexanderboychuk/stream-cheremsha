@@ -27,9 +27,15 @@ def test_play_sound_volume_percent_passed_to_playback(
     got: dict[str, object] = {}
 
     async def fake_play_sound_from_file(
-        path: str, *, sink: object, volume_percent: int = 100, skip_queue_if_same: bool = False
+        path: str,
+        *,
+        sink: object,
+        volume_percent: int = 100,
+        skip_queue_if_same: bool = False,
+        play_immediately: bool = False,
     ) -> None:
         _ = skip_queue_if_same
+        _ = play_immediately
         got["path"] = path
         got["volume_percent"] = volume_percent
         _ = sink

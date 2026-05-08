@@ -24,6 +24,7 @@ async def play_sound_from_file(
     sink: AudioSink,
     volume_percent: int = 100,
     skip_queue_if_same: bool = False,
+    play_immediately: bool = False,
 ) -> None:
     p = Path((path or "").strip())
     if not p:
@@ -41,6 +42,18 @@ async def play_sound_from_file(
     linear = vp / 100.0
 
     dedupe_key = sound_file_dedupe_key(str(p)) if skip_queue_if_same else ""
+    if play_immediately:
+        play_parallel_deduped = getattr(sink, "play_mp3_parallel_with_volume_deduped", None)
+        if dedupe_key and callable(play_parallel_deduped):
+            ok = await play_parallel_deduped(data, linear, dedupe_key=dedupe_key)
+            if not ok:
+                return
+            return
+        play_parallel = getattr(sink, "play_mp3_parallel_with_volume", None)
+        if callable(play_parallel):
+            await play_parallel(data, linear)
+            return
+
     play_deduped = getattr(sink, "play_mp3_with_volume_deduped", None)
     if dedupe_key and callable(play_deduped):
         ok = await play_deduped(data, linear, dedupe_key=dedupe_key)

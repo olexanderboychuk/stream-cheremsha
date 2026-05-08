@@ -189,6 +189,7 @@ def test_engine_executes_play_random_myinstants_ua_action(monkeypatch) -> None:
         sink,
         volume_percent: int,
         skip_queue_if_same: bool,
+        play_immediately: bool,
         max_duration_seconds: float,
         max_page: int,
         skip_words: object,
@@ -200,6 +201,7 @@ def test_engine_executes_play_random_myinstants_ua_action(monkeypatch) -> None:
                 "sink": sink,
                 "volume_percent": int(volume_percent),
                 "skip_queue_if_same": bool(skip_queue_if_same),
+                "play_immediately": bool(play_immediately),
                 "max_duration_seconds": float(max_duration_seconds),
                 "max_page": int(max_page),
                 "skip_words": str(skip_words),
@@ -241,11 +243,70 @@ def test_engine_executes_play_random_myinstants_ua_action(monkeypatch) -> None:
             "sink": sink,
             "volume_percent": 100,
             "skip_queue_if_same": True,
+            "play_immediately": False,
             "max_duration_seconds": 5.0,
             "max_page": 3,
             "skip_words": "siren, loud",
         },
     ]
+
+
+def test_engine_play_sound_respects_gift_combo_count(tmp_path: Path, monkeypatch) -> None:
+    p = tmp_path / "a.mp3"
+    p.write_bytes(b"mp3-bytes")
+    sink = FakeSink()
+    calls: list[dict[str, object]] = []
+
+    async def fake_play_sound_from_file(
+        path: str,
+        *,
+        sink: object,
+        volume_percent: int = 100,
+        skip_queue_if_same: bool = False,
+        play_immediately: bool = False,
+    ) -> None:
+        calls.append(
+            {
+                "path": path,
+                "volume_percent": int(volume_percent),
+                "skip_queue_if_same": bool(skip_queue_if_same),
+                "play_immediately": bool(play_immediately),
+            }
+        )
+
+    import stream_cheremsha.actions.engine as eng_mod
+
+    monkeypatch.setattr(eng_mod, "play_sound_from_file", fake_play_sound_from_file)
+
+    rules = [
+        RuleV1(
+            id="r1",
+            enabled=True,
+            events=({"type": "gift_received", "params": {"gift_name": "Rose"}},),
+            actions=[
+                {
+                    "type": "play_sound",
+                    "params": {
+                        "file_path": str(p),
+                        "volume_percent": 35,
+                        "respect_gift_combo": True,
+                    },
+                }
+            ],
+        ),
+    ]
+    engine = PlatformActionsEngine(sink, rules, status_callback=lambda _m: None)
+    ev = GiftReceivedEvent(
+        platform=ChatPlatform.TIKTOK,
+        sender="bob",
+        gift_id="",
+        gift_name="Rose",
+        count=3,
+        gift_icon_url="",
+        received_at=datetime.now(tz=UTC),
+    )
+    asyncio.run(engine.on_gift_received(ev))
+    assert len(calls) == 3
 
 
 def test_engine_play_sound_two_same_file_without_skip_plays_twice(tmp_path: Path) -> None:
@@ -1206,7 +1267,7 @@ def test_engine_tiktok_shared_min_count(tmp_path: Path) -> None:
     assert sink.mp3_calls == [b"x"]
 
 
-def test_engine_tiktok_first_activity_fires_once_per_session(tmp_path: Path) -> None:
+def test_engine_tiktok_first_activity_fires_once_per_user_per_session(tmp_path: Path) -> None:
     p = tmp_path / "a.mp3"
     p.write_bytes(b"x")
     sink = FakeSink()
@@ -1222,10 +1283,10 @@ def test_engine_tiktok_first_activity_fires_once_per_session(tmp_path: Path) -> 
     now = datetime.now(tz=UTC)
     asyncio.run(engine.on_tiktok_joined("bob", now))
     asyncio.run(engine.on_tiktok_followed("alice", now))
-    assert sink.mp3_calls == [b"x"]
+    assert sink.mp3_calls == [b"x", b"x"]
     engine.reset_tiktok_like_totals()
     asyncio.run(engine.on_tiktok_followed("alice", now))
-    assert sink.mp3_calls == [b"x", b"x"]
+    assert sink.mp3_calls == [b"x", b"x", b"x"]
 
 
 def test_engine_tiktok_any_gift_received_matches_min_price(tmp_path: Path) -> None:
@@ -1279,6 +1340,36 @@ def test_engine_tiktok_any_gift_received_does_not_match_unknown_price(tmp_path: 
     )
     asyncio.run(engine.on_gift_received(ev))
     assert sink.mp3_calls == []
+
+
+def test_engine_speak_tts_strips_unresolved_placeholders(tmp_path: Path) -> None:
+    # When placeholders cannot be resolved (no context), they must not be read aloud.
+    p = tmp_path / "a.mp3"
+    p.write_bytes(b"x")
+    sink = FakeSink()
+    spoken: list[str] = []
+
+    async def speak(s: str, _author: str | None = None) -> None:
+        spoken.append(s)
+
+    rules = [
+        RuleV1(
+            id="r1",
+            enabled=True,
+            events=({"type": "tiktok_joined", "params": {}},),
+            actions=[
+                {
+                    "type": "speak_tts",
+                    "params": {"text": "hello {sender} {unknown} world"},
+                }
+            ],
+        ),
+    ]
+    engine = PlatformActionsEngine(sink, rules, tts_speak=speak)
+    now = datetime.now(tz=UTC)
+    asyncio.run(engine.on_tiktok_joined("", now))
+    # Sender empty -> removed; unknown -> removed; keep the rest.
+    assert spoken == ["hello   world"]
 
 
 def test_engine_tiktok_any_gift_received_matches_unknown_catalog_via_live_coin_each(
@@ -1482,6 +1573,37 @@ def test_engine_show_overlay_gift_picture_falls_back_to_catalog_when_live_icon_e
     patch = asyncio.run(_run())
     assert patch.get("append", {}).get("gift_picture_url") == "https://catalog.example/from-db.png"
     assert patch.get("append", {}).get("platform") == "tiktok"
+
+
+def test_engine_gift_received_falls_back_to_name_when_event_missing_id(tmp_path: Path) -> None:
+    p = tmp_path / "a.mp3"
+    p.write_bytes(b"x")
+    sink = FakeSink()
+    rules = [
+        RuleV1(
+            id="r1",
+            enabled=True,
+            events=(
+                {
+                    "type": "gift_received",
+                    "params": {"gift_id": "123", "gift_name": "Go Popular", "min_count": 1},
+                },
+            ),
+            actions=[{"type": "play_sound", "params": {"file_path": str(p)}}],
+        ),
+    ]
+    engine = PlatformActionsEngine(sink, rules, status_callback=lambda _m: None)
+    ev = GiftReceivedEvent(
+        platform=ChatPlatform.TIKTOK,
+        sender="bob",
+        gift_id="",
+        gift_name="Go Popular",
+        count=1,
+        gift_icon_url="",
+        received_at=datetime.now(tz=UTC),
+    )
+    asyncio.run(engine.on_gift_received(ev))
+    assert sink.mp3_calls == [b"x"]
 
 
 def test_engine_twitch_follow_and_cheer(tmp_path: Path) -> None:

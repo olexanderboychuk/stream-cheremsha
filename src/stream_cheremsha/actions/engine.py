@@ -8,7 +8,10 @@ from typing import Any
 
 import httpx
 
-from stream_cheremsha.actions.action_placeholders import apply_action_placeholders
+from stream_cheremsha.actions.action_placeholders import (
+    apply_action_placeholders,
+    strip_unresolved_placeholders,
+)
 from stream_cheremsha.actions.actions_launch_program import launch_program
 from stream_cheremsha.actions.actions_play_random_myinstants_ua import play_random_myinstants_ua
 from stream_cheremsha.actions.actions_play_sound import play_sound_from_file
@@ -169,14 +172,22 @@ def _gift_trigger_matches(
         min_count = 1
     gift_id = params.get("gift_id")
     gift_name = params.get("gift_name")
-    match_ok = False
-    if isinstance(gift_id, str) and gift_id.strip():
-        match_ok = ev.gift_id.strip() == gift_id.strip()
-    elif isinstance(gift_name, str) and gift_name.strip():
-        match_ok = ev.gift_name.strip().casefold() == gift_name.strip().casefold()
-    else:
+    ev_gid = (ev.gift_id or "").strip()
+    ev_gn = (ev.gift_name or "").strip()
+
+    gid = gift_id.strip() if isinstance(gift_id, str) else ""
+    gn = gift_name.strip() if isinstance(gift_name, str) else ""
+
+    if not gid and not gn:
         status(f"Rule {rule_id}: gift_id or gift_name is required")
         return False
+    # Prefer id when both sides have it, but fall back to name matching when the incoming event
+    # lacks an id (TikTok sometimes omits it) or when the stored rule uses only name.
+    match_ok = False
+    if gid and ev_gid:
+        match_ok = ev_gid == gid
+    if not match_ok and gn and ev_gn:
+        match_ok = ev_gn.casefold() == gn.casefold()
     return match_ok and int(ev.count) >= min_count
 
 
@@ -299,12 +310,16 @@ def _tiktok_first_activity_trigger_matches(
     *,
     rule_id: str,
     status: StatusCallback,
+    actual_user: str,
 ) -> bool:
     if ev_blob.get("type") != "tiktok_first_activity":
         return False
     params: Any = ev_blob.get("params")
     if not isinstance(params, dict):
         status(f"Rule {rule_id}: event.params must be an object")
+        return False
+    # Optional user filter (same semantics as other simple user triggers).
+    if not _tiktok_simple_user_matches(params.get("user", ""), actual_user):
         return False
     return True
 
@@ -513,7 +528,8 @@ class PlatformActionsEngine:
         # TikTok like totals for tiktok_likes_received rules (session-local, not persisted).
         self._tiktok_like_all_total: int = 0
         self._tiktok_like_user_totals: dict[str, int] = {}
-        self._tiktok_first_activity_fired: bool = False
+        # "First activity" is tracked per-user per engine session.
+        self._tiktok_first_activity_seen_users: set[str] = set()
 
     def set_rules(self, rules: list[RuleV1]) -> None:
         self._rules = list(rules)
@@ -522,7 +538,7 @@ class PlatformActionsEngine:
         """Reset TikTok per-stream counters used by TikTok triggers."""
         self._tiktok_like_all_total = 0
         self._tiktok_like_user_totals.clear()
-        self._tiktok_first_activity_fired = False
+        self._tiktok_first_activity_seen_users.clear()
 
     async def _maybe_dispatch_tiktok_first_activity(
         self,
@@ -532,9 +548,12 @@ class PlatformActionsEngine:
         count: int,
         received_at: datetime,
     ) -> None:
-        if self._tiktok_first_activity_fired:
+        u = (user or "").strip()
+        if not u:
             return
-        self._tiktok_first_activity_fired = True
+        if u in self._tiktok_first_activity_seen_users:
+            return
+        self._tiktok_first_activity_seen_users.add(u)
         for rule in self._rules:
             if not rule.enabled:
                 continue
@@ -544,6 +563,7 @@ class PlatformActionsEngine:
                     ev_blob,
                     rule_id=rule.id,
                     status=self._status_callback,
+                    actual_user=u,
                 ):
                     matched = True
                     break
@@ -552,7 +572,7 @@ class PlatformActionsEngine:
             ev = TikTokFirstActivityEvent(
                 platform=ChatPlatform.TIKTOK,
                 kind=(kind or "").strip(),
-                user=(user or "").strip(),
+                user=u,
                 count=max(0, int(count)),
                 received_at=received_at,
             )
@@ -1091,19 +1111,28 @@ class PlatformActionsEngine:
                     if vol > 100:
                         vol = 100
                     skip_if_same = _obs_bool_flag(params.get("skip_if_same_playing"), default=False)
+                    play_now = _obs_bool_flag(params.get("play_immediately"), default=False)
+                    respect_combo = _obs_bool_flag(params.get("respect_gift_combo"), default=False)
 
                     async def _play(
                         fp: str = file_path,
                         v: int = vol,
                         skip_dup: bool = skip_if_same,
+                        pn: bool = play_now,
+                        rc: bool = respect_combo,
                     ) -> None:
                         try:
-                            await play_sound_from_file(
-                                fp,
-                                sink=self._sink,
-                                volume_percent=v,
-                                skip_queue_if_same=skip_dup,
-                            )
+                            n = 1
+                            if rc and isinstance(ev, GiftReceivedEvent):
+                                n = max(1, int(getattr(ev, "count", 1) or 1))
+                            for _k in range(n):
+                                await play_sound_from_file(
+                                    fp,
+                                    sink=self._sink,
+                                    volume_percent=v,
+                                    skip_queue_if_same=skip_dup,
+                                    play_immediately=pn,
+                                )
                         except FileNotFoundError:
                             self._status_callback(f"Rule {rule.id}: sound file not found: {fp}")
                         except (OSError, ValueError) as e:
@@ -1138,24 +1167,33 @@ class PlatformActionsEngine:
                     if mp < 1:
                         mp = 1
                     sw = params.get("skip_words", "")
+                    play_now = _obs_bool_flag(params.get("play_immediately"), default=False)
+                    respect_combo = _obs_bool_flag(params.get("respect_gift_combo"), default=False)
 
                     async def _play_random_myinstants_ua(
                         v: int = vol,
                         s: bool = skip_dup,
+                        pn: bool = play_now,
+                        rc: bool = respect_combo,
                         md: float = max_d,
                         mpage: int = mp,
                         skip_words: object = sw,
                     ) -> None:
                         try:
-                            await play_random_myinstants_ua(
-                                sink=self._sink,
-                                volume_percent=v,
-                                skip_queue_if_same=s,
-                                max_duration_seconds=md,
-                                max_page=mpage,
-                                skip_words=skip_words,
-                                status=self._status_callback,
-                            )
+                            n = 1
+                            if rc and isinstance(ev, GiftReceivedEvent):
+                                n = max(1, int(getattr(ev, "count", 1) or 1))
+                            for _k in range(n):
+                                await play_random_myinstants_ua(
+                                    sink=self._sink,
+                                    volume_percent=v,
+                                    skip_queue_if_same=s,
+                                    play_immediately=pn,
+                                    max_duration_seconds=md,
+                                    max_page=mpage,
+                                    skip_words=skip_words,
+                                    status=self._status_callback,
+                                )
                         except (httpx.HTTPError, OSError, ValueError) as e:
                             self._status_callback(
                                 f"Rule {rule.id}: play_random_myinstants_ua failed: {e}"
@@ -1187,7 +1225,7 @@ class PlatformActionsEngine:
 
                     async def _write(fp: str = file_path, tx: str = text, m: str = mode) -> None:
                         try:
-                            write_text_to_file(fp, tx, mode=m)
+                            await asyncio.to_thread(write_text_to_file, fp, tx, mode=m)
                         except (OSError, ValueError) as e:
                             self._status_callback(f"Rule {rule.id}: write_file failed: {e}")
 
@@ -1212,7 +1250,9 @@ class PlatformActionsEngine:
 
                     async def _run(prog: str = program_path, ar: str = args_raw) -> None:
                         try:
+                            logger.info("Rule %s: run_program: %s args=%r", rule.id, prog, ar)
                             await launch_program(prog, ar)
+                            logger.info("Rule %s: run_program started", rule.id)
                         except FileNotFoundError:
                             self._status_callback(f"Rule {rule.id}: program not found: {prog}")
                         except PermissionError as e:
@@ -1228,7 +1268,9 @@ class PlatformActionsEngine:
                     if not isinstance(raw, str):
                         self._status_callback(f"Rule {rule.id}: actions[{i}].text must be a string")
                         continue
-                    resolved = apply_action_placeholders(raw, ev).strip()
+                    resolved = strip_unresolved_placeholders(
+                        apply_action_placeholders(raw, ev),
+                    ).strip()
                     if not resolved:
                         self._status_callback(
                             f"Rule {rule.id}: actions[{i}].text is empty after placeholders"

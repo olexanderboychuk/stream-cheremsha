@@ -28,6 +28,7 @@ build/
 !build/nsis/
 !build/nsis/**/*
 *.mp3
+*.msi
 *.json
 *.xml
 rvc_models

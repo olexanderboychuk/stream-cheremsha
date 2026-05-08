@@ -258,7 +258,7 @@ class TelegramBotService:
             if not is_admin:
                 await q.message.reply_text("Недостатньо прав.")
                 return
-            tid = data[len(_CB_RM_PREFIX):].strip()
+            tid = data[len(_CB_RM_PREFIX) :].strip()
             if not tid:
                 await q.message.reply_text("Невірна команда.")
                 return

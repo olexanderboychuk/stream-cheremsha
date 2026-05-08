@@ -295,9 +295,51 @@ class ActionsQmlApi(QObject):
     def __init__(self, main: MainWindow) -> None:
         super().__init__(parent=main)
         self._m: weakref.ref[MainWindow] = weakref.ref(main)
+        # OBS pickers are called synchronously from QML bindings/timers. Never block UI:
+        # cache last JSON payload and refresh it in background threads.
+        self._obs_cache: dict[tuple[str, str, str], dict[str, object]] = {}
+        self._obs_inflight: set[tuple[str, str, str]] = set()
+        self._obs_next_refresh_at_ms: dict[tuple[str, str, str], int] = {}
 
     def _win(self) -> MainWindow | None:
         return self._m()
+
+    def _obs_now_ms(self) -> int:
+        return int(datetime.now(UTC).timestamp() * 1000)
+
+    def _obs_schedule_refresh(
+        self,
+        key: tuple[str, str, str],
+        *,
+        fn: typing.Callable[[], tuple[list[dict[str, str]], str | None]],
+        min_interval_ms: int = 600,
+    ) -> None:
+        if key in self._obs_inflight:
+            return
+        now_ms = self._obs_now_ms()
+        next_ok = int(self._obs_next_refresh_at_ms.get(key, 0))
+        if now_ms < next_ok:
+            return
+        self._obs_next_refresh_at_ms[key] = now_ms + int(min_interval_ms)
+        self._obs_inflight.add(key)
+
+        async def _run() -> None:
+            try:
+                items, err = await asyncio.to_thread(fn)
+                self._obs_cache[key] = {"items": items, "error": err}
+            except Exception as e:
+                # Never let OBS failures bubble into the UI thread; store as error.
+                self._obs_cache[key] = {"items": [], "error": str(e)}
+            finally:
+                self._obs_inflight.discard(key)
+
+        w = self._win()
+        loop = getattr(w, "_asyncio_loop", None) if w is not None else None  # noqa: SLF001
+        if loop is not None:
+            loop.call_soon_threadsafe(lambda: asyncio.ensure_future(_run()))
+        else:
+            # Fallback: best-effort schedule on whatever loop is current.
+            asyncio.ensure_future(_run())
 
     @staticmethod
     def _store_account_key(platform: str, accountKey: str) -> str:
@@ -461,30 +503,48 @@ class ActionsQmlApi(QObject):
         """JSON ``{items:[{name,value}], error: str|null}`` for OBS canvas picker."""
         w = self._win()
         h, p, pw = _obs_host_port_password_from_main(w)
-        items, err = obs_list_canvases(h, p, pw)
-        return json.dumps({"items": items, "error": err}, ensure_ascii=False)
+        key = ("canvases", "", "")
+        self._obs_schedule_refresh(
+            key,
+            fn=lambda: obs_list_canvases(h, p, pw),
+        )
+        payload = self._obs_cache.get(key) or {"items": [], "error": None}
+        return json.dumps(payload, ensure_ascii=False)
 
     @Slot(str, result=str)
     def obsListScenesJson(self, canvasUuid: str) -> str:
         """JSON ``{items:[{name,value}], error: str|null}`` — ``GetSceneList``."""
         w = self._win()
         h, port, pw = _obs_host_port_password_from_main(w)
-        items, err = obs_list_scenes(h, port, pw, canvas_uuid=canvasUuid or "")
-        return json.dumps({"items": items, "error": err}, ensure_ascii=False)
+        cu = (canvasUuid or "").strip()
+        key = ("scenes", cu, "")
+        self._obs_schedule_refresh(
+            key,
+            fn=lambda: obs_list_scenes(h, port, pw, canvas_uuid=cu),
+        )
+        payload = self._obs_cache.get(key) or {"items": [], "error": None}
+        return json.dumps(payload, ensure_ascii=False)
 
     @Slot(str, str, result=str)
     def obsListSceneSourcesJson(self, canvasUuid: str, sceneName: str) -> str:
         """JSON ``{items:[{name,value}], error: str|null}`` — ``GetSceneItemList``."""
         w = self._win()
         h, port, pw = _obs_host_port_password_from_main(w)
-        items, err = obs_list_scene_sources(
-            h,
-            port,
-            pw,
-            canvas_uuid=canvasUuid or "",
-            scene_name=sceneName or "",
+        cu = (canvasUuid or "").strip()
+        sn = (sceneName or "").strip()
+        key = ("sources", cu, sn)
+        self._obs_schedule_refresh(
+            key,
+            fn=lambda: obs_list_scene_sources(
+                h,
+                port,
+                pw,
+                canvas_uuid=cu,
+                scene_name=sn,
+            ),
         )
-        return json.dumps({"items": items, "error": err}, ensure_ascii=False)
+        payload = self._obs_cache.get(key) or {"items": [], "error": None}
+        return json.dumps(payload, ensure_ascii=False)
 
     def _preview_engine_run(self, w: typing.Any, rule: RuleV1, p: str) -> str:
         """Schedule preview tasks for a resolved RuleV1 (saved disk rules or live UI object)."""

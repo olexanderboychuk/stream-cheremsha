@@ -139,6 +139,7 @@ class QtAudioSink(QObject):
         self._sound_dedupe_lock = asyncio.Lock()
         self._sound_dedupe_keys: set[str] = set()
         self._pending_fut: asyncio.Future[None] | None = None
+        self._parallel_tasks: set[asyncio.Task[None]] = set()
 
         self._player.errorOccurred.connect(self._on_player_error)
         self._player.mediaStatusChanged.connect(self._on_media_status)
@@ -275,6 +276,79 @@ class QtAudioSink(QObject):
                 await self._play_mp3_locked(data)
             finally:
                 self._audio.setVolume(prev)
+
+    async def _play_mp3_parallel(self, data: bytes, linear: float) -> None:
+        """Play one clip without waiting on the FIFO lock (allows overlap)."""
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future[None] = loop.create_future()
+
+        boosted = await asyncio.to_thread(_try_louder_mp3, data, self._tts_gain_db)
+        file_path = await asyncio.to_thread(_write_temp_audio, boosted)
+
+        player = QMediaPlayer(self)
+        audio = QAudioOutput(self)
+        player.setAudioOutput(audio)
+        audio.setVolume(max(0.0, min(1.0, float(linear))))
+
+        def _done_ok() -> None:
+            if not fut.done():
+                fut.set_result(None)
+
+        def _done_err(_err: QMediaPlayer.Error, error_string: str) -> None:
+            if not fut.done():
+                fut.set_exception(RuntimeError(f"QMediaPlayer error: {error_string}"))
+
+        player.mediaStatusChanged.connect(
+            lambda st: _done_ok() if st == QMediaPlayer.MediaStatus.EndOfMedia else None
+        )
+        player.errorOccurred.connect(_done_err)
+
+        player.setSource(QUrl.fromLocalFile(str(file_path)))
+        player.play()
+        try:
+            await fut
+        finally:
+            try:
+                player.stop()
+            except RuntimeError:
+                pass
+            try:
+                file_path.unlink(missing_ok=True)
+            except OSError as e:
+                logger.debug("Temp audio cleanup: %s", e)
+            player.deleteLater()
+            audio.deleteLater()
+
+    async def play_mp3_parallel_with_volume(self, data: bytes, linear: float) -> None:
+        """Public API: play immediately, even if others queued."""
+        t = asyncio.create_task(self._play_mp3_parallel(data, linear), name="audio-parallel")
+        self._parallel_tasks.add(t)
+
+        def _done(_t: asyncio.Task[None]) -> None:
+            self._parallel_tasks.discard(_t)
+
+        t.add_done_callback(_done)
+        await t
+
+    async def play_mp3_parallel_with_volume_deduped(
+        self, data: bytes, linear: float, *, dedupe_key: str
+    ) -> bool:
+        """Parallel play with dedupe; returns False if already playing/queued."""
+        k = (dedupe_key or "").strip()
+        if not k:
+            await self.play_mp3_parallel_with_volume(data, linear)
+            return True
+        k = os.path.normcase(k)
+        async with self._sound_dedupe_lock:
+            if k in self._sound_dedupe_keys:
+                return False
+            self._sound_dedupe_keys.add(k)
+        try:
+            await self.play_mp3_parallel_with_volume(data, linear)
+            return True
+        finally:
+            async with self._sound_dedupe_lock:
+                self._sound_dedupe_keys.discard(k)
 
     def shutdown(self) -> None:
         self._player.stop()
