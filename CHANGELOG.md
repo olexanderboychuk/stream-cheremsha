@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.0] — 2026-05-13
+
+### Added
+
+- TikTok Live: optional Genius.com lyrics screening before going live (ruleset, UI, Telegram notices).
+- Dependencies: `lyricsgenius` for lyrics lookup.
+
+### Changed
+
+- YouTube/TikTok chat sources, OBS control, music player, and connections UI updates supporting the new flow.
+
 ## [0.2.0] — 2026-05-08
 
 ### Added
@@ -49,6 +60,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Comment and formatting consistency in several modules after merging PR #5.
 
+[0.3.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.1.8...v0.2.0
 [0.1.8]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.1.7...v0.1.8
 [0.1.3]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.1.2...v0.1.3
