@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
+import lyricsgenius as lg
 
 from stream_cheremsha import l10n
 
@@ -112,8 +113,6 @@ def fetch_lyrics_for_youtube_title(genius_access_token: str, youtube_title: str)
 
     Returns ``None`` if no match or empty lyrics.
     """
-    import lyricsgenius as lg
-
     token = (genius_access_token or "").strip()
     raw_title = (youtube_title or "").strip()
     if not token or not raw_title:
