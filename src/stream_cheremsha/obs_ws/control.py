@@ -2,14 +2,40 @@
 
 from __future__ import annotations
 
+import errno
+import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from obsws_python import ReqClient
 from obsws_python.error import OBSSDKError, OBSSDKRequestError, OBSSDKTimeoutError
+from websocket import WebSocketTimeoutException
 
 
 class ObsControlError(Exception):
     """User-facing OBS WebSocket failure."""
+
+
+@contextmanager
+def _quiet_obsws_python_logs() -> Iterator[None]:
+    """obsws-python logs expected connect failures at ERROR with a traceback; avoid log spam."""
+    log = logging.getLogger("obsws_python")
+    previous = log.level
+    if previous == logging.NOTSET:
+        log.setLevel(logging.WARNING)
+    else:
+        log.setLevel(max(int(previous), logging.WARNING))
+    try:
+        yield
+    finally:
+        log.setLevel(previous)
+
+
+def _map_connect_failure(host: str, port: int, exc: BaseException) -> ObsControlError:
+    return ObsControlError(
+        f"Cannot connect to OBS WebSocket at {host}:{port} ({type(exc).__name__}).",
+    )
 
 
 def _client(host: str, port: int, password: str, *, timeout: float = 5.0) -> ReqClient:
@@ -20,7 +46,17 @@ def _client(host: str, port: int, password: str, *, timeout: float = 5.0) -> Req
         raise ObsControlError("WebSocket port must be a number") from e
     if p < 1 or p > 65535:
         raise ObsControlError("WebSocket port must be between 1 and 65535")
-    return ReqClient(host=h, port=p, password=password or "", timeout=timeout)
+    try:
+        with _quiet_obsws_python_logs():
+            return ReqClient(host=h, port=p, password=password or "", timeout=timeout)
+    except (ConnectionRefusedError, TimeoutError, WebSocketTimeoutException) as e:
+        raise _map_connect_failure(h, p, e) from e
+    except OSError as e:
+        if e.errno in (errno.ECONNREFUSED, errno.ECONNRESET, errno.ENETUNREACH, errno.EHOSTUNREACH):
+            raise _map_connect_failure(h, p, e) from e
+        if getattr(e, "winerror", None) == 10061:
+            raise _map_connect_failure(h, p, e) from e
+        raise
 
 
 def _disconnect_safe(cl: ReqClient) -> None:
@@ -66,7 +102,10 @@ def obs_list_canvases(
 
     Uses ``GetCanvasList`` when available (OBS 31+ / obs-websocket 5.7+); otherwise one default row.
     """
-    cl = _client(host, port, password, timeout=8.0)
+    try:
+        cl = _client(host, port, password, timeout=8.0)
+    except ObsControlError as e:
+        return [], str(e)
     try:
         try:
             data = _send_raw(cl, "GetCanvasList", {})
@@ -92,7 +131,10 @@ def obs_list_scenes(
     host: str, port: int, password: str, canvas_uuid: str = ""
 ) -> tuple[list[dict[str, str]], str | None]:
     """Return scene rows: ``name`` and ``value`` both set to scene name (protocol ``sceneName``)."""
-    cl = _client(host, port, password, timeout=8.0)
+    try:
+        cl = _client(host, port, password, timeout=8.0)
+    except ObsControlError as e:
+        return [], str(e)
     try:
         req: dict[str, Any] = {}
         cu = (canvas_uuid or "").strip()
@@ -127,7 +169,10 @@ def obs_list_scene_sources(
     if not scene:
         return [], "scene_name is required"
 
-    cl = _client(host, port, password, timeout=8.0)
+    try:
+        cl = _client(host, port, password, timeout=8.0)
+    except ObsControlError as e:
+        return [], str(e)
     try:
         req: dict[str, Any] = {"sceneName": scene}
         cu = (canvas_uuid or "").strip()

@@ -17,6 +17,8 @@ class TikTokOnline(TypedDict):
 
 
 class YouTubeOnline(TypedDict):
+    current: int
+    peak: int
     messages: int
     unique: int
     superchats: int

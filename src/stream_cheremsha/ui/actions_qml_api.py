@@ -289,6 +289,14 @@ def _obs_host_port_password_from_main(w: MainWindow | None) -> tuple[str, int, s
     return host, port, pw
 
 
+def _obs_ws_enabled_from_main(w: MainWindow | None) -> bool:
+    """Allow OBS WebSocket traffic unless the user turned it off in Settings."""
+    if w is None:
+        return True
+    cb = getattr(w, "_obs_ws_enabled", None)
+    return cb is None or bool(cb.isChecked())
+
+
 class ActionsQmlApi(QObject):
     refreshUiRequested = Signal()
 
@@ -502,6 +510,11 @@ class ActionsQmlApi(QObject):
     def obsListCanvasesJson(self) -> str:
         """JSON ``{items:[{name,value}], error: str|null}`` for OBS canvas picker."""
         w = self._win()
+        if w is not None and not _obs_ws_enabled_from_main(w):
+            return json.dumps(
+                {"items": [], "error": w._tr("settings.obs_picker_disabled")},  # noqa: SLF001
+                ensure_ascii=False,
+            )
         h, p, pw = _obs_host_port_password_from_main(w)
         key = ("canvases", "", "")
         self._obs_schedule_refresh(
@@ -515,6 +528,11 @@ class ActionsQmlApi(QObject):
     def obsListScenesJson(self, canvasUuid: str) -> str:
         """JSON ``{items:[{name,value}], error: str|null}`` — ``GetSceneList``."""
         w = self._win()
+        if w is not None and not _obs_ws_enabled_from_main(w):
+            return json.dumps(
+                {"items": [], "error": w._tr("settings.obs_picker_disabled")},  # noqa: SLF001
+                ensure_ascii=False,
+            )
         h, port, pw = _obs_host_port_password_from_main(w)
         cu = (canvasUuid or "").strip()
         key = ("scenes", cu, "")
@@ -529,6 +547,11 @@ class ActionsQmlApi(QObject):
     def obsListSceneSourcesJson(self, canvasUuid: str, sceneName: str) -> str:
         """JSON ``{items:[{name,value}], error: str|null}`` — ``GetSceneItemList``."""
         w = self._win()
+        if w is not None and not _obs_ws_enabled_from_main(w):
+            return json.dumps(
+                {"items": [], "error": w._tr("settings.obs_picker_disabled")},  # noqa: SLF001
+                ensure_ascii=False,
+            )
         h, port, pw = _obs_host_port_password_from_main(w)
         cu = (canvasUuid or "").strip()
         sn = (sceneName or "").strip()

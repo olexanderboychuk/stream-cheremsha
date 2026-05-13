@@ -22,9 +22,21 @@ def test_youtube_analytics_counters_and_reset() -> None:
     assert a.membershipsSession == 1
     assert a.feedModel.rowCount() == 4
 
+    a._apply_viewers(7)
+    assert a.viewersCurrent == 7
+    assert a.viewersPeak == 7
+    a._apply_viewers(12)
+    assert a.viewersCurrent == 12
+    assert a.viewersPeak == 12
+    a._apply_viewers(3)
+    assert a.viewersCurrent == 3
+    assert a.viewersPeak == 12
+
     a.resetSession()
     assert a.messagesSession == 0
     assert a.uniqueChattersSession == 0
     assert a.superChatsSession == 0
     assert a.membershipsSession == 0
+    assert a.viewersCurrent == 0
+    assert a.viewersPeak == 0
     assert a.feedModel.rowCount() == 0

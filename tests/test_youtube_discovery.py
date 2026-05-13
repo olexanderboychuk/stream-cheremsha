@@ -6,6 +6,8 @@ from stream_cheremsha.chat.youtube_source import (
     _dedupe_strs,
     _live_broadcast_row_is_on_air,
     discover_my_live_chat_ids,
+    discover_my_live_streams,
+    fetch_concurrent_viewers_total,
 )
 
 
@@ -109,3 +111,44 @@ def test_discover_no_rss_without_channel(monkeypatch: pytest.MonkeyPatch) -> Non
     assert discover_my_live_chat_ids(service) == []
     service.search.return_value.list.assert_not_called()
     assert called == []
+
+
+def test_discover_my_live_streams_pairs_chat_and_video_ids() -> None:
+    service = MagicMock()
+    service.liveBroadcasts.return_value.list.return_value.execute.return_value = {
+        "items": [
+            {
+                "id": "vid1",
+                "snippet": {"liveChatId": "LC1"},
+                "status": {"lifeCycleStatus": "live"},
+            },
+            {
+                "id": "vid2",
+                "snippet": {"liveChatId": "LC2"},
+                "status": {"lifeCycleStatus": "testing"},
+            },
+        ],
+        "nextPageToken": None,
+    }
+    assert discover_my_live_streams(service) == [("LC1", "vid1"), ("LC2", "vid2")]
+
+
+def test_fetch_concurrent_viewers_total_sums_active_streams() -> None:
+    service = MagicMock()
+    service.videos.return_value.list.return_value.execute.return_value = {
+        "items": [
+            {"liveStreamingDetails": {"concurrentViewers": "42"}},
+            {"liveStreamingDetails": {"concurrentViewers": "8"}},
+            {"liveStreamingDetails": {}},  # ended stream — no counter
+        ],
+    }
+    assert fetch_concurrent_viewers_total(service, ["v1", "v2", "v3"]) == 50
+
+
+def test_fetch_concurrent_viewers_total_returns_none_when_no_data() -> None:
+    service = MagicMock()
+    service.videos.return_value.list.return_value.execute.return_value = {
+        "items": [{"liveStreamingDetails": {}}],
+    }
+    assert fetch_concurrent_viewers_total(service, ["v1"]) is None
+    assert fetch_concurrent_viewers_total(service, []) is None

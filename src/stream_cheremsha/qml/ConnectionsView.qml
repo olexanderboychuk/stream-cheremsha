@@ -780,7 +780,7 @@ Item {
             }
         }
 
-        // Analytics panels (dynamic grid: TikTok + Twitch).
+        // Analytics panels: adaptive GridLayout (columns from width; narrow → one row + horizontal flick).
         Item {
             id: analyticsSlot
             Layout.fillWidth: true
@@ -827,11 +827,55 @@ Item {
             }
             Layout.bottomMargin: _footerReserve
 
-            readonly property int _cardH: Math.max(180, height - 28 - _footerReserve)
-
             readonly property int _minCardW: 360
             readonly property int _gap: 12
-            readonly property bool _needsHScroll: width < (_minCardW * 2 + _gap)
+            readonly property int _panelCount: (_tkOn ? 1 : 0) + (_ytOn ? 1 : 0) + (_twOn ? 1 : 0)
+            // How many columns fit at min card width (never force 2+ columns — that caused a 3rd card to wrap and double page height).
+            readonly property int _gridCols: {
+                var n = _panelCount
+                var vw = Math.max(1, analyticsFlick.width)
+                if (n <= 0)
+                    return 1
+                var maxC = Math.max(1, Math.floor((vw + _gap) / (_minCardW + _gap)))
+                var cols = Math.min(n, maxC)
+                if (cols === 1 && n > 1)
+                    return n
+                return cols
+            }
+            readonly property int _gridRows: {
+                var n = _panelCount
+                if (n <= 0)
+                    return 1
+                return Math.ceil(n / _gridCols)
+            }
+            // Single-row-all-panels mode: horizontal flick when min widths exceed viewport.
+            readonly property bool _needsHScroll: {
+                var n = _panelCount
+                if (n <= 0)
+                    return false
+                if (_gridCols < n)
+                    return false
+                var vw = Math.max(1, analyticsFlick.width)
+                return (n * _minCardW + (n - 1) * _gap) > vw + 0.5
+            }
+            readonly property real _cardW: {
+                var c = _gridCols
+                if (c <= 0)
+                    return _minCardW
+                var vw = Math.max(1, analyticsFlick.width)
+                var gapTotal = (c - 1) * _gap
+                if (_needsHScroll)
+                    return _minCardW
+                return Math.max(_minCardW, (vw - gapTotal) / c)
+            }
+            readonly property int _cellCardH: {
+                var fh = Math.max(1, analyticsFlick.height)
+                var r = _gridRows
+                if (r <= 1)
+                    return Math.max(180, Math.floor(fh))
+                return Math.max(160, Math.floor((fh - Math.max(0, r - 1) * _gap) / r))
+            }
+            readonly property bool _compact: _cardW <= 380
 
             // Shared mini-stat tile used by both panels.
             component StatMini: Rectangle {
@@ -885,7 +929,6 @@ Item {
                 }
             }
 
-            // Wide layout: Flow wraps into 2 columns. Narrow layout: keep 2 cards in a row + horizontal scroll.
             Flickable {
                 id: analyticsFlick
                 anchors.fill: parent
@@ -922,36 +965,35 @@ Item {
 
                 Item {
                     id: contentRoot
-                    width: Math.max(parent.width, implicitWidth)
                     height: parent.height
-                    implicitWidth: analyticsSlot._needsHScroll ? (analyticsSlot._minCardW * 2 + analyticsSlot._gap) : flow.implicitWidth
+                    implicitWidth: Math.max(
+                        analyticsFlick.width,
+                        analyticsSlot._gridCols * analyticsSlot._minCardW
+                        + Math.max(0, analyticsSlot._gridCols - 1) * analyticsSlot._gap)
+                    width: implicitWidth
 
-                    Flow {
-                        id: flow
+                    GridLayout {
+                        id: analyticsGrid
                         anchors.fill: parent
-                        spacing: analyticsSlot._gap
-                        flow: Flow.LeftToRight
-
-                        // Compute responsive width per card so Flow wraps naturally (but never below min width).
-                        property int columns: analyticsSlot._needsHScroll ? 2 : Math.max(2, Math.floor((width + spacing) / (420 + spacing)))
-                        property real cardW: analyticsSlot._needsHScroll
-                            ? analyticsSlot._minCardW
-                            : Math.max(analyticsSlot._minCardW, Math.floor((width - spacing * (columns - 1)) / columns))
-                        property bool compact: cardW <= 380
+                        columns: analyticsSlot._gridCols
+                        columnSpacing: analyticsSlot._gap
+                        rowSpacing: analyticsSlot._gap
 
                         // --- TikTok card ---
                         AnalyticsCard {
-                            width: flow.cardW
-                            height: analyticsSlot._cardH
-                    topLine: "#103044"
-                    visible: analyticsSlot._tkOn
+                            visible: analyticsSlot._tkOn
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: analyticsSlot._minCardW
+                            Layout.preferredHeight: analyticsSlot._cellCardH
+                            Layout.maximumHeight: analyticsSlot._cellCardH
+                            topLine: "#103044"
 
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 14
-                        spacing: 10
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 14
+                                spacing: 10
 
-                        RowLayout {
+                                RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
                             Rectangle { width: 3; height: 24; radius: 1; color: tkBar; Layout.alignment: Qt.AlignVCenter }
@@ -986,36 +1028,36 @@ Item {
 
                         GridLayout {
                             Layout.fillWidth: true
-                            columns: flow.compact ? 2 : 4
+                            columns: analyticsSlot._compact ? 2 : 4
                             columnSpacing: 8
                             rowSpacing: 8
                             visible: { if (!api) return false; api.refreshCounter; return api.tiktokEnabled() }
 
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: flow.compact ? 10 : 11
-                                valPx: flow.compact ? 16 : 18
+                                capPx: analyticsSlot._compact ? 10 : 11
+                                valPx: analyticsSlot._compact ? 16 : 18
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.tiktok_analytics_online") }
                                 val: tiktokAnalytics ? tiktokAnalytics.onlineViewersCurrent : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: flow.compact ? 10 : 11
-                                valPx: flow.compact ? 16 : 18
+                                capPx: analyticsSlot._compact ? 10 : 11
+                                valPx: analyticsSlot._compact ? 16 : 18
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.tiktok_analytics_total") }
                                 val: tiktokAnalytics ? tiktokAnalytics.onlineViewersTotal : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: flow.compact ? 10 : 11
-                                valPx: flow.compact ? 16 : 18
+                                capPx: analyticsSlot._compact ? 10 : 11
+                                valPx: analyticsSlot._compact ? 16 : 18
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.tiktok_analytics_gifts") }
                                 val: tiktokAnalytics ? tiktokAnalytics.giftUnitsTotal : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: flow.compact ? 10 : 11
-                                valPx: flow.compact ? 16 : 18
+                                capPx: analyticsSlot._compact ? 10 : 11
+                                valPx: analyticsSlot._compact ? 16 : 18
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.tiktok_analytics_diamonds") }
                                 val: tiktokAnalytics ? tiktokAnalytics.diamondsTotal : 0
                             }
@@ -1100,12 +1142,14 @@ Item {
 
                         // --- YouTube card ---
                         AnalyticsCard {
-                            width: flow.cardW
-                            height: analyticsSlot._cardH
-                    topLine: "#4a1d1d"
-                    visible: analyticsSlot._ytOn
+                            visible: analyticsSlot._ytOn
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: analyticsSlot._minCardW
+                            Layout.preferredHeight: analyticsSlot._cellCardH
+                            Layout.maximumHeight: analyticsSlot._cellCardH
+                            topLine: "#4a1d1d"
 
-                    ColumnLayout {
+                            ColumnLayout {
                         anchors.fill: parent
                         anchors.margins: 14
                         spacing: 10
@@ -1145,36 +1189,50 @@ Item {
 
                         GridLayout {
                             Layout.fillWidth: true
-                            columns: flow.compact ? 2 : 4
+                            columns: analyticsSlot._compact ? 2 : 3
                             columnSpacing: 8
                             rowSpacing: 8
                             visible: { if (!api) return false; api.refreshCounter; return api.youtubeRunning() }
 
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: flow.compact ? 10 : 11
-                                valPx: flow.compact ? 16 : 18
+                                capPx: analyticsSlot._compact ? 10 : 11
+                                valPx: analyticsSlot._compact ? 16 : 18
+                                cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.youtube_analytics_viewers") }
+                                val: youtubeAnalytics ? youtubeAnalytics.viewersCurrent : 0
+                            }
+                            StatMini {
+                                Layout.fillWidth: true
+                                capPx: analyticsSlot._compact ? 10 : 11
+                                valPx: analyticsSlot._compact ? 16 : 18
+                                cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.youtube_analytics_peak") }
+                                val: youtubeAnalytics ? youtubeAnalytics.viewersPeak : 0
+                            }
+                            StatMini {
+                                Layout.fillWidth: true
+                                capPx: analyticsSlot._compact ? 10 : 11
+                                valPx: analyticsSlot._compact ? 16 : 18
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.youtube_analytics_messages") }
                                 val: youtubeAnalytics ? youtubeAnalytics.messagesSession : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: flow.compact ? 10 : 11
-                                valPx: flow.compact ? 16 : 18
+                                capPx: analyticsSlot._compact ? 10 : 11
+                                valPx: analyticsSlot._compact ? 16 : 18
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.youtube_analytics_unique") }
                                 val: youtubeAnalytics ? youtubeAnalytics.uniqueChattersSession : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: flow.compact ? 10 : 11
-                                valPx: flow.compact ? 16 : 18
+                                capPx: analyticsSlot._compact ? 10 : 11
+                                valPx: analyticsSlot._compact ? 16 : 18
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.youtube_analytics_superchats") }
                                 val: youtubeAnalytics ? youtubeAnalytics.superChatsSession : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: flow.compact ? 10 : 11
-                                valPx: flow.compact ? 16 : 18
+                                capPx: analyticsSlot._compact ? 10 : 11
+                                valPx: analyticsSlot._compact ? 16 : 18
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.youtube_analytics_memberships") }
                                 val: youtubeAnalytics ? youtubeAnalytics.membershipsSession : 0
                             }
@@ -1242,17 +1300,19 @@ Item {
 
                         // --- Twitch card ---
                         AnalyticsCard {
-                            width: flow.cardW
-                            height: analyticsSlot._cardH
-                    topLine: "#4c1d95"
-                    visible: analyticsSlot._twOn
+                            visible: analyticsSlot._twOn
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: analyticsSlot._minCardW
+                            Layout.preferredHeight: analyticsSlot._cellCardH
+                            Layout.maximumHeight: analyticsSlot._cellCardH
+                            topLine: "#4c1d95"
 
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 14
-                        spacing: 10
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 14
+                                spacing: 10
 
-                        RowLayout {
+                                RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
                             Rectangle { width: 3; height: 24; radius: 1; color: twBar; Layout.alignment: Qt.AlignVCenter }
@@ -1287,50 +1347,50 @@ Item {
 
                         GridLayout {
                             Layout.fillWidth: true
-                            columns: flow.compact ? 2 : 3
+                            columns: analyticsSlot._compact ? 2 : 3
                             columnSpacing: 8
                             rowSpacing: 8
                             visible: { if (!api) return false; api.refreshCounter; return api.twitchRunning() }
 
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: flow.compact ? 10 : 11
-                                valPx: flow.compact ? 16 : 18
+                                capPx: analyticsSlot._compact ? 10 : 11
+                                valPx: analyticsSlot._compact ? 16 : 18
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.twitch_analytics_viewers") }
                                 val: twitchAnalytics ? twitchAnalytics.viewersCurrent : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: flow.compact ? 10 : 11
-                                valPx: flow.compact ? 16 : 18
+                                capPx: analyticsSlot._compact ? 10 : 11
+                                valPx: analyticsSlot._compact ? 16 : 18
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.twitch_analytics_peak") }
                                 val: twitchAnalytics ? twitchAnalytics.viewersPeak : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: flow.compact ? 10 : 11
-                                valPx: flow.compact ? 16 : 18
+                                capPx: analyticsSlot._compact ? 10 : 11
+                                valPx: analyticsSlot._compact ? 16 : 18
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.twitch_analytics_follows") }
                                 val: twitchAnalytics ? twitchAnalytics.followsSession : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: flow.compact ? 10 : 11
-                                valPx: flow.compact ? 16 : 18
+                                capPx: analyticsSlot._compact ? 10 : 11
+                                valPx: analyticsSlot._compact ? 16 : 18
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.twitch_analytics_subs") }
                                 val: twitchAnalytics ? twitchAnalytics.subsSession : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: flow.compact ? 10 : 11
-                                valPx: flow.compact ? 16 : 18
+                                capPx: analyticsSlot._compact ? 10 : 11
+                                valPx: analyticsSlot._compact ? 16 : 18
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.twitch_analytics_bits") }
                                 val: twitchAnalytics ? twitchAnalytics.bitsSession : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: flow.compact ? 10 : 11
-                                valPx: flow.compact ? 16 : 18
+                                capPx: analyticsSlot._compact ? 10 : 11
+                                valPx: analyticsSlot._compact ? 16 : 18
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.twitch_analytics_raids") }
                                 val: twitchAnalytics ? twitchAnalytics.raidsSession : 0
                             }
@@ -1396,7 +1456,7 @@ Item {
                             }
                         }
                     }
-                } // Flow
+                } // GridLayout analyticsGrid
             } // contentRoot
             } // Flickable
 

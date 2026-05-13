@@ -185,6 +185,14 @@ def render_online_dock_html() -> str:
             </div>
             <div class="rows">
               <div class="row">
+                <div class="k" id="ytCurrentK">Current</div>
+                <div class="v" id="ytCurrentV">0</div>
+              </div>
+              <div class="row">
+                <div class="k" id="ytPeakK">Peak</div>
+                <div class="v" id="ytPeakV">0</div>
+              </div>
+              <div class="row">
                 <div class="k" id="ytMsgK">Messages</div>
                 <div class="v" id="ytMsgV">0</div>
               </div>
@@ -284,6 +292,8 @@ def render_online_dock_html() -> str:
 
         const twCurrentV = document.getElementById('twCurrentV');
         const twPeakV = document.getElementById('twPeakV');
+        const ytCurrentV = document.getElementById('ytCurrentV');
+        const ytPeakV = document.getElementById('ytPeakV');
         const ytMsgV = document.getElementById('ytMsgV');
         const ytUniqueV = document.getElementById('ytUniqueV');
         const ytSuperV = document.getElementById('ytSuperV');
@@ -302,6 +312,8 @@ def render_online_dock_html() -> str:
         if (tiktokTitle) tiktokTitle.textContent = T.tiktok;
         const twCurrentK = document.getElementById('twCurrentK');
         const twPeakK = document.getElementById('twPeakK');
+        const ytCurrentK = document.getElementById('ytCurrentK');
+        const ytPeakK = document.getElementById('ytPeakK');
         const ytMsgK = document.getElementById('ytMsgK');
         const ytUniqueK = document.getElementById('ytUniqueK');
         const ytSuperK = document.getElementById('ytSuperK');
@@ -312,6 +324,8 @@ def render_online_dock_html() -> str:
         const ttDiamondsK = document.getElementById('ttDiamondsK');
         if (twCurrentK) twCurrentK.textContent = T.current;
         if (twPeakK) twPeakK.textContent = T.peak;
+        if (ytCurrentK) ytCurrentK.textContent = T.current;
+        if (ytPeakK) ytPeakK.textContent = T.peak;
         if (ytMsgK) ytMsgK.textContent = T.messages;
         if (ytUniqueK) ytUniqueK.textContent = T.unique;
         if (ytSuperK) ytSuperK.textContent = T.super;
@@ -349,6 +363,8 @@ def render_online_dock_html() -> str:
 
           if (twCurrentV) twCurrentV.textContent = String(toInt(twitch.current));
           if (twPeakV) twPeakV.textContent = String(toInt(twitch.peak));
+          if (ytCurrentV) ytCurrentV.textContent = String(toInt(youtube.current));
+          if (ytPeakV) ytPeakV.textContent = String(toInt(youtube.peak));
           if (ytMsgV) ytMsgV.textContent = String(toInt(youtube.messages));
           if (ytUniqueV) ytUniqueV.textContent = String(toInt(youtube.unique));
           if (ytSuperV) ytSuperV.textContent = String(toInt(youtube.superchats));

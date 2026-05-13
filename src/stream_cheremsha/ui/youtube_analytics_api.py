@@ -86,6 +86,7 @@ class YouTubeAnalyticsApi(QObject):
     statsChanged = Signal()
 
     _event_sig = Signal(str, str, str, int)
+    _viewers_sig = Signal(int)
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -95,8 +96,11 @@ class YouTubeAnalyticsApi(QObject):
         self._superchats = 0
         self._memberships = 0
         self._unique_chatters: set[str] = set()
+        self._viewers_current = 0
+        self._viewers_peak = 0
 
         self._event_sig.connect(self._apply_event, Qt.ConnectionType.QueuedConnection)
+        self._viewers_sig.connect(self._apply_viewers, Qt.ConnectionType.QueuedConnection)
 
     @staticmethod
     def _now_hms() -> str:
@@ -117,6 +121,14 @@ class YouTubeAnalyticsApi(QObject):
     @Property(int, notify=statsChanged)
     def membershipsSession(self) -> int:  # noqa: N802
         return self._memberships
+
+    @Property(int, notify=statsChanged)
+    def viewersCurrent(self) -> int:  # noqa: N802
+        return self._viewers_current
+
+    @Property(int, notify=statsChanged)
+    def viewersPeak(self) -> int:  # noqa: N802
+        return self._viewers_peak
 
     @Property(QObject, constant=True)
     def feedModel(self) -> YouTubeAnalyticsFeedModel:  # noqa: N802
@@ -151,9 +163,22 @@ class YouTubeAnalyticsApi(QObject):
         )
         self._emit_stats()
 
+    @Slot(int)
+    def _apply_viewers(self, n: int) -> None:
+        v = max(0, int(n))
+        if v == self._viewers_current and v <= self._viewers_peak:
+            return
+        self._viewers_current = v
+        if v > self._viewers_peak:
+            self._viewers_peak = v
+        self._emit_stats()
+
     # Public enqueue helpers (thread-safe)
     def enqueue_event(self, kind: str, user: str, detail: str, count: int = 1) -> None:
         self._event_sig.emit(kind, user, detail, int(count))
+
+    def enqueue_viewers(self, n: int) -> None:
+        self._viewers_sig.emit(int(n))
 
     def enqueue_chat(self, user: str, text: str) -> None:
         self.enqueue_event("chat", user, text, 1)
@@ -172,6 +197,8 @@ class YouTubeAnalyticsApi(QObject):
         self._messages = 0
         self._superchats = 0
         self._memberships = 0
+        self._viewers_current = 0
+        self._viewers_peak = 0
         self._unique_chatters.clear()
         self._feed.clear()
         self._emit_stats()
@@ -180,6 +207,10 @@ class YouTubeAnalyticsApi(QObject):
     @property
     def on_event(self) -> Callable[[str, str, str, int], None]:
         return self.enqueue_event
+
+    @property
+    def on_viewers(self) -> Callable[[int], None]:
+        return self.enqueue_viewers
 
     @property
     def on_chat(self) -> Callable[[str, str], None]:

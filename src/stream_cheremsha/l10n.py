@@ -156,6 +156,8 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Увімкніть YouTube зліва та виконайте OAuth, щоб збирати статистику за цей сеанс.",
         "en": "Enable YouTube on the left and run OAuth to collect stats for this session.",
     },
+    "connections.youtube_analytics_viewers": {"uk": "Онлайн", "en": "Live viewers"},
+    "connections.youtube_analytics_peak": {"uk": "Пік", "en": "Peak"},
     "connections.youtube_analytics_messages": {"uk": "Повідомлення", "en": "Messages"},
     "connections.youtube_analytics_unique": {"uk": "Унікальні", "en": "Unique chatters"},
     "connections.youtube_analytics_superchats": {"uk": "Суперчати", "en": "Super Chats"},
@@ -178,6 +180,77 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "settings.telegram_song_requests": {
         "uk": "Увімкнути запити пісень",
         "en": "Enable song requests",
+    },
+    "settings.telegram_tiktok_lyrics_filter": {
+        "uk": "Автоматична перевірка слів пісні перед TikTok Live",
+        "en": "Automatically check song lyrics before TikTok Live",
+    },
+    "settings.telegram_genius_token": {
+        "uk": "Токен для пошуку текстів пісень",
+        "en": "Token for looking up song lyrics",
+    },
+    "settings.telegram_groq_api_key": {
+        "uk": "Ключ для перевірки, чи трек пасує для ефіру",
+        "en": "Key for checking whether a track fits the stream",
+    },
+    "settings.telegram_tiktok_filter_hint": {
+        "uk": "Увімкни й заповни два поля нижче — тоді перед TikTok Live замовлення з Telegram "
+        "перевірятимуться автоматично. Якщо поля порожні, перевірка не працюватиме. Якщо текст "
+        "пісні не знайшли — трек усе одно можна додати без цієї перевірки. Ключі зберігаються на "
+        "цьому комп’ютері, як у звичайних програмах.",
+        "en": "Turn this on and fill in the two fields below — then Telegram song requests are "
+        "checked automatically before TikTok Live. If they’re empty, nothing runs. If we can’t find "
+        "lyrics, the song can still be added without this step. Your keys are stored on this "
+        "computer, like in other apps.",
+    },
+    # Telegram bot — song request errors (viewer-facing: plain language, no tech jargon)
+    "telegram.song.empty_link": {
+        "uk": "Не вийшло додати: посилання виглядає криво. Кинь звичайне посилання на одне YouTube-відео.",
+        "en": "Couldn’t add it: that link looks wrong. Paste a normal single-video YouTube link.",
+    },
+    "telegram.song.duration_unknown": {
+        "uk": "Не вийшло додати: з цим роликом не зрозуміло, скільки він триває. Спробуй інше відео.",
+        "en": "Couldn’t add it: we couldn’t read how long this video is. Try another one.",
+    },
+    "telegram.song.too_long": {
+        "uk": "Не вийшло додати: ролик занадто довгий для цієї черги (у нас ~{mins} хв, а стрімер поставив максимум {limit} хв). Обери коротше.",
+        "en": "Couldn’t add it: this one’s too long for this queue (about {mins} min; the streamer’s max is {limit} min). Pick something shorter.",
+    },
+    "telegram.song.tiktok_need_keys": {
+        "uk": "Зараз стрімер не може приймати такі замовлення — у нього не дороблені налаштування перевірки. Напиши йому в чат.",
+        "en": "The streamer can’t take this kind of request right now — their check setup isn’t finished. Message them in chat.",
+    },
+    "telegram.song.title_unknown": {
+        "uk": "Не вийшло додати: не зрозуміло, що це за відео. Кинь інше посилання.",
+        "en": "Couldn’t add it: we couldn’t tell what video this is. Try another link.",
+    },
+    "telegram.song.genius_unavailable": {
+        "uk": "Не вийшло додати: не знайшли нормальний текст до цієї пісні. Обери інший трек або інше відео.",
+        "en": "Couldn’t add it: we couldn’t find a usable lyric sheet for this one. Try another song/video.",
+    },
+    "telegram.song.check_unavailable": {
+        "uk": "Не вийшло перевірити трек зараз. Спробуй ще раз за хвилину-дві.",
+        "en": "We couldn’t run the check right now. Try again in a minute or two.",
+    },
+    "telegram.song.groq_busy": {
+        "uk": "Зараз дуже багато замовлень — сервіс просить почекати. Спробуй через хвилину.",
+        "en": "It’s really busy right now — please wait a bit and try again in a minute.",
+    },
+    "telegram.song.groq_service": {
+        "uk": "Щось пішло не так під час перевірки. Спробуй пізніше або інший трек.",
+        "en": "Something went wrong while checking the song. Try later, or pick another track.",
+    },
+    "telegram.song.moderating_line": {
+        "uk": "ТРЕК МОДЕРУЄТЬСЯ…",
+        "en": "CHECKING THE TRACK…",
+    },
+    "telegram.song.tiktok_soft_no": {
+        "uk": "Цей трек не додали: за словами він так собі для стріму — можуть прилітати скарги чи різко обірвати ефір. Краще щось спокійніше.",
+        "en": "We didn’t add this track: the lyrics aren’t a great fit for streaming — reports or a sudden takedown can happen. Pick something calmer.",
+    },
+    "telegram.song.tiktok_hard_no": {
+        "uk": "Цей трек не додали: текст занадто жорсткий для ефіру, таке на стрім не ставимо. Обери інший.",
+        "en": "We didn’t add this track: the lyrics are too heavy for a live stream — we won’t put that on air. Choose another one.",
     },
     "settings.music_group": {"uk": "Музика", "en": "Music"},
     "settings.music_open_in_mpv": {
@@ -567,6 +640,18 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "Auto-start TikTok on launch (requires username on Connections)",
     },
     "settings.obs_group": {"uk": "OBS WebSocket", "en": "OBS WebSocket"},
+    "settings.obs_enabled": {
+        "uk": "Увімкнути з’єднання з OBS (WebSocket)",
+        "en": "Enable OBS WebSocket connection",
+    },
+    "settings.obs_picker_disabled": {
+        "uk": "З’єднання з OBS вимкнено в налаштуваннях.",
+        "en": "OBS connection is disabled in Settings.",
+    },
+    "settings.obs_test_when_disabled": {
+        "uk": "Увімкніть «Увімкнути з’єднання з OBS (WebSocket)» вище, щоб перевірити WebSocket.",
+        "en": "Turn on «Enable OBS WebSocket connection» above to test.",
+    },
     "settings.obs_help_html": {
         "uk": (
             "Для дій «OBS» (перемикання сцени програми, видимість джерел).<br>"
@@ -797,15 +882,23 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "symbols are removed. OpenAI moderation replacement lines are left unchanged.",
     },
     "audio.card_levels_title": {"uk": "Вихід і рівні", "en": "Output & levels"},
-    "settings.openai_group": {"uk": "OpenAI", "en": "OpenAI"},
+    "settings.ai_shield_group": {"uk": "AI Shield", "en": "AI Shield"},
+    "settings.ai_shield_section_tts": {
+        "uk": "Чат і голос (TTS)",
+        "en": "Chat & voice (TTS)",
+    },
+    "settings.ai_shield_section_songs": {
+        "uk": "Замовлення пісень (Telegram)",
+        "en": "Song requests (Telegram)",
+    },
     "settings.openai_api_key": {"uk": "API-ключ", "en": "API key"},
     "settings.openai_api_key_hint": {
         "uk": "Для Moderation API (platform.openai.com). Зберігається в системному keyring.",
         "en": "For the Moderation API (platform.openai.com). Stored in the OS keyring.",
     },
     "openai.moderation_no_api_key": {
-        "uk": "OpenAI: увімкнено перевірку TTS, але не задано API-ключ (Налаштування → OpenAI).",
-        "en": "OpenAI: TTS validation is on but no API key is set (Settings → OpenAI).",
+        "uk": "OpenAI: увімкнено перевірку TTS, але не задано API-ключ (Налаштування → AI Shield).",
+        "en": "OpenAI: TTS validation is on but no API key is set (Settings → AI Shield).",
     },
     "openai.moderation_error": {
         "uk": "OpenAI Moderation: {err}",
@@ -909,6 +1002,16 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "yt.token_expired": {
         "uk": "YouTube: токен прострочено — знову OAuth",
         "en": "YouTube: token expired — run OAuth again",
+    },
+    "yt.oauth_refresh_failed": {
+        "uk": (
+            "YouTube: доступ скасовано або токен більше не дійсний "
+            "(invalid_grant) — увійдіть через Google знову."
+        ),
+        "en": (
+            "YouTube: access was revoked or the token is no longer valid "
+            "(invalid_grant) — sign in with Google again."
+        ),
     },
     "yt.stopped": {"uk": "YouTube: зупинено", "en": "YouTube: stopped"},
     "yt.bad_url": {

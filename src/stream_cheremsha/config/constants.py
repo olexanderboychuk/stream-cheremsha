@@ -13,9 +13,15 @@ KEY_DONATIK_API_TOKEN = "donatik_api_token"
 KEY_DONATELLO_API_TOKEN = "donatello_api_token"
 KEY_OBS_WEBSOCKET_PASSWORD = "obs_websocket_password"
 KEY_TELEGRAM_BOT_TOKEN = "telegram_bot_token"
+KEY_GENIUS_CLIENT_ACCESS_TOKEN = "genius_client_access_token"
+KEY_GROQ_API_KEY = "groq_api_key"
+# Older builds stored a Gemini key here; still read if KEY_GROQ_API_KEY is unset.
+KEY_LEGACY_GEMINI_API_KEY = "gemini_api_key"
 KEY_OPENAI_API_KEY = "openai_api_key"
 SETTINGS_OBS_WS_HOST = "obs/websocket_host"
 SETTINGS_OBS_WS_PORT = "obs/websocket_port"
+# When false, the app does not open OBS WebSocket connections (no scene pickers, no actions).
+SETTINGS_OBS_WS_ENABLED = "obs/websocket_enabled"
 
 # Public (non-secret) build/run-time overrides.
 # Example (PowerShell): $env:STREAM_CHEREMSHA_TWITCH_CLIENT_ID="..."

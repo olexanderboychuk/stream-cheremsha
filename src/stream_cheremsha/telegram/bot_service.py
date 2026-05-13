@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import threading
 from collections.abc import Awaitable, Callable
@@ -29,6 +30,7 @@ _CB_SKIP = "skip"
 _CB_RM_PREFIX = "rm:"  # rm:<track_id>
 
 MainLoopCall = Callable[[Callable[[], Awaitable[None]]], None]
+ModerationNoticeFn = Callable[[], str]
 
 
 def _safe_user_display(update: Update) -> str:
@@ -58,10 +60,14 @@ class TelegramBotService:
             [int],
             Awaitable[tuple[dict[str, str] | None, list[dict[str, str]]]],
         ],
+        tiktok_lyrics_filter_enabled: bool = False,
+        moderation_notice_text: ModerationNoticeFn | None = None,
     ) -> None:
         self._token = (token or "").strip()
         self._admin_id = int(admin_id)
         self._song_requests_enabled = bool(song_requests_enabled)
+        self._tiktok_lyrics_filter_enabled = bool(tiktok_lyrics_filter_enabled)
+        self._moderation_notice_text = moderation_notice_text
         self._call_on_main_loop = call_on_main_loop
         self._enqueue_song = enqueue_song
         self._skip_song = skip_song
@@ -91,28 +97,14 @@ class TelegramBotService:
         self._thread.start()
 
     def stop(self, timeout_sec: float = 6.0) -> None:
+        # Only signal the bot thread; shutdown order must be updater.stop → app.stop →
+        # app.shutdown inside _run. Scheduling app.stop() from here races _run and causes
+        # "This Application is not running!" on exit.
         self._stop.set()
-        loop = self._loop
-        app = self._app
-        if loop is not None and app is not None:
-            try:
-                loop.call_soon_threadsafe(lambda: asyncio.create_task(self._shutdown_app(app)))
-            except RuntimeError:
-                pass
         t = self._thread
         if t is not None:
             t.join(timeout=timeout_sec)
         self._thread = None
-
-    async def _shutdown_app(self, app: Application) -> None:
-        try:
-            await app.stop()
-        except RuntimeError:
-            return
-        try:
-            await app.shutdown()
-        except RuntimeError:
-            return
 
     def _thread_main(self) -> None:
         try:
@@ -131,6 +123,14 @@ class TelegramBotService:
 
     def _cancel_markup(self) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup([[InlineKeyboardButton("Скасувати", callback_data=_CB_CANCEL)]])
+
+    async def _teardown_polling_app(self, app: Application) -> None:
+        """Stop polling then the application; tolerate duplicate stop during exit."""
+        with contextlib.suppress(RuntimeError):
+            await app.updater.stop()
+        with contextlib.suppress(RuntimeError):
+            await app.stop()
+        await app.shutdown()
 
     async def _run(self) -> None:
         self._loop = asyncio.get_running_loop()
@@ -160,13 +160,11 @@ class TelegramBotService:
             logger.info("Telegram: set_my_commands failed: %s", e)
         await app.start()
         await app.updater.start_polling(drop_pending_updates=True)
-
-        while not self._stop.is_set():
-            await asyncio.sleep(0.25)
-
-        await app.updater.stop()
-        await app.stop()
-        await app.shutdown()
+        try:
+            while not self._stop.is_set():
+                await asyncio.sleep(0.25)
+        finally:
+            await self._teardown_polling_app(app)
 
     async def _on_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         _ = context
@@ -347,6 +345,14 @@ class TelegramBotService:
             )
             return
         who = _safe_user_display(update)
+
+        if self._tiktok_lyrics_filter_enabled and self._moderation_notice_text is not None:
+            notice = self._moderation_notice_text()
+            if (notice or "").strip():
+                await update.effective_chat.send_message(
+                    notice.strip(),
+                    reply_markup=self._cancel_markup(),
+                )
 
         fut: asyncio.Future[str | None] = asyncio.get_running_loop().create_future()
 

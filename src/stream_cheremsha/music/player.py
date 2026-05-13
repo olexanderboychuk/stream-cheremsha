@@ -124,8 +124,16 @@ class MusicPlayer:
             return
         self._closing = False
         t = asyncio.create_task(self._loop(), name="music-player")
-        t.add_done_callback(lambda _t: _t.exception())
+        t.add_done_callback(MusicPlayer._supervisor_task_done)
         self._task = t
+
+    @staticmethod
+    def _supervisor_task_done(task: asyncio.Task[None]) -> None:
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.error("Music player supervisor exited with error", exc_info=exc)
 
     async def stop(self) -> None:
         self._closing = True

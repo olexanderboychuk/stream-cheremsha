@@ -150,6 +150,8 @@ Enter a username (with or without `@`) — the app connects via `TikTokLive` and
 2. Paste the token in the app (saved to keyring)
 3. Viewers can send `/play <song name or YouTube URL>` to request music
 
+Optional **TikTok Live lyrics screening** (Settings → Telegram): Genius + **Groq** ([GroqCloud](https://console.groq.com/)). The app uses OpenAI-compatible `POST /openai/v1/chat/completions`. Default model is **`llama-3.1-8b-instant`**. Override with **`STREAM_CHEREMSHA_GROQ_MODEL`** (see Groq’s model list).
+
 ### OBS WebSocket
 1. In OBS: **Tools → WebSocket Server Settings** → enable, set port `4455` and a password
 2. Enter the password in the app (saved to keyring)

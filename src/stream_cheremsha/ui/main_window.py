@@ -37,6 +37,7 @@ from PySide6.QtGui import (
     QIcon,
     QPainter,
     QPen,
+    QPixmap,
     QTextCursor,
 )
 from PySide6.QtQuick import QQuickView
@@ -108,6 +109,12 @@ from stream_cheremsha.paths import stream_cheremsha_root
 from stream_cheremsha.pipeline.coordinator import StreamCoordinator
 from stream_cheremsha.pipeline.tts_sanitize import strip_non_alphabetic_for_tts
 from stream_cheremsha.telegram.bot_service import TelegramBotService
+from stream_cheremsha.telegram.tiktok_song_filter import (
+    TikTokLyricsCheckError,
+    analyze_lyrics_with_groq,
+    fetch_lyrics_for_youtube_title,
+    format_tiktok_reject_reason,
+)
 from stream_cheremsha.tts.edge_tts import (
     EdgeTts,
     filter_edge_voices_for_locale,
@@ -125,6 +132,7 @@ from stream_cheremsha.ui.chat_popout import ChatPopoutWindow
 from stream_cheremsha.ui.docks_qml_api import DocksQmlApi
 from stream_cheremsha.ui.donations_qml_api import DonationsQmlApi
 from stream_cheremsha.ui.qml_api import StreamCheremshaQmlApi
+from stream_cheremsha.ui.qt_async_dialog import async_dialog_code
 from stream_cheremsha.ui.tiktok_analytics_api import TikTokAnalyticsApi
 from stream_cheremsha.ui.twitch_analytics_api import TwitchAnalyticsApi
 from stream_cheremsha.ui.widgets_qml_api import WidgetsQmlApi, WidgetsWindowQmlApi
@@ -197,6 +205,7 @@ _SETTINGS_TTS_STRIP_NON_ALPHA = "tts/strip_non_alphabetic"
 _SETTINGS_TELEGRAM_ENABLED = "telegram/enabled"
 _SETTINGS_TELEGRAM_ADMIN_ID = "telegram/admin_id"
 _SETTINGS_TELEGRAM_SONG_REQUESTS_ENABLED = "telegram/song_requests_enabled"
+_SETTINGS_TELEGRAM_TIKTOK_LYRICS_FILTER = "telegram/tiktok_live_lyrics_filter_enabled"
 
 _SETTINGS_MUSIC_BACKEND = "music/backend"  # "app" | "mpv"
 _SETTINGS_MUSIC_MAX_DURATION_MIN = "music/max_duration_minutes"
@@ -579,13 +588,14 @@ class MainWindow(FramelessWindow):
         self._twitch_helix: TwitchHelixClient | None = None
         self._twitch_viewers_task: asyncio.Task[None] | None = None
         self._online_publish_task: asyncio.Task[None] | None = None
+        self._youtube_analytics = YouTubeAnalyticsApi(self)
         self._youtube = YouTubeChatSource(
             self._coordinator,
             on_status=self._on_user_status,
             on_analytics_event=self._on_youtube_analytics_event,
             get_locale=self._get_locale,
+            on_viewers_current=self._youtube_analytics.on_viewers,
         )
-        self._youtube_analytics = YouTubeAnalyticsApi(self)
         self._tiktok_analytics = TikTokAnalyticsApi(self)
         self._tiktok = TikTokChatSource(
             self._coordinator,
@@ -608,11 +618,18 @@ class MainWindow(FramelessWindow):
         self._obs_ws_port = QLineEdit()
         self._obs_ws_password = QLineEdit()
         self._obs_ws_password.setEchoMode(QLineEdit.EchoMode.Password)
+        self._obs_ws_enabled = QCheckBox()
         self._tg_enabled = QCheckBox()
         self._tg_token = QLineEdit()
         self._tg_token.setEchoMode(QLineEdit.EchoMode.Password)
         self._tg_admin_id = QLineEdit()
         self._tg_song_requests_enabled = QCheckBox()
+        self._tg_tiktok_lyrics_filter = QCheckBox()
+        self._tg_genius_token = QLineEdit()
+        self._tg_genius_token.setEchoMode(QLineEdit.EchoMode.Password)
+        self._tg_groq_api_key = QLineEdit()
+        self._tg_groq_api_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self._lbl_tg_tiktok_filter_hint = QLabel()
         self._openai_api_key = QLineEdit()
         self._openai_api_key.setEchoMode(QLineEdit.EchoMode.Password)
 
@@ -989,7 +1006,7 @@ class MainWindow(FramelessWindow):
         self._btn_footer_music.setObjectName("footerNav")
         self._btn_footer_music.setProperty("navId", "navMusic")
         self._btn_footer_music.setIcon(
-            _footer_icon("tts.png", QStyle.StandardPixmap.SP_MediaPlay),
+            _footer_icon("music.png", QStyle.StandardPixmap.SP_MediaPlay),
         )
         self._btn_footer_music.setIconSize(QSize(18, 18))
         self._btn_footer_music.setToolButtonStyle(
@@ -1331,6 +1348,10 @@ class MainWindow(FramelessWindow):
         obs_grid.addWidget(self._lbl_obs_help, row, 0, 1, 2)
         row += 1
 
+        self._obs_ws_enabled.stateChanged.connect(self._persist_obs_ws_enabled)
+        obs_grid.addWidget(self._obs_ws_enabled, row, 0, 1, 2)
+        row += 1
+
         self._lbl_obs_host = MainWindow._obs_settings_label("")
         self._lbl_obs_host.setBuddy(self._obs_ws_host)
         obs_grid.addWidget(self._lbl_obs_host, row, 0)
@@ -1428,28 +1449,88 @@ class MainWindow(FramelessWindow):
         tg_outer.addLayout(tg_grid)
         lay.addWidget(self._gb_telegram)
 
-        self._gb_openai = QGroupBox()
-        openai_outer = QVBoxLayout(self._gb_openai)
-        openai_outer.setContentsMargins(6, 10, 6, 8)
-        openai_outer.setSpacing(10)
-        openai_grid = QGridLayout()
-        openai_grid.setContentsMargins(0, 0, 0, 0)
-        openai_grid.setHorizontalSpacing(12)
-        openai_grid.setVerticalSpacing(8)
-        openai_grid.setColumnStretch(1, 1)
-        openai_grid.setColumnMinimumWidth(0, 124)
+        self._gb_ai_shield = QGroupBox()
+        self._gb_ai_shield.setTitle(self._tr("settings.ai_shield_group"))
+        ai_outer = QVBoxLayout(self._gb_ai_shield)
+        ai_outer.setContentsMargins(6, 10, 6, 8)
+        ai_outer.setSpacing(10)
+
+        ai_head = QHBoxLayout()
+        ai_head.setContentsMargins(0, 0, 0, 0)
+        ai_head.setSpacing(10)
+        self._lbl_ai_shield_icon = QLabel()
+        self._lbl_ai_shield_icon.setFixedSize(40, 40)
+        self._lbl_ai_shield_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        _ai_pm = QPixmap(str(_asset_path("ai.png")))
+        if not _ai_pm.isNull():
+            self._lbl_ai_shield_icon.setPixmap(
+                _ai_pm.scaled(
+                    36,
+                    36,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                ),
+            )
+        ai_head.addWidget(self._lbl_ai_shield_icon, alignment=Qt.AlignmentFlag.AlignTop)
+        ai_head.addStretch(1)
+        ai_outer.addLayout(ai_head)
+
+        ai_grid = QGridLayout()
+        ai_grid.setContentsMargins(0, 0, 0, 0)
+        ai_grid.setHorizontalSpacing(12)
+        ai_grid.setVerticalSpacing(8)
+        ai_grid.setColumnStretch(1, 1)
+        ai_grid.setColumnMinimumWidth(0, 124)
         o_row = 0
+
+        self._lbl_ai_shield_tts_caption = QLabel()
+        self._lbl_ai_shield_tts_caption.setStyleSheet("color: #8b95a5; font-size: 11px;")
+        ai_grid.addWidget(self._lbl_ai_shield_tts_caption, o_row, 0, 1, 2)
+        o_row += 1
+
+        self._cb_tts_openai_moderate = QCheckBox()
+        self._cb_tts_openai_moderate.stateChanged.connect(self._persist_tts_openai_moderate)
+        ai_grid.addWidget(self._cb_tts_openai_moderate, o_row, 0, 1, 2)
+        o_row += 1
+
         self._lbl_openai_api_key = MainWindow._obs_settings_label("")
         self._lbl_openai_api_key.setBuddy(self._openai_api_key)
-        openai_grid.addWidget(self._lbl_openai_api_key, o_row, 0)
-        openai_grid.addWidget(self._stretch_field(self._openai_api_key), o_row, 1)
+        ai_grid.addWidget(self._lbl_openai_api_key, o_row, 0)
+        ai_grid.addWidget(self._stretch_field(self._openai_api_key), o_row, 1)
         o_row += 1
         self._lbl_openai_api_hint = QLabel()
         self._lbl_openai_api_hint.setWordWrap(True)
         self._lbl_openai_api_hint.setStyleSheet("color: #8b95a5; font-size: 11px;")
-        openai_grid.addWidget(self._lbl_openai_api_hint, o_row, 0, 1, 2)
-        openai_outer.addLayout(openai_grid)
-        lay.addWidget(self._gb_openai)
+        ai_grid.addWidget(self._lbl_openai_api_hint, o_row, 0, 1, 2)
+        o_row += 1
+
+        self._lbl_ai_shield_songs_caption = QLabel()
+        self._lbl_ai_shield_songs_caption.setStyleSheet("color: #8b95a5; font-size: 11px;")
+        ai_grid.addWidget(self._lbl_ai_shield_songs_caption, o_row, 0, 1, 2)
+        o_row += 1
+
+        ai_grid.addWidget(self._tg_tiktok_lyrics_filter, o_row, 0, 1, 2)
+        o_row += 1
+
+        self._lbl_tg_genius_token = MainWindow._obs_settings_label("")
+        self._lbl_tg_genius_token.setBuddy(self._tg_genius_token)
+        ai_grid.addWidget(self._lbl_tg_genius_token, o_row, 0)
+        ai_grid.addWidget(self._stretch_field(self._tg_genius_token), o_row, 1)
+        o_row += 1
+
+        self._lbl_tg_groq_api_key = MainWindow._obs_settings_label("")
+        self._lbl_tg_groq_api_key.setBuddy(self._tg_groq_api_key)
+        ai_grid.addWidget(self._lbl_tg_groq_api_key, o_row, 0)
+        ai_grid.addWidget(self._stretch_field(self._tg_groq_api_key), o_row, 1)
+        o_row += 1
+
+        self._lbl_tg_tiktok_filter_hint.setWordWrap(True)
+        self._lbl_tg_tiktok_filter_hint.setStyleSheet("color: #8b95a5; font-size: 11px;")
+        ai_grid.addWidget(self._lbl_tg_tiktok_filter_hint, o_row, 0, 1, 2)
+        o_row += 1
+
+        ai_outer.addLayout(ai_grid)
+        lay.addWidget(self._gb_ai_shield)
 
         self._openai_api_key.editingFinished.connect(self._persist_openai_api_key)
 
@@ -1459,6 +1540,11 @@ class MainWindow(FramelessWindow):
         self._tg_song_requests_enabled.stateChanged.connect(
             self._persist_telegram_song_requests_enabled
         )
+        self._tg_tiktok_lyrics_filter.stateChanged.connect(
+            self._persist_telegram_tiktok_lyrics_filter,
+        )
+        self._tg_genius_token.editingFinished.connect(self._persist_telegram_genius_token)
+        self._tg_groq_api_key.editingFinished.connect(self._persist_telegram_groq_api_key)
 
         self._gb_music = QGroupBox()
         music_outer = QVBoxLayout(self._gb_music)
@@ -1577,6 +1663,13 @@ class MainWindow(FramelessWindow):
             keyring_store.set_password(constants.KEY_OBS_WEBSOCKET_PASSWORD, vv)
         else:
             keyring_store.delete_password(constants.KEY_OBS_WEBSOCKET_PASSWORD)
+
+    @Slot(int)
+    def _persist_obs_ws_enabled(self, _state: int) -> None:
+        self._settings.setValue(
+            constants.SETTINGS_OBS_WS_ENABLED,
+            bool(self._obs_ws_enabled.isChecked()),
+        )
 
     @Slot(int)
     def _persist_telegram_enabled(self, _state: int) -> None:
@@ -1708,7 +1801,7 @@ class MainWindow(FramelessWindow):
         cb_ignore = QCheckBox(self._tr("updates.ignore_this_version"))
         dlg.setCheckBox(cb_ignore)
 
-        dlg.exec()
+        await async_dialog_code(dlg)
         clicked = dlg.clickedButton()
         if clicked != btn_update:
             if cb_ignore.isChecked():
@@ -1803,6 +1896,28 @@ class MainWindow(FramelessWindow):
         enabled = bool(self._tg_song_requests_enabled.isChecked())
         self._settings.setValue(_SETTINGS_TELEGRAM_SONG_REQUESTS_ENABLED, enabled)
         asyncio.ensure_future(self._apply_telegram_from_settings())
+
+    def _persist_telegram_tiktok_lyrics_filter(self, _state: int) -> None:
+        self._settings.setValue(
+            _SETTINGS_TELEGRAM_TIKTOK_LYRICS_FILTER,
+            bool(self._tg_tiktok_lyrics_filter.isChecked()),
+        )
+
+    def _persist_telegram_genius_token(self) -> None:
+        vv = self._tg_genius_token.text() or ""
+        if vv.strip():
+            keyring_store.set_password(constants.KEY_GENIUS_CLIENT_ACCESS_TOKEN, vv)
+        else:
+            keyring_store.delete_password(constants.KEY_GENIUS_CLIENT_ACCESS_TOKEN)
+
+    def _persist_telegram_groq_api_key(self) -> None:
+        vv = self._tg_groq_api_key.text() or ""
+        if vv.strip():
+            keyring_store.set_password(constants.KEY_GROQ_API_KEY, vv)
+            keyring_store.delete_password(constants.KEY_LEGACY_GEMINI_API_KEY)
+        else:
+            keyring_store.delete_password(constants.KEY_GROQ_API_KEY)
+            keyring_store.delete_password(constants.KEY_LEGACY_GEMINI_API_KEY)
 
     @Slot(int)
     def _persist_music_backend(self, _state: int) -> None:
@@ -2066,6 +2181,7 @@ class MainWindow(FramelessWindow):
         self._cb_autostart_tiktok.setText(self._tr("settings.autostart_tiktok"))
         self._gb_obs.setTitle(self._tr("settings.obs_group"))
         self._lbl_obs_help.setText(self._tr("settings.obs_help_html"))
+        self._obs_ws_enabled.setText(self._tr("settings.obs_enabled"))
         self._lbl_obs_host.setText(self._tr("settings.obs_host"))
         self._lbl_obs_port.setText(self._tr("settings.obs_port"))
         self._lbl_obs_password.setText(self._tr("settings.obs_password"))
@@ -2077,10 +2193,17 @@ class MainWindow(FramelessWindow):
         self._lbl_tg_token.setText(self._tr("settings.telegram_token"))
         self._lbl_tg_admin_id.setText(self._tr("settings.telegram_admin_id"))
         self._tg_song_requests_enabled.setText(self._tr("settings.telegram_song_requests"))
-
-        self._gb_openai.setTitle(self._tr("settings.openai_group"))
+        self._gb_ai_shield.setTitle(self._tr("settings.ai_shield_group"))
+        self._lbl_ai_shield_tts_caption.setText(self._tr("settings.ai_shield_section_tts"))
+        self._cb_tts_openai_moderate.setText(self._tr("audio.openai_moderate"))
+        self._cb_tts_openai_moderate.setToolTip(self._tr("audio.openai_moderate_hint"))
         self._lbl_openai_api_key.setText(self._tr("settings.openai_api_key"))
         self._lbl_openai_api_hint.setText(self._tr("settings.openai_api_key_hint"))
+        self._lbl_ai_shield_songs_caption.setText(self._tr("settings.ai_shield_section_songs"))
+        self._tg_tiktok_lyrics_filter.setText(self._tr("settings.telegram_tiktok_lyrics_filter"))
+        self._lbl_tg_genius_token.setText(self._tr("settings.telegram_genius_token"))
+        self._lbl_tg_groq_api_key.setText(self._tr("settings.telegram_groq_api_key"))
+        self._lbl_tg_tiktok_filter_hint.setText(self._tr("settings.telegram_tiktok_filter_hint"))
 
         self._gb_music.setTitle(self._tr("settings.music_group"))
         self._music_use_mpv.setText(self._tr("settings.music_open_in_mpv"))
@@ -2602,9 +2725,6 @@ class MainWindow(FramelessWindow):
             lambda: asyncio.ensure_future(self._flush_tts_queues()),
         )
         tts_body.addWidget(self._btn_audio_flush_queues)
-        self._cb_tts_openai_moderate = QCheckBox()
-        self._cb_tts_openai_moderate.stateChanged.connect(self._persist_tts_openai_moderate)
-        tts_body.addWidget(self._cb_tts_openai_moderate)
         self._cb_tts_speak_author = QCheckBox()
         self._cb_tts_speak_author.stateChanged.connect(self._persist_tts_speak_author)
         tts_body.addWidget(self._cb_tts_speak_author)
@@ -2699,8 +2819,6 @@ class MainWindow(FramelessWindow):
         self._btn_audio_flush_queues.setText(self._tr("audio.flush_queues"))
         self._btn_audio_flush_queues.setToolTip(self._tr("audio.flush_queues_hint"))
         self._lbl_audio_tts_card_h.setText(self._tr("audio.card_tts_title"))
-        self._cb_tts_openai_moderate.setText(self._tr("audio.openai_moderate"))
-        self._cb_tts_openai_moderate.setToolTip(self._tr("audio.openai_moderate_hint"))
         self._cb_tts_speak_author.setText(self._tr("audio.speak_author_name"))
         self._cb_tts_speak_author.setToolTip(self._tr("audio.speak_author_name_hint"))
         self._cb_tts_strip_non_alpha.setText(self._tr("audio.strip_non_alpha"))
@@ -2980,6 +3098,11 @@ class MainWindow(FramelessWindow):
             self._sink.set_tts_gain_db(self._tts_gain_spin.value())
         self._load_chat_font_from_settings()
 
+        obs_ws_on = bool(self._settings.value(constants.SETTINGS_OBS_WS_ENABLED, True, bool))
+        self._obs_ws_enabled.blockSignals(True)
+        self._obs_ws_enabled.setChecked(obs_ws_on)
+        self._obs_ws_enabled.blockSignals(False)
+
         obs_host = str(
             self._settings.value(constants.SETTINGS_OBS_WS_HOST, "127.0.0.1", str) or "",
         ).strip()
@@ -3009,6 +3132,21 @@ class MainWindow(FramelessWindow):
         self._tg_song_requests_enabled.blockSignals(True)
         self._tg_song_requests_enabled.setChecked(tg_songs)
         self._tg_song_requests_enabled.blockSignals(False)
+
+        tg_tiktok = bool(
+            self._settings.value(_SETTINGS_TELEGRAM_TIKTOK_LYRICS_FILTER, False, bool),
+        )
+        self._tg_tiktok_lyrics_filter.blockSignals(True)
+        self._tg_tiktok_lyrics_filter.setChecked(tg_tiktok)
+        self._tg_tiktok_lyrics_filter.blockSignals(False)
+
+        self._tg_genius_token.setText(
+            keyring_store.get_password(constants.KEY_GENIUS_CLIENT_ACCESS_TOKEN) or "",
+        )
+        gq = (keyring_store.get_password(constants.KEY_GROQ_API_KEY) or "").strip()
+        if not gq:
+            gq = (keyring_store.get_password(constants.KEY_LEGACY_GEMINI_API_KEY) or "").strip()
+        self._tg_groq_api_key.setText(gq)
 
         oai = keyring_store.get_password(constants.KEY_OPENAI_API_KEY) or ""
         self._openai_api_key.setText(oai)
@@ -3549,6 +3687,9 @@ class MainWindow(FramelessWindow):
     async def _obs_execute_for_actions(self, payload: dict[str, Any]) -> None:
         from stream_cheremsha.obs_ws.control import ObsControlError, run_obs_scene_action
 
+        if not self._obs_ws_enabled.isChecked():
+            return
+
         host = (self._obs_ws_host.text() or "").strip() or "127.0.0.1"
         port_s = (self._obs_ws_port.text() or "").strip() or "4455"
         try:
@@ -3583,6 +3724,16 @@ class MainWindow(FramelessWindow):
         btn = self._btn_obs_ws_test
         old_btn_text = btn.text()
         res = self._lbl_obs_test_result
+        title = self._tr("settings.obs_group")
+
+        if not self._obs_ws_enabled.isChecked():
+            msg = self._tr("settings.obs_test_when_disabled")
+            res.setText(msg)
+            res.setStyleSheet("color: #8b95a5;")
+            self._on_user_status(msg)
+            QMessageBox.information(self, title, msg)
+            return
+
         btn.setEnabled(False)
         btn.setText(self._tr("settings.obs_test_busy"))
         res.clear()
@@ -3599,7 +3750,6 @@ class MainWindow(FramelessWindow):
         if not pw:
             pw = keyring_store.get_password(constants.KEY_OBS_WEBSOCKET_PASSWORD) or ""
 
-        title = self._tr("settings.obs_group")
         try:
             ver = await asyncio.to_thread(obs_test_connection, host, port, pw)
         except ObsControlError as e:
@@ -4213,9 +4363,10 @@ class MainWindow(FramelessWindow):
             asyncio.run_coroutine_threadsafe(fn(), loop)
 
         async def enqueue_song(video_id: str, requested_by: str) -> str | None:
+            loc = self._get_locale()
             vid = (video_id or "").strip()
             if not vid:
-                return "Порожнє посилання."
+                return self._tr("telegram.song.empty_link")
             max_min_raw = self._settings.value(_SETTINGS_MUSIC_MAX_DURATION_MIN, 5)
             try:
                 max_min = int(max_min_raw)
@@ -4229,20 +4380,81 @@ class MainWindow(FramelessWindow):
                     meta = await asyncio.to_thread(fetch_youtube_meta, vid)
                 except (OSError, ValueError, RuntimeError) as e:
                     logger.debug("Music duration fetch failed: %s", e)
-                    return "Не вдалося визначити тривалість відео."
+                    return self._tr("telegram.song.duration_unknown")
                 dur = meta.duration_seconds
                 title = (meta.title or "").strip()
                 if dur is None:
-                    return "Не вдалося визначити тривалість відео."
+                    return self._tr("telegram.song.duration_unknown")
                 if dur > int(max_min) * 60:
                     mins = max(1, (dur + 59) // 60)
-                    return f"Відео задовге: ~{mins} хв (ліміт {int(max_min)} хв)."
+                    return self._tr(
+                        "telegram.song.too_long",
+                        mins=str(mins),
+                        limit=str(int(max_min)),
+                    )
 
-            tr = await self._music_queue.enqueue(video_id=vid, requested_by=requested_by)
+            tiktok_filter = bool(
+                self._settings.value(_SETTINGS_TELEGRAM_TIKTOK_LYRICS_FILTER, False, bool),
+            )
+            if tiktok_filter:
+                genius_tok = (
+                    keyring_store.get_password(constants.KEY_GENIUS_CLIENT_ACCESS_TOKEN) or ""
+                ).strip()
+                groq_key = (keyring_store.get_password(constants.KEY_GROQ_API_KEY) or "").strip()
+                if not groq_key:
+                    groq_key = (
+                        keyring_store.get_password(constants.KEY_LEGACY_GEMINI_API_KEY) or ""
+                    ).strip()
+                if not genius_tok or not groq_key:
+                    return self._tr("telegram.song.tiktok_need_keys")
+                if not title:
+                    try:
+                        meta_title = await asyncio.to_thread(fetch_youtube_meta, vid)
+                    except (OSError, ValueError, RuntimeError) as e:
+                        logger.debug("YouTube meta for TikTok filter failed: %s", e)
+                        return self._tr("telegram.song.title_unknown")
+                    title = (meta_title.title or "").strip()
+                if not title:
+                    return self._tr("telegram.song.title_unknown")
+                try:
+                    lyrics = await asyncio.to_thread(
+                        fetch_lyrics_for_youtube_title,
+                        genius_tok,
+                        title,
+                    )
+                except Exception as e:
+                    logger.warning("Genius lyrics fetch failed: %s", e)
+                    return self._tr("telegram.song.genius_unavailable")
+                if lyrics:
+                    try:
+                        verdict = await analyze_lyrics_with_groq(
+                            groq_key,
+                            lyrics,
+                            loc,
+                            youtube_title=title,
+                        )
+                    except TikTokLyricsCheckError as e:
+                        return str(e)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as e:
+                        logger.warning("Groq TikTok check failed: %s", e)
+                        return self._tr("telegram.song.check_unavailable")
+                    if not verdict.allows_enqueue():
+                        return format_tiktok_reject_reason(verdict, ui_locale=loc)
+                else:
+                    logger.debug(
+                        "TikTok lyrics filter: no Genius lyrics for %r — enqueue without Groq.",
+                        title,
+                    )
+
+            new_track = await self._music_queue.enqueue(video_id=vid, requested_by=requested_by)
             if title:
-                asyncio.create_task(self._music_queue.set_track_title(tr.id, title))
+                asyncio.create_task(self._music_queue.set_track_title(new_track.id, title))
             else:
-                asyncio.create_task(self._fetch_music_title_for_track(tr.id, tr.video_id))
+                asyncio.create_task(
+                    self._fetch_music_title_for_track(new_track.id, new_track.video_id),
+                )
             return None
 
         async def skip_song() -> None:
@@ -4275,6 +4487,10 @@ class MainWindow(FramelessWindow):
             skip_song=skip_song,
             remove_song_by_id=remove_song_by_id,
             list_queue=list_queue,
+            tiktok_lyrics_filter_enabled=bool(
+                self._settings.value(_SETTINGS_TELEGRAM_TIKTOK_LYRICS_FILTER, False, bool),
+            ),
+            moderation_notice_text=lambda: self._tr("telegram.song.moderating_line"),
         )
         self._telegram.start()
 
@@ -4305,6 +4521,8 @@ class MainWindow(FramelessWindow):
                             "diamonds": int(self._tiktok_analytics.diamondsTotal),
                         },
                         "youtube": {
+                            "current": int(self._youtube_analytics.viewersCurrent),
+                            "peak": int(self._youtube_analytics.viewersPeak),
                             "messages": int(self._youtube_analytics.messagesSession),
                             "unique": int(self._youtube_analytics.uniqueChattersSession),
                             "superchats": int(self._youtube_analytics.superChatsSession),

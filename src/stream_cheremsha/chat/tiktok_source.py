@@ -27,6 +27,10 @@ logger = logging.getLogger(__name__)
 # Delay before reconnecting after an ended/failed connection.
 TIKTOK_RECONNECT_SEC = 15.0
 TIKTOK_COMMENT_BACKLOG_WINDOW_SEC = 2.0
+# When joining an already-running live, TikTokLive replays a short burst of recent
+# action events (gifts, follows, shares, joins, paid subs). Treat events emitted within
+# this window after `ConnectEvent` as backlog if they don't carry a parseable timestamp.
+TIKTOK_ACTION_BACKLOG_WINDOW_SEC = 5.0
 # HTTP room/info snapshot occasionally exposes viewer counts when websocket fields stay zero.
 TIKTOK_VIEWERS_POLL_SEC = 25.0
 # RoomUserSeq: fused / multi-live rooms often expose concurrent viewers only via fields
@@ -400,6 +404,59 @@ def _parse_int_best_effort(v: object, *, default: int) -> int:
     return default
 
 
+# Event timestamp fields observed across TikTokLive versions / payloads. Some are
+# epoch seconds, some are milliseconds, some are ISO datetimes (rare). The actual
+# unit is resolved heuristically by `_event_epoch_best_effort` below.
+_TIKTOK_EVENT_TIMESTAMP_ATTRS = (
+    "create_time",
+    "timestamp",
+    "time",
+    "event_time",
+    "send_time",
+)
+_TIKTOK_BASE_MESSAGE_TIMESTAMP_ATTRS = (
+    "create_time",
+    "timestamp",
+    "server_time",
+    "send_time",
+)
+
+
+def _coerce_event_epoch(raw_ts: object) -> float | None:
+    """Convert a TikTokLive timestamp value into a UNIX epoch (seconds)."""
+    if isinstance(raw_ts, datetime):
+        dt = raw_ts if raw_ts.tzinfo is not None else raw_ts.replace(tzinfo=UTC)
+        return dt.timestamp()
+    if isinstance(raw_ts, bool):
+        return None
+    if isinstance(raw_ts, (int, float)):
+        v = float(raw_ts)
+        if v != v or v <= 0:  # NaN / non-positive
+            return None
+        return (v / 1000.0) if v > 3_000_000_000 else v
+    if isinstance(raw_ts, str):
+        s = raw_ts.strip()
+        if s.isdigit():
+            v = float(s)
+            return (v / 1000.0) if v > 3_000_000_000 else v
+    return None
+
+
+def _event_epoch_best_effort(event: object) -> float | None:
+    """Best-effort UNIX-epoch (seconds) timestamp from a TikTokLive event."""
+    for attr in _TIKTOK_EVENT_TIMESTAMP_ATTRS:
+        ev = _coerce_event_epoch(getattr(event, attr, None))
+        if ev is not None:
+            return ev
+    base_msg = getattr(event, "base_message", None)
+    if base_msg is not None:
+        for attr in _TIKTOK_BASE_MESSAGE_TIMESTAMP_ATTRS:
+            ev = _coerce_event_epoch(getattr(base_msg, attr, None))
+            if ev is not None:
+                return ev
+    return None
+
+
 class TikTokChatSource:
     """TikTokLive client wrapper: forwards TikTok comments into the coordinator."""
 
@@ -449,6 +506,10 @@ class TikTokChatSource:
         # If a CommentEvent doesn't expose any usable timestamp, TikTokLive may still emit
         # a small "history burst" right after connect. Suppress that short window.
         self._comment_backlog_window_sec: float = TIKTOK_COMMENT_BACKLOG_WINDOW_SEC
+        # Same idea for action events (gifts, follows, shares, joins, paid subs): if the
+        # event has no timestamp we still want to drop the burst emitted right after
+        # connect when joining an already-running live.
+        self._action_backlog_window_sec: float = TIKTOK_ACTION_BACKLOG_WINDOW_SEC
         # Only treat the next ConnectEvent as "new stream start" after LiveEndEvent.
         self._stream_ended = True
         # Some TikTokLive builds expose like totals (stream-level) rather than per-event batches.
@@ -481,6 +542,29 @@ class TikTokChatSource:
     @property
     def running(self) -> bool:
         return self._running and self._task is not None and not self._task.done()
+
+    def _event_is_backlog(self, event: object, *, window_sec: float) -> bool:
+        """Detect events whose origin time predates the current connection.
+
+        TikTokLive replays a short burst of recent action/chat events when attaching to
+        an already-running live. We want gifts/likes/follows/shares/joins/subs to react
+        only to what happens after the user connects.
+
+        - If the event carries any usable timestamp, an event older than the connect
+          cutoff is treated as backlog.
+        - If no timestamp is present, fall back to "within `window_sec` of connect"
+          since TikTok empirically bursts the backlog in the first few seconds.
+        """
+        cutoff_epoch = self._connect_cutoff_epoch
+        if cutoff_epoch is None:
+            return False
+        event_epoch = _event_epoch_best_effort(event)
+        if event_epoch is not None:
+            return event_epoch < cutoff_epoch
+        cutoff_mono = self._connect_cutoff_mono
+        if cutoff_mono is None:
+            return False
+        return (time.monotonic() - cutoff_mono) <= window_sec
 
     def _push_room_viewers_current(self, n: int, *, reliable: bool, source: str) -> None:
         cb_cur = self._on_room_viewers_current or self._on_room_viewers
@@ -677,44 +761,11 @@ class TikTokChatSource:
 
                 @client.on(CommentEvent)
                 async def _on_comment(event: CommentEvent) -> None:  # noqa: ANN001
-                    cutoff = self._connect_cutoff_epoch
-                    if cutoff is not None:
-                        # Best-effort event time extraction (TikTokLive differs between versions).
-                        # Common fields observed: create_time (epoch sec), timestamp (epoch ms/sec).
-                        base_msg = getattr(event, "base_message", None)
-                        raw_ts = (
-                            getattr(event, "create_time", None)
-                            or getattr(event, "timestamp", None)
-                            or getattr(event, "time", None)
-                            or getattr(event, "event_time", None)
-                            or getattr(base_msg, "create_time", None)
-                            or getattr(base_msg, "timestamp", None)
-                            or getattr(base_msg, "server_time", None)
-                        )
-                        event_epoch: float | None = None
-                        if isinstance(raw_ts, datetime):
-                            event_epoch = raw_ts.replace(tzinfo=UTC).timestamp()
-                        elif isinstance(raw_ts, (int, float)):
-                            # Heuristic: treat very large numbers as ms.
-                            v = float(raw_ts)
-                            event_epoch = (v / 1000.0) if v > 3_000_000_000 else v
-                        elif isinstance(raw_ts, str):
-                            s = raw_ts.strip()
-                            if s.isdigit():
-                                v = float(s)
-                                event_epoch = (v / 1000.0) if v > 3_000_000_000 else v
-                        if event_epoch is not None:
-                            if event_epoch < cutoff:
-                                return
-                        else:
-                            # Fallback: if the library doesn't expose timestamps for comments,
-                            # suppress a short backlog window right after connect.
-                            mono0 = self._connect_cutoff_mono
-                            if (
-                                mono0 is not None
-                                and (time.monotonic() - mono0) <= self._comment_backlog_window_sec
-                            ):
-                                return
+                    if self._event_is_backlog(
+                        event,
+                        window_sec=self._comment_backlog_window_sec,
+                    ):
+                        return
 
                     user_blob = getattr(event, "user_info", None) or getattr(event, "user", None)
                     author = getattr(user_blob, "nickname", None) or "unknown"
@@ -790,6 +841,12 @@ class TikTokChatSource:
                     cb = self._on_follow
                     if cb is None:
                         return
+                    if self._event_is_backlog(
+                        event,
+                        window_sec=self._action_backlog_window_sec,
+                    ):
+                        logger.info("TikTok follow suppressed (pre-connect backlog)")
+                        return
                     user = getattr(event, "user", None)
                     cb(_display_name_from_user(user))
 
@@ -799,8 +856,14 @@ class TikTokChatSource:
                 async def _on_join(event: object) -> None:  # noqa: ANN001
                     cb = self._on_join
                     if cb is not None:
-                        user = getattr(event, "user", None)
-                        cb(_display_name_from_user(user))
+                        if self._event_is_backlog(
+                            event,
+                            window_sec=self._action_backlog_window_sec,
+                        ):
+                            logger.info("TikTok join suppressed (pre-connect backlog)")
+                        else:
+                            user = getattr(event, "user", None)
+                            cb(_display_name_from_user(user))
                     n = _join_event_live_viewer_count_hint(event)
                     if n > 0:
                         logger.info(
@@ -818,6 +881,10 @@ class TikTokChatSource:
                     cb = self._on_like
                     if cb is None:
                         return
+                    is_backlog = self._event_is_backlog(
+                        event,
+                        window_sec=self._action_backlog_window_sec,
+                    )
                     user = getattr(event, "user", None) or getattr(event, "user_info", None)
                     avatar_u = tiktok_user_avatar_url(user)
                     # Best-effort: TikTokLive differs between versions:
@@ -831,14 +898,29 @@ class TikTokChatSource:
                         prev_total = self._last_like_total
                         self._last_like_total = total_i
                         if prev_total is None:
-                            n_i = max(1, total_i)
-                        else:
-                            n_i = total_i - prev_total
-                            if n_i <= 0:
-                                n_i = 1
+                            # Joining an already-running live: seed the baseline from the
+                            # initial cumulative total instead of firing actions for every
+                            # historical like.
+                            logger.info(
+                                "TikTok like baseline seeded total=%s (no callback fired)",
+                                total_i,
+                            )
+                            return
+                        n_i = total_i - prev_total
+                        if n_i <= 0:
+                            n_i = 1
+                        if is_backlog:
+                            logger.info(
+                                "TikTok like suppressed (pre-connect backlog, delta=%s)",
+                                n_i,
+                            )
+                            return
                         cb(_display_name_from_user(user), n_i, avatar_u)
                         return
 
+                    if is_backlog:
+                        logger.info("TikTok like suppressed (pre-connect backlog)")
+                        return
                     raw_batch = (
                         getattr(event, "like_count", None) or getattr(event, "count", None) or 1
                     )
@@ -851,6 +933,12 @@ class TikTokChatSource:
                 async def _on_share(event: object) -> None:  # noqa: ANN001
                     cb = self._on_share
                     if cb is None:
+                        return
+                    if self._event_is_backlog(
+                        event,
+                        window_sec=self._action_backlog_window_sec,
+                    ):
+                        logger.info("TikTok share suppressed (pre-connect backlog)")
                         return
                     user = getattr(event, "user", None) or getattr(event, "user_info", None)
                     raw_n = (
@@ -868,6 +956,12 @@ class TikTokChatSource:
                 async def _on_paid_sub(event: object) -> None:  # noqa: ANN001
                     cb = self._on_paid_sub
                     if cb is None:
+                        return
+                    if self._event_is_backlog(
+                        event,
+                        window_sec=self._action_backlog_window_sec,
+                    ):
+                        logger.info("TikTok paid_sub suppressed (pre-connect backlog)")
                         return
                     user = getattr(event, "user", None) or getattr(event, "user_info", None)
                     cb(_display_name_from_user(user))
@@ -887,7 +981,15 @@ class TikTokChatSource:
                     if cb is None and self._on_gift_analytics is None:
                         logger.debug("TikTok gift received but no gift callbacks are configured")
                         return
-                    # Best-effort extraction (TikTokLive differs between versions).
+                    # Suppress gifts replayed by TikTokLive for streaks that started before
+                    # we connected to the live. Without this, joining an already-running
+                    # stream would fire actions for historical gifts.
+                    if self._event_is_backlog(
+                        event,
+                        window_sec=self._action_backlog_window_sec,
+                    ):
+                        logger.info("TikTok gift suppressed (pre-connect backlog)")
+                        return
                     user_obj = getattr(event, "user", None)
                     sender_avatar = tiktok_user_avatar_url(user_obj)
                     user = getattr(user_obj, "nickname", None) or getattr(

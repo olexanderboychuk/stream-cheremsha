@@ -187,3 +187,15 @@ def test_obs_list_canvases_fallback_when_rpc_missing() -> None:
         rows, err = obs_list_canvases("127.0.0.1", 4455, "")
     assert err is None
     assert rows == [{"name": "", "value": ""}]
+
+
+def test_obs_list_canvases_returns_error_on_connection_refused() -> None:
+    with patch(
+        "stream_cheremsha.obs_ws.control.ReqClient",
+        side_effect=ConnectionRefusedError(61, "refused"),
+    ):
+        rows, err = obs_list_canvases("127.0.0.1", 4455, "")
+    assert rows == []
+    assert err is not None
+    assert "Cannot connect to OBS WebSocket" in err
+    assert "ConnectionRefusedError" in err

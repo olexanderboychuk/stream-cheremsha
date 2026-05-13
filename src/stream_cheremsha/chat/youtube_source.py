@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -93,6 +94,24 @@ def _dedupe_strs(items: list[str]) -> list[str]:
     return out
 
 
+def _dedupe_pairs(
+    items: list[tuple[str, str | None]],
+) -> list[tuple[str, str | None]]:
+    """Deduplicate by chat_id while preserving order and the first paired video_id."""
+    seen: set[str] = set()
+    out: list[tuple[str, str | None]] = []
+    for cid, vid in items:
+        if cid in seen:
+            continue
+        seen.add(cid)
+        out.append((cid, vid))
+    return out
+
+
+# Concurrent-viewers polling cadence: cheap enough not to blow daily quota.
+YOUTUBE_VIEWERS_POLL_INTERVAL_SEC = 30.0
+
+
 # YouTube API rejects ``mine=true`` together with ``broadcastStatus``; filter client-side.
 _LIVE_BROADCAST_LIFE_CYCLES = frozenset({"live", "testing"})
 
@@ -126,17 +145,18 @@ def fetch_channel_video_ids_from_rss(channel_id: str) -> list[str]:
     return _dedupe_strs(extract_video_ids_from_rss_xml(resp.text))
 
 
-def discover_my_live_chat_ids(service: object) -> list[str]:
-    """Resolve live chat IDs for the OAuth user's current streams.
+def discover_my_live_streams(service: object) -> list[tuple[str, str | None]]:
+    """Resolve ``(live_chat_id, video_id)`` pairs for the OAuth user's current streams.
 
     Prefer ``liveBroadcasts.list`` with ``mine=true`` (no ``broadcastStatus`` — it is
     incompatible with ``mine``) and ``part=snippet,status``, keeping rows whose
-    ``status.lifeCycleStatus`` is ``live`` or ``testing``.
+    ``status.lifeCycleStatus`` is ``live`` or ``testing``. The broadcast ``id`` is the
+    video ID used for concurrent-viewer queries.
 
     If none, fall back to ``channels.list(mine=true)``, the channel's public video RSS
     feed, then ``videos.list`` ``liveStreamingDetails.activeLiveChatId``.
     """
-    chat_ids: list[str] = []
+    pairs: list[tuple[str, str | None]] = []
     page_token: str | None = None
     while True:
         resp = (
@@ -154,14 +174,15 @@ def discover_my_live_chat_ids(service: object) -> list[str]:
                 continue
             sn = item.get("snippet") or {}
             lcid = sn.get("liveChatId")
+            vid = item.get("id")
             if isinstance(lcid, str) and lcid:
-                chat_ids.append(lcid)
+                pairs.append((lcid, vid if isinstance(vid, str) and vid else None))
         page_token = resp.get("nextPageToken")
         if not page_token:
             break
 
-    if chat_ids:
-        return _dedupe_strs(chat_ids)
+    if pairs:
+        return _dedupe_pairs(pairs)
 
     channel_id = _oauth_channel_id(service)
     if not channel_id:
@@ -171,16 +192,48 @@ def discover_my_live_chat_ids(service: object) -> list[str]:
     if not video_ids:
         return []
 
-    out: list[str] = []
+    out: list[tuple[str, str | None]] = []
     for i in range(0, len(video_ids), 50):
         chunk = video_ids[i : i + 50]
         vresp = service.videos().list(part="liveStreamingDetails", id=",".join(chunk)).execute()
         for item in vresp.get("items", []):
             lsd = item.get("liveStreamingDetails") or {}
             lcid = lsd.get("activeLiveChatId")
+            vid = item.get("id")
             if isinstance(lcid, str) and lcid:
-                out.append(lcid)
-    return _dedupe_strs(out)
+                out.append((lcid, vid if isinstance(vid, str) and vid else None))
+    return _dedupe_pairs(out)
+
+
+def discover_my_live_chat_ids(service: object) -> list[str]:
+    """Backwards-compatible wrapper returning only chat IDs."""
+    return _dedupe_strs([cid for cid, _ in discover_my_live_streams(service)])
+
+
+def fetch_concurrent_viewers_total(service: object, video_ids: list[str]) -> int | None:
+    """Sum ``concurrentViewers`` across the given video IDs.
+
+    Returns ``None`` when the API yields no parsable counters (stream may have
+    ended or the field is hidden); callers should treat that as "no update".
+    """
+    if not video_ids:
+        return None
+    total = 0
+    seen_any = False
+    for i in range(0, len(video_ids), 50):
+        chunk = video_ids[i : i + 50]
+        resp = service.videos().list(part="liveStreamingDetails", id=",".join(chunk)).execute()
+        for item in resp.get("items", []):
+            lsd = item.get("liveStreamingDetails") or {}
+            raw = lsd.get("concurrentViewers")
+            if raw is None:
+                continue
+            try:
+                total += int(raw)
+            except (TypeError, ValueError):
+                continue
+            seen_any = True
+    return total if seen_any else None
 
 
 def is_google_account_linked() -> bool:
@@ -234,13 +287,35 @@ class YouTubeChatSource:
         on_status: Callable[[str], None],
         on_analytics_event: Callable[[str, str, str, int], None] | None = None,
         get_locale: Callable[[], str] | None = None,
+        on_viewers_current: Callable[[int], None] | None = None,
     ) -> None:
         self._coordinator = coordinator
         self._on_status = on_status
         self._on_analytics_event = on_analytics_event
+        self._on_viewers_current = on_viewers_current
         self._get_locale = get_locale or (lambda: l10n.DEFAULT_LOCALE)
         self._task: asyncio.Task[None] | None = None
         self._running = False
+
+    async def _refresh_oauth_credentials(self, creds: Credentials) -> bool:
+        """Refresh access token and persist to keyring.
+
+        Returns False when the refresh token is revoked or unusable; stored
+        session is cleared and the user must sign in again (no automatic fix).
+        """
+
+        def do_refresh() -> None:
+            creds.refresh(Request())
+
+        try:
+            await asyncio.to_thread(do_refresh)
+        except RefreshError as err:
+            logger.warning("YouTube OAuth refresh failed: %s", err)
+            clear_youtube_user_session()
+            self._on_status(l10n.tr(self._get_locale(), "yt.oauth_refresh_failed"))
+            return False
+        keyring_store.set_password(KEY_YOUTUBE_OAUTH, creds.to_json())
+        return True
 
     @property
     def running(self) -> bool:
@@ -268,12 +343,8 @@ class YouTubeChatSource:
             if not creds.refresh_token:
                 self._on_status(l10n.tr(self._get_locale(), "yt.token_expired"))
                 return
-
-            def refresh() -> None:
-                creds.refresh(Request())
-
-            await asyncio.to_thread(refresh)
-            keyring_store.set_password(KEY_YOUTUBE_OAUTH, creds.to_json())
+            if not await self._refresh_oauth_credentials(creds):
+                return
 
         self._running = True
         self._task = asyncio.create_task(
@@ -312,12 +383,9 @@ class YouTubeChatSource:
                     self._on_status(l10n.tr(self._get_locale(), "yt.token_expired"))
                     self._running = False
                     return
-
-                def refresh() -> None:
-                    creds.refresh(Request())
-
-                await asyncio.to_thread(refresh)
-                keyring_store.set_password(KEY_YOUTUBE_OAUTH, creds.to_json())
+                if not await self._refresh_oauth_credentials(creds):
+                    self._running = False
+                    return
 
             try:
                 service = await asyncio.to_thread(
@@ -375,8 +443,11 @@ class YouTubeChatSource:
                         service,
                         [video_id],
                     )
+                    live_video_ids: list[str] = [video_id]
                 else:
-                    live_chat_ids = await asyncio.to_thread(discover_my_live_chat_ids, service)
+                    pairs = await asyncio.to_thread(discover_my_live_streams, service)
+                    live_chat_ids = [cid for cid, _ in pairs]
+                    live_video_ids = [vid for _, vid in pairs if isinstance(vid, str) and vid]
             except HttpError as e:
                 if video_id and _http_error_is_fallback_worthy(e):
                     if video_id:
@@ -441,7 +512,7 @@ class YouTubeChatSource:
             else:
                 fb_url = await asyncio.to_thread(_channel_live_fallback_url, service)
 
-            await self._poll_chats_round_robin(creds, live_chat_ids, fb_url)
+            await self._poll_chats_round_robin(creds, live_chat_ids, fb_url, live_video_ids)
             break
 
     async def _run_fallback_for_watch_url(self, watch_url: str) -> None:
@@ -506,10 +577,13 @@ class YouTubeChatSource:
         creds: Credentials,
         live_chat_ids: list[str],
         fallback_watch_url: str | None,
+        video_ids: list[str] | None = None,
     ) -> None:
         """One ``liveChatMessages.list`` at a time, rotating chats.
 
         Parallel loops per stream multiply quota (~N×); round-robin keeps total call rate ~1×.
+        Concurrent viewers (when ``video_ids`` is provided) are polled in a side task at a
+        slow cadence so the chat loop never blocks on the viewers call.
         """
         if not live_chat_ids:
             return
@@ -538,10 +612,32 @@ class YouTubeChatSource:
             self._on_status(l10n.tr(self._get_locale(), "yt.api_init", err=str(e)))
             return
 
+        viewers_task: asyncio.Task[None] | None = None
+        if video_ids and self._on_viewers_current is not None:
+            viewers_task = asyncio.create_task(
+                self._poll_concurrent_viewers(service, list(video_ids)),
+                name="youtube-viewers",
+            )
+
         page_tokens: dict[str, str | None] = {lcid: None for lcid in live_chat_ids}
         order = list(live_chat_ids)
         rr = 0
 
+        try:
+            await self._chat_round_robin_loop(service, order, page_tokens, rr, fallback_watch_url)
+        finally:
+            if viewers_task is not None and not viewers_task.done():
+                viewers_task.cancel()
+                await asyncio.gather(viewers_task, return_exceptions=True)
+
+    async def _chat_round_robin_loop(
+        self,
+        service: object,
+        order: list[str],
+        page_tokens: dict[str, str | None],
+        rr: int,
+        fallback_watch_url: str | None,
+    ) -> None:
         while self._running:
             lcid = order[rr % len(order)]
             rr += 1
@@ -598,6 +694,33 @@ class YouTubeChatSource:
             await asyncio.sleep(
                 max(interval_ms, YOUTUBE_MIN_POLL_INTERVAL_MS) / 1000.0,
             )
+
+    async def _poll_concurrent_viewers(self, service: object, video_ids: list[str]) -> None:
+        """Periodically pull ``concurrentViewers`` for the active broadcast(s).
+
+        Failures (HTTP, transport, parse) are logged and the loop continues so a transient
+        viewers-API hiccup never tears down the chat polling.
+        """
+        cb = self._on_viewers_current
+        if cb is None or not video_ids:
+            return
+        while self._running:
+            try:
+                total = await asyncio.to_thread(
+                    fetch_concurrent_viewers_total,
+                    service,
+                    video_ids,
+                )
+            except asyncio.CancelledError:
+                raise
+            except HttpError as exc:
+                logger.debug("YouTube concurrentViewers HTTP error: %s", exc)
+            except OSError as exc:
+                logger.debug("YouTube concurrentViewers network error: %s", exc)
+            else:
+                if total is not None:
+                    cb(int(total))
+            await asyncio.sleep(YOUTUBE_VIEWERS_POLL_INTERVAL_SEC)
 
     @staticmethod
     def _resolve_live_chat_ids_for_videos(service: object, video_ids: list[str]) -> list[str]:
