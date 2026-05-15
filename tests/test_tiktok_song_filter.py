@@ -89,6 +89,50 @@ async def test_analyze_lyrics_with_groq_success() -> None:
 
 
 @pytest.mark.asyncio
+async def test_analyze_lyrics_with_groq_title_only() -> None:
+    inner_json = json.dumps(
+        {
+            "status": "Risky",
+            "risk_score": 55,
+            "violations": ["uncertain"],
+            "dangerous_segments": [],
+        },
+    )
+    payload = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": inner_json,
+                },
+            },
+        ],
+    }
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json = MagicMock(return_value=payload)
+    inner = MagicMock()
+    inner.post = AsyncMock(return_value=mock_resp)
+    cm = MagicMock()
+    cm.__aenter__ = AsyncMock(return_value=inner)
+    cm.__aexit__ = AsyncMock(return_value=None)
+    with patch("stream_cheremsha.telegram.tiktok_song_filter.httpx.AsyncClient", return_value=cm):
+        out = await analyze_lyrics_with_groq(
+            "gsk-test",
+            "",
+            "en",
+            youtube_title="Some Artist - Track Name",
+        )
+    assert out.status == "Risky"
+    assert out.allows_enqueue() is False
+    sent = inner.post.await_args
+    assert sent is not None
+    user_msg = sent.kwargs["json"]["messages"][1]["content"]
+    assert "No lyrics" in user_msg
+    assert "Some Artist - Track Name" in user_msg
+
+
+@pytest.mark.asyncio
 async def test_analyze_lyrics_groq_429_message_en() -> None:
     err_body = json.dumps({"error": {"message": "Rate limit exceeded"}})
     mock_resp = MagicMock()

@@ -5,6 +5,8 @@ import contextlib
 import logging
 import threading
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import Literal
 
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
@@ -28,9 +30,20 @@ _CB_PLAYER = "player"
 _CB_REFRESH = "refresh"
 _CB_SKIP = "skip"
 _CB_RM_PREFIX = "rm:"  # rm:<track_id>
+_CB_RISKY_Y = "risky:y:"  # + pending_id (hex)
+_CB_RISKY_N = "risky:n:"
 
 MainLoopCall = Callable[[Callable[[], Awaitable[None]]], None]
 ModerationNoticeFn = Callable[[], str]
+EnqueueSongOutcome = str | tuple[str, Literal["info"]] | None
+
+
+@dataclass(frozen=True, slots=True)
+class RiskyDecisionResult:
+    """Result of admin approve/deny for a risky TikTok-filter pending track."""
+
+    handled: bool
+    answer_hint: str
 
 
 def _safe_user_display(update: Update) -> str:
@@ -53,13 +66,14 @@ class TelegramBotService:
         admin_id: int,
         song_requests_enabled: bool,
         call_on_main_loop: MainLoopCall,
-        enqueue_song: Callable[[str, str], Awaitable[str | None]],
+        enqueue_song: Callable[[str, str, int], Awaitable[EnqueueSongOutcome]],
         skip_song: Callable[[], Awaitable[None]],
         remove_song_by_id: Callable[[str], Awaitable[bool]],
         list_queue: Callable[
             [int],
             Awaitable[tuple[dict[str, str] | None, list[dict[str, str]]]],
         ],
+        on_risky_admin_decision: Callable[[str, bool], Awaitable[RiskyDecisionResult]],
         tiktok_lyrics_filter_enabled: bool = False,
         moderation_notice_text: ModerationNoticeFn | None = None,
     ) -> None:
@@ -70,6 +84,7 @@ class TelegramBotService:
         self._moderation_notice_text = moderation_notice_text
         self._call_on_main_loop = call_on_main_loop
         self._enqueue_song = enqueue_song
+        self._on_risky_admin_decision = on_risky_admin_decision
         self._skip_song = skip_song
         self._remove_song_by_id = remove_song_by_id
         self._list_queue = list_queue
@@ -105,6 +120,69 @@ class TelegramBotService:
         if t is not None:
             t.join(timeout=timeout_sec)
         self._thread = None
+
+    def schedule_risky_review(self, *, pending_id: str, admin_message_html: str) -> None:
+        """Called from the main UI thread after a song is flagged Risky by the AI filter."""
+        loop = self._loop
+        if loop is None:
+            logger.warning("Telegram bot: event loop not ready; risky admin prompt skipped")
+            return
+        try:
+            asyncio.run_coroutine_threadsafe(
+                self._deliver_risky_admin_prompt(admin_message_html, pending_id),
+                loop,
+            )
+        except Exception as e:
+            logger.warning("schedule_risky_review failed: %s", e)
+
+    def send_html_message_to_chat(self, chat_id: int, html: str) -> None:
+        """Fire-and-forget HTML message from the main thread (e.g. risky approve/deny notice)."""
+        if chat_id <= 0 or not (html or "").strip():
+            return
+        loop = self._loop
+        if loop is None:
+            return
+
+        async def _go() -> None:
+            app = self._app
+            if app is None:
+                return
+            await app.bot.send_message(
+                int(chat_id),
+                html,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
+            )
+
+        try:
+            asyncio.run_coroutine_threadsafe(_go(), loop)
+        except Exception as e:
+            logger.warning("send_html_message_to_chat failed: %s", e)
+
+    async def _deliver_risky_admin_prompt(self, admin_message_html: str, pending_id: str) -> None:
+        app = self._app
+        if app is None:
+            return
+        y_data = f"{_CB_RISKY_Y}{pending_id}"
+        n_data = f"{_CB_RISKY_N}{pending_id}"
+        if len(y_data) > 64 or len(n_data) > 64:
+            logger.warning("risky callback_data too long for pending_id=%r", pending_id)
+            return
+        kb = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton("✅ У чергу", callback_data=y_data),
+                    InlineKeyboardButton("❌ Ні", callback_data=n_data),
+                ],
+            ],
+        )
+        await app.bot.send_message(
+            int(self._admin_id),
+            admin_message_html,
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb,
+            disable_web_page_preview=True,
+        )
 
     def _thread_main(self) -> None:
         try:
@@ -207,11 +285,49 @@ class TelegramBotService:
         q = update.callback_query
         if q is None:
             return
-        await q.answer()
         user = update.effective_user
         uid = int(user.id) if user is not None else 0
         is_admin = uid == int(self._admin_id)
         data = (q.data or "").strip()
+
+        if data.startswith(_CB_RISKY_Y) or data.startswith(_CB_RISKY_N):
+            if not is_admin:
+                await q.answer("Недостатньо прав.", show_alert=True)
+                return
+            approved = data.startswith(_CB_RISKY_Y)
+            prefix = _CB_RISKY_Y if approved else _CB_RISKY_N
+            pid = data[len(prefix) :].strip()
+            if not pid:
+                await q.answer("Невірний ідентифікатор.", show_alert=True)
+                return
+            fut: asyncio.Future[RiskyDecisionResult] = asyncio.get_running_loop().create_future()
+
+            async def _work() -> None:
+                try:
+                    res = await self._on_risky_admin_decision(pid, approved)
+                    fut.set_result(res)
+                except Exception as e:
+                    fut.set_exception(e)
+
+            self._call_on_main_loop(_work)
+            try:
+                res = await asyncio.wait_for(fut, timeout=120.0)
+            except Exception:
+                logger.exception("risky admin decision failed")
+                await q.answer("Помилка обробки.", show_alert=True)
+                return
+            hint = (res.answer_hint or "OK").strip()
+            if len(hint) > 180:
+                hint = hint[:177] + "…"
+            await q.answer(hint, show_alert=False)
+            if res.handled and q.message is not None:
+                try:
+                    await q.message.edit_reply_markup(reply_markup=None)
+                except Exception as e:
+                    logger.debug("edit_reply_markup after risky: %s", e)
+            return
+
+        await q.answer()
 
         if data in (_CB_MENU,):
             if q.message is not None:
@@ -354,18 +470,28 @@ class TelegramBotService:
                     reply_markup=self._cancel_markup(),
                 )
 
-        fut: asyncio.Future[str | None] = asyncio.get_running_loop().create_future()
+        fut: asyncio.Future[EnqueueSongOutcome] = asyncio.get_running_loop().create_future()
+        chat_id = int(update.effective_chat.id)
 
         async def _enqueue() -> None:
-            err = await self._enqueue_song(vid, who)
-            fut.set_result(err)
+            out = await self._enqueue_song(vid, who, chat_id)
+            fut.set_result(out)
 
         self._call_on_main_loop(_enqueue)
-        err = await fut
+        outcome = await fut
         is_admin = int(update.effective_user.id) == int(self._admin_id)
-        if err:
+        if isinstance(outcome, tuple):
+            msg, kind = outcome
+            if kind == "info":
+                await update.effective_chat.send_message(
+                    msg,
+                    reply_markup=self._main_menu_markup(is_admin=is_admin),
+                    disable_web_page_preview=True,
+                )
+                return
+        if outcome:
             await update.effective_chat.send_message(
-                f"❌ {err}",
+                f"❌ {outcome}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=self._main_menu_markup(is_admin=is_admin),
                 disable_web_page_preview=True,

@@ -18,3 +18,4 @@ class ChatMessage:
     platform: ChatPlatform
     received_at: datetime
     author_avatar_url: str = ""
+    tiktok_stable_key: str = ""

@@ -2,6 +2,7 @@ import asyncio
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import patch
 
 from stream_cheremsha.actions.engine import PlatformActionsEngine
 from stream_cheremsha.actions.events import ChatMessageEvent, GiftReceivedEvent
@@ -908,6 +909,79 @@ def test_engine_run_program_invokes_interpreter() -> None:
     )
     asyncio.run(engine.on_chat_message(ev))
     assert st == []
+
+
+def test_engine_simulate_keystrokes_invokes_backend() -> None:
+    sink = FakeSink()
+    captured: list[tuple[str, dict[str, object]]] = []
+
+    def _fake_run(seq: str, **kw: object) -> None:
+        captured.append((seq, dict(kw)))
+
+    rules = [
+        RuleV1(
+            id="r1",
+            enabled=True,
+            events=({"type": "chat_keyword", "params": {"keyword": "hello"}},),
+            actions=[
+                {
+                    "type": "simulate_keystrokes",
+                    "params": {
+                        "sequence": "{ENTER}{username}",
+                        "hold_ms": 50,
+                        "game_compatibility": True,
+                        "modifier_ctrl": True,
+                        "modifier_alt": False,
+                        "modifier_shift": True,
+                    },
+                },
+            ],
+        ),
+    ]
+    engine = PlatformActionsEngine(sink, rules)
+    ev = ChatMessageEvent(
+        platform=ChatPlatform.TWITCH,
+        author="alice",
+        text="hello world",
+        received_at=datetime.now(tz=UTC),
+    )
+    with patch("stream_cheremsha.actions.engine.run_simulate_keystrokes", side_effect=_fake_run):
+        asyncio.run(engine.on_chat_message(ev))
+    assert len(captured) == 1
+    seq, kw = captured[0]
+    assert seq == "{ENTER}alice"
+    assert kw["hold_ms"] == 50
+    assert kw["game_mode"] is True
+    assert kw["with_ctrl"] is True
+    assert kw["with_alt"] is False
+    assert kw["with_shift"] is True
+
+
+def test_engine_simulate_keystrokes_value_error_surfaces_in_status() -> None:
+    sink = FakeSink()
+    st: list[str] = []
+    rules = [
+        RuleV1(
+            id="r1",
+            enabled=True,
+            events=({"type": "chat_keyword", "params": {"keyword": "hello"}},),
+            actions=[{"type": "simulate_keystrokes", "params": {"sequence": "{BAD}"}}],
+        ),
+    ]
+    engine = PlatformActionsEngine(sink, rules, status_callback=st.append)
+    ev = ChatMessageEvent(
+        platform=ChatPlatform.TWITCH,
+        author="alice",
+        text="hello world",
+        received_at=datetime.now(tz=UTC),
+    )
+
+    def _boom(_seq: str, **_kw: object) -> None:
+        raise ValueError("unit test")
+
+    with patch("stream_cheremsha.actions.engine.run_simulate_keystrokes", side_effect=_boom):
+        asyncio.run(engine.on_chat_message(ev))
+    assert any("simulate_keystrokes" in m and "unit test" in m for m in st)
 
 
 def test_engine_run_exe_legacy_type_and_exe_path_key() -> None:

@@ -306,6 +306,39 @@ Item {
         }
     }
 
+    /** Expand/collapse folder: clone tree, toggle, reassign model (reliable with QML Repeater + QVariantMap). */
+    function _commitFolderToggleUi(fid) {
+        if (!fid)
+            return;
+        function toggle(nodes) {
+            if (!nodes)
+                return false;
+            for (var i = 0; i < nodes.length; i++) {
+                var n = nodes[i];
+                if (!n)
+                    continue;
+                if (n.kind === "folder" && ("" + n.id) === fid) {
+                    n.expanded = !n.expanded;
+                    return true;
+                }
+                if (n.kind === "folder") {
+                    if (toggle(n.children || []))
+                        return true;
+                }
+            }
+            return false;
+        }
+        var tree = root._cloneUiTree(root.rulesUiTree);
+        if (!toggle(tree))
+            return;
+        root._preserveScroll(function() {
+            root.rulesUiTree = tree;
+            root._nextUiRevision();
+            root._saveUiLayoutOnly();
+            root._saveRulesPayload(false);
+        });
+    }
+
     function _normalizeUiTree(treeIn) {
         var tree = _cloneUiTree(treeIn);
         if (!tree.length)
@@ -894,6 +927,7 @@ Item {
         { text: api ? api.loc("actions.play_random_myinstants_ua") : "Random MyInstants UA", value: "play_random_myinstants_ua" },
         { text: api ? api.loc("actions.write_file") : "Write to file", value: "write_file" },
         { text: api ? api.loc("actions.run_program") : "Run program", value: "run_program" },
+        { text: api ? api.loc("actions.simulate_keystrokes") : "Simulate keystrokes", value: "simulate_keystrokes" },
         { text: api ? api.loc("actions.speak_tts") : "Speak text (TTS)", value: "speak_tts" },
         { text: api ? api.loc("actions.show_overlay") : "Show on Actions overlay", value: "show_overlay" },
         { text: api ? api.loc("actions.obs_scene") : "OBS scene", value: "obs_scene" }
@@ -933,6 +967,45 @@ Item {
             Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
             Behavior on border.color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
         }
+    }
+
+    // Same pill toggle look as ConnectionsView.qml `ConnMainSwitch`.
+    component ConnToggleSwitch: Switch {
+        id: toggleSw
+        padding: 0
+        implicitWidth: 46
+        implicitHeight: 24
+        focusPolicy: Qt.NoFocus
+        hoverEnabled: true
+        transformOrigin: Item.Right
+        scale: toggleSw.hovered ? 1.06 : 1.0
+        Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+
+        indicator: Rectangle {
+            width: toggleSw.implicitWidth
+            height: toggleSw.implicitHeight
+            radius: 12
+            color: toggleSw.checked ? "#16a34a" : "#dc2626"
+            border.width: 1
+            border.color: toggleSw.checked ? "#22c55e" : "#ef4444"
+            opacity: toggleSw.enabled ? 1.0 : 0.55
+            Behavior on color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
+            Behavior on border.color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
+
+            Rectangle {
+                width: 18
+                height: 18
+                radius: 9
+                y: 3
+                x: toggleSw.checked ? (parent.width - width - 3) : 3
+                color: "#0b0f17"
+                border.width: 1
+                border.color: "#1f2937"
+                Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+            }
+        }
+
+        contentItem: Item {}
     }
 
     component UiRulesDropGap: Item {
@@ -980,7 +1053,8 @@ Item {
         property int depth: 0
         property var nextSibling: null
 
-        height: 58
+        implicitHeight: ruleMainCol.implicitHeight + 20
+        height: implicitHeight
         radius: 10
         x: depth * 14
         width: Math.max(120, parent.width - depth * 14)
@@ -1004,170 +1078,213 @@ Item {
             }
         }
 
-        RowLayout {
+        ColumnLayout {
+            id: ruleMainCol
             anchors.fill: parent
             anchors.margins: 10
-            spacing: 8
+            spacing: 6
 
-            Item {
-                id: dragPad
-                Layout.preferredWidth: 28
-                Layout.fillHeight: true
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
 
-                // NOTE: don't bind Drag.active (can create binding loops on some Qt builds).
-                Drag.supportedActions: Qt.MoveAction
-                Drag.proposedAction: Qt.MoveAction
-                Drag.hotSpot: Qt.point(width / 2, height / 2)
-                Drag.dragType: Drag.Automatic
-                Drag.mimeData: {
-                    "text/plain": JSON.stringify({
-                        scope: "actions-rules",
-                        kind: "rule",
-                        rule_id: rid
-                    }),
-                    "text": JSON.stringify({
-                        scope: "actions-rules",
-                        kind: "rule",
-                        rule_id: rid
-                    })
-                }
+                Item {
+                    id: dragPad
+                    Layout.preferredWidth: 26
+                    Layout.preferredHeight: 28
+                    Layout.alignment: Qt.AlignTop
 
-                Text {
-                    anchors.centerIn: parent
-                    text: "⠿"
-                    color: muted
-                    font.pixelSize: 14
-                }
-
-                MouseArea {
-                    id: ruleDragMa
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    preventStealing: true
-                    cursorShape: Qt.OpenHandCursor
-                    property real pressX: 0
-                    property real pressY: 0
-                    property bool armed: false
-
-                    onPressed: function(mouse) {
-                        pressX = mouse.x;
-                        pressY = mouse.y;
-                        armed = true;
-                        dragPad.Drag.active = false;
-                        cursorShape = Qt.OpenHandCursor;
+                    // NOTE: don't bind Drag.active (can create binding loops on some Qt builds).
+                    Drag.supportedActions: Qt.MoveAction
+                    Drag.proposedAction: Qt.MoveAction
+                    Drag.hotSpot: Qt.point(width / 2, height / 2)
+                    Drag.dragType: Drag.Automatic
+                    Drag.mimeData: {
+                        "text/plain": JSON.stringify({
+                            scope: "actions-rules",
+                            kind: "rule",
+                            rule_id: rid
+                        }),
+                        "text": JSON.stringify({
+                            scope: "actions-rules",
+                            kind: "rule",
+                            rule_id: rid
+                        })
                     }
-                    onPositionChanged: function(mouse) {
-                        if (!armed)
-                            return;
-                        var dx = Math.abs(mouse.x - pressX);
-                        var dy = Math.abs(mouse.y - pressY);
-                        if (dx + dy >= 10) {
-                            dragPad.Drag.hotSpot = Qt.point(pressX, pressY);
-                            dragPad.Drag.active = true;
-                            cursorShape = Qt.ClosedHandCursor;
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "⠿"
+                        color: muted
+                        font.pixelSize: 14
+                    }
+
+                    MouseArea {
+                        id: ruleDragMa
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        preventStealing: true
+                        cursorShape: Qt.OpenHandCursor
+                        property real pressX: 0
+                        property real pressY: 0
+                        property bool armed: false
+
+                        onPressed: function(mouse) {
+                            pressX = mouse.x;
+                            pressY = mouse.y;
+                            armed = true;
+                            dragPad.Drag.active = false;
+                            cursorShape = Qt.OpenHandCursor;
+                        }
+                        onPositionChanged: function(mouse) {
+                            if (!armed)
+                                return;
+                            var dx = Math.abs(mouse.x - pressX);
+                            var dy = Math.abs(mouse.y - pressY);
+                            if (dx + dy >= 10) {
+                                dragPad.Drag.hotSpot = Qt.point(pressX, pressY);
+                                dragPad.Drag.active = true;
+                                cursorShape = Qt.ClosedHandCursor;
+                            }
+                        }
+                        onReleased: function(mouse) {
+                            armed = false;
+                            dragPad.Drag.active = false;
+                            cursorShape = Qt.OpenHandCursor;
+                        }
+                        onCanceled: function() {
+                            armed = false;
+                            dragPad.Drag.active = false;
+                            cursorShape = Qt.OpenHandCursor;
                         }
                     }
-                    onReleased: function(mouse) {
-                        armed = false;
-                        dragPad.Drag.active = false;
-                        cursorShape = Qt.OpenHandCursor;
+                }
+
+                ConnToggleSwitch {
+                    Layout.alignment: Qt.AlignTop
+                    Layout.topMargin: 2
+                    checked: ruleObj ? !!ruleObj.enabled : false
+                    enabled: ruleObj !== null && idxInRules >= 0
+                    onClicked: {
+                        if (ruleObj === null || idxInRules < 0)
+                            return;
+                        var r = root._copyRule(ruleObj);
+                        if (r == null)
+                            return;
+                        r.enabled = checked;
+                        root._setRule(idxInRules, r);
+                        root._save(false);
                     }
-                    onCanceled: function() {
-                        armed = false;
-                        dragPad.Drag.active = false;
-                        cursorShape = Qt.OpenHandCursor;
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 40
+                    Layout.alignment: Qt.AlignTop
+                    spacing: 2
+
+                    Text {
+                        id: ruleTitleLine
+                        Layout.fillWidth: true
+                        color: ink
+                        font.pixelSize: 13
+                        wrapMode: Text.WordWrap
+                        maximumLineCount: 2
+                        elide: Text.ElideRight
+                        text: root._ruleListTitle(ruleObj || {})
+                    }
+                    Text {
+                        id: ruleSubLine
+                        Layout.fillWidth: true
+                        color: muted
+                        font.pixelSize: 11
+                        wrapMode: Text.WordWrap
+                        maximumLineCount: 3
+                        elide: Text.ElideRight
+                        text: root._ruleListSubtitle(ruleObj || {})
+                    }
+                }
+
+                RowLayout {
+                    id: ruleActionsRow
+                    spacing: 4
+                    Layout.alignment: Qt.AlignTop
+                    Layout.preferredWidth: 110
+
+                    ConnPillButton {
+                            text: "▶"
+                            pillFontSize: 12
+                            leftPadding: 8
+                            rightPadding: 8
+                            topPadding: 4
+                            bottomPadding: 4
+                            Layout.preferredWidth: 34
+                            Layout.maximumWidth: 34
+                            hoverEnabled: true
+                            ToolTip.visible: hovered
+                            ToolTip.delay: 350
+                            ToolTip.text: api ? api.loc("actions.rule_preview_tt") : "Test this rule (preview)"
+                            enabled: ruleObj !== null && !!ruleObj.id
+                            onClicked: {
+                                if (ruleObj === null)
+                                    return;
+                                var pr = root._ruleToPersistObj(ruleObj);
+                                if (!pr)
+                                    return;
+                                var m = actApi.previewRuleLive(platform, accountKey, pr);
+                                root._notifyPreviewToast(m);
+                            }
+                        }
+
+                        ConnPillButton {
+                            text: "\u29C9"
+                            pillFontSize: 13
+                            leftPadding: 8
+                            rightPadding: 8
+                            topPadding: 4
+                            bottomPadding: 4
+                            Layout.preferredWidth: 34
+                            Layout.maximumWidth: 34
+                            hoverEnabled: true
+                            ToolTip.visible: hovered
+                            ToolTip.delay: 350
+                            ToolTip.text: api ? api.loc("actions.duplicate_btn") : "Copy"
+                            enabled: idxInRules >= 0
+                            onClicked: root._duplicateRuleAt(idxInRules)
+                        }
+
+                        ConnPillButton {
+                            text: "\u2715"
+                            pillFontSize: 13
+                            leftPadding: 8
+                            rightPadding: 8
+                            topPadding: 4
+                            bottomPadding: 4
+                            Layout.preferredWidth: 34
+                            Layout.maximumWidth: 34
+                            hoverEnabled: true
+                            ToolTip.visible: hovered
+                            ToolTip.delay: 350
+                            ToolTip.text: api ? api.loc("actions.delete") : "Delete"
+                            enabled: idxInRules >= 0
+                            onClicked: {
+                                var killId = rid;
+                                var copy = rulesModel.slice();
+                                copy.splice(idxInRules, 1);
+                                root._preserveScroll(function() {
+                                    rulesModel = copy;
+                                    root._patchUiRemoveRuleId(killId);
+                                    if (("" + root.selectedRuleId) === killId)
+                                        root.selectedRuleId = "";
+                                    root._syncRulesModelOrder();
+                                    root._saveUiLayoutOnly();
+                                    root._saveRulesPayload(false);
+                                });
+                            }
+                        }
                     }
                 }
             }
-
-            Switch {
-                checked: ruleObj ? !!ruleObj.enabled : false
-                enabled: ruleObj !== null && idxInRules >= 0
-                onClicked: {
-                    if (ruleObj === null || idxInRules < 0)
-                        return;
-                    var r = root._copyRule(ruleObj);
-                    if (r == null)
-                        return;
-                    r.enabled = checked;
-                    root._setRule(idxInRules, r);
-                    root._save(false);
-                }
-            }
-
-            Item {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                Layout.minimumWidth: 80
-                Layout.alignment: Qt.AlignVCenter
-                implicitHeight: ruleTitleLine.implicitHeight + 2 + ruleSubLine.implicitHeight
-
-                Text {
-                    id: ruleTitleLine
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.top: parent.top
-                    color: ink
-                    font.pixelSize: 13
-                    wrapMode: Text.NoWrap
-                    elide: Text.ElideRight
-                    text: root._ruleListTitle(ruleObj || {})
-                }
-                Text {
-                    id: ruleSubLine
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.top: ruleTitleLine.bottom
-                    anchors.topMargin: 2
-                    color: muted
-                    font.pixelSize: 11
-                    wrapMode: Text.NoWrap
-                    elide: Text.ElideRight
-                    text: root._ruleListSubtitle(ruleObj || {})
-                }
-            }
-
-            ConnPillButton {
-                text: "▶"
-                pillFontSize: 12
-                enabled: ruleObj !== null && !!ruleObj.id
-                onClicked: {
-                    if (ruleObj === null)
-                        return;
-                    var pr = root._ruleToPersistObj(ruleObj);
-                    if (!pr)
-                        return;
-                    var m = actApi.previewRuleLive(platform, accountKey, pr);
-                    root._notifyPreviewToast(m);
-                }
-            }
-
-            ConnPillButton {
-                text: api ? api.loc("actions.duplicate_btn") : "Copy"
-                pillFontSize: 12
-                enabled: idxInRules >= 0
-                onClicked: root._duplicateRuleAt(idxInRules)
-            }
-
-            ConnPillButton {
-                text: api ? api.loc("actions.delete") : "Delete"
-                enabled: idxInRules >= 0
-                onClicked: {
-                    var killId = rid;
-                    var copy = rulesModel.slice();
-                    copy.splice(idxInRules, 1);
-                    root._preserveScroll(function() {
-                        rulesModel = copy;
-                        root._patchUiRemoveRuleId(killId);
-                        if (("" + root.selectedRuleId) === killId)
-                            root.selectedRuleId = "";
-                        root._syncRulesModelOrder();
-                        root._saveUiLayoutOnly();
-                        root._saveRulesPayload(false);
-                    });
-                }
-            }
-        }
 
         DropArea {
             anchors.fill: parent
@@ -1214,6 +1331,28 @@ Item {
             color: "#141b29"
             border.width: 1
             border.color: cardEdge
+
+            DropArea {
+                anchors.fill: parent
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: folderHeader.radius
+                    color: parent.containsDrag ? "#2c6bff33" : "transparent"
+                    border.width: parent.containsDrag ? 1 : 0
+                    border.color: "#4d8dff"
+                }
+
+                onDropped: function(drop) {
+                    var payload = root._dropPayload(drop);
+                    if (!payload || payload.scope !== "actions-rules")
+                        return;
+                    if (payload.kind !== "rule")
+                        return;
+                    root._dropRuleOntoFolder(payload.rule_id, fid);
+                    drop.acceptProposedAction();
+                }
+            }
 
             RowLayout {
                 anchors.fill: parent
@@ -1291,16 +1430,33 @@ Item {
                     }
                 }
 
-                Text {
-                    text: folderRoot.expanded ? "▾" : "▸"
-                    color: ink
-                    font.pixelSize: 14
+                Button {
+                    id: folderChevronBtn
+                    Layout.preferredWidth: 36
+                    Layout.preferredHeight: 30
                     Layout.alignment: Qt.AlignVCenter
+                    flat: true
+                    focusPolicy: Qt.NoFocus
+                    padding: 0
+                    topPadding: 0
+                    bottomPadding: 0
+                    leftPadding: 0
+                    rightPadding: 0
+                    text: folderRoot.expanded ? "▾" : "▸"
+                    onClicked: root._commitFolderToggleUi(fid)
+                    background: Item {}
+                    contentItem: Text {
+                        text: folderChevronBtn.text
+                        color: ink
+                        font.pixelSize: 14
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
                 }
 
                 TextField {
                     Layout.fillWidth: true
-                    Layout.minimumWidth: 80
+                    Layout.minimumWidth: 0
                     color: ink
                     font.pixelSize: 13
                     maximumLength: 120
@@ -1366,71 +1522,19 @@ Item {
                 }
 
                 ConnPillButton {
-                    text: api ? api.loc("actions.folder_delete") : "Delete folder"
-                    pillFontSize: 11
-                    leftPadding: 10
-                    rightPadding: 10
+                    text: "\u2715"
+                    pillFontSize: 13
+                    leftPadding: 8
+                    rightPadding: 8
                     topPadding: 4
                     bottomPadding: 4
+                    Layout.preferredWidth: 34
+                    Layout.maximumWidth: 34
+                    hoverEnabled: true
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 350
+                    ToolTip.text: api ? api.loc("actions.folder_delete") : "Delete folder"
                     onClicked: root._deleteFolderKeepRules(fid)
-                }
-            }
-
-            MouseArea {
-                anchors.fill: parent
-                acceptedButtons: Qt.LeftButton
-                z: -1
-                onClicked: {
-                    function toggle(nodes) {
-                        if (!nodes)
-                            return false;
-                        for (var i = 0; i < nodes.length; i++) {
-                            var n = nodes[i];
-                            if (!n)
-                                continue;
-                            if (n.kind === "folder" && ("" + n.id) === fid) {
-                                n.expanded = !n.expanded;
-                                return true;
-                            }
-                            if (n.kind === "folder") {
-                                if (toggle(n.children || []))
-                                    return true;
-                            }
-                        }
-                        return false;
-                    }
-
-                    var tree = root._cloneUiTree(rulesUiTree);
-                    if (!toggle(tree))
-                        return;
-                    root._preserveScroll(function() {
-                        rulesUiTree = tree;
-                        root._nextUiRevision();
-                        root._saveUiLayoutOnly();
-                        root._saveRulesPayload(false);
-                    });
-                }
-            }
-
-            DropArea {
-                anchors.fill: parent
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius: folderHeader.radius
-                    color: parent.containsDrag ? "#2c6bff33" : "transparent"
-                    border.width: parent.containsDrag ? 1 : 0
-                    border.color: "#4d8dff"
-                }
-
-                onDropped: function(drop) {
-                    var payload = root._dropPayload(drop);
-                    if (!payload || payload.scope !== "actions-rules")
-                        return;
-                    if (payload.kind !== "rule")
-                        return;
-                    root._dropRuleOntoFolder(payload.rule_id, fid);
-                    drop.acceptProposedAction();
                 }
             }
         }
@@ -1440,13 +1544,6 @@ Item {
             width: parent.width
             height: expanded ? folderInnerCol.implicitHeight : 0
             clip: true
-
-            Behavior on height {
-                NumberAnimation {
-                    duration: 220
-                    easing.type: Easing.OutCubic
-                }
-            }
 
             Rectangle {
                 anchors.fill: folderInnerCol
@@ -2486,7 +2583,7 @@ Item {
                     ScrollBar.vertical.policy: ScrollBar.AlwaysOn
 
                     Column {
-                        width: Math.max(120, rulesList.availableWidth - 22)
+                        width: Math.max(120, rulesList.availableWidth - 28)
                         spacing: 8
 
                         UiRulesDropGap {
@@ -3435,6 +3532,24 @@ Item {
                         delegate: Rectangle {
                             readonly property var page: actionsList.rootApi
 
+                            function insertKsTag(tag) {
+                                if (aType !== "simulate_keystrokes")
+                                    return;
+                                var aa = page.actionsModel;
+                                if (!aa || aIdx < 0 || aIdx >= aa.length)
+                                    return;
+                                if (!aa[aIdx].params)
+                                    aa[aIdx].params = {};
+                                var fld = ksStrokeSeq;
+                                var pos = fld.cursorPosition;
+                                var t0 = fld.text;
+                                fld.text = t0.substring(0, pos) + tag + t0.substring(pos);
+                                fld.cursorPosition = pos + tag.length;
+                                aa[aIdx].params.sequence = fld.text;
+                                page.actionsModel = aa;
+                                page._scheduleCommitSelectedRuleActions();
+                            }
+
                             Layout.fillWidth: true
                             width: actionsList.width
                             radius: 10
@@ -3500,6 +3615,15 @@ Item {
                                             };
                                             if (t === "write_file") aa[aIdx].params = { file_path: "", text: "", mode: "overwrite" };
                                             if (t === "run_program") aa[aIdx].params = { program_path: "", arguments: "" };
+                                            if (t === "simulate_keystrokes") aa[aIdx].params = {
+                                                sequence: "",
+                                                hold_ms: 0,
+                                                game_compatibility: false,
+                                                use_interception: false,
+                                                modifier_ctrl: false,
+                                                modifier_alt: false,
+                                                modifier_shift: false
+                                            };
                                             if (t === "speak_tts") aa[aIdx].params = { text: "" };
                                             if (t === "show_overlay") aa[aIdx].params = { text: "", seconds: 3 };
                                             if (t === "obs_scene") aa[aIdx].params = {
@@ -4044,6 +4168,284 @@ Item {
                                     }
                                 }
 
+                                // Simulate keystrokes (Windows SendInput)
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+                                    visible: aType === "simulate_keystrokes"
+
+                                    Text {
+                                        text: api ? api.loc("actions.keystrokes_sequence_label") : "Sequence"
+                                        color: muted
+                                        font.pixelSize: 12
+                                    }
+                                    TextArea {
+                                        id: ksStrokeSeq
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 88
+                                        wrapMode: TextArea.Wrap
+                                        placeholderText: api ? api.loc("actions.keystrokes_sequence_ph") : "{END}{F7}"
+                                        text: (modelData && modelData.params && modelData.params.sequence !== undefined) ? ("" + modelData.params.sequence) : ""
+                                        color: ink
+                                        placeholderTextColor: muted
+                                        background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                        onTextChanged: {
+                                            var aa = page.actionsModel;
+                                            if (!aa || aIdx < 0 || aIdx >= aa.length)
+                                                return;
+                                            if (!aa[aIdx].params)
+                                                aa[aIdx].params = {};
+                                            aa[aIdx].params.sequence = text;
+                                            page.actionsModel = aa;
+                                            page._scheduleCommitSelectedRuleActions();
+                                        }
+                                        onActiveFocusChanged: {
+                                            page.isActionTextEditing = activeFocus;
+                                            if (!activeFocus)
+                                                page._commitSelectedRuleActions(false);
+                                        }
+                                    }
+
+                                    Text {
+                                        text: api ? api.loc("actions.keystrokes_modifiers") : "Modifiers (for tags only)"
+                                        color: muted
+                                        font.pixelSize: 12
+                                    }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 12
+                                        CheckBox {
+                                            id: ksModCtrl
+                                            text: "Ctrl"
+                                            checked: !!(modelData && modelData.params && modelData.params.modifier_ctrl)
+                                            onCheckedChanged: {
+                                                var aa = page.actionsModel;
+                                                if (!aa || aIdx < 0 || aIdx >= aa.length)
+                                                    return;
+                                                if (!aa[aIdx].params)
+                                                    aa[aIdx].params = {};
+                                                if (aa[aIdx].params.modifier_ctrl === ksModCtrl.checked)
+                                                    return;
+                                                aa[aIdx].params.modifier_ctrl = ksModCtrl.checked;
+                                                page.actionsModel = aa;
+                                                page._scheduleCommitSelectedRuleActions();
+                                            }
+                                        }
+                                        CheckBox {
+                                            id: ksModAlt
+                                            text: "Alt"
+                                            checked: !!(modelData && modelData.params && modelData.params.modifier_alt)
+                                            onCheckedChanged: {
+                                                var aa = page.actionsModel;
+                                                if (!aa || aIdx < 0 || aIdx >= aa.length)
+                                                    return;
+                                                if (!aa[aIdx].params)
+                                                    aa[aIdx].params = {};
+                                                if (aa[aIdx].params.modifier_alt === ksModAlt.checked)
+                                                    return;
+                                                aa[aIdx].params.modifier_alt = ksModAlt.checked;
+                                                page.actionsModel = aa;
+                                                page._scheduleCommitSelectedRuleActions();
+                                            }
+                                        }
+                                        CheckBox {
+                                            id: ksModShift
+                                            text: "Shift"
+                                            checked: !!(modelData && modelData.params && modelData.params.modifier_shift)
+                                            onCheckedChanged: {
+                                                var aa = page.actionsModel;
+                                                if (!aa || aIdx < 0 || aIdx >= aa.length)
+                                                    return;
+                                                if (!aa[aIdx].params)
+                                                    aa[aIdx].params = {};
+                                                if (aa[aIdx].params.modifier_shift === ksModShift.checked)
+                                                    return;
+                                                aa[aIdx].params.modifier_shift = ksModShift.checked;
+                                                page.actionsModel = aa;
+                                                page._scheduleCommitSelectedRuleActions();
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        text: api ? api.loc("actions.keystrokes_insert_hint") : "Insert special keys"
+                                        color: muted
+                                        font.pixelSize: 12
+                                    }
+                                    TabBar {
+                                        id: ksKeyTabs
+                                        Layout.fillWidth: true
+                                        background: Rectangle { color: "transparent" }
+                                        TabButton {
+                                            text: api ? api.loc("actions.keystrokes_tab_nav") : "Nav"
+                                            width: implicitWidth + 16
+                                        }
+                                        TabButton {
+                                            text: api ? api.loc("actions.keystrokes_tab_editing") : "Editing"
+                                            width: implicitWidth + 16
+                                        }
+                                        TabButton {
+                                            text: api ? api.loc("actions.keystrokes_tab_fn") : "F-keys"
+                                            width: implicitWidth + 16
+                                        }
+                                        TabButton {
+                                            text: api ? api.loc("actions.keystrokes_tab_mouse") : "Mouse"
+                                            width: implicitWidth + 16
+                                        }
+                                    }
+                                    StackLayout {
+                                        Layout.fillWidth: true
+                                        currentIndex: ksKeyTabs.currentIndex
+                                        GridLayout {
+                                            columns: 4
+                                            rowSpacing: 6
+                                            columnSpacing: 6
+                                            ConnPillButton { pillFontSize: 11; text: "Home"; onClicked: insertKsTag("{HOME}") }
+                                            ConnPillButton { pillFontSize: 11; text: "End"; onClicked: insertKsTag("{END}") }
+                                            ConnPillButton { pillFontSize: 11; text: "PgUp"; onClicked: insertKsTag("{PGUP}") }
+                                            ConnPillButton { pillFontSize: 11; text: "PgDn"; onClicked: insertKsTag("{PGDN}") }
+                                            ConnPillButton { pillFontSize: 11; text: "↑"; onClicked: insertKsTag("{UP}") }
+                                            ConnPillButton { pillFontSize: 11; text: "↓"; onClicked: insertKsTag("{DOWN}") }
+                                            ConnPillButton { pillFontSize: 11; text: "←"; onClicked: insertKsTag("{LEFT}") }
+                                            ConnPillButton { pillFontSize: 11; text: "→"; onClicked: insertKsTag("{RIGHT}") }
+                                            ConnPillButton { pillFontSize: 11; text: "Ins"; onClicked: insertKsTag("{INSERT}") }
+                                            ConnPillButton { pillFontSize: 11; text: "Del"; onClicked: insertKsTag("{DELETE}") }
+                                        }
+                                        GridLayout {
+                                            columns: 4
+                                            rowSpacing: 6
+                                            columnSpacing: 6
+                                            ConnPillButton { pillFontSize: 11; text: "Enter"; onClicked: insertKsTag("{ENTER}") }
+                                            ConnPillButton { pillFontSize: 11; text: "Space"; onClicked: insertKsTag("{SPACE}") }
+                                            ConnPillButton { pillFontSize: 11; text: "Tab"; onClicked: insertKsTag("{TAB}") }
+                                            ConnPillButton { pillFontSize: 11; text: "Esc"; onClicked: insertKsTag("{ESC}") }
+                                            ConnPillButton { pillFontSize: 11; text: "Bksp"; onClicked: insertKsTag("{BACKSPACE}") }
+                                            ConnPillButton { pillFontSize: 11; text: "Pause"; onClicked: insertKsTag("{PAUSE}") }
+                                            ConnPillButton { pillFontSize: 11; text: "Caps"; onClicked: insertKsTag("{CAPSLOCK}") }
+                                        }
+                                        GridLayout {
+                                            columns: 6
+                                            rowSpacing: 6
+                                            columnSpacing: 6
+                                            ConnPillButton { pillFontSize: 11; text: "F1"; onClicked: insertKsTag("{F1}") }
+                                            ConnPillButton { pillFontSize: 11; text: "F2"; onClicked: insertKsTag("{F2}") }
+                                            ConnPillButton { pillFontSize: 11; text: "F3"; onClicked: insertKsTag("{F3}") }
+                                            ConnPillButton { pillFontSize: 11; text: "F4"; onClicked: insertKsTag("{F4}") }
+                                            ConnPillButton { pillFontSize: 11; text: "F5"; onClicked: insertKsTag("{F5}") }
+                                            ConnPillButton { pillFontSize: 11; text: "F6"; onClicked: insertKsTag("{F6}") }
+                                            ConnPillButton { pillFontSize: 11; text: "F7"; onClicked: insertKsTag("{F7}") }
+                                            ConnPillButton { pillFontSize: 11; text: "F8"; onClicked: insertKsTag("{F8}") }
+                                            ConnPillButton { pillFontSize: 11; text: "F9"; onClicked: insertKsTag("{F9}") }
+                                            ConnPillButton { pillFontSize: 11; text: "F10"; onClicked: insertKsTag("{F10}") }
+                                            ConnPillButton { pillFontSize: 11; text: "F11"; onClicked: insertKsTag("{F11}") }
+                                            ConnPillButton { pillFontSize: 11; text: "F12"; onClicked: insertKsTag("{F12}") }
+                                        }
+                                        RowLayout {
+                                            spacing: 8
+                                            ConnPillButton { pillFontSize: 11; text: api ? api.loc("actions.keystrokes_left_click") : "Left click"; onClicked: insertKsTag("{LCLICK}") }
+                                            ConnPillButton { pillFontSize: 11; text: api ? api.loc("actions.keystrokes_right_click") : "Right click"; onClicked: insertKsTag("{RCLICK}") }
+                                        }
+                                    }
+
+                                    Text {
+                                        text: api ? api.loc("actions.keystrokes_advanced") : "Advanced"
+                                        color: ink
+                                        font.pixelSize: 13
+                                        font.bold: true
+                                    }
+                                    CheckBox {
+                                        id: ksInterception
+                                        visible: Qt.platform.os === "windows"
+                                        text: api ? api.loc("actions.keystrokes_interception") : "Interception driver"
+                                        checked: !!(modelData && modelData.params && modelData.params.use_interception)
+                                        onCheckedChanged: {
+                                            var aa = page.actionsModel;
+                                            if (!aa || aIdx < 0 || aIdx >= aa.length)
+                                                return;
+                                            if (!aa[aIdx].params)
+                                                aa[aIdx].params = {};
+                                            if (aa[aIdx].params.use_interception === ksInterception.checked)
+                                                return;
+                                            aa[aIdx].params.use_interception = ksInterception.checked;
+                                            page.actionsModel = aa;
+                                            page._scheduleCommitSelectedRuleActions();
+                                        }
+                                    }
+                                    Text {
+                                        visible: Qt.platform.os === "windows"
+                                        Layout.fillWidth: true
+                                        text: api ? api.loc("actions.keystrokes_interception_hint") : ""
+                                        wrapMode: Text.WordWrap
+                                        font.pixelSize: 11
+                                        color: page.muted
+                                    }
+                                    CheckBox {
+                                        id: ksGameCompat
+                                        visible: Qt.platform.os === "windows"
+                                        text: api ? api.loc("actions.keystrokes_game_mode") : "Game compatibility"
+                                        checked: !!(modelData && modelData.params && modelData.params.game_compatibility)
+                                        onCheckedChanged: {
+                                            var aa = page.actionsModel;
+                                            if (!aa || aIdx < 0 || aIdx >= aa.length)
+                                                return;
+                                            if (!aa[aIdx].params)
+                                                aa[aIdx].params = {};
+                                            if (aa[aIdx].params.game_compatibility === ksGameCompat.checked)
+                                                return;
+                                            aa[aIdx].params.game_compatibility = ksGameCompat.checked;
+                                            page.actionsModel = aa;
+                                            page._scheduleCommitSelectedRuleActions();
+                                        }
+                                    }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+                                        Text {
+                                            text: api ? api.loc("actions.keystrokes_hold_ms") : "Hold (ms)"
+                                            color: muted
+                                            font.pixelSize: 12
+                                        }
+                                        SpinBox {
+                                            from: 0
+                                            to: 60000
+                                            stepSize: 10
+                                            editable: true
+                                            Layout.preferredWidth: 140
+                                            value: {
+                                                var v = (modelData && modelData.params && modelData.params.hold_ms !== undefined) ? Number(modelData.params.hold_ms) : 0;
+                                                if (isNaN(v) || v < 0)
+                                                    return 0;
+                                                return Math.min(60000, v);
+                                            }
+                                            onValueModified: {
+                                                var aa = page.actionsModel;
+                                                if (!aa || aIdx < 0 || aIdx >= aa.length)
+                                                    return;
+                                                if (!aa[aIdx].params)
+                                                    aa[aIdx].params = {};
+                                                aa[aIdx].params.hold_ms = value;
+                                                page.actionsModel = aa;
+                                                page._scheduleCommitSelectedRuleActions();
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: api ? api.loc("actions.keystrokes_placeholders_hint") : "Placeholders…"
+                                        wrapMode: Text.WordWrap
+                                        font.pixelSize: 11
+                                        color: page.muted
+                                    }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: api ? api.loc("actions.keystrokes_admin_hint") : "Admin hint"
+                                        wrapMode: Text.WordWrap
+                                        font.pixelSize: 11
+                                        color: "#c95c5c"
+                                    }
+                                }
+
                                 // TTS speak text
                                 ColumnLayout {
                                     Layout.fillWidth: true
@@ -4371,7 +4773,8 @@ Item {
                                             return m === "source_visible";
                                         }
                                         Text { text: api ? api.loc("actions.obs_visible") : "Visible"; color: muted; font.pixelSize: 12 }
-                                        Switch {
+                                        ConnToggleSwitch {
+                                            Layout.alignment: Qt.AlignVCenter
                                             checked: {
                                                 if (!modelData || !modelData.params) return true;
                                                 return modelData.params.visible !== false;

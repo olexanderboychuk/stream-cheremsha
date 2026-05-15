@@ -5,7 +5,9 @@ import html
 import json
 import logging
 import os
+import secrets
 import shutil
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -13,7 +15,7 @@ import time
 from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, NamedTuple
 from xml.sax.saxutils import quoteattr
 
 import httpx
@@ -96,6 +98,7 @@ from stream_cheremsha.chat.youtube_source import (
 from stream_cheremsha.config import constants, keyring_store
 from stream_cheremsha.domain.models import ChatMessage, ChatPlatform
 from stream_cheremsha.domain.protocols import TextToSpeech
+from stream_cheremsha.music.musicbrainz import youtube_title_indicates_russian_artist_area
 from stream_cheremsha.music.player import MusicPlayer
 from stream_cheremsha.music.queue_controller import MusicQueueController
 from stream_cheremsha.music.yt_dlp_resolver import fetch_youtube_meta, fetch_youtube_title
@@ -103,12 +106,24 @@ from stream_cheremsha.online.models import now_hms as online_now_hms
 from stream_cheremsha.online.models import online_state_patch
 from stream_cheremsha.openai_moderation import openai_moderation_flagged
 from stream_cheremsha.overlays.chat_overlay import chat_message_to_patch
+from stream_cheremsha.overlays.king_of_live_overlay_config import (
+    king_of_live_overlay_config_to_json_text,
+    load_king_of_live_overlay_config,
+)
 from stream_cheremsha.overlays.registry import OverlayRegistry
 from stream_cheremsha.overlays.server import OverlayServer
+from stream_cheremsha.overlays.top_gifters_overlay_config import load_top_gifters_overlay_config
+from stream_cheremsha.overlays.top_gifters_session import TikTokSessionTopGifters
+from stream_cheremsha.overlays.top_likers_overlay_config import load_top_likers_overlay_config
+from stream_cheremsha.overlays.top_likers_session import TikTokSessionTopLikers
 from stream_cheremsha.paths import stream_cheremsha_root
+from stream_cheremsha.persistence.tiktok_gifts_sqlite import (
+    append_tiktok_gift_event,
+    fetch_all_time_gifter_totals,
+)
 from stream_cheremsha.pipeline.coordinator import StreamCoordinator
 from stream_cheremsha.pipeline.tts_sanitize import strip_non_alphabetic_for_tts
-from stream_cheremsha.telegram.bot_service import TelegramBotService
+from stream_cheremsha.telegram.bot_service import RiskyDecisionResult, TelegramBotService
 from stream_cheremsha.telegram.tiktok_song_filter import (
     TikTokLyricsCheckError,
     analyze_lyrics_with_groq,
@@ -453,6 +468,13 @@ class _CheremshaTitleBar(StandardTitleBar):
         super().paintEvent(e)
 
 
+class _RiskyPendingTrack(NamedTuple):
+    video_id: str
+    requested_by: str
+    title: str
+    requester_chat_id: int
+
+
 class MainWindow(FramelessWindow):
     """MVP: stacked panes (connections, settings, chat, audio, logs) + status."""
 
@@ -550,6 +572,7 @@ class MainWindow(FramelessWindow):
         self._music_player: MusicPlayer | None = None
         self._music_title_cache: dict[str, str] = {}
         self._telegram: TelegramBotService | None = None
+        self._telegram_risky_pending: dict[str, _RiskyPendingTrack] = {}
         self._status_app = l10n.tr(self._locale, "status.app_idle")
         self._edge_voices_refresh_lock = asyncio.Lock()
         self._status_twitch = "—"
@@ -613,6 +636,15 @@ class MainWindow(FramelessWindow):
             on_stream_start=self._on_tiktok_stream_start,
         )
         self._like_share_agg = LikeShareAggregator(window_sec=7.0)
+        self._tiktok_top_likers = TikTokSessionTopLikers()
+        self._top_likers_publish_handle: asyncio.TimerHandle | None = None
+        self._tiktok_top_gifters = TikTokSessionTopGifters()
+        self._top_gifters_publish_handle: asyncio.TimerHandle | None = None
+        self._king_overlay_publish_handle: asyncio.TimerHandle | None = None
+        self._king_presence_seq: int = 0
+        self._king_chat_highlight_seq: int = 0
+        self._king_overlay_cached_king_key: str = ""
+        self._king_overlay_cached_king_display: str = ""
         self._tiktok_username = QLineEdit()
         self._obs_ws_host = QLineEdit()
         self._obs_ws_port = QLineEdit()
@@ -3424,6 +3456,7 @@ class MainWindow(FramelessWindow):
             # Ensure exceptions are retrieved to avoid "Task exception was never retrieved".
             t.add_done_callback(lambda _t: _t.exception())
         self._dispatch_actions_for_chat(message)
+        self._maybe_bump_king_chat_highlight(message)
 
     def _on_youtube_analytics_event(self, kind: str, user: str, detail: str, count: int) -> None:
         self._youtube_analytics.enqueue_event(kind, user, detail, count)
@@ -3476,7 +3509,7 @@ class MainWindow(FramelessWindow):
         )
         self._publish_activity_item(it)
 
-    def _on_tiktok_join_any(self, user: str) -> None:
+    def _on_tiktok_join_any(self, user: str, stable_key: str = "") -> None:
         if self._closing:
             return
         eng = self._get_actions_engine(
@@ -3485,6 +3518,10 @@ class MainWindow(FramelessWindow):
         )
         asyncio.ensure_future(eng.on_tiktok_joined((user or "").strip(), datetime.now(UTC)))
         self._tiktok_analytics.on_join(user)
+        self._maybe_bump_king_presence(
+            display_name=(user or "").strip(),
+            stable_key=(stable_key or "").strip(),
+        )
         it = ActivityItem(
             platform="tiktok",
             kind="join",
@@ -3524,7 +3561,13 @@ class MainWindow(FramelessWindow):
         )
         self._publish_activity_item(it)
 
-    def _on_tiktok_like_any(self, user: str, n: int, profile_picture_url: str = "") -> None:
+    def _on_tiktok_like_any(
+        self,
+        user: str,
+        n: int,
+        profile_picture_url: str = "",
+        user_key: str = "",
+    ) -> None:
         # Activity dock aggregates likes; actions engine evaluates tiktok_likes_received rules.
         if self._closing:
             return
@@ -3552,6 +3595,212 @@ class MainWindow(FramelessWindow):
         )
         for it in self._like_share_agg.flush_ready(now_mono=time.monotonic()):
             self._publish_activity_item(it)
+        self._tiktok_top_likers.add_likes(
+            user_key=(user_key or "").strip(),
+            display_name=(user or "").strip(),
+            n=n_i,
+            avatar_url=(profile_picture_url or "").strip(),
+        )
+        self._schedule_top_likers_overlay_publish()
+
+    def _schedule_top_likers_overlay_publish(self) -> None:
+        if self._closing:
+            return
+        loop = self._asyncio_loop
+        if loop is None:
+            return
+        prev = self._top_likers_publish_handle
+        if prev is not None:
+            prev.cancel()
+        self._top_likers_publish_handle = loop.call_later(
+            0.12,
+            self._on_top_likers_debounced_fire,
+        )
+
+    def _on_top_likers_debounced_fire(self) -> None:
+        self._top_likers_publish_handle = None
+        if self._closing:
+            return
+        loop = self._asyncio_loop
+        if loop is None:
+            return
+        loop.create_task(self._publish_top_likers_leaders_patch())
+
+    async def _publish_top_likers_leaders_patch(self) -> None:
+        cfg = load_top_likers_overlay_config()
+        leaders = self._tiktok_top_likers.leaders(
+            limit=int(cfg.top_count),
+            sort=str(cfg.leader_sort),
+        )
+        await self._overlay_server.pubsub().publish(
+            "overlay:top_likers:main",
+            {"leaders": leaders},
+        )
+
+    def _schedule_top_gifters_overlay_publish(self) -> None:
+        if self._closing:
+            return
+        loop = self._asyncio_loop
+        if loop is None:
+            return
+        prev = self._top_gifters_publish_handle
+        if prev is not None:
+            prev.cancel()
+        self._top_gifters_publish_handle = loop.call_later(
+            0.12,
+            self._on_top_gifters_debounced_fire,
+        )
+
+    def _on_top_gifters_debounced_fire(self) -> None:
+        self._top_gifters_publish_handle = None
+        if self._closing:
+            return
+        loop = self._asyncio_loop
+        if loop is None:
+            return
+        loop.create_task(self._publish_top_gifters_leaders_patch())
+
+    async def _publish_top_gifters_leaders_patch(self) -> None:
+        cfg = load_top_gifters_overlay_config()
+        leaders = self._tiktok_top_gifters.leaders(
+            limit=int(cfg.top_count),
+            sort=str(cfg.leader_sort),
+        )
+        await self._overlay_server.pubsub().publish(
+            "overlay:top_gifters:main",
+            {"leaders": leaders},
+        )
+
+    def _schedule_king_overlay_publish(self) -> None:
+        if self._closing:
+            return
+        loop = self._asyncio_loop
+        if loop is None:
+            return
+        prev = self._king_overlay_publish_handle
+        if prev is not None:
+            prev.cancel()
+        self._king_overlay_publish_handle = loop.call_later(
+            0.35,
+            self._on_king_overlay_debounced_fire,
+        )
+
+    def _on_king_overlay_debounced_fire(self) -> None:
+        self._king_overlay_publish_handle = None
+        if self._closing:
+            return
+        loop = self._asyncio_loop
+        if loop is None:
+            return
+        loop.create_task(self._publish_king_overlay_patch())
+
+    async def _publish_king_overlay_patch(self) -> None:
+        cfg = load_king_of_live_overlay_config()
+        tops = fetch_all_time_gifter_totals(limit=5)
+        king = tops[0] if tops else None
+        runner = tops[1] if len(tops) > 1 else None
+        gap = 0
+        runner_name = ""
+        if king and runner and str(king.get("key") or "") != str(runner.get("key") or ""):
+            gap = max(0, int(king.get("diamonds") or 0) - int(runner.get("diamonds") or 0))
+            runner_name = str(runner.get("user") or "")
+        king_d = int(king.get("diamonds") or 0) if king else 0
+        king_key = str(king.get("key") or "").strip() if king else ""
+
+        leaders = self._tiktok_top_gifters.leaders(limit=12, sort="likes_desc")
+        challenger: dict[str, Any] | None = None
+        best_ratio = 0.0
+        if king_key and king_d > 0:
+            for row in leaders:
+                rk = str(row.get("key") or "").strip()
+                if not rk or rk == king_key:
+                    continue
+                coins = int(row.get("coins") or 0)
+                ratio = coins / float(king_d) if king_d else 0.0
+                if ratio > best_ratio:
+                    best_ratio = ratio
+                    challenger = {
+                        "key": rk,
+                        "user": str(row.get("user") or "?"),
+                        "coins": coins,
+                        "ratio": round(ratio, 4),
+                    }
+
+        thr_pct = max(50, min(99, int(cfg.danger_threshold_pct)))
+        throne_danger = bool(challenger and best_ratio * 100.0 >= float(thr_pct))
+
+        patch: dict[str, Any] = {
+            "config": json.loads(king_of_live_overlay_config_to_json_text(cfg)),
+            "king": king,
+            "gap_diamonds": gap,
+            "runner_up_user": runner_name,
+            "session_challenger": challenger,
+            "throne_danger": throne_danger,
+            "king_revision": 0,
+            "king_presence_seq": int(self._king_presence_seq),
+            "chat_highlight_seq": int(self._king_chat_highlight_seq),
+        }
+        if king:
+            self._king_overlay_cached_king_key = king_key
+            self._king_overlay_cached_king_display = str(king.get("user") or "").strip()
+        else:
+            self._king_overlay_cached_king_key = ""
+            self._king_overlay_cached_king_display = ""
+        await self._overlay_server.pubsub().publish("overlay:king_of_live:main", patch)
+
+    def _maybe_bump_king_presence(self, *, display_name: str, stable_key: str) -> None:
+        if self._closing:
+            return
+        k_key = (stable_key or "").strip()
+        k_disp = (display_name or "").strip().casefold()
+        king_key = self._king_overlay_cached_king_key
+        king_disp = self._king_overlay_cached_king_display.strip().casefold()
+        hit = bool(k_key and king_key and k_key == king_key)
+        if not hit and k_disp and king_disp:
+            hit = k_disp == king_disp
+        if not hit:
+            return
+        self._king_presence_seq += 1
+        try:
+            ps = self._overlay_server.pubsub()
+        except RuntimeError:
+            return
+        t = asyncio.create_task(
+            ps.publish(
+                "overlay:king_of_live:main",
+                {
+                    "king_presence_seq": int(self._king_presence_seq),
+                },
+            ),
+        )
+        t.add_done_callback(lambda _t: _t.exception())
+
+    def _maybe_bump_king_chat_highlight(self, message: ChatMessage) -> None:
+        if self._closing or message.platform != ChatPlatform.TIKTOK:
+            return
+        k_key = (message.tiktok_stable_key or "").strip()
+        author_cf = (message.author or "").strip().casefold()
+        king_key = self._king_overlay_cached_king_key
+        king_disp = self._king_overlay_cached_king_display.strip().casefold()
+        hit = bool(k_key and king_key and k_key == king_key)
+        if not hit and author_cf and king_disp:
+            hit = author_cf == king_disp
+        if not hit:
+            return
+        self._king_chat_highlight_seq += 1
+        try:
+            ps = self._overlay_server.pubsub()
+        except RuntimeError:
+            return
+        t = asyncio.create_task(
+            ps.publish(
+                "overlay:king_of_live:main",
+                {
+                    "chat_highlight_seq": int(self._king_chat_highlight_seq),
+                },
+            ),
+        )
+        t.add_done_callback(lambda _t: _t.exception())
 
     def _on_tiktok_stream_start(self) -> None:
         """Reset per-stream counters when TikTokLive indicates a new stream has started."""
@@ -3562,6 +3811,35 @@ class MainWindow(FramelessWindow):
             constants.TIKTOK_ACTIONS_ACCOUNT_KEY,
         )
         eng.reset_tiktok_like_totals()
+        self._tiktok_top_likers.reset()
+        self._tiktok_top_gifters.reset()
+        h = self._top_likers_publish_handle
+        if h is not None:
+            h.cancel()
+            self._top_likers_publish_handle = None
+        hg = self._top_gifters_publish_handle
+        if hg is not None:
+            hg.cancel()
+            self._top_gifters_publish_handle = None
+        hk = self._king_overlay_publish_handle
+        if hk is not None:
+            hk.cancel()
+            self._king_overlay_publish_handle = None
+        loop = self._asyncio_loop
+        if loop is not None:
+            loop.create_task(
+                self._overlay_server.pubsub().publish(
+                    "overlay:top_likers:main",
+                    {"leaders": []},
+                ),
+            )
+            loop.create_task(
+                self._overlay_server.pubsub().publish(
+                    "overlay:top_gifters:main",
+                    {"leaders": []},
+                ),
+            )
+            self._schedule_king_overlay_publish()
 
     def _on_tiktok_share_any(self, user: str, n: int) -> None:
         if self._closing:
@@ -3804,6 +4082,10 @@ class MainWindow(FramelessWindow):
         icon_url: str = "",
         sender_avatar_url: str = "",
         tiktok_coin_each: int = 0,
+        sender_user_key: str = "",
+        gift_raw_json: str = "",
+        tiktok_user_bundle_json: str = "",
+        stream_host_unique_id: str = "",
     ) -> None:
         logger.info(
             "TikTok gift dispatch: sender=%s gift_id=%s gift_name=%s count=%s enabled=%s user=%s",
@@ -3818,6 +4100,7 @@ class MainWindow(FramelessWindow):
             ChatPlatform.TIKTOK.value,
             constants.TIKTOK_ACTIONS_ACCOUNT_KEY,
         )
+        now = datetime.now(UTC)
         ev = GiftReceivedEvent(
             platform=ChatPlatform.TIKTOK,
             sender=sender,
@@ -3825,11 +4108,53 @@ class MainWindow(FramelessWindow):
             gift_name=gift_name,
             count=count,
             gift_icon_url=str(icon_url or ""),
-            received_at=datetime.now(UTC),
+            received_at=now,
             sender_avatar_url=str(sender_avatar_url or "").strip(),
             tiktok_coin_each=int(tiktok_coin_each or 0),
         )
         asyncio.ensure_future(eng.on_gift_received(ev))
+        try:
+            c = max(1, int(count))
+        except (TypeError, ValueError):
+            c = 1
+        try:
+            each = max(0, int(tiktok_coin_each or 0))
+        except (TypeError, ValueError):
+            each = 0
+        total_coins = each * c
+        if not self._closing:
+            try:
+                streamer = (stream_host_unique_id or "").strip()
+                if not streamer:
+                    streamer = (self._tiktok.connected_stream_unique_id or "").strip()
+                if not streamer:
+                    streamer = (self._tiktok_username.text() or "").strip()
+                append_tiktok_gift_event(
+                    anchor_username=streamer,
+                    received_at=now,
+                    sender_display=sender,
+                    sender_user_key=(sender_user_key or "").strip(),
+                    gift_id=gift_id,
+                    gift_name=gift_name,
+                    gift_count=c,
+                    diamond_each=each,
+                    diamonds_total=total_coins,
+                    gift_icon_url=str(icon_url or ""),
+                    sender_avatar_url=str(sender_avatar_url or "").strip(),
+                    raw_json=gift_raw_json or "",
+                    tiktok_user_bundle_json=tiktok_user_bundle_json or "",
+                )
+            except (OSError, sqlite3.Error) as exc:
+                logger.warning("tiktok gifts sqlite: persist failed: %s", exc)
+        if total_coins > 0:
+            self._tiktok_top_gifters.add_coins(
+                user_key=(sender_user_key or "").strip(),
+                display_name=(sender or "").strip(),
+                n=total_coins,
+                avatar_url=(sender_avatar_url or "").strip(),
+            )
+            self._schedule_top_gifters_overlay_publish()
+            self._schedule_king_overlay_publish()
 
     def _ensure_widgets_window(self) -> QQuickView:
         if self._qml_widgets_win is not None:
@@ -4285,6 +4610,7 @@ class MainWindow(FramelessWindow):
             self._music_queue.set_loop(self._asyncio_loop)
             await self._overlay_server.start()
             logger.info("Overlay server: %s", self._overlay_server.base_url())
+            self._schedule_king_overlay_publish()
             self._music_player = MusicPlayer(
                 queue=self._music_queue,
                 sink=self._sink,
@@ -4362,7 +4688,11 @@ class MainWindow(FramelessWindow):
         def call_on_main_loop(fn) -> None:
             asyncio.run_coroutine_threadsafe(fn(), loop)
 
-        async def enqueue_song(video_id: str, requested_by: str) -> str | None:
+        async def enqueue_song(
+            video_id: str,
+            requested_by: str,
+            requester_chat_id: int,
+        ) -> str | tuple[str, Literal["info"]] | None:
             loc = self._get_locale()
             vid = (video_id or "").strip()
             if not vid:
@@ -4417,6 +4747,13 @@ class MainWindow(FramelessWindow):
                 if not title:
                     return self._tr("telegram.song.title_unknown")
                 try:
+                    if await youtube_title_indicates_russian_artist_area(title):
+                        return self._tr("telegram.song.musicbrainz_russian_origin")
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.warning("MusicBrainz artist-area check failed: %s", e)
+                try:
                     lyrics = await asyncio.to_thread(
                         fetch_lyrics_for_youtube_title,
                         genius_tok,
@@ -4425,28 +4762,54 @@ class MainWindow(FramelessWindow):
                 except Exception as e:
                     logger.warning("Genius lyrics fetch failed: %s", e)
                     return self._tr("telegram.song.genius_unavailable")
-                if lyrics:
-                    try:
-                        verdict = await analyze_lyrics_with_groq(
-                            groq_key,
-                            lyrics,
-                            loc,
-                            youtube_title=title,
-                        )
-                    except TikTokLyricsCheckError as e:
-                        return str(e)
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception as e:
-                        logger.warning("Groq TikTok check failed: %s", e)
-                        return self._tr("telegram.song.check_unavailable")
-                    if not verdict.allows_enqueue():
-                        return format_tiktok_reject_reason(verdict, ui_locale=loc)
-                else:
+                lyrics_stripped = (lyrics or "").strip()
+                if not lyrics_stripped:
                     logger.debug(
-                        "TikTok lyrics filter: no Genius lyrics for %r — enqueue without Groq.",
+                        "TikTok lyrics filter: no Genius lyrics for %r — Groq title-only check.",
                         title,
                     )
+                try:
+                    verdict = await analyze_lyrics_with_groq(
+                        groq_key,
+                        lyrics_stripped,
+                        loc,
+                        youtube_title=title,
+                    )
+                except TikTokLyricsCheckError as e:
+                    return str(e)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.warning("Groq TikTok check failed: %s", e)
+                    return self._tr("telegram.song.check_unavailable")
+                if verdict.status == "Banned":
+                    return format_tiktok_reject_reason(verdict, ui_locale=loc)
+                if verdict.status == "Risky":
+                    pending_id = secrets.token_hex(8)
+                    vline = ", ".join(verdict.violations[:6]) if verdict.violations else "—"
+                    rs = verdict.risk_score
+                    rs_s = "—" if rs is None else str(rs)
+                    admin_html = self._tr(
+                        "telegram.admin.risky_track",
+                        title=html.escape(title),
+                        video_id=html.escape(vid),
+                        requested_by=html.escape(requested_by),
+                        risk_score=html.escape(rs_s),
+                        violations=html.escape(vline),
+                    )
+                    self._telegram_risky_pending[pending_id] = _RiskyPendingTrack(
+                        video_id=vid,
+                        requested_by=requested_by,
+                        title=title,
+                        requester_chat_id=int(requester_chat_id),
+                    )
+                    tg = self._telegram
+                    if tg is not None:
+                        tg.schedule_risky_review(
+                            pending_id=pending_id,
+                            admin_message_html=admin_html,
+                        )
+                    return (self._tr("telegram.song.risky_sent_to_admin"), "info")
 
             new_track = await self._music_queue.enqueue(video_id=vid, requested_by=requested_by)
             if title:
@@ -4478,6 +4841,55 @@ class MainWindow(FramelessWindow):
             ]
             return (cur_map, q_maps)
 
+        async def on_risky_admin_decision(pending_id: str, approved: bool) -> RiskyDecisionResult:
+            pending = self._telegram_risky_pending.pop(pending_id, None)
+            if pending is None:
+                return RiskyDecisionResult(
+                    handled=False,
+                    answer_hint=self._tr("telegram.admin.risky_already_done"),
+                )
+            tg = self._telegram
+            if approved:
+                try:
+                    new_track = await self._music_queue.enqueue(
+                        video_id=pending.video_id,
+                        requested_by=pending.requested_by,
+                    )
+                except Exception as e:
+                    logger.warning("Risky approve enqueue failed: %s", e)
+                    self._telegram_risky_pending[pending_id] = pending
+                    return RiskyDecisionResult(
+                        handled=False,
+                        answer_hint=self._tr("telegram.admin.risky_enqueue_failed"),
+                    )
+                if pending.title:
+                    asyncio.create_task(
+                        self._music_queue.set_track_title(new_track.id, pending.title),
+                    )
+                else:
+                    asyncio.create_task(
+                        self._fetch_music_title_for_track(new_track.id, new_track.video_id),
+                    )
+                if tg is not None and pending.requester_chat_id > 0:
+                    msg = self._tr(
+                        "telegram.song.risky_approved",
+                        video_id=html.escape(pending.video_id),
+                    )
+                    tg.send_html_message_to_chat(pending.requester_chat_id, msg)
+                return RiskyDecisionResult(
+                    handled=True,
+                    answer_hint=self._tr("telegram.admin.risky_approved_answer"),
+                )
+            if tg is not None and pending.requester_chat_id > 0:
+                tg.send_html_message_to_chat(
+                    pending.requester_chat_id,
+                    self._tr("telegram.song.risky_rejected"),
+                )
+            return RiskyDecisionResult(
+                handled=True,
+                answer_hint=self._tr("telegram.admin.risky_rejected_answer"),
+            )
+
         self._telegram = TelegramBotService(
             token=tok,
             admin_id=admin_id,
@@ -4487,6 +4899,7 @@ class MainWindow(FramelessWindow):
             skip_song=skip_song,
             remove_song_by_id=remove_song_by_id,
             list_queue=list_queue,
+            on_risky_admin_decision=on_risky_admin_decision,
             tiktok_lyrics_filter_enabled=bool(
                 self._settings.value(_SETTINGS_TELEGRAM_TIKTOK_LYRICS_FILTER, False, bool),
             ),
@@ -4573,6 +4986,18 @@ class MainWindow(FramelessWindow):
         except (RuntimeError, OSError):
             pass
         self._closing = True
+        h = self._top_likers_publish_handle
+        if h is not None:
+            h.cancel()
+            self._top_likers_publish_handle = None
+        hg = self._top_gifters_publish_handle
+        if hg is not None:
+            hg.cancel()
+            self._top_gifters_publish_handle = None
+        hk = self._king_overlay_publish_handle
+        if hk is not None:
+            hk.cancel()
+            self._king_overlay_publish_handle = None
         # We run an async shutdown sequence; hide immediately so the user doesn't
         # need to click close twice while teardown runs in the background.
         try:

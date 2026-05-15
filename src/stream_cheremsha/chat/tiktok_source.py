@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import time
@@ -313,6 +314,109 @@ def _normalize_unique_id(v: str) -> str:
     return (v or "").strip().lstrip("@").strip()
 
 
+def _shallow_public_attrs(obj: object | None, *, max_keys: int = 48) -> dict[str, object]:
+    """JSON-friendly snapshot of an object's public ``__dict__`` keys (best-effort)."""
+    if obj is None:
+        return {}
+    d = getattr(obj, "__dict__", None)
+    if not isinstance(d, dict):
+        return {"type": type(obj).__name__, "repr": str(obj)[:4000]}
+    out: dict[str, object] = {}
+    for k in sorted(d.keys()):
+        if k.startswith("_"):
+            continue
+        if len(out) >= max_keys:
+            out["_truncated"] = True
+            break
+        v = d[k]
+        if v is None or isinstance(v, (bool, int, float, str)):
+            out[k] = v
+        elif isinstance(v, (list, tuple)):
+            out[k] = {"_kind": "sequence", "len": len(v)}
+        elif isinstance(v, dict):
+            out[k] = {"_kind": "dict", "len": len(v)}
+        else:
+            out[k] = {"_kind": type(v).__name__}
+    return out
+
+
+_MISSING = object()
+
+
+def _tiktok_user_bundle_json(
+    user: object | None,
+    *,
+    display_fallback: str,
+    avatar_url: str,
+    stable_key: str,
+) -> str:
+    """Serializable viewer profile for SQLite ``tiktok_users`` (best-effort)."""
+    fields: dict[str, object] = {}
+    if user is not None:
+        for attr in (
+            "sec_uid",
+            "secUid",
+            "user_id",
+            "userId",
+            "id",
+            "nickname",
+            "nick_name",
+            "unique_id",
+            "uniqueId",
+            "short_id",
+            "shortId",
+            "follow_status",
+            "followStatus",
+            "is_follower",
+            "profile_picture_url",
+            "avatar_url",
+        ):
+            v = getattr(user, attr, _MISSING)
+            if v is _MISSING:
+                continue
+            if v is None or isinstance(v, (bool, int, float, str)):
+                fields[attr] = v
+            else:
+                fields[attr] = {"_kind": type(v).__name__}
+    payload: dict[str, object] = {
+        "stable_key": (stable_key or "").strip(),
+        "display_fallback": (display_fallback or "").strip() or "?",
+        "avatar_url": (avatar_url or "").strip(),
+        "fields": fields,
+        "profile": _shallow_public_attrs(user),
+    }
+    try:
+        return json.dumps(payload, ensure_ascii=False)[:65_536]
+    except (TypeError, ValueError):
+        return json.dumps(
+            {"error": "user_bundle_json_failed", "stable_key": (stable_key or "").strip()},
+            ensure_ascii=False,
+        )
+
+
+def _tiktok_gift_raw_snapshot(
+    *,
+    event: object,
+    gift: object | None,
+    user: object | None,
+    normalized: dict[str, object],
+) -> str:
+    payload: dict[str, object] = {
+        "normalized": normalized,
+        "event_type": type(event).__name__,
+        "event": _shallow_public_attrs(event),
+        "gift": _shallow_public_attrs(gift),
+        "user": _shallow_public_attrs(user),
+    }
+    try:
+        return json.dumps(payload, ensure_ascii=False)[:262_144]
+    except (TypeError, ValueError):
+        return json.dumps(
+            {"error": "snapshot_json_failed", "event_type": type(event).__name__},
+            ensure_ascii=False,
+        )
+
+
 def _gift_icon_url(gift: object | None) -> str:
     if gift is None:
         return ""
@@ -371,6 +475,29 @@ def _display_name_from_user(user: object | None) -> str:
         return str(nick).strip() or "?"
     raw = getattr(user, "nick_name", None) or getattr(user, "username", None)
     return str(raw or "?").strip() or "?"
+
+
+def tiktok_user_stable_key(user: object | None) -> str:
+    """Best-effort stable id for aggregating per-viewer stats (likes, gifts, …)."""
+    if user is None:
+        return ""
+    for attr in ("sec_uid", "secUid", "user_id", "userId"):
+        v = getattr(user, attr, None)
+        if v is not None and str(v).strip():
+            return str(v).strip()
+    uid = getattr(user, "id", None)
+    if uid is not None and str(uid).strip():
+        return str(uid).strip()
+    for attr in ("unique_id", "uniqueId"):
+        raw = getattr(user, attr, None)
+        if isinstance(raw, str) and raw.strip():
+            return _normalize_unique_id(raw)
+    nested = getattr(user, "user_info", None)
+    if nested is not None and nested is not user:
+        inner = tiktok_user_stable_key(nested)
+        if inner:
+            return inner
+    return ""
 
 
 _INT_RE = re.compile(r"[-+]?\d+")
@@ -464,23 +591,23 @@ class TikTokChatSource:
         self,
         coordinator: StreamCoordinator,
         on_status: Callable[[str], None],
-        on_gift: Callable[[str, str, str, int, str, str, int], None] | None = None,
+        on_gift: Callable[..., None] | None = None,
         get_locale: Callable[[], str] | None = None,
         client_factory: Callable[[str], TikTokLiveClient] | None = None,
         on_room_viewers: Callable[[int], None] | None = None,
         on_room_viewers_current: Callable[[int], None] | None = None,
         on_room_viewers_total: Callable[[int], None] | None = None,
         on_follow: Callable[[str], None] | None = None,
-        on_join: Callable[[str], None] | None = None,
+        on_join: Callable[[str, str], None] | None = None,
         on_gift_analytics: Callable[[str, str, str, int, int, str], None] | None = None,
-        on_like: Callable[[str, int, str], None] | None = None,
+        on_like: Callable[..., object] | None = None,
         on_share: Callable[[str, int], None] | None = None,
         on_stream_start: Callable[[], None] | None = None,
         on_paid_sub: Callable[[str], None] | None = None,
     ) -> None:
         self._coordinator = coordinator
         self._on_status = on_status
-        self._on_gift = on_gift
+        self._on_gift = TikTokChatSource._wrap_on_gift(on_gift)
         # Back-compat: on_room_viewers is treated as current online viewers.
         self._on_room_viewers = on_room_viewers
         self._on_room_viewers_current = on_room_viewers_current
@@ -488,7 +615,7 @@ class TikTokChatSource:
         self._on_follow = on_follow
         self._on_join = on_join
         self._on_gift_analytics = on_gift_analytics
-        self._on_like = on_like
+        self._on_like = TikTokChatSource._wrap_on_like(on_like)
         self._on_share = on_share
         self._on_stream_start = on_stream_start
         self._on_paid_sub = on_paid_sub
@@ -496,6 +623,7 @@ class TikTokChatSource:
         self._client_factory = client_factory or (lambda uid: TikTokLiveClient(unique_id=uid))
         self._task: asyncio.Task[None] | None = None
         self._running = False
+        # Normalized TikTok unique_id passed to TikTokLiveClient (stream host / channel).
         self._unique_id: str | None = None
         self._client: TikTokLiveClient | None = None
         self._gift_event_supported: bool | None = None
@@ -524,6 +652,107 @@ class TikTokChatSource:
         self._connect_backoff_sec: float = TIKTOK_RECONNECT_SEC
 
     @staticmethod
+    def _wrap_on_like(
+        cb: Callable[..., object] | None,
+    ) -> Callable[[str, int, str, str], None] | None:
+        if cb is None:
+            return None
+
+        def wrapped(user: str, n: int, avatar: str, user_key: str) -> None:
+            try:
+                cb(user, n, avatar, user_key)
+            except TypeError:
+                cb(user, n, avatar)
+
+        return wrapped
+
+    @staticmethod
+    def _wrap_on_gift(
+        cb: Callable[..., object] | None,
+    ) -> Callable[..., None] | None:
+        if cb is None:
+            return None
+
+        def wrapped(
+            sender: str,
+            gift_id: str,
+            gift_name: str,
+            count: int,
+            icon_url: str,
+            sender_avatar: str,
+            diamond_each: int,
+            user_key: str,
+            raw_json: str,
+            user_bundle_json: str,
+            stream_host_unique_id: str,
+        ) -> None:
+            try:
+                cb(
+                    sender,
+                    gift_id,
+                    gift_name,
+                    count,
+                    icon_url,
+                    sender_avatar,
+                    diamond_each,
+                    user_key,
+                    raw_json,
+                    user_bundle_json,
+                    stream_host_unique_id,
+                )
+            except TypeError:
+                try:
+                    cb(
+                        sender,
+                        gift_id,
+                        gift_name,
+                        count,
+                        icon_url,
+                        sender_avatar,
+                        diamond_each,
+                        user_key,
+                        raw_json,
+                        user_bundle_json,
+                    )
+                except TypeError:
+                    try:
+                        cb(
+                            sender,
+                            gift_id,
+                            gift_name,
+                            count,
+                            icon_url,
+                            sender_avatar,
+                            diamond_each,
+                            user_key,
+                            raw_json,
+                        )
+                    except TypeError:
+                        try:
+                            cb(
+                                sender,
+                                gift_id,
+                                gift_name,
+                                count,
+                                icon_url,
+                                sender_avatar,
+                                diamond_each,
+                                user_key,
+                            )
+                        except TypeError:
+                            cb(
+                                sender,
+                                gift_id,
+                                gift_name,
+                                count,
+                                icon_url,
+                                sender_avatar,
+                                diamond_each,
+                            )
+
+        return wrapped
+
+    @staticmethod
     def _room_info_viewer_candidates(payload: object) -> dict[str, int]:
         if not isinstance(payload, dict):
             return {}
@@ -542,6 +771,11 @@ class TikTokChatSource:
     @property
     def running(self) -> bool:
         return self._running and self._task is not None and not self._task.done()
+
+    @property
+    def connected_stream_unique_id(self) -> str:
+        """Normalized TikTok handle passed to ``start()`` (the live host you are attached to)."""
+        return (self._unique_id or "").strip()
 
     def _event_is_backlog(self, event: object, *, window_sec: float) -> bool:
         """Detect events whose origin time predates the current connection.
@@ -776,6 +1010,7 @@ class TikTokChatSource:
                         platform=ChatPlatform.TIKTOK,
                         received_at=datetime.now(UTC),
                         author_avatar_url=tiktok_user_avatar_url(user_blob),
+                        tiktok_stable_key=tiktok_user_stable_key(user_blob),
                     )
                     await self._coordinator.enqueue_chat(msg)
 
@@ -863,7 +1098,10 @@ class TikTokChatSource:
                             logger.info("TikTok join suppressed (pre-connect backlog)")
                         else:
                             user = getattr(event, "user", None)
-                            cb(_display_name_from_user(user))
+                            cb(
+                                _display_name_from_user(user),
+                                tiktok_user_stable_key(user),
+                            )
                     n = _join_event_live_viewer_count_hint(event)
                     if n > 0:
                         logger.info(
@@ -887,6 +1125,7 @@ class TikTokChatSource:
                     )
                     user = getattr(event, "user", None) or getattr(event, "user_info", None)
                     avatar_u = tiktok_user_avatar_url(user)
+                    stable_u = tiktok_user_stable_key(user)
                     # Best-effort: TikTokLive differs between versions:
                     # - some expose per-event batch count
                     # - some expose a stream-level running total (often likeCount)
@@ -915,7 +1154,7 @@ class TikTokChatSource:
                                 n_i,
                             )
                             return
-                        cb(_display_name_from_user(user), n_i, avatar_u)
+                        cb(_display_name_from_user(user), n_i, avatar_u, stable_u)
                         return
 
                     if is_backlog:
@@ -925,7 +1164,7 @@ class TikTokChatSource:
                         getattr(event, "like_count", None) or getattr(event, "count", None) or 1
                     )
                     n_i = _parse_int_best_effort(raw_batch, default=1)
-                    cb(_display_name_from_user(user), max(1, n_i), avatar_u)
+                    cb(_display_name_from_user(user), max(1, n_i), avatar_u, stable_u)
 
             if ShareEvent is not None:
 
@@ -992,6 +1231,7 @@ class TikTokChatSource:
                         return
                     user_obj = getattr(event, "user", None)
                     sender_avatar = tiktok_user_avatar_url(user_obj)
+                    user_key_s = tiktok_user_stable_key(user_obj)
                     user = getattr(user_obj, "nickname", None) or getattr(
                         user_obj, "unique_id", None
                     )
@@ -1083,6 +1323,32 @@ class TikTokChatSource:
                         except (TypeError, ValueError):
                             diamond_each = 0
                     diamonds_total = diamond_each * max(1, count_i)
+                    normalized: dict[str, object] = {
+                        "sender": sender_s,
+                        "sender_user_key": user_key_s,
+                        "stream_host_unique_id": (self._unique_id or "").strip(),
+                        "gift_id": gift_id_s,
+                        "gift_name": gift_name_s,
+                        "count": count_i,
+                        "diamond_each": diamond_each,
+                        "diamonds_total": diamonds_total,
+                        "gift_icon_url": str(icon_url or ""),
+                        "sender_avatar_url": str(sender_avatar or ""),
+                        "repeat_end": repeat_end,
+                        "streaking": streaking,
+                    }
+                    raw_json = _tiktok_gift_raw_snapshot(
+                        event=event,
+                        gift=gift,
+                        user=user_obj,
+                        normalized=normalized,
+                    )
+                    user_bundle_json = _tiktok_user_bundle_json(
+                        user_obj,
+                        display_fallback=sender_s,
+                        avatar_url=sender_avatar,
+                        stable_key=user_key_s,
+                    )
                     ga = self._on_gift_analytics
                     if ga is not None:
                         ga(sender_s, gift_id_s, gift_name_s, count_i, diamonds_total, icon_url)
@@ -1095,6 +1361,10 @@ class TikTokChatSource:
                             icon_url,
                             sender_avatar,
                             diamond_each,
+                            user_key_s,
+                            raw_json,
+                            user_bundle_json,
+                            (self._unique_id or "").strip(),
                         )
 
             try:

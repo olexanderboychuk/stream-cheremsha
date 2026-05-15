@@ -48,7 +48,7 @@ def chat_config_defaults() -> ChatOverlayConfig:
         username_color_mode="auto",
         username_color_custom="#93c5fd",
         text_color="#e5e7eb",
-        text_shadow_enabled=False,
+        text_shadow_enabled=True,
         text_shadow_rgba="rgba(0,0,0,0.65)",
         text_shadow_blur_px=4,
         text_shadow_offset_x_px=0,

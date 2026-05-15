@@ -32,6 +32,10 @@ dependencies = [
     "obsws-python>=1.6,<2",
     # Without a floor, pip may pick an old numpy sdist on some platforms and fail to build.
     "numpy>=1.26.0",
+    # Global keyboard/mouse simulation for Actions (cross-platform; Linux needs X11 for best results).
+    "pynput>=1.7.7",
+    # Interception driver Python wrapper (Windows low-level input for games; wheel is platform-neutral).
+    "interception-python>=1.12,<2",
 ]
 
 [project.optional-dependencies]

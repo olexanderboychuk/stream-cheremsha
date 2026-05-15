@@ -18,7 +18,7 @@ def test_chat_config_defaults_are_valid() -> None:
     assert cfg.show_platform in (True, False)
     assert cfg.username_color_mode in ("auto", "platform", "custom")
     assert isinstance(cfg.bubble_radius_px, int) and cfg.bubble_radius_px >= 0
-    assert cfg.text_shadow_enabled is False
+    assert cfg.text_shadow_enabled is True
     assert "rgba" in cfg.text_shadow_rgba
     assert 0 <= cfg.text_shadow_blur_px <= 24
     assert cfg.widget_bg_enabled is False

@@ -186,17 +186,25 @@ def build_placeholder_context(ev: object) -> dict[str, str]:
             "giftcount": c,
             "gift_count": c,
             "count": c,
+            "repeatcount": c,
             "giftname": gn,
             "gift_name": gn,
             "giftid": gid,
             "gift_id": gid,
             "sender": snd,
+            "username": snd,
+            "nickname": snd,
             "platform": plat,
         }
     if isinstance(ev, ChatMessageEvent):
+        au = ev.author or ""
+        tx = ev.text or ""
         return {
-            "author": ev.author or "",
-            "text": ev.text or "",
+            "author": au,
+            "text": tx,
+            "comment": tx,
+            "username": au,
+            "nickname": au,
             "platform": _platform_str(ev.platform),
         }
     if isinstance(ev, TikTokLikesReceivedEvent):
@@ -206,11 +214,14 @@ def build_placeholder_context(ev: object) -> dict[str, str]:
         return {
             "sender": u,
             "user": u,
+            "username": u,
+            "nickname": u,
             "likebatch": batch,
             "likes_batch": batch,
             "likecount": batch,
             "liketotal": tot,
             "likes_total": tot,
+            "totallikecount": tot,
             "count": batch,
             "platform": _platform_str(ev.platform),
         }
@@ -226,6 +237,8 @@ def build_placeholder_context(ev: object) -> dict[str, str]:
         return {
             "sender": u,
             "user": u,
+            "username": u,
+            "nickname": u,
             "platform": _platform_str(ev.platform),
         }
     if isinstance(ev, TikTokSharedEvent):
@@ -234,6 +247,8 @@ def build_placeholder_context(ev: object) -> dict[str, str]:
         return {
             "sender": u,
             "user": u,
+            "username": u,
+            "nickname": u,
             "count": c,
             "platform": _platform_str(ev.platform),
         }
@@ -243,6 +258,8 @@ def build_placeholder_context(ev: object) -> dict[str, str]:
         return {
             "sender": u,
             "user": u,
+            "username": u,
+            "nickname": u,
             "count": c,
             "kind": ev.kind or "",
             "platform": _platform_str(ev.platform),
@@ -252,6 +269,8 @@ def build_placeholder_context(ev: object) -> dict[str, str]:
         return {
             "sender": u,
             "user": u,
+            "username": u,
+            "nickname": u,
             "platform": _platform_str(ev.platform),
         }
     if isinstance(ev, (TwitchSubscribeEvent, TwitchSubscriptionGiftEvent)):
@@ -260,7 +279,10 @@ def build_placeholder_context(ev: object) -> dict[str, str]:
         return {
             "sender": u,
             "user": u,
+            "username": u,
+            "nickname": u,
             "months": mo,
+            "submonth": mo,
             "platform": _platform_str(ev.platform),
         }
     if isinstance(ev, TwitchResubscribeEvent):
@@ -270,7 +292,10 @@ def build_placeholder_context(ev: object) -> dict[str, str]:
         return {
             "sender": u,
             "user": u,
+            "username": u,
+            "nickname": u,
             "months": mo,
+            "submonth": mo,
             "message": msg,
             "text": msg,
             "platform": _platform_str(ev.platform),
@@ -281,6 +306,8 @@ def build_placeholder_context(ev: object) -> dict[str, str]:
         return {
             "sender": u,
             "user": u,
+            "username": u,
+            "nickname": u,
             "bits": b,
             "count": b,
             "platform": _platform_str(ev.platform),
@@ -291,6 +318,8 @@ def build_placeholder_context(ev: object) -> dict[str, str]:
         return {
             "sender": r,
             "user": r,
+            "username": r,
+            "nickname": r,
             "raider": r,
             "viewers": v,
             "count": v,

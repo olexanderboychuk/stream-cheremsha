@@ -33,11 +33,14 @@ Item {
             root._loadingCfg = false;
             root._loadingActionsCfg = false;
             root._loadingOnlineCfg = false;
+            root._loadingTopLikersCfg = false;
+            root._loadingTopGiftersCfg = false;
+            root._loadingKingCfg = false;
         }
     }
 
     readonly property int titleBarH: 44
-    property string widgetMode: "grid" // grid | chat | actions | online
+    property string widgetMode: "grid" // grid | chat | actions | online | top_likers | top_gifters | king_of_live
 
     component PillButton: Button {
         id: pillCtl
@@ -91,9 +94,11 @@ Item {
             border.color: cb.hovered ? "#3b4458" : root.cardEdge
         }
         delegate: ItemDelegate {
+            required property int index
             width: ListView.view ? ListView.view.width : implicitWidth
+            implicitHeight: 34
             contentItem: Text {
-                text: cb.textRole ? (modelData[cb.textRole] || "") : (modelData || "")
+                text: cb.textAt(index)
                 color: root.ink
                 font.pixelSize: 13
                 elide: Text.ElideRight
@@ -110,15 +115,21 @@ Item {
         hoverEnabled: true
         focusPolicy: Qt.StrongFocus
         editable: true
+        stepSize: 1
+        wheelEnabled: true
         font.pixelSize: 13
         implicitHeight: 34
         implicitWidth: 150
 
-        // Qt Quick SpinBox may not expose increase()/decrease() to QML (not invokable in this build).
         function _stepBy(delta) {
-            var next = sb.value + delta;
-            if (next < sb.from) next = sb.from;
-            if (next > sb.to) next = sb.to;
+            var step = sb.stepSize > 0 ? sb.stepSize : 1;
+            var next = sb.value + delta * step;
+            if (next < sb.from)
+                next = sb.from;
+            if (next > sb.to)
+                next = sb.to;
+            if (next === sb.value)
+                return;
             sb.value = next;
         }
 
@@ -190,7 +201,7 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: sb._stepBy(-sb.stepSize)
+                    onClicked: function (mouse) { mouse.accepted = true; sb._stepBy(-1); }
                 }
             }
         }
@@ -221,9 +232,121 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: sb._stepBy(sb.stepSize)
+                    onClicked: function (mouse) { mouse.accepted = true; sb._stepBy(1); }
                 }
             }
+        }
+    }
+
+    // SpinBox `value: root.someCfg.field` does not refresh when only nested keys on a `var` map change.
+    component VarMapSpinBox: StyledSpinBox {
+        id: vsb
+        required property var hostMap
+        required property string hostKey
+        property int hostDefault: 0
+        /// "chat" | "online" | "actions" | "tier" | "king"
+        required property string syncGroup
+        property bool __vsync: false
+
+        function _loadingForGroup() {
+            if (vsb.syncGroup === "chat")
+                return root._loadingCfg;
+            if (vsb.syncGroup === "online")
+                return root._loadingOnlineCfg;
+            if (vsb.syncGroup === "actions")
+                return root._loadingActionsCfg;
+            if (vsb.syncGroup === "tier")
+                return root._tierOverlayLoading;
+            if (vsb.syncGroup === "king")
+                return root._loadingKingCfg;
+            return true;
+        }
+
+        function _persist() {
+            if (vsb.syncGroup === "chat")
+                root._save();
+            else if (vsb.syncGroup === "online")
+                root._saveOnline();
+            else if (vsb.syncGroup === "actions")
+                root._saveActions();
+            else if (vsb.syncGroup === "tier")
+                root._saveTierOverlay();
+            else if (vsb.syncGroup === "king")
+                root._saveKing();
+        }
+
+        function _pull() {
+            if (vsb.hostMap === null)
+                return;
+            var raw = vsb.hostMap[vsb.hostKey];
+            var v = (raw !== undefined && raw !== null) ? parseInt(raw, 10) : vsb.hostDefault;
+            if (isNaN(v))
+                v = vsb.hostDefault;
+            if (v < vsb.from)
+                v = vsb.from;
+            if (v > vsb.to)
+                v = vsb.to;
+            if (v === vsb.value)
+                return;
+            vsb.__vsync = true;
+            vsb.value = v;
+            vsb.__vsync = false;
+        }
+
+        Component.onCompleted: vsb._pull()
+        Connections {
+            target: root
+            function onCfgChanged() {
+                if (vsb.syncGroup === "chat")
+                    vsb._pull();
+            }
+            function onChatCfgEpochChanged() {
+                if (vsb.syncGroup === "chat")
+                    vsb._pull();
+            }
+            function onOnlineCfgChanged() {
+                if (vsb.syncGroup === "online")
+                    vsb._pull();
+            }
+            function onOnlineCfgEpochChanged() {
+                if (vsb.syncGroup === "online")
+                    vsb._pull();
+            }
+            function onActionsCfgChanged() {
+                if (vsb.syncGroup === "actions")
+                    vsb._pull();
+            }
+            function onActionsCfgEpochChanged() {
+                if (vsb.syncGroup === "actions")
+                    vsb._pull();
+            }
+            function onTierOverlayCfgChanged() {
+                if (vsb.syncGroup === "tier")
+                    vsb._pull();
+            }
+            function onTopLikersCfgEpochChanged() {
+                if (vsb.syncGroup === "tier")
+                    vsb._pull();
+            }
+            function onTopGiftersCfgEpochChanged() {
+                if (vsb.syncGroup === "tier")
+                    vsb._pull();
+            }
+            function onKingCfgChanged() {
+                if (vsb.syncGroup === "king")
+                    vsb._pull();
+            }
+            function onKingCfgEpochChanged() {
+                if (vsb.syncGroup === "king")
+                    vsb._pull();
+            }
+        }
+
+        onValueChanged: {
+            if (vsb.__vsync || vsb._loadingForGroup() || vsb.hostMap === null)
+                return;
+            vsb.hostMap[vsb.hostKey] = value;
+            vsb._persist();
         }
     }
 
@@ -252,6 +375,39 @@ Item {
     property color _onlineBorderColor: "#242424"
     property color _onlineTextColor: "#e5e7eb"
 
+    property var topLikersCfg: null
+    property bool _loadingTopLikersCfg: false
+    property int topLikersCfgEpoch: 0
+    property var topGiftersCfg: null
+    property bool _loadingTopGiftersCfg: false
+    property int topGiftersCfgEpoch: 0
+    property var kingCfg: null
+    property bool _loadingKingCfg: false
+    property int kingCfgEpoch: 0
+    property var tierOverlayCfg: null
+
+    readonly property bool _tierOverlayLoading: (root.widgetMode === "top_gifters")
+        ? root._loadingTopGiftersCfg
+        : root._loadingTopLikersCfg
+
+    property color _tlUsernameColor: "#c4b5fd"
+    property color _tlPointsColor: "#f4f4f5"
+    property color _tlRankColor: "#d9d9d9"
+    property color _tlBorderColor: "#242424"
+    property color _tlListBgColor: "#12141c"
+    property real _tlListBgAlpha: 0.72
+    property color _tlUsernameShadowColor: "#000000"
+    property color _tlLikesShadowColor: "#000000"
+    property color _tlPanelShadowColor: "#212121"
+    property real _tlPanelShadowAlpha: 0.4
+
+    function _tlColorFromCfg(s) {
+        var t = (s || "").trim();
+        if (t.length >= 4 && t.toLowerCase().indexOf("rgba") === 0)
+            return _parseRgba(t).c;
+        return Qt.color(t.length ? t : "#000000");
+    }
+
     function _ensureDefaults(obj) {
         if (!obj) obj = {};
         if (obj.schema_version === undefined) obj.schema_version = 1;
@@ -271,7 +427,7 @@ Item {
         if (!obj.username_color_mode) obj.username_color_mode = "auto";
         if (!obj.username_color_custom) obj.username_color_custom = "#93c5fd";
         if (!obj.text_color) obj.text_color = "#e5e7eb";
-        if (obj.text_shadow_enabled === undefined) obj.text_shadow_enabled = false;
+        if (obj.text_shadow_enabled === undefined) obj.text_shadow_enabled = true;
         if (!obj.text_shadow_rgba) obj.text_shadow_rgba = "rgba(0,0,0,0.65)";
         if (obj.text_shadow_blur_px === undefined) obj.text_shadow_blur_px = 4;
         if (obj.text_shadow_offset_x_px === undefined) obj.text_shadow_offset_x_px = 0;
@@ -327,12 +483,16 @@ Item {
     }
 
     function _save() {
-        if (!api || cfg === null) return;
-        if (_loadingCfg) return;
-        api.saveChatConfigJson(JSON.stringify(cfg));
+        if (!api || root.cfg === null) return;
+        root.chatCfgEpoch += 1;
+        if (typeof api.saveChatConfigMap === "function")
+            api.saveChatConfigMap(root.cfg);
+        else
+            api.saveChatConfigJson(JSON.stringify(root.cfg));
     }
 
     property bool _loadingCfg: false
+    property int chatCfgEpoch: 0
 
     function _ensureActionsDefaults(obj) {
         if (!obj) obj = {};
@@ -377,10 +537,12 @@ Item {
     }
 
     function _saveActions() {
-        if (!api || actionsCfg === null) return;
-        if (_loadingActionsCfg) return;
-        actionsCfgEpoch += 1;
-        api.saveActionsConfigJson(JSON.stringify(actionsCfg));
+        if (!api || root.actionsCfg === null) return;
+        root.actionsCfgEpoch += 1;
+        if (typeof api.saveActionsConfigMap === "function")
+            api.saveActionsConfigMap(root.actionsCfg);
+        else
+            api.saveActionsConfigJson(JSON.stringify(root.actionsCfg));
     }
 
     function _ensureOnlineDefaults(obj) {
@@ -416,10 +578,240 @@ Item {
     }
 
     function _saveOnline() {
-        if (!api || onlineCfg === null) return;
-        if (_loadingOnlineCfg) return;
-        onlineCfgEpoch += 1;
-        api.saveOnlineOverlayConfigJson(JSON.stringify(onlineCfg));
+        if (!api || root.onlineCfg === null) return;
+        root.onlineCfgEpoch += 1;
+        if (typeof api.saveOnlineOverlayConfigMap === "function")
+            api.saveOnlineOverlayConfigMap(root.onlineCfg);
+        else
+            api.saveOnlineOverlayConfigJson(JSON.stringify(root.onlineCfg));
+    }
+
+    function _saveTopGifters() {
+        if (!api || root.topGiftersCfg === null) return;
+        root.topGiftersCfgEpoch += 1;
+        if (typeof api.saveTopGiftersOverlayConfigMap === "function")
+            api.saveTopGiftersOverlayConfigMap(root.topGiftersCfg);
+        else
+            api.saveTopGiftersOverlayConfigJson(JSON.stringify(root.topGiftersCfg));
+    }
+
+    function _saveKing() {
+        if (!api || root.kingCfg === null) return;
+        root.kingCfgEpoch += 1;
+        if (typeof api.saveKingOfLiveOverlayConfigMap === "function")
+            api.saveKingOfLiveOverlayConfigMap(root.kingCfg);
+        else
+            api.saveKingOfLiveOverlayConfigJson(JSON.stringify(root.kingCfg));
+    }
+
+    function _saveTierOverlay() {
+        if (root.widgetMode === "top_gifters")
+            root._saveTopGifters();
+        else
+            root._saveTopLikers();
+    }
+
+    readonly property bool _canSaveCurrentWidget:
+        typeof api !== "undefined" && api !== null && (
+            (root.widgetMode === "chat" && root.cfg !== null) ||
+            (root.widgetMode === "actions" && root.actionsCfg !== null) ||
+            (root.widgetMode === "online" && root.onlineCfg !== null) ||
+            ((root.widgetMode === "top_likers" || root.widgetMode === "top_gifters") && root.tierOverlayCfg !== null) ||
+            (root.widgetMode === "king_of_live" && root.kingCfg !== null)
+        )
+
+    function _flushTierOverlayEditorsIntoCfg() {
+        if (root.tierOverlayCfg === null)
+            return;
+        if (typeof tlFontFamily !== "undefined") {
+            var ff = (tlFontFamily.editText || tlFontFamily.currentText || "").trim();
+            if (ff.length)
+                root.tierOverlayCfg.font_family = ff;
+        }
+        if (typeof tlTextFx !== "undefined" && tlTextFx.currentIndex >= 0 && tlTextFx.currentIndex < tlTextFx.count) {
+            var fx = tlTextFx.model.get(tlTextFx.currentIndex).value;
+            if (fx)
+                root.tierOverlayCfg.text_effect_username = fx;
+        }
+        if (typeof tlWaveSpd !== "undefined" && tlWaveSpd.currentIndex >= 0 && tlWaveSpd.currentIndex < tlWaveSpd.count) {
+            var ws = tlWaveSpd.model.get(tlWaveSpd.currentIndex).value;
+            if (ws)
+                root.tierOverlayCfg.wave_speed = ws;
+        }
+        if (typeof tlLeaderSort !== "undefined") {
+            var li = tlLeaderSort.currentIndex;
+            if (li === 0)
+                root.tierOverlayCfg.leader_sort = "likes_desc";
+            else if (li === 1)
+                root.tierOverlayCfg.leader_sort = "likes_asc";
+            else
+                root.tierOverlayCfg.leader_sort = "name_asc";
+        }
+        root.tierOverlayCfg.color_username = _colorToHex(_tlUsernameColor);
+        root.tierOverlayCfg.color_points = _colorToHex(_tlPointsColor);
+        root.tierOverlayCfg.color_rank = _colorToHex(_tlRankColor);
+        root.tierOverlayCfg.font_border_color = _colorToHex(_tlBorderColor);
+        root.tierOverlayCfg.username_text_shadow_color = _colorToHex(_tlUsernameShadowColor);
+        root.tierOverlayCfg.likes_text_shadow_color = _colorToHex(_tlLikesShadowColor);
+        root.tierOverlayCfg.bg_shadow_color = _rgbaString(_tlPanelShadowColor, _tlPanelShadowAlpha);
+        root.tierOverlayCfg.list_bg_rgba = _rgbaString(_tlListBgColor, _tlListBgAlpha);
+    }
+
+    function _saveAndApplyCurrentWidget() {
+        if (!root._canSaveCurrentWidget)
+            return;
+        if (root.widgetMode === "chat")
+            root._save();
+        else if (root.widgetMode === "actions")
+            root._saveActions();
+        else if (root.widgetMode === "online")
+            root._saveOnline();
+        else if (root.widgetMode === "top_likers" || root.widgetMode === "top_gifters") {
+            root._flushTierOverlayEditorsIntoCfg();
+            root._saveTierOverlay();
+        } else if (root.widgetMode === "king_of_live") {
+            root._saveKing();
+        }
+    }
+
+    function _syncTierOverlayCombosFromCfg() {
+        if (!root.tierOverlayCfg)
+            return;
+        if (typeof tlFontFamily !== "undefined" && root.tierOverlayCfg) {
+            var tff = (root.tierOverlayCfg.font_family || "").trim();
+            var ti = tlFontFamily.model.indexOf(tff);
+            if (ti >= 0) tlFontFamily.currentIndex = ti;
+            else { tlFontFamily.currentIndex = -1; tlFontFamily.editText = tff || "Segoe UI"; }
+        }
+        if (typeof tlTextFx !== "undefined" && root.tierOverlayCfg) {
+            var tx = String(root.tierOverlayCfg.text_effect_username || "none").toLowerCase();
+            var foundFx = false;
+            for (var tj = 0; tj < tlTextFx.count; ++tj) {
+                if (tlTextFx.model.get(tj).value === tx) {
+                    tlTextFx.currentIndex = tj;
+                    foundFx = true;
+                    break;
+                }
+            }
+            if (!foundFx)
+                tlTextFx.currentIndex = 0;
+        }
+        if (typeof tlWaveSpd !== "undefined" && root.tierOverlayCfg) {
+            var ws = String(root.tierOverlayCfg.wave_speed || "normal").toLowerCase();
+            var foundWs = false;
+            for (var wj = 0; wj < tlWaveSpd.count; ++wj) {
+                if (tlWaveSpd.model.get(wj).value === ws) {
+                    tlWaveSpd.currentIndex = wj;
+                    foundWs = true;
+                    break;
+                }
+            }
+            if (!foundWs)
+                tlWaveSpd.currentIndex = 1;
+        }
+        if (typeof tlLeaderSort !== "undefined" && root.tierOverlayCfg) {
+            var r = String(root.tierOverlayCfg.leader_sort || "likes_desc").toLowerCase();
+            if (r === "likes_asc") tlLeaderSort.currentIndex = 1;
+            else if (r === "name_asc") tlLeaderSort.currentIndex = 2;
+            else tlLeaderSort.currentIndex = 0;
+        }
+    }
+
+    function _pullTierOverlayColorsFromCfg() {
+        if (!root.tierOverlayCfg)
+            return;
+        _tlUsernameColor = root.tierOverlayCfg.color_username || "#c4b5fd";
+        _tlPointsColor = root.tierOverlayCfg.color_points || "#f4f4f5";
+        _tlRankColor = root.tierOverlayCfg.color_rank || "#d9d9d9";
+        _tlBorderColor = root.tierOverlayCfg.font_border_color || "#242424";
+        _tlUsernameShadowColor = _tlColorFromCfg(root.tierOverlayCfg.username_text_shadow_color);
+        _tlLikesShadowColor = _tlColorFromCfg(root.tierOverlayCfg.likes_text_shadow_color);
+        var bsp2 = _parseRgba(root.tierOverlayCfg.bg_shadow_color || "rgba(33,33,33,0.4)");
+        _tlPanelShadowColor = bsp2.c;
+        _tlPanelShadowAlpha = bsp2.a;
+        var tlp2 = _parseRgba(root.tierOverlayCfg.list_bg_rgba || "rgba(18,20,28,0.72)");
+        _tlListBgColor = tlp2.c;
+        _tlListBgAlpha = tlp2.a;
+        if (typeof tlListBgAlphaSb !== "undefined")
+            tlListBgAlphaSb.value = Math.round(_tlListBgAlpha * 100);
+        if (typeof tlPanelShadowAlphaSb !== "undefined")
+            tlPanelShadowAlphaSb.value = Math.round(_tlPanelShadowAlpha * 100);
+    }
+
+    onWidgetModeChanged: {
+        if (root.widgetMode === "top_likers")
+            root.tierOverlayCfg = root.topLikersCfg;
+        else if (root.widgetMode === "top_gifters")
+            root.tierOverlayCfg = root.topGiftersCfg;
+        else
+            root.tierOverlayCfg = null;
+        if (root.widgetMode === "top_likers" || root.widgetMode === "top_gifters") {
+            root._pullTierOverlayColorsFromCfg();
+            Qt.callLater(function() { root._syncTierOverlayCombosFromCfg(); });
+        }
+    }
+
+    // QVariantMap from load*ConfigMap() is not always a plain JS object; cloning avoids
+    // JSON.stringify -> "{}" on save and prevents mutating engine-owned maps in-place.
+    function _detachTierOverlayCfgMap(m) {
+        var x = m;
+        if (!x || typeof x !== "object")
+            x = {};
+        try {
+            return JSON.parse(JSON.stringify(x));
+        } catch (e) {
+            console.warn("WidgetsView: tier cfg clone failed:", e);
+            return {};
+        }
+    }
+
+    function _ensureTopLikersDefaults(obj) {
+        if (!obj) obj = {};
+        if (obj.schema_version === undefined) obj.schema_version = 1;
+        if (!obj.font_family) obj.font_family = "Segoe UI";
+        if (obj.font_size_px === undefined) obj.font_size_px = 22;
+        if (obj.font_line_spacing_px === undefined) obj.font_line_spacing_px = 4;
+        if (obj.font_letter_spacing_px === undefined) obj.font_letter_spacing_px = 0;
+        if (!obj.color_username) obj.color_username = "#c4b5fd";
+        if (!obj.color_points) obj.color_points = "#f4f4f5";
+        if (!obj.color_rank) obj.color_rank = "#d9d9d9";
+        if (obj.bg_shadow_enabled === undefined) obj.bg_shadow_enabled = false;
+        if (!obj.bg_shadow_color) obj.bg_shadow_color = "rgba(33,33,33,0.4)";
+        if (obj.username_text_shadow_enabled === undefined) obj.username_text_shadow_enabled = false;
+        if (!obj.username_text_shadow_color) obj.username_text_shadow_color = "#000000";
+        if (obj.likes_text_shadow_enabled === undefined) obj.likes_text_shadow_enabled = false;
+        if (!obj.likes_text_shadow_color) obj.likes_text_shadow_color = "#000000";
+        if (!obj.leader_sort) obj.leader_sort = "likes_desc";
+        if (obj.show_rank === undefined) obj.show_rank = true;
+        if (obj.show_likes === undefined) obj.show_likes = true;
+        if (obj.rtl === undefined) obj.rtl = false;
+        if (obj.show_top1_crown === undefined) obj.show_top1_crown = true;
+        if (obj.show_top3_medal === undefined) obj.show_top3_medal = true;
+        if (obj.show_heart === undefined) obj.show_heart = true;
+        if (obj.heart_animated === undefined) obj.heart_animated = true;
+        if (obj.heart_size_px === undefined) obj.heart_size_px = 14;
+        if (!obj.text_effect_username) obj.text_effect_username = "none";
+        if (obj.wave_enabled === undefined) obj.wave_enabled = false;
+        if (!obj.wave_speed) obj.wave_speed = "normal";
+        if (obj.font_border_enabled === undefined) obj.font_border_enabled = true;
+        if (!obj.font_border_color) obj.font_border_color = "#242424";
+        if (obj.top_count === undefined) obj.top_count = 8;
+        if (obj.avatar_size_px === undefined) obj.avatar_size_px = 48;
+        if (obj.row_gap_px === undefined) obj.row_gap_px = 10;
+        if (obj.list_bg_enabled === undefined) obj.list_bg_enabled = true;
+        if (!obj.list_bg_rgba) obj.list_bg_rgba = "rgba(18,20,28,0.72)";
+        if (obj.list_radius_px === undefined) obj.list_radius_px = 12;
+        if (obj.list_scroll_interval_sec === undefined) obj.list_scroll_interval_sec = 0;
+        return obj;
+    }
+
+    function _saveTopLikers() {
+        if (!api || root.topLikersCfg === null) return;
+        root.topLikersCfgEpoch += 1;
+        if (typeof api.saveTopLikersOverlayConfigMap === "function")
+            api.saveTopLikersOverlayConfigMap(root.topLikersCfg);
+        else
+            api.saveTopLikersOverlayConfigJson(JSON.stringify(root.topLikersCfg));
     }
 
     Loader {
@@ -658,6 +1050,30 @@ Item {
                             onCopy: function() { if (api) api.copyOnlineOverlayUrl(); }
                             onEdit: function() { root.widgetMode = "online"; }
                         }
+
+                        WidgetCard {
+                            title: "Top Likers (TikTok)"
+                            urlText: api ? api.topLikersOverlayUrlValue : ""
+                            onCopy: function() { if (api) api.copyTopLikersOverlayUrl(); }
+                            onPlay: function() { if (api) api.previewTopLikersOverlay(); }
+                            onEdit: function() { root.widgetMode = "top_likers"; }
+                        }
+
+                        WidgetCard {
+                            title: "Top GIFters (TikTok)"
+                            urlText: api ? api.topGiftersOverlayUrlValue : ""
+                            onCopy: function() { if (api) api.copyTopGiftersOverlayUrl(); }
+                            onPlay: function() { if (api) api.previewTopGiftersOverlay(); }
+                            onEdit: function() { root.widgetMode = "top_gifters"; }
+                        }
+
+                        WidgetCard {
+                            title: "King of the Live (TikTok)"
+                            urlText: api ? api.kingOfLiveOverlayUrlValue : ""
+                            onCopy: function() { if (api) api.copyKingOfLiveOverlayUrl(); }
+                            onPlay: function() { if (api) api.previewKingOfLiveOverlay(); }
+                            onEdit: function() { root.widgetMode = "king_of_live"; }
+                        }
                     }
 
                     RowLayout {
@@ -720,6 +1136,12 @@ Item {
                         }
 
                         PillButton {
+                            text: "Зберегти й застосувати"
+                            enabled: root._canSaveCurrentWidget
+                            onClicked: root._saveAndApplyCurrentWidget()
+                        }
+
+                        PillButton {
                             text: "Назад"
                             onClicked: root.widgetMode = "grid"
                         }
@@ -778,6 +1200,12 @@ Item {
                         }
 
                         PillButton {
+                            text: "Зберегти й застосувати"
+                            enabled: root._canSaveCurrentWidget
+                            onClicked: root._saveAndApplyCurrentWidget()
+                        }
+
+                        PillButton {
                             text: "Назад"
                             onClicked: root.widgetMode = "grid"
                         }
@@ -830,6 +1258,148 @@ Item {
                         }
 
                         PillButton {
+                            text: "Зберегти й застосувати"
+                            enabled: root._canSaveCurrentWidget
+                            onClicked: root._saveAndApplyCurrentWidget()
+                        }
+
+                        PillButton {
+                            text: "Назад"
+                            onClicked: root.widgetMode = "grid"
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                radius: 14
+                color: cardBase
+                border.width: 1
+                border.color: cardEdge
+                visible: root.widgetMode === "top_likers" || root.widgetMode === "top_gifters"
+                implicitHeight: editTopLikersHeader.implicitHeight + 20
+
+                ColumnLayout {
+                    id: editTopLikersHeader
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 12
+                    spacing: 8
+
+                    Text {
+                        text: root.widgetMode === "top_gifters" ? "Top GIFters (TikTok)" : "Top Likers (TikTok)"
+                        color: ink
+                        font.pixelSize: 18
+                        font.bold: true
+                        Layout.fillWidth: true
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+
+                        TextField {
+                            Layout.fillWidth: true
+                            readOnly: true
+                            selectByMouse: true
+                            color: ink
+                            font.pixelSize: 12
+                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                            text: api ? (root.widgetMode === "top_gifters" ? api.topGiftersOverlayUrlValue : api.topLikersOverlayUrlValue) : ""
+                        }
+
+                        PillButton {
+                            text: "Скопіювати URL"
+                            onClicked: {
+                                if (!api) return;
+                                if (root.widgetMode === "top_gifters") api.copyTopGiftersOverlayUrl();
+                                else api.copyTopLikersOverlayUrl();
+                            }
+                        }
+
+                        PillButton {
+                            text: "▶"
+                            pillFontSize: 12
+                            onClicked: {
+                                if (!api) return;
+                                if (root.widgetMode === "top_gifters") api.previewTopGiftersOverlay();
+                                else api.previewTopLikersOverlay();
+                            }
+                        }
+
+                        PillButton {
+                            text: "Зберегти й застосувати"
+                            enabled: root._canSaveCurrentWidget
+                            onClicked: root._saveAndApplyCurrentWidget()
+                        }
+
+                        PillButton {
+                            text: "Назад"
+                            onClicked: root.widgetMode = "grid"
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                radius: 14
+                color: cardBase
+                border.width: 1
+                border.color: cardEdge
+                visible: root.widgetMode === "king_of_live"
+                implicitHeight: editKingHeader.implicitHeight + 20
+
+                ColumnLayout {
+                    id: editKingHeader
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 12
+                    spacing: 8
+
+                    Text {
+                        text: "King of the Live (TikTok)"
+                        color: ink
+                        font.pixelSize: 18
+                        font.bold: true
+                        Layout.fillWidth: true
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+
+                        TextField {
+                            Layout.fillWidth: true
+                            readOnly: true
+                            selectByMouse: true
+                            color: ink
+                            font.pixelSize: 12
+                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                            text: api ? api.kingOfLiveOverlayUrlValue : ""
+                        }
+
+                        PillButton {
+                            text: "Скопіювати URL"
+                            onClicked: if (api) api.copyKingOfLiveOverlayUrl()
+                        }
+
+                        PillButton {
+                            text: "▶"
+                            pillFontSize: 12
+                            onClicked: if (api) api.previewKingOfLiveOverlay()
+                        }
+
+                        PillButton {
+                            text: "Зберегти й застосувати"
+                            enabled: root._canSaveCurrentWidget
+                            onClicked: root._saveAndApplyCurrentWidget()
+                        }
+
+                        PillButton {
                             text: "Назад"
                             onClicked: root.widgetMode = "grid"
                         }
@@ -867,16 +1437,14 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "К-сть повідомлень"; color: muted; Layout.preferredWidth: 160 }
-                            StyledSpinBox {
+                            VarMapSpinBox {
                                 id: maxItems
+                                syncGroup: "chat"
+                                hostMap: root.cfg
+                                hostKey: "max_items"
+                                hostDefault: 12
                                 from: 1
                                 to: 200
-                                value: (cfg && cfg.max_items) ? cfg.max_items : 12
-                                onValueChanged: {
-                                    if (_loadingCfg || cfg === null) return;
-                                    cfg.max_items = value;
-                                    _save();
-                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -885,16 +1453,14 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Розмір шрифту"; color: muted; Layout.preferredWidth: 160 }
-                            StyledSpinBox {
+                            VarMapSpinBox {
                                 id: fontSize
+                                syncGroup: "chat"
+                                hostMap: root.cfg
+                                hostKey: "font_size_px"
+                                hostDefault: 18
                                 from: 8
                                 to: 96
-                                value: (cfg && cfg.font_size_px) ? cfg.font_size_px : 18
-                                onValueChanged: {
-                                    if (_loadingCfg || cfg === null) return;
-                                    cfg.font_size_px = value;
-                                    _save();
-                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -905,11 +1471,11 @@ Item {
                             Text { text: "Іконки платформ"; color: muted; Layout.preferredWidth: 160 }
                             Switch {
                                 id: showPlatformIcon
-                                checked: cfg ? !!cfg.show_platform_icon : true
+                                checked: root.cfg ? !!root.cfg.show_platform_icon : true
                                 onClicked: {
-                                    if (cfg === null) return;
-                                    cfg.show_platform_icon = checked;
-                                    _save();
+                                    if (root.cfg === null) return;
+                                    root.cfg.show_platform_icon = checked;
+                                    root._save();
                                 }
                             }
                             Item { Layout.fillWidth: true }
@@ -919,16 +1485,14 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Авто-приховування (сек)"; color: muted; Layout.preferredWidth: 160 }
-                            StyledSpinBox {
+                            VarMapSpinBox {
                                 id: fadeSeconds
+                                syncGroup: "chat"
+                                hostMap: root.cfg
+                                hostKey: "fade_seconds"
+                                hostDefault: 0
                                 from: 0
                                 to: 600
-                                value: (cfg && cfg.fade_seconds !== undefined) ? cfg.fade_seconds : 0
-                                onValueChanged: {
-                                    if (_loadingCfg || cfg === null) return;
-                                    cfg.fade_seconds = value;
-                                    _save();
-                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -939,11 +1503,11 @@ Item {
                             Text { text: "Фон віджета"; color: muted; Layout.preferredWidth: 160 }
                             Switch {
                                 id: widgetBgSw
-                                checked: cfg ? !!cfg.widget_bg_enabled : false
+                                checked: root.cfg ? !!root.cfg.widget_bg_enabled : false
                                 onClicked: {
-                                    if (cfg === null) return;
-                                    cfg.widget_bg_enabled = checked;
-                                    _save();
+                                    if (root.cfg === null) return;
+                                    root.cfg.widget_bg_enabled = checked;
+                                    root._save();
                                 }
                             }
                             Item { Layout.fillWidth: true }
@@ -952,7 +1516,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: cfg && cfg.widget_bg_enabled
+                            visible: root.cfg && root.cfg.widget_bg_enabled
                             Text { text: "Колір фону"; color: muted; Layout.preferredWidth: 160 }
                             Rectangle {
                                 width: 26
@@ -977,10 +1541,10 @@ Item {
                                 stepSize: 0.01
                                 value: _widgetBgAlpha
                                 onMoved: {
-                                    if (cfg === null) return;
+                                    if (root.cfg === null) return;
                                     _widgetBgAlpha = value;
-                                    cfg.widget_bg_rgba = _rgbaString(_widgetBgColor, _widgetBgAlpha);
-                                    _save();
+                                    root.cfg.widget_bg_rgba = _rgbaString(_widgetBgColor, _widgetBgAlpha);
+                                    root._save();
                                 }
                             }
                         }
@@ -988,18 +1552,16 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: cfg && cfg.widget_bg_enabled
+                            visible: root.cfg && root.cfg.widget_bg_enabled
                             Text { text: "Заокруглення фону (px)"; color: muted; Layout.preferredWidth: 160 }
-                            StyledSpinBox {
+                            VarMapSpinBox {
                                 id: widgetBgRadius
+                                syncGroup: "chat"
+                                hostMap: root.cfg
+                                hostKey: "widget_bg_radius_px"
+                                hostDefault: 14
                                 from: 0
                                 to: 60
-                                value: (cfg && cfg.widget_bg_radius_px !== undefined) ? cfg.widget_bg_radius_px : 14
-                                onValueChanged: {
-                                    if (_loadingCfg || cfg === null) return;
-                                    cfg.widget_bg_radius_px = value;
-                                    _save();
-                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -1007,18 +1569,16 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: cfg && cfg.widget_bg_enabled
+                            visible: root.cfg && root.cfg.widget_bg_enabled
                             Text { text: "Внутрішній відступ (px)"; color: muted; Layout.preferredWidth: 160 }
-                            StyledSpinBox {
+                            VarMapSpinBox {
                                 id: widgetBgPadding
+                                syncGroup: "chat"
+                                hostMap: root.cfg
+                                hostKey: "widget_bg_padding_px"
+                                hostDefault: 10
                                 from: 0
                                 to: 48
-                                value: (cfg && cfg.widget_bg_padding_px !== undefined) ? cfg.widget_bg_padding_px : 10
-                                onValueChanged: {
-                                    if (_loadingCfg || cfg === null) return;
-                                    cfg.widget_bg_padding_px = value;
-                                    _save();
-                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -1029,11 +1589,11 @@ Item {
                             Text { text: "Фон повідомлень"; color: muted; Layout.preferredWidth: 160 }
                             Switch {
                                 id: bubbleBgSw
-                                checked: cfg ? !!cfg.bubble_bg_enabled : true
+                                checked: root.cfg ? !!root.cfg.bubble_bg_enabled : true
                                 onClicked: {
-                                    if (cfg === null) return;
-                                    cfg.bubble_bg_enabled = checked;
-                                    _save();
+                                    if (root.cfg === null) return;
+                                    root.cfg.bubble_bg_enabled = checked;
+                                    root._save();
                                 }
                             }
                             Item { Layout.fillWidth: true }
@@ -1042,7 +1602,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: cfg && cfg.bubble_bg_enabled
+                            visible: root.cfg && root.cfg.bubble_bg_enabled
                             Text { text: "Фон бульбашки"; color: muted; Layout.preferredWidth: 160 }
                             Rectangle {
                                 width: 26
@@ -1067,10 +1627,10 @@ Item {
                                 stepSize: 0.01
                                 value: _bubbleAlpha
                                 onMoved: {
-                                    if (cfg === null) return;
+                                    if (root.cfg === null) return;
                                     _bubbleAlpha = value;
-                                    cfg.bubble_bg_rgba = _rgbaString(_bubbleColor, _bubbleAlpha);
-                                    _save();
+                                    root.cfg.bubble_bg_rgba = _rgbaString(_bubbleColor, _bubbleAlpha);
+                                    root._save();
                                 }
                             }
                         }
@@ -1078,18 +1638,16 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: cfg && cfg.bubble_bg_enabled
+                            visible: root.cfg && root.cfg.bubble_bg_enabled
                             Text { text: "Заокруглення (px)"; color: muted; Layout.preferredWidth: 160 }
-                            StyledSpinBox {
+                            VarMapSpinBox {
                                 id: bubbleRadius
+                                syncGroup: "chat"
+                                hostMap: root.cfg
+                                hostKey: "bubble_radius_px"
+                                hostDefault: 10
                                 from: 0
                                 to: 60
-                                value: (cfg && cfg.bubble_radius_px !== undefined) ? cfg.bubble_radius_px : 10
-                                onValueChanged: {
-                                    if (_loadingCfg || cfg === null) return;
-                                    cfg.bubble_radius_px = value;
-                                    _save();
-                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -1103,13 +1661,13 @@ Item {
                                 model: ["Авто", "Колір платформи", "Свій колір"]
                                 Layout.fillWidth: true
                                 onActivated: {
-                                    if (cfg === null) return;
-                                    cfg.username_color_mode = (currentIndex === 1) ? "platform" : ((currentIndex === 2) ? "custom" : "auto");
-                                    _save();
+                                    if (root.cfg === null) return;
+                                    root.cfg.username_color_mode = (currentIndex === 1) ? "platform" : ((currentIndex === 2) ? "custom" : "auto");
+                                    root._save();
                                 }
                                 Component.onCompleted: {
-                                    if (!cfg) return;
-                                    var raw = cfg.username_color_mode || "auto";
+                                    if (!root.cfg) return;
+                                    var raw = root.cfg.username_color_mode || "auto";
                                     currentIndex = (raw === "platform") ? 1 : ((raw === "custom") ? 2 : 0);
                                 }
                             }
@@ -1118,7 +1676,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: cfg && cfg.username_color_mode === "custom"
+                            visible: root.cfg && root.cfg.username_color_mode === "custom"
                             Text { text: "Свій колір ніку"; color: muted; Layout.preferredWidth: 160 }
                             Rectangle {
                                 width: 26
@@ -1135,7 +1693,7 @@ Item {
                                 onClicked: usernameColorDlg.open()
                             }
                             Text {
-                                text: cfg ? (cfg.username_color_custom || "") : ""
+                                text: root.cfg ? (root.cfg.username_color_custom || "") : ""
                                 color: muted
                                 font.pixelSize: 11
                                 Layout.fillWidth: true
@@ -1152,7 +1710,7 @@ Item {
                                 width: 26
                                 height: 26
                                 radius: 8
-                                color: cfg ? (cfg.text_color || "#e5e7eb") : "#e5e7eb"
+                                color: root.cfg ? (root.cfg.text_color || "#e5e7eb") : "#e5e7eb"
                                 border.width: 1
                                 border.color: cardEdge
                                 Layout.alignment: Qt.AlignVCenter
@@ -1166,11 +1724,11 @@ Item {
                                 Layout.fillWidth: true
                                 color: ink
                                 background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                                text: cfg ? (cfg.text_color || "") : ""
+                                text: root.cfg ? (root.cfg.text_color || "") : ""
                                 onEditingFinished: {
-                                    if (cfg === null) return;
-                                    cfg.text_color = text;
-                                    _save();
+                                    if (root.cfg === null) return;
+                                    root.cfg.text_color = text;
+                                    root._save();
                                 }
                             }
                         }
@@ -1181,11 +1739,11 @@ Item {
                             Text { text: "Тінь тексту"; color: muted; Layout.preferredWidth: 160 }
                             Switch {
                                 id: textShadowSw
-                                checked: cfg ? !!cfg.text_shadow_enabled : false
+                                checked: root.cfg ? !!root.cfg.text_shadow_enabled : false
                                 onClicked: {
-                                    if (cfg === null) return;
-                                    cfg.text_shadow_enabled = checked;
-                                    _save();
+                                    if (root.cfg === null) return;
+                                    root.cfg.text_shadow_enabled = checked;
+                                    root._save();
                                 }
                             }
                             Item { Layout.fillWidth: true }
@@ -1194,7 +1752,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: cfg && cfg.text_shadow_enabled
+                            visible: root.cfg && root.cfg.text_shadow_enabled
                             Text { text: "Колір тіні"; color: muted; Layout.preferredWidth: 160 }
                             Rectangle {
                                 width: 26
@@ -1219,10 +1777,10 @@ Item {
                                 stepSize: 0.01
                                 value: _textShadowAlpha
                                 onMoved: {
-                                    if (cfg === null) return;
+                                    if (root.cfg === null) return;
                                     _textShadowAlpha = value;
-                                    cfg.text_shadow_rgba = _rgbaString(_textShadowColor, _textShadowAlpha);
-                                    _save();
+                                    root.cfg.text_shadow_rgba = _rgbaString(_textShadowColor, _textShadowAlpha);
+                                    root._save();
                                 }
                             }
                         }
@@ -1230,18 +1788,16 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: cfg && cfg.text_shadow_enabled
+                            visible: root.cfg && root.cfg.text_shadow_enabled
                             Text { text: "Розмиття тіні"; color: muted; Layout.preferredWidth: 160 }
-                            StyledSpinBox {
+                            VarMapSpinBox {
                                 id: textShadowBlur
+                                syncGroup: "chat"
+                                hostMap: root.cfg
+                                hostKey: "text_shadow_blur_px"
+                                hostDefault: 4
                                 from: 0
                                 to: 24
-                                value: (cfg && cfg.text_shadow_blur_px !== undefined) ? cfg.text_shadow_blur_px : 4
-                                onValueChanged: {
-                                    if (_loadingCfg || cfg === null) return;
-                                    cfg.text_shadow_blur_px = value;
-                                    _save();
-                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -1249,18 +1805,16 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: cfg && cfg.text_shadow_enabled
+                            visible: root.cfg && root.cfg.text_shadow_enabled
                             Text { text: "Зміщення X"; color: muted; Layout.preferredWidth: 160 }
-                            StyledSpinBox {
+                            VarMapSpinBox {
                                 id: textShadowOffX
+                                syncGroup: "chat"
+                                hostMap: root.cfg
+                                hostKey: "text_shadow_offset_x_px"
+                                hostDefault: 0
                                 from: -12
                                 to: 12
-                                value: (cfg && cfg.text_shadow_offset_x_px !== undefined) ? cfg.text_shadow_offset_x_px : 0
-                                onValueChanged: {
-                                    if (_loadingCfg || cfg === null) return;
-                                    cfg.text_shadow_offset_x_px = value;
-                                    _save();
-                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -1268,18 +1822,16 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: cfg && cfg.text_shadow_enabled
+                            visible: root.cfg && root.cfg.text_shadow_enabled
                             Text { text: "Зміщення Y"; color: muted; Layout.preferredWidth: 160 }
-                            StyledSpinBox {
+                            VarMapSpinBox {
                                 id: textShadowOffY
+                                syncGroup: "chat"
+                                hostMap: root.cfg
+                                hostKey: "text_shadow_offset_y_px"
+                                hostDefault: 1
                                 from: -12
                                 to: 12
-                                value: (cfg && cfg.text_shadow_offset_y_px !== undefined) ? cfg.text_shadow_offset_y_px : 1
-                                onValueChanged: {
-                                    if (_loadingCfg || cfg === null) return;
-                                    cfg.text_shadow_offset_y_px = value;
-                                    _save();
-                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -1294,18 +1846,18 @@ Item {
                                 editable: true
                                 model: api ? api.systemFontFamilies() : []
                                 onActivated: {
-                                    if (cfg === null) return;
-                                    cfg.font_family = currentText;
-                                    _save();
+                                    if (root.cfg === null) return;
+                                    root.cfg.font_family = currentText;
+                                    root._save();
                                 }
                                 onAccepted: {
-                                    if (cfg === null) return;
-                                    cfg.font_family = editText || currentText;
-                                    _save();
+                                    if (root.cfg === null) return;
+                                    root.cfg.font_family = editText || currentText;
+                                    root._save();
                                 }
                                 Component.onCompleted: {
-                                    if (!cfg) return;
-                                    var ff = (cfg.font_family || "").trim();
+                                    if (!root.cfg) return;
+                                    var ff = (root.cfg.font_family || "").trim();
                                     var i = model.indexOf(ff);
                                     if (i >= 0) currentIndex = i;
                                     else {
@@ -1346,13 +1898,13 @@ Item {
                                     "Окремо по кожній площадці"
                                 ]
                                 onActivated: {
-                                    if (onlineCfg === null) return;
-                                    onlineCfg.layout_mode = (currentIndex === 1) ? "per_platform" : "combined";
-                                    _saveOnline();
+                                    if (root.onlineCfg === null) return;
+                                    root.onlineCfg.layout_mode = (currentIndex === 1) ? "per_platform" : "combined";
+                                    root._saveOnline();
                                 }
                                 Component.onCompleted: {
-                                    if (!onlineCfg) { currentIndex = 0; return; }
-                                    var m = String(onlineCfg.layout_mode || "combined").toLowerCase();
+                                    if (!root.onlineCfg) { currentIndex = 0; return; }
+                                    var m = String(root.onlineCfg.layout_mode || "combined").toLowerCase();
                                     currentIndex = (m === "per_platform") ? 1 : 0;
                                 }
                             }
@@ -1365,11 +1917,11 @@ Item {
                             spacing: 10
                             Text { text: "Twitch"; color: muted; Layout.preferredWidth: 160 }
                             Switch {
-                                checked: onlineCfg ? !!onlineCfg.platform_twitch_enabled : true
+                                checked: root.onlineCfg ? !!root.onlineCfg.platform_twitch_enabled : true
                                 onClicked: {
-                                    if (onlineCfg === null) return;
-                                    onlineCfg.platform_twitch_enabled = checked;
-                                    _saveOnline();
+                                    if (root.onlineCfg === null) return;
+                                    root.onlineCfg.platform_twitch_enabled = checked;
+                                    root._saveOnline();
                                 }
                             }
                             Item { Layout.fillWidth: true }
@@ -1380,11 +1932,11 @@ Item {
                             spacing: 10
                             Text { text: "TikTok"; color: muted; Layout.preferredWidth: 160 }
                             Switch {
-                                checked: onlineCfg ? !!onlineCfg.platform_tiktok_enabled : true
+                                checked: root.onlineCfg ? !!root.onlineCfg.platform_tiktok_enabled : true
                                 onClicked: {
-                                    if (onlineCfg === null) return;
-                                    onlineCfg.platform_tiktok_enabled = checked;
-                                    _saveOnline();
+                                    if (root.onlineCfg === null) return;
+                                    root.onlineCfg.platform_tiktok_enabled = checked;
+                                    root._saveOnline();
                                 }
                             }
                             Item { Layout.fillWidth: true }
@@ -1395,11 +1947,11 @@ Item {
                             spacing: 10
                             Text { text: "YouTube"; color: muted; Layout.preferredWidth: 160 }
                             Switch {
-                                checked: onlineCfg ? !!onlineCfg.platform_youtube_enabled : true
+                                checked: root.onlineCfg ? !!root.onlineCfg.platform_youtube_enabled : true
                                 onClicked: {
-                                    if (onlineCfg === null) return;
-                                    onlineCfg.platform_youtube_enabled = checked;
-                                    _saveOnline();
+                                    if (root.onlineCfg === null) return;
+                                    root.onlineCfg.platform_youtube_enabled = checked;
+                                    root._saveOnline();
                                 }
                             }
                             Item { Layout.fillWidth: true }
@@ -1423,18 +1975,18 @@ Item {
                                 editable: true
                                 model: api ? api.systemFontFamilies() : []
                                 onActivated: {
-                                    if (onlineCfg === null) return;
-                                    onlineCfg.font_family = currentText;
-                                    _saveOnline();
+                                    if (root.onlineCfg === null) return;
+                                    root.onlineCfg.font_family = currentText;
+                                    root._saveOnline();
                                 }
                                 onAccepted: {
-                                    if (onlineCfg === null) return;
-                                    onlineCfg.font_family = editText || currentText;
-                                    _saveOnline();
+                                    if (root.onlineCfg === null) return;
+                                    root.onlineCfg.font_family = editText || currentText;
+                                    root._saveOnline();
                                 }
                                 Component.onCompleted: {
-                                    if (!onlineCfg) return;
-                                    var ff = (onlineCfg.font_family || "").trim();
+                                    if (!root.onlineCfg) return;
+                                    var ff = (root.onlineCfg.font_family || "").trim();
                                     var i = model.indexOf(ff);
                                     if (i >= 0) currentIndex = i;
                                     else {
@@ -1449,15 +2001,13 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Розмір шрифту"; color: muted; Layout.preferredWidth: 160 }
-                            StyledSpinBox {
+                            VarMapSpinBox {
+                                syncGroup: "online"
+                                hostMap: root.onlineCfg
+                                hostKey: "font_size_px"
+                                hostDefault: 36
                                 from: 8
                                 to: 200
-                                value: (onlineCfg && onlineCfg.font_size_px !== undefined) ? onlineCfg.font_size_px : 36
-                                onValueChanged: {
-                                    if (_loadingOnlineCfg || onlineCfg === null) return;
-                                    onlineCfg.font_size_px = value;
-                                    _saveOnline();
-                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -1466,15 +2016,13 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Інтервал між рядками"; color: muted; Layout.preferredWidth: 160 }
-                            StyledSpinBox {
+                            VarMapSpinBox {
+                                syncGroup: "online"
+                                hostMap: root.onlineCfg
+                                hostKey: "font_line_spacing_px"
+                                hostDefault: 0
                                 from: 0
                                 to: 200
-                                value: (onlineCfg && onlineCfg.font_line_spacing_px !== undefined) ? onlineCfg.font_line_spacing_px : 0
-                                onValueChanged: {
-                                    if (_loadingOnlineCfg || onlineCfg === null) return;
-                                    onlineCfg.font_line_spacing_px = value;
-                                    _saveOnline();
-                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -1483,15 +2031,13 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Інтервал між літерами"; color: muted; Layout.preferredWidth: 160 }
-                            StyledSpinBox {
+                            VarMapSpinBox {
+                                syncGroup: "online"
+                                hostMap: root.onlineCfg
+                                hostKey: "font_letter_spacing_px"
+                                hostDefault: 0
                                 from: -200
                                 to: 200
-                                value: (onlineCfg && onlineCfg.font_letter_spacing_px !== undefined) ? onlineCfg.font_letter_spacing_px : 0
-                                onValueChanged: {
-                                    if (_loadingOnlineCfg || onlineCfg === null) return;
-                                    onlineCfg.font_letter_spacing_px = value;
-                                    _saveOnline();
-                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -1503,11 +2049,11 @@ Item {
                             spacing: 10
                             Text { text: "Увімкнути тінь"; color: muted; Layout.preferredWidth: 220 }
                             Switch {
-                                checked: onlineCfg ? !!onlineCfg.text_shadow_enabled : false
+                                checked: root.onlineCfg ? !!root.onlineCfg.text_shadow_enabled : false
                                 onClicked: {
-                                    if (onlineCfg === null) return;
-                                    onlineCfg.text_shadow_enabled = checked;
-                                    _saveOnline();
+                                    if (root.onlineCfg === null) return;
+                                    root.onlineCfg.text_shadow_enabled = checked;
+                                    root._saveOnline();
                                 }
                             }
                             Item { Layout.fillWidth: true }
@@ -1516,7 +2062,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: onlineCfg && onlineCfg.text_shadow_enabled
+                            visible: root.onlineCfg && root.onlineCfg.text_shadow_enabled
                             Text { text: "Колір тіні"; color: muted; Layout.preferredWidth: 220 }
                             Rectangle {
                                 width: 26
@@ -1532,7 +2078,7 @@ Item {
                                 onClicked: onlineTextShadowDlg.open()
                             }
                             Text {
-                                text: onlineCfg ? (onlineCfg.text_shadow_color || "") : ""
+                                text: root.onlineCfg ? (root.onlineCfg.text_shadow_color || "") : ""
                                 color: muted
                                 font.pixelSize: 11
                                 Layout.fillWidth: true
@@ -1561,7 +2107,7 @@ Item {
                                 onClicked: onlineTextColorDlg.open()
                             }
                             Text {
-                                text: onlineCfg ? (onlineCfg.text_color || "") : ""
+                                text: root.onlineCfg ? (root.onlineCfg.text_color || "") : ""
                                 color: muted
                                 font.pixelSize: 11
                                 Layout.fillWidth: true
@@ -1577,11 +2123,11 @@ Item {
                             spacing: 10
                             Text { text: "Увімкнути контур"; color: muted; Layout.preferredWidth: 220 }
                             Switch {
-                                checked: onlineCfg ? !!onlineCfg.font_border_enabled : false
+                                checked: root.onlineCfg ? !!root.onlineCfg.font_border_enabled : false
                                 onClicked: {
-                                    if (onlineCfg === null) return;
-                                    onlineCfg.font_border_enabled = checked;
-                                    _saveOnline();
+                                    if (root.onlineCfg === null) return;
+                                    root.onlineCfg.font_border_enabled = checked;
+                                    root._saveOnline();
                                 }
                             }
                             Item { Layout.fillWidth: true }
@@ -1590,7 +2136,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: onlineCfg && onlineCfg.font_border_enabled
+                            visible: root.onlineCfg && root.onlineCfg.font_border_enabled
                             Text { text: "Колір контуру"; color: muted; Layout.preferredWidth: 220 }
                             Rectangle {
                                 width: 26
@@ -1606,7 +2152,7 @@ Item {
                                 onClicked: onlineBorderDlg.open()
                             }
                             Text {
-                                text: onlineCfg ? (onlineCfg.font_border_color || "") : ""
+                                text: root.onlineCfg ? (root.onlineCfg.font_border_color || "") : ""
                                 color: muted
                                 font.pixelSize: 11
                                 Layout.fillWidth: true
@@ -1626,19 +2172,19 @@ Item {
                                 Layout.fillWidth: true
                                 model: ["Немає", "Glow", "Neon", "Rainbow", "The Aurora", "Fire"]
                                 onActivated: {
-                                    if (onlineCfg === null) return;
-                                    onlineCfg.text_effect =
+                                    if (root.onlineCfg === null) return;
+                                    root.onlineCfg.text_effect =
                                         (currentIndex === 1) ? "glow"
                                         : (currentIndex === 2) ? "neon"
                                         : (currentIndex === 3) ? "rainbow"
                                         : (currentIndex === 4) ? "aurora"
                                         : (currentIndex === 5) ? "fire"
                                         : "none";
-                                    _saveOnline();
+                                    root._saveOnline();
                                 }
                                 Component.onCompleted: {
-                                    if (!onlineCfg) { currentIndex = 0; return; }
-                                    var raw = String(onlineCfg.text_effect || "none").trim().toLowerCase();
+                                    if (!root.onlineCfg) { currentIndex = 0; return; }
+                                    var raw = String(root.onlineCfg.text_effect || "none").trim().toLowerCase();
                                     currentIndex =
                                         (raw === "glow") ? 1
                                         : (raw === "neon") ? 2
@@ -1656,15 +2202,13 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Розмір іконки (px)"; color: muted; Layout.preferredWidth: 220 }
-                            StyledSpinBox {
+                            VarMapSpinBox {
+                                syncGroup: "online"
+                                hostMap: root.onlineCfg
+                                hostKey: "platform_icon_size_px"
+                                hostDefault: 28
                                 from: 16
                                 to: 128
-                                value: (onlineCfg && onlineCfg.platform_icon_size_px !== undefined) ? onlineCfg.platform_icon_size_px : 28
-                                onValueChanged: {
-                                    if (_loadingOnlineCfg || onlineCfg === null) return;
-                                    onlineCfg.platform_icon_size_px = value;
-                                    _saveOnline();
-                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -1673,15 +2217,13 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Відступ іконки — число (px)"; color: muted; Layout.preferredWidth: 220 }
-                            StyledSpinBox {
+                            VarMapSpinBox {
+                                syncGroup: "online"
+                                hostMap: root.onlineCfg
+                                hostKey: "icon_number_gap_px"
+                                hostDefault: 12
                                 from: 0
                                 to: 80
-                                value: (onlineCfg && onlineCfg.icon_number_gap_px !== undefined) ? onlineCfg.icon_number_gap_px : 12
-                                onValueChanged: {
-                                    if (_loadingOnlineCfg || onlineCfg === null) return;
-                                    onlineCfg.icon_number_gap_px = value;
-                                    _saveOnline();
-                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -1693,11 +2235,11 @@ Item {
                             spacing: 10
                             Text { text: "Фон-підкладка"; color: muted; Layout.preferredWidth: 220 }
                             Switch {
-                                checked: onlineCfg ? !!onlineCfg.bubble_bg_enabled : true
+                                checked: root.onlineCfg ? !!root.onlineCfg.bubble_bg_enabled : true
                                 onClicked: {
-                                    if (onlineCfg === null) return;
-                                    onlineCfg.bubble_bg_enabled = checked;
-                                    _saveOnline();
+                                    if (root.onlineCfg === null) return;
+                                    root.onlineCfg.bubble_bg_enabled = checked;
+                                    root._saveOnline();
                                 }
                             }
                             Item { Layout.fillWidth: true }
@@ -1706,18 +2248,18 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: onlineCfg && onlineCfg.bubble_bg_enabled
+                            visible: root.onlineCfg && root.onlineCfg.bubble_bg_enabled
                             Text { text: "Непрозорість фону"; color: muted; Layout.preferredWidth: 220 }
                             Slider {
                                 Layout.fillWidth: true
                                 from: 0.0
                                 to: 1.0
                                 stepSize: 0.01
-                                value: (onlineCfg && onlineCfg.bubble_bg_alpha !== undefined) ? onlineCfg.bubble_bg_alpha : 0.45
+                                value: (root.onlineCfg && root.onlineCfg.bubble_bg_alpha !== undefined) ? root.onlineCfg.bubble_bg_alpha : 0.45
                                 onMoved: {
-                                    if (onlineCfg === null) return;
-                                    onlineCfg.bubble_bg_alpha = value;
-                                    _saveOnline();
+                                    if (root.onlineCfg === null) return;
+                                    root.onlineCfg.bubble_bg_alpha = value;
+                                    root._saveOnline();
                                 }
                             }
                         }
@@ -1725,22 +2267,1033 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: onlineCfg && onlineCfg.bubble_bg_enabled
+                            visible: root.onlineCfg && root.onlineCfg.bubble_bg_enabled
                             Text { text: "Радіус кутів (px)"; color: muted; Layout.preferredWidth: 220 }
-                            StyledSpinBox {
+                            VarMapSpinBox {
+                                syncGroup: "online"
+                                hostMap: root.onlineCfg
+                                hostKey: "bubble_radius_px"
+                                hostDefault: 14
                                 from: 0
                                 to: 60
-                                value: (onlineCfg && onlineCfg.bubble_radius_px !== undefined) ? onlineCfg.bubble_radius_px : 14
-                                onValueChanged: {
-                                    if (_loadingOnlineCfg || onlineCfg === null) return;
-                                    onlineCfg.bubble_radius_px = value;
-                                    _saveOnline();
-                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
 
                         } // onlineSettings
+
+                        ColumnLayout {
+                            id: topLikersSettings
+                            visible: root.widgetMode === "top_likers" || root.widgetMode === "top_gifters"
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                        Rectangle { Layout.fillWidth: true; height: 1; color: cardEdge; opacity: 0.6 }
+
+                        Text {
+                            text: "Top Likers — Налаштування"
+                            color: ink
+                            font.pixelSize: 16
+                            font.bold: true
+                            Layout.fillWidth: true
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Шрифт"; color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: tlFontFamily
+                                Layout.fillWidth: true
+                                editable: true
+                                model: api ? api.systemFontFamilies() : []
+                                onActivated: {
+                                    if (root.tierOverlayCfg === null) return;
+                                    root.tierOverlayCfg.font_family = currentText;
+                                    root._saveTierOverlay();
+                                }
+                                onAccepted: {
+                                    if (root.tierOverlayCfg === null) return;
+                                    root.tierOverlayCfg.font_family = editText || currentText;
+                                    root._saveTierOverlay();
+                                }
+                                Component.onCompleted: {
+                                    if (!root.tierOverlayCfg) return;
+                                    var ff = (root.tierOverlayCfg.font_family || "").trim();
+                                    var i = model.indexOf(ff);
+                                    if (i >= 0) currentIndex = i;
+                                    else { currentIndex = -1; editText = ff || "Segoe UI"; }
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Розмір шрифту (нік)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "tier"
+                                hostMap: root.tierOverlayCfg
+                                hostKey: "font_size_px"
+                                hostDefault: 22
+                                from: 8; to: 120
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Інтервал рядків (нік)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "tier"
+                                hostMap: root.tierOverlayCfg
+                                hostKey: "font_line_spacing_px"
+                                hostDefault: 4
+                                from: 0; to: 80
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Інтервал літер"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "tier"
+                                hostMap: root.tierOverlayCfg
+                                hostKey: "font_letter_spacing_px"
+                                hostDefault: 0
+                                from: -20; to: 40
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Колір ніку"; color: muted; Layout.preferredWidth: 160 }
+                            Rectangle {
+                                width: 28; height: 28; radius: 6; color: _tlUsernameColor; border.width: 1; border.color: cardEdge
+                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: tlUsernameDlg.open() }
+                            }
+                            TextField {
+                                Layout.fillWidth: true
+                                readOnly: true
+                                color: ink
+                                font.pixelSize: 12
+                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                text: root.tierOverlayCfg ? (root.tierOverlayCfg.color_username || "") : ""
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: root.widgetMode === "top_gifters" ? "Колір монет" : "Колір лайків"; color: muted; Layout.preferredWidth: 160 }
+                            Rectangle {
+                                width: 28; height: 28; radius: 6; color: _tlPointsColor; border.width: 1; border.color: cardEdge
+                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: tlPointsDlg.open() }
+                            }
+                            TextField {
+                                Layout.fillWidth: true
+                                readOnly: true
+                                color: ink
+                                font.pixelSize: 12
+                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                text: root.tierOverlayCfg ? (root.tierOverlayCfg.color_points || "") : ""
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Колір рангу"; color: muted; Layout.preferredWidth: 160 }
+                            Rectangle {
+                                width: 28; height: 28; radius: 6; color: _tlRankColor; border.width: 1; border.color: cardEdge
+                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: tlRankDlg.open() }
+                            }
+                            TextField {
+                                Layout.fillWidth: true
+                                readOnly: true
+                                color: ink
+                                font.pixelSize: 12
+                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                text: root.tierOverlayCfg ? (root.tierOverlayCfg.color_rank || "") : ""
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Показувати тінь панелі"; color: muted; Layout.preferredWidth: 160 }
+                            Switch {
+                                checked: root.tierOverlayCfg ? !!root.tierOverlayCfg.bg_shadow_enabled : false
+                                onClicked: {
+                                    if (root.tierOverlayCfg === null) return;
+                                    root.tierOverlayCfg.bg_shadow_enabled = checked;
+                                    root._saveTierOverlay();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Колір тіні панелі"; color: muted; Layout.preferredWidth: 160 }
+                            Rectangle {
+                                width: 28; height: 28; radius: 6; color: _tlPanelShadowColor; border.width: 1; border.color: cardEdge
+                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: tlPanelShadowDlg.open() }
+                            }
+                            StyledSpinBox {
+                                id: tlPanelShadowAlphaSb
+                                from: 0; to: 100
+                                value: {
+                                    void root.topLikersCfgEpoch;
+                                    void root.topGiftersCfgEpoch;
+                                    return Math.round(_tlPanelShadowAlpha * 100);
+                                }
+                                onValueChanged: {
+                                    if (root._tierOverlayLoading || root.tierOverlayCfg === null) return;
+                                    _tlPanelShadowAlpha = value / 100.0;
+                                    root.tierOverlayCfg.bg_shadow_color = _rgbaString(_tlPanelShadowColor, _tlPanelShadowAlpha);
+                                    root._saveTierOverlay();
+                                }
+                            }
+                            TextField {
+                                Layout.fillWidth: true
+                                readOnly: true
+                                color: ink
+                                font.pixelSize: 12
+                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                text: root.tierOverlayCfg ? (root.tierOverlayCfg.bg_shadow_color || "") : ""
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Показувати ранг"; color: muted; Layout.preferredWidth: 160 }
+                            Switch {
+                                checked: root.tierOverlayCfg ? !!root.tierOverlayCfg.show_rank : true
+                                onClicked: {
+                                    if (root.tierOverlayCfg === null) return;
+                                    root.tierOverlayCfg.show_rank = checked;
+                                    root._saveTierOverlay();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: root.widgetMode === "top_gifters" ? "Показувати монети" : "Показувати лайки"; color: muted; Layout.preferredWidth: 160 }
+                            Switch {
+                                checked: root.tierOverlayCfg ? !!root.tierOverlayCfg.show_likes : true
+                                onClicked: {
+                                    if (root.tierOverlayCfg === null) return;
+                                    root.tierOverlayCfg.show_likes = checked;
+                                    root._saveTierOverlay();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "RTL (справа наліво)"; color: muted; Layout.preferredWidth: 160 }
+                            Switch {
+                                checked: root.tierOverlayCfg ? !!root.tierOverlayCfg.rtl : false
+                                onClicked: {
+                                    if (root.tierOverlayCfg === null) return;
+                                    root.tierOverlayCfg.rtl = checked;
+                                    root._saveTierOverlay();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Корона для 1-го"; color: muted; Layout.preferredWidth: 160 }
+                            Switch {
+                                checked: root.tierOverlayCfg ? !!root.tierOverlayCfg.show_top1_crown : true
+                                onClicked: {
+                                    if (root.tierOverlayCfg === null) return;
+                                    root.tierOverlayCfg.show_top1_crown = checked;
+                                    root._saveTierOverlay();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Медалі топ-3"; color: muted; Layout.preferredWidth: 160 }
+                            Switch {
+                                checked: root.tierOverlayCfg ? !!root.tierOverlayCfg.show_top3_medal : true
+                                onClicked: {
+                                    if (root.tierOverlayCfg === null) return;
+                                    root.tierOverlayCfg.show_top3_medal = checked;
+                                    root._saveTierOverlay();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: root.widgetMode === "top_gifters" ? "Значок монети біля числа" : "Серце біля лайків"; color: muted; Layout.preferredWidth: 160 }
+                            Switch {
+                                checked: root.tierOverlayCfg ? !!root.tierOverlayCfg.show_heart : true
+                                onClicked: {
+                                    if (root.tierOverlayCfg === null) return;
+                                    root.tierOverlayCfg.show_heart = checked;
+                                    root._saveTierOverlay();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Розмір серця (px)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "tier"
+                                hostMap: root.tierOverlayCfg
+                                hostKey: "heart_size_px"
+                                hostDefault: 14
+                                from: 8; to: 48
+                                enabled: root.tierOverlayCfg ? !!root.tierOverlayCfg.show_heart : false
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Плавна пульсація серця"; color: muted; Layout.preferredWidth: 160 }
+                            Switch {
+                                enabled: root.tierOverlayCfg ? !!root.tierOverlayCfg.show_heart : false
+                                checked: root.tierOverlayCfg ? !!root.tierOverlayCfg.heart_animated : true
+                                onClicked: {
+                                    if (root.tierOverlayCfg === null) return;
+                                    root.tierOverlayCfg.heart_animated = checked;
+                                    root._saveTierOverlay();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        Text { text: "Текстові ефекти"; color: ink; font.pixelSize: 14; font.bold: true; Layout.fillWidth: true }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Ефект ніку"; color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: tlTextFx
+                                Layout.fillWidth: true
+                                textRole: "label"
+                                valueRole: "value"
+                                model: ListModel {
+                                    ListElement { label: "Без ефекту"; value: "none" }
+                                    ListElement { label: "Веселка"; value: "rainbow" }
+                                    ListElement { label: "Полярне сяйво"; value: "aurora" }
+                                    ListElement { label: "Кіберпанк"; value: "cyberpunk" }
+                                    ListElement { label: "Вогонь"; value: "fire" }
+                                    ListElement { label: "Лід"; value: "ice" }
+                                    ListElement { label: "Холод"; value: "cold" }
+                                    ListElement { label: "Мороз"; value: "freeze" }
+                                    ListElement { label: "Потужний"; value: "strong" }
+                                }
+                                onActivated: function (index) {
+                                    if (root.tierOverlayCfg === null) return;
+                                    root.tierOverlayCfg.text_effect_username = tlTextFx.model.get(index).value;
+                                    root._saveTierOverlay();
+                                }
+                                Component.onCompleted: {
+                                    if (!root.tierOverlayCfg) {
+                                        currentIndex = 0;
+                                        return;
+                                    }
+                                    var raw = String(root.tierOverlayCfg.text_effect_username || "none").toLowerCase();
+                                    for (var ti = 0; ti < tlTextFx.count; ++ti) {
+                                        if (tlTextFx.model.get(ti).value === raw) {
+                                            currentIndex = ti;
+                                            return;
+                                        }
+                                    }
+                                    currentIndex = 0;
+                                }
+                            }
+                        }
+
+                        Text { text: "Хвиля"; color: ink; font.pixelSize: 14; font.bold: true; Layout.fillWidth: true }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Анімація хвилі"; color: muted; Layout.preferredWidth: 160 }
+                            Switch {
+                                checked: root.tierOverlayCfg ? !!root.tierOverlayCfg.wave_enabled : false
+                                onClicked: {
+                                    if (root.tierOverlayCfg === null) return;
+                                    root.tierOverlayCfg.wave_enabled = checked;
+                                    root._saveTierOverlay();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Швидкість хвилі"; color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: tlWaveSpd
+                                Layout.fillWidth: true
+                                textRole: "label"
+                                valueRole: "value"
+                                model: ListModel {
+                                    ListElement { label: "Повільно"; value: "slow" }
+                                    ListElement { label: "Звичайна"; value: "normal" }
+                                    ListElement { label: "Швидко"; value: "fast" }
+                                }
+                                onActivated: function (index) {
+                                    if (root.tierOverlayCfg === null) return;
+                                    root.tierOverlayCfg.wave_speed = tlWaveSpd.model.get(index).value;
+                                    root._saveTierOverlay();
+                                }
+                                Component.onCompleted: {
+                                    if (!root.tierOverlayCfg) {
+                                        currentIndex = 1;
+                                        return;
+                                    }
+                                    var raw = String(root.tierOverlayCfg.wave_speed || "normal").toLowerCase();
+                                    for (var wi = 0; wi < tlWaveSpd.count; ++wi) {
+                                        if (tlWaveSpd.model.get(wi).value === raw) {
+                                            currentIndex = wi;
+                                            return;
+                                        }
+                                    }
+                                    currentIndex = 1;
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        Text { text: "Контур шрифту"; color: ink; font.pixelSize: 14; font.bold: true; Layout.fillWidth: true }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Увімкнути контур"; color: muted; Layout.preferredWidth: 160 }
+                            Switch {
+                                checked: root.tierOverlayCfg ? !!root.tierOverlayCfg.font_border_enabled : true
+                                onClicked: {
+                                    if (root.tierOverlayCfg === null) return;
+                                    root.tierOverlayCfg.font_border_enabled = checked;
+                                    root._saveTierOverlay();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Колір контуру"; color: muted; Layout.preferredWidth: 160 }
+                            Rectangle {
+                                width: 28; height: 28; radius: 6; color: _tlBorderColor; border.width: 1; border.color: cardEdge
+                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: tlBorderDlg.open() }
+                            }
+                            TextField {
+                                Layout.fillWidth: true
+                                readOnly: true
+                                color: ink
+                                font.pixelSize: 12
+                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                text: root.tierOverlayCfg ? (root.tierOverlayCfg.font_border_color || "") : ""
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        Text {
+                            text: "Тінь тексту"
+                            color: ink
+                            font.pixelSize: 14
+                            font.bold: true
+                            Layout.fillWidth: true
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Тінь ніку"; color: muted; Layout.preferredWidth: 160 }
+                            Switch {
+                                checked: root.tierOverlayCfg ? !!root.tierOverlayCfg.username_text_shadow_enabled : false
+                                onClicked: {
+                                    if (root.tierOverlayCfg === null) return;
+                                    root.tierOverlayCfg.username_text_shadow_enabled = checked;
+                                    root._saveTierOverlay();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Колір тіні ніку"; color: muted; Layout.preferredWidth: 160 }
+                            Rectangle {
+                                width: 28; height: 28; radius: 6; color: _tlUsernameShadowColor; border.width: 1; border.color: cardEdge
+                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: tlUsernameShadowDlg.open() }
+                            }
+                            TextField {
+                                Layout.fillWidth: true
+                                readOnly: true
+                                color: ink
+                                font.pixelSize: 12
+                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                text: root.tierOverlayCfg ? (root.tierOverlayCfg.username_text_shadow_color || "") : ""
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: root.widgetMode === "top_gifters" ? "Тінь числа монет" : "Тінь лайків"; color: muted; Layout.preferredWidth: 160 }
+                            Switch {
+                                checked: root.tierOverlayCfg ? !!root.tierOverlayCfg.likes_text_shadow_enabled : false
+                                onClicked: {
+                                    if (root.tierOverlayCfg === null) return;
+                                    root.tierOverlayCfg.likes_text_shadow_enabled = checked;
+                                    root._saveTierOverlay();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: root.widgetMode === "top_gifters" ? "Колір тіні числа монет" : "Колір тіні лайків"; color: muted; Layout.preferredWidth: 160 }
+                            Rectangle {
+                                width: 28; height: 28; radius: 6; color: _tlLikesShadowColor; border.width: 1; border.color: cardEdge
+                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: tlLikesShadowDlg.open() }
+                            }
+                            TextField {
+                                Layout.fillWidth: true
+                                readOnly: true
+                                color: ink
+                                font.pixelSize: 12
+                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                text: root.tierOverlayCfg ? (root.tierOverlayCfg.likes_text_shadow_color || "") : ""
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        Text {
+                            text: "Список лідерів"
+                            color: ink
+                            font.pixelSize: 14
+                            font.bold: true
+                            Layout.fillWidth: true
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Порядок у списку"; color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: tlLeaderSort
+                                Layout.fillWidth: true
+                                model: root.widgetMode === "top_gifters"
+                                    ? ["Монети: спадання", "Монети: зростання", "Ім'я: А–Я"]
+                                    : ["Лайки: спадання", "Лайки: зростання", "Ім'я: А–Я"]
+                                onActivated: {
+                                    if (root.tierOverlayCfg === null) return;
+                                    var index = currentIndex;
+                                    if (index === 0) root.tierOverlayCfg.leader_sort = "likes_desc";
+                                    else if (index === 1) root.tierOverlayCfg.leader_sort = "likes_asc";
+                                    else root.tierOverlayCfg.leader_sort = "name_asc";
+                                    root._saveTierOverlay();
+                                }
+                                Component.onCompleted: {
+                                    if (!root.tierOverlayCfg) { currentIndex = 0; return; }
+                                    var r = String(root.tierOverlayCfg.leader_sort || "likes_desc").toLowerCase();
+                                    if (r === "likes_asc") currentIndex = 1;
+                                    else if (r === "name_asc") currentIndex = 2;
+                                    else currentIndex = 0;
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Кількість у топі"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "tier"
+                                hostMap: root.tierOverlayCfg
+                                hostKey: "top_count"
+                                hostDefault: 8
+                                from: 1; to: 10
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Аватар (px)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "tier"
+                                hostMap: root.tierOverlayCfg
+                                hostKey: "avatar_size_px"
+                                hostDefault: 48
+                                from: 24; to: 120
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Відступ між рядками"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "tier"
+                                hostMap: root.tierOverlayCfg
+                                hostKey: "row_gap_px"
+                                hostDefault: 10
+                                from: 0; to: 40
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        Text { text: "Панель списку"; color: ink; font.pixelSize: 14; font.bold: true; Layout.fillWidth: true }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Фон панелі"; color: muted; Layout.preferredWidth: 160 }
+                            Switch {
+                                checked: root.tierOverlayCfg ? !!root.tierOverlayCfg.list_bg_enabled : true
+                                onClicked: {
+                                    if (root.tierOverlayCfg === null) return;
+                                    root.tierOverlayCfg.list_bg_enabled = checked;
+                                    root._saveTierOverlay();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Фон (rgba)"; color: muted; Layout.preferredWidth: 160 }
+                            Rectangle {
+                                width: 28; height: 28; radius: 6; color: _tlListBgColor; border.width: 1; border.color: cardEdge
+                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: tlListBgDlg.open() }
+                            }
+                            StyledSpinBox {
+                                id: tlListBgAlphaSb
+                                from: 0; to: 100
+                                value: {
+                                    void root.topLikersCfgEpoch;
+                                    void root.topGiftersCfgEpoch;
+                                    return Math.round(_tlListBgAlpha * 100);
+                                }
+                                onValueChanged: {
+                                    if (root._tierOverlayLoading || root.tierOverlayCfg === null) return;
+                                    _tlListBgAlpha = value / 100.0;
+                                    root.tierOverlayCfg.list_bg_rgba = _rgbaString(_tlListBgColor, _tlListBgAlpha);
+                                    root._saveTierOverlay();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Радіус панелі (px)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "tier"
+                                hostMap: root.tierOverlayCfg
+                                hostKey: "list_radius_px"
+                                hostDefault: 12
+                                from: 0; to: 40
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Інтервал прокрутки (с)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "tier"
+                                hostMap: root.tierOverlayCfg
+                                hostKey: "list_scroll_interval_sec"
+                                hostDefault: 0
+                                from: 0; to: 600
+                            }
+                            Text {
+                                text: "0 — вимк. N>0: N с зверху → вниз → нагору → знову N с (завжди рух, не залежить від кількості лідерів)."
+                                color: muted
+                                font.pixelSize: 11
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                            }
+                        }
+
+                        } // topLikersSettings
+
+                        ColumnLayout {
+                            id: kingOfLiveSettings
+                            visible: root.widgetMode === "king_of_live"
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                        Rectangle { Layout.fillWidth: true; height: 1; color: cardEdge; opacity: 0.6 }
+
+                        Text {
+                            text: "King of the Live — стиль і пороги"
+                            color: ink
+                            font.pixelSize: 16
+                            font.bold: true
+                            Layout.fillWidth: true
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Пресет"; color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: kingPreset
+                                Layout.fillWidth: true
+                                textRole: "text"
+                                valueRole: "value"
+                                model: ListModel {
+                                    ListElement { text: "Imperial Gold"; value: "imperial_gold" }
+                                    ListElement { text: "Cyber King"; value: "cyber_king" }
+                                    ListElement { text: "Dark Overlord"; value: "dark_overlord" }
+                                    ListElement { text: "Minimalist"; value: "minimalist" }
+                                }
+                                onActivated: {
+                                    if (root._loadingKingCfg || root.kingCfg === null) return;
+                                    var v = model.get(index).value;
+                                    if (v) { root.kingCfg.preset = v; root._saveKing(); }
+                                }
+                                Component.onCompleted: {
+                                    if (!root.kingCfg) return;
+                                    var p = String(root.kingCfg.preset || "imperial_gold").toLowerCase();
+                                    for (var i = 0; i < count; ++i) {
+                                        if (model.get(i).value === p) { currentIndex = i; return; }
+                                    }
+                                    currentIndex = 0;
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Заголовок"; color: muted; Layout.preferredWidth: 160 }
+                            TextField {
+                                Layout.fillWidth: true
+                                color: ink
+                                font.pixelSize: 13
+                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                text: root.kingCfg ? (root.kingCfg.title_text || "") : ""
+                                onEditingFinished: {
+                                    if (root._loadingKingCfg || root.kingCfg === null) return;
+                                    root.kingCfg.title_text = text;
+                                    root._saveKing();
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Поріг небезпеки (% від рекорду)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "king"
+                                hostMap: root.kingCfg
+                                hostKey: "danger_threshold_pct"
+                                hostDefault: 90
+                                from: 50; to: 99
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Показувати смугу «до корони»"; color: muted; Layout.preferredWidth: 160 }
+                            CheckBox {
+                                checked: root.kingCfg ? !!root.kingCfg.show_gap_strip : true
+                                onClicked: {
+                                    if (root._loadingKingCfg || root.kingCfg === null) return;
+                                    root.kingCfg.show_gap_strip = checked;
+                                    root._saveKing();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Розмір аватара (px)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "king"
+                                hostMap: root.kingCfg
+                                hostKey: "avatar_size_px"
+                                hostDefault: 120
+                                from: 64; to: 220
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Шрифт"; color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: kingFontFamily
+                                Layout.fillWidth: true
+                                editable: true
+                                model: api ? api.systemFontFamilies() : []
+                                onActivated: {
+                                    if (root._loadingKingCfg || root.kingCfg === null) return;
+                                    root.kingCfg.font_family = currentText;
+                                    root._saveKing();
+                                }
+                                onAccepted: {
+                                    if (root._loadingKingCfg || root.kingCfg === null) return;
+                                    root.kingCfg.font_family = editText || currentText;
+                                    root._saveKing();
+                                }
+                                Component.onCompleted: {
+                                    if (!root.kingCfg) return;
+                                    var ff = (root.kingCfg.font_family || "").trim();
+                                    var i = model.indexOf(ff);
+                                    if (i >= 0) currentIndex = i;
+                                    else { currentIndex = -1; editText = ff || "Segoe UI"; }
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Блюр фону за карткою (px, 0 = вимкнено)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "king"
+                                hostMap: root.kingCfg
+                                hostKey: "backdrop_blur_px"
+                                hostDefault: 0
+                                from: 0; to: 48
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Блюр «бабла» за блоком (px, 0 = вимкнено)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "king"
+                                hostMap: root.kingCfg
+                                hostKey: "backdrop_bubble_blur_px"
+                                hostDefault: 0
+                                from: 0; to: 48
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Яскравість променів (фон, %)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "king"
+                                hostMap: root.kingCfg
+                                hostKey: "rays_intensity_pct"
+                                hostDefault: 130
+                                from: 40; to: 200
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Розмір тексту (%)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "king"
+                                hostMap: root.kingCfg
+                                hostKey: "text_scale_pct"
+                                hostDefault: 100
+                                from: 70; to: 160
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Інтенсивність анімацій (%)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "king"
+                                hostMap: root.kingCfg
+                                hostKey: "anim_intensity_pct"
+                                hostDefault: 100
+                                from: 25; to: 200
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        Rectangle { Layout.fillWidth: true; height: 1; color: cardEdge; opacity: 0.6 }
+
+                        Text {
+                            text: "Анімації"
+                            color: ink
+                            font.pixelSize: 16
+                            font.bold: true
+                            Layout.fillWidth: true
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Рух аватарки"; color: muted; Layout.preferredWidth: 160 }
+                            CheckBox {
+                                checked: !root.kingCfg || (root.kingCfg.anim_avatar_motion !== false && root.kingCfg.anim_avatar_motion !== 0)
+                                onClicked: {
+                                    if (root._loadingKingCfg || root.kingCfg === null) return;
+                                    root.kingCfg.anim_avatar_motion = checked;
+                                    root._saveKing();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Корона (левітація)"; color: muted; Layout.preferredWidth: 160 }
+                            CheckBox {
+                                checked: !root.kingCfg || (root.kingCfg.anim_crown_float !== false && root.kingCfg.anim_crown_float !== 0)
+                                onClicked: {
+                                    if (root._loadingKingCfg || root.kingCfg === null) return;
+                                    root.kingCfg.anim_crown_float = checked;
+                                    root._saveKing();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Золоті промені (фон)"; color: muted; Layout.preferredWidth: 160 }
+                            CheckBox {
+                                checked: !root.kingCfg || (root.kingCfg.anim_rays_spin !== false && root.kingCfg.anim_rays_spin !== 0)
+                                onClicked: {
+                                    if (root._loadingKingCfg || root.kingCfg === null) return;
+                                    root.kingCfg.anim_rays_spin = checked;
+                                    root._saveKing();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Монети / пил (знизу)"; color: muted; Layout.preferredWidth: 160 }
+                            CheckBox {
+                                checked: !root.kingCfg || (root.kingCfg.anim_coins_fall !== false && root.kingCfg.anim_coins_fall !== 0)
+                                onClicked: {
+                                    if (root._loadingKingCfg || root.kingCfg === null) return;
+                                    root.kingCfg.anim_coins_fall = checked;
+                                    root._saveKing();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Пульсація числа 💎"; color: muted; Layout.preferredWidth: 160 }
+                            CheckBox {
+                                checked: !root.kingCfg || (root.kingCfg.anim_gem_pulse !== false && root.kingCfg.anim_gem_pulse !== 0)
+                                onClicked: {
+                                    if (root._loadingKingCfg || root.kingCfg === null) return;
+                                    root.kingCfg.anim_gem_pulse = checked;
+                                    root._saveKing();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Мерехтіння заголовка"; color: muted; Layout.preferredWidth: 160 }
+                            CheckBox {
+                                checked: !root.kingCfg || (root.kingCfg.anim_title_shimmer !== false && root.kingCfg.anim_title_shimmer !== 0)
+                                onClicked: {
+                                    if (root._loadingKingCfg || root.kingCfg === null) return;
+                                    root.kingCfg.anim_title_shimmer = checked;
+                                    root._saveKing();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Феєрверки при вході короля"; color: muted; Layout.preferredWidth: 160 }
+                            CheckBox {
+                                checked: !root.kingCfg || (root.kingCfg.anim_fireworks_on_presence !== false && root.kingCfg.anim_fireworks_on_presence !== 0)
+                                onClicked: {
+                                    if (root._loadingKingCfg || root.kingCfg === null) return;
+                                    root.kingCfg.anim_fireworks_on_presence = checked;
+                                    root._saveKing();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        Text {
+                            text: "Топ береться з локальної БД подарунків (усі стріми). Небезпека трону — коли хтось у цьому ефірі набирає відсоток від рекорду короля."
+                            color: muted
+                            font.pixelSize: 11
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+
+                        } // kingOfLiveSettings
 
                         ColumnLayout {
                             id: actionsSettings
@@ -1768,18 +3321,18 @@ Item {
                                 editable: true
                                 model: api ? api.systemFontFamilies() : []
                                 onActivated: {
-                                    if (actionsCfg === null) return;
-                                    actionsCfg.font_family = currentText;
-                                    _saveActions();
+                                    if (root.actionsCfg === null) return;
+                                    root.actionsCfg.font_family = currentText;
+                                    root._saveActions();
                                 }
                                 onAccepted: {
-                                    if (actionsCfg === null) return;
-                                    actionsCfg.font_family = editText || currentText;
-                                    _saveActions();
+                                    if (root.actionsCfg === null) return;
+                                    root.actionsCfg.font_family = editText || currentText;
+                                    root._saveActions();
                                 }
                                 Component.onCompleted: {
-                                    if (!actionsCfg) return;
-                                    var ff = (actionsCfg.font_family || "").trim();
+                                    if (!root.actionsCfg) return;
+                                    var ff = (root.actionsCfg.font_family || "").trim();
                                     var i = model.indexOf(ff);
                                     if (i >= 0) currentIndex = i;
                                     else {
@@ -1794,15 +3347,13 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Font size"; color: muted; Layout.preferredWidth: 160 }
-                            StyledSpinBox {
+                            VarMapSpinBox {
+                                syncGroup: "actions"
+                                hostMap: root.actionsCfg
+                                hostKey: "font_size_px"
+                                hostDefault: 40
                                 from: 8
                                 to: 200
-                                value: (actionsCfg && actionsCfg.font_size_px !== undefined) ? actionsCfg.font_size_px : 40
-                                onValueChanged: {
-                                    if (_loadingActionsCfg || actionsCfg === null) return;
-                                    actionsCfg.font_size_px = value;
-                                    _saveActions();
-                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -1811,15 +3362,13 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Font line spacing"; color: muted; Layout.preferredWidth: 160 }
-                            StyledSpinBox {
+                            VarMapSpinBox {
+                                syncGroup: "actions"
+                                hostMap: root.actionsCfg
+                                hostKey: "font_line_spacing_px"
+                                hostDefault: 0
                                 from: 0
                                 to: 200
-                                value: (actionsCfg && actionsCfg.font_line_spacing_px !== undefined) ? actionsCfg.font_line_spacing_px : 0
-                                onValueChanged: {
-                                    if (_loadingActionsCfg || actionsCfg === null) return;
-                                    actionsCfg.font_line_spacing_px = value;
-                                    _saveActions();
-                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -1828,15 +3377,13 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Font letter spacing"; color: muted; Layout.preferredWidth: 160 }
-                            StyledSpinBox {
+                            VarMapSpinBox {
+                                syncGroup: "actions"
+                                hostMap: root.actionsCfg
+                                hostKey: "font_letter_spacing_px"
+                                hostDefault: 0
                                 from: -200
                                 to: 200
-                                value: (actionsCfg && actionsCfg.font_letter_spacing_px !== undefined) ? actionsCfg.font_letter_spacing_px : 0
-                                onValueChanged: {
-                                    if (_loadingActionsCfg || actionsCfg === null) return;
-                                    actionsCfg.font_letter_spacing_px = value;
-                                    _saveActions();
-                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -1848,11 +3395,11 @@ Item {
                             spacing: 10
                             Text { text: "Enable Wave Effect"; color: muted; Layout.preferredWidth: 220 }
                             Switch {
-                                checked: actionsCfg ? !!actionsCfg.wave_enabled : false
+                                checked: root.actionsCfg ? !!root.actionsCfg.wave_enabled : false
                                 onClicked: {
-                                    if (actionsCfg === null) return;
-                                    actionsCfg.wave_enabled = checked;
-                                    _saveActions();
+                                    if (root.actionsCfg === null) return;
+                                    root.actionsCfg.wave_enabled = checked;
+                                    root._saveActions();
                                 }
                             }
                             Item { Layout.fillWidth: true }
@@ -1863,11 +3410,11 @@ Item {
                             spacing: 10
                             Text { text: "Enable Move Effect"; color: muted; Layout.preferredWidth: 220 }
                             Switch {
-                                checked: actionsCfg ? !!actionsCfg.move_enabled : false
+                                checked: root.actionsCfg ? !!root.actionsCfg.move_enabled : false
                                 onClicked: {
-                                    if (actionsCfg === null) return;
-                                    actionsCfg.move_enabled = checked;
-                                    _saveActions();
+                                    if (root.actionsCfg === null) return;
+                                    root.actionsCfg.move_enabled = checked;
+                                    root._saveActions();
                                 }
                             }
                             Item { Layout.fillWidth: true }
@@ -1878,11 +3425,11 @@ Item {
                             spacing: 10
                             Text { text: "Enable 3D Effect"; color: muted; Layout.preferredWidth: 220 }
                             Switch {
-                                checked: actionsCfg ? !!actionsCfg.effect_3d_enabled : false
+                                checked: root.actionsCfg ? !!root.actionsCfg.effect_3d_enabled : false
                                 onClicked: {
-                                    if (actionsCfg === null) return;
-                                    actionsCfg.effect_3d_enabled = checked;
-                                    _saveActions();
+                                    if (root.actionsCfg === null) return;
+                                    root.actionsCfg.effect_3d_enabled = checked;
+                                    root._saveActions();
                                 }
                             }
                             Item { Layout.fillWidth: true }
@@ -1893,11 +3440,11 @@ Item {
                             spacing: 10
                             Text { text: "Enable Wiggle Effect"; color: muted; Layout.preferredWidth: 220 }
                             Switch {
-                                checked: actionsCfg ? !!actionsCfg.wiggle_enabled : false
+                                checked: root.actionsCfg ? !!root.actionsCfg.wiggle_enabled : false
                                 onClicked: {
-                                    if (actionsCfg === null) return;
-                                    actionsCfg.wiggle_enabled = checked;
-                                    _saveActions();
+                                    if (root.actionsCfg === null) return;
+                                    root.actionsCfg.wiggle_enabled = checked;
+                                    root._saveActions();
                                 }
                             }
                             Item { Layout.fillWidth: true }
@@ -1910,11 +3457,11 @@ Item {
                             spacing: 10
                             Text { text: "Enable Text Shadow"; color: muted; Layout.preferredWidth: 220 }
                             Switch {
-                                checked: actionsCfg ? !!actionsCfg.text_shadow_enabled : false
+                                checked: root.actionsCfg ? !!root.actionsCfg.text_shadow_enabled : false
                                 onClicked: {
-                                    if (actionsCfg === null) return;
-                                    actionsCfg.text_shadow_enabled = checked;
-                                    _saveActions();
+                                    if (root.actionsCfg === null) return;
+                                    root.actionsCfg.text_shadow_enabled = checked;
+                                    root._saveActions();
                                 }
                             }
                             Item { Layout.fillWidth: true }
@@ -1923,7 +3470,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: actionsCfg && actionsCfg.text_shadow_enabled
+                            visible: root.actionsCfg && root.actionsCfg.text_shadow_enabled
                             Text { text: "Shadow Color"; color: muted; Layout.preferredWidth: 220 }
                             Rectangle {
                                 width: 26
@@ -1939,7 +3486,7 @@ Item {
                                 onClicked: actionsTextShadowDlg.open()
                             }
                             Text {
-                                text: actionsCfg ? (actionsCfg.text_shadow_color || "") : ""
+                                text: root.actionsCfg ? (root.actionsCfg.text_shadow_color || "") : ""
                                 color: muted
                                 font.pixelSize: 11
                                 Layout.fillWidth: true
@@ -1968,7 +3515,7 @@ Item {
                                 onClicked: actionsTextColorDlg.open()
                             }
                             Text {
-                                text: actionsCfg ? (actionsCfg.text_color || "") : ""
+                                text: root.actionsCfg ? (root.actionsCfg.text_color || "") : ""
                                 color: muted
                                 font.pixelSize: 11
                                 Layout.fillWidth: true
@@ -1984,11 +3531,11 @@ Item {
                             spacing: 10
                             Text { text: "Enable Font Border"; color: muted; Layout.preferredWidth: 220 }
                             Switch {
-                                checked: actionsCfg ? !!actionsCfg.font_border_enabled : false
+                                checked: root.actionsCfg ? !!root.actionsCfg.font_border_enabled : false
                                 onClicked: {
-                                    if (actionsCfg === null) return;
-                                    actionsCfg.font_border_enabled = checked;
-                                    _saveActions();
+                                    if (root.actionsCfg === null) return;
+                                    root.actionsCfg.font_border_enabled = checked;
+                                    root._saveActions();
                                 }
                             }
                             Item { Layout.fillWidth: true }
@@ -1997,7 +3544,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: actionsCfg && actionsCfg.font_border_enabled
+                            visible: root.actionsCfg && root.actionsCfg.font_border_enabled
                             Text { text: "Border Color"; color: muted; Layout.preferredWidth: 220 }
                             Rectangle {
                                 width: 26
@@ -2013,7 +3560,7 @@ Item {
                                 onClicked: actionsBorderDlg.open()
                             }
                             Text {
-                                text: actionsCfg ? (actionsCfg.font_border_color || "") : ""
+                                text: root.actionsCfg ? (root.actionsCfg.font_border_color || "") : ""
                                 color: muted
                                 font.pixelSize: 11
                                 Layout.fillWidth: true
@@ -2029,11 +3576,11 @@ Item {
                             spacing: 10
                             Text { text: "Enable Custom Color"; color: muted; Layout.preferredWidth: 220 }
                             Switch {
-                                checked: actionsCfg ? !!actionsCfg.username_custom_color_enabled : false
+                                checked: root.actionsCfg ? !!root.actionsCfg.username_custom_color_enabled : false
                                 onClicked: {
-                                    if (actionsCfg === null) return;
-                                    actionsCfg.username_custom_color_enabled = checked;
-                                    _saveActions();
+                                    if (root.actionsCfg === null) return;
+                                    root.actionsCfg.username_custom_color_enabled = checked;
+                                    root._saveActions();
                                 }
                             }
                             Item { Layout.fillWidth: true }
@@ -2042,7 +3589,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: actionsCfg && actionsCfg.username_custom_color_enabled
+                            visible: root.actionsCfg && root.actionsCfg.username_custom_color_enabled
                             Text { text: "Custom Color"; color: muted; Layout.preferredWidth: 220 }
                             Rectangle {
                                 width: 26
@@ -2058,7 +3605,7 @@ Item {
                                 onClicked: actionsCustomColorDlg.open()
                             }
                             Text {
-                                text: actionsCfg ? (actionsCfg.username_custom_color || "") : ""
+                                text: root.actionsCfg ? (root.actionsCfg.username_custom_color || "") : ""
                                 color: muted
                                 font.pixelSize: 11
                                 Layout.fillWidth: true
@@ -2076,18 +3623,18 @@ Item {
                                 Layout.fillWidth: true
                                 model: ["None", "Rainbow", "The Aurora", "Neon", "Fire"]
                                 onActivated: {
-                                    if (actionsCfg === null) return;
-                                    actionsCfg.username_text_effect =
+                                    if (root.actionsCfg === null) return;
+                                    root.actionsCfg.username_text_effect =
                                         (currentIndex === 1) ? "rainbow"
                                         : (currentIndex === 2) ? "aurora"
                                         : (currentIndex === 3) ? "neon"
                                         : (currentIndex === 4) ? "fire"
                                         : "none";
-                                    _saveActions();
+                                    root._saveActions();
                                 }
                                 Component.onCompleted: {
-                                    if (!actionsCfg) { currentIndex = 0; return; }
-                                    var raw = (actionsCfg.username_text_effect || "none").trim().toLowerCase();
+                                    if (!root.actionsCfg) { currentIndex = 0; return; }
+                                    var raw = (root.actionsCfg.username_text_effect || "none").trim().toLowerCase();
                                     currentIndex =
                                         (raw === "rainbow") ? 1
                                         : (raw === "aurora") ? 2
@@ -2104,16 +3651,13 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Picture Size"; color: muted; Layout.preferredWidth: 220 }
-                            StyledSpinBox {
+                            VarMapSpinBox {
+                                syncGroup: "actions"
+                                hostMap: root.actionsCfg
+                                hostKey: "picture_size_px"
+                                hostDefault: 65
                                 from: 1
                                 to: 512
-                                value: (actionsCfg && actionsCfg.picture_size_px !== undefined) ? actionsCfg.picture_size_px : 65
-                                onValueChanged: {
-                                    if (_loadingActionsCfg || actionsCfg === null)
-                                        return;
-                                    actionsCfg.picture_size_px = value;
-                                    _saveActions();
-                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -2122,16 +3666,13 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Username Size"; color: muted; Layout.preferredWidth: 220 }
-                            StyledSpinBox {
+                            VarMapSpinBox {
+                                syncGroup: "actions"
+                                hostMap: root.actionsCfg
+                                hostKey: "username_size_px"
+                                hostDefault: 65
                                 from: 1
                                 to: 512
-                                value: (actionsCfg && actionsCfg.username_size_px !== undefined) ? actionsCfg.username_size_px : 65
-                                onValueChanged: {
-                                    if (_loadingActionsCfg || actionsCfg === null)
-                                        return;
-                                    actionsCfg.username_size_px = value;
-                                    _saveActions();
-                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -2140,15 +3681,13 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Відстань між ніком і текстом (px)"; color: muted; Layout.preferredWidth: 220 }
-                            StyledSpinBox {
+                            VarMapSpinBox {
+                                syncGroup: "actions"
+                                hostMap: root.actionsCfg
+                                hostKey: "name_text_gap_px"
+                                hostDefault: 8
                                 from: 0
                                 to: 80
-                                value: (actionsCfg && actionsCfg.name_text_gap_px !== undefined) ? actionsCfg.name_text_gap_px : 8
-                                onValueChanged: {
-                                    if (_loadingActionsCfg || actionsCfg === null) return;
-                                    actionsCfg.name_text_gap_px = value;
-                                    _saveActions();
-                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -2160,11 +3699,11 @@ Item {
                             spacing: 10
                             Text { text: "Bubble background"; color: muted; Layout.preferredWidth: 220 }
                             Switch {
-                                checked: actionsCfg ? !!actionsCfg.bubble_bg_enabled : true
+                                checked: root.actionsCfg ? !!root.actionsCfg.bubble_bg_enabled : true
                                 onClicked: {
-                                    if (actionsCfg === null) return;
-                                    actionsCfg.bubble_bg_enabled = checked;
-                                    _saveActions();
+                                    if (root.actionsCfg === null) return;
+                                    root.actionsCfg.bubble_bg_enabled = checked;
+                                    root._saveActions();
                                 }
                             }
                             Item { Layout.fillWidth: true }
@@ -2173,18 +3712,18 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: actionsCfg && actionsCfg.bubble_bg_enabled
+                            visible: root.actionsCfg && root.actionsCfg.bubble_bg_enabled
                             Text { text: "Bubble opacity"; color: muted; Layout.preferredWidth: 220 }
                             Slider {
                                 Layout.fillWidth: true
                                 from: 0.0
                                 to: 1.0
                                 stepSize: 0.01
-                                value: (actionsCfg && actionsCfg.bubble_bg_alpha !== undefined) ? actionsCfg.bubble_bg_alpha : 0.55
+                                value: (root.actionsCfg && root.actionsCfg.bubble_bg_alpha !== undefined) ? root.actionsCfg.bubble_bg_alpha : 0.55
                                 onMoved: {
-                                    if (actionsCfg === null) return;
-                                    actionsCfg.bubble_bg_alpha = value;
-                                    _saveActions();
+                                    if (root.actionsCfg === null) return;
+                                    root.actionsCfg.bubble_bg_alpha = value;
+                                    root._saveActions();
                                 }
                             }
                         }
@@ -2192,17 +3731,15 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: actionsCfg && actionsCfg.bubble_bg_enabled
+                            visible: root.actionsCfg && root.actionsCfg.bubble_bg_enabled
                             Text { text: "Bubble radius (px)"; color: muted; Layout.preferredWidth: 220 }
-                            StyledSpinBox {
+                            VarMapSpinBox {
+                                syncGroup: "actions"
+                                hostMap: root.actionsCfg
+                                hostKey: "bubble_radius_px"
+                                hostDefault: 16
                                 from: 0
                                 to: 60
-                                value: (actionsCfg && actionsCfg.bubble_radius_px !== undefined) ? actionsCfg.bubble_radius_px : 16
-                                onValueChanged: {
-                                    if (_loadingActionsCfg || actionsCfg === null) return;
-                                    actionsCfg.bubble_radius_px = value;
-                                    _saveActions();
-                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -2211,15 +3748,13 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Auto-hide (sec)"; color: muted; Layout.preferredWidth: 220 }
-                            StyledSpinBox {
+                            VarMapSpinBox {
+                                syncGroup: "actions"
+                                hostMap: root.actionsCfg
+                                hostKey: "auto_hide_seconds"
+                                hostDefault: 0
                                 from: 0
                                 to: 600
-                                value: (actionsCfg && actionsCfg.auto_hide_seconds !== undefined) ? actionsCfg.auto_hide_seconds : 0
-                                onValueChanged: {
-                                    if (_loadingActionsCfg || actionsCfg === null) return;
-                                    actionsCfg.auto_hide_seconds = value;
-                                    _saveActions();
-                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -2229,11 +3764,11 @@ Item {
                             spacing: 10
                             Text { text: "Show Profile Picture"; color: muted; Layout.preferredWidth: 220 }
                             Switch {
-                                checked: actionsCfg ? !!actionsCfg.show_profile_picture : true
+                                checked: root.actionsCfg ? !!root.actionsCfg.show_profile_picture : true
                                 onClicked: {
-                                    if (actionsCfg === null) return;
-                                    actionsCfg.show_profile_picture = checked;
-                                    _saveActions();
+                                    if (root.actionsCfg === null) return;
+                                    root.actionsCfg.show_profile_picture = checked;
+                                    root._saveActions();
                                 }
                             }
                             Item { Layout.fillWidth: true }
@@ -2244,11 +3779,11 @@ Item {
                             spacing: 10
                             Text { text: "Show Gift Picture"; color: muted; Layout.preferredWidth: 220 }
                             Switch {
-                                checked: actionsCfg ? !!actionsCfg.show_gift_picture : true
+                                checked: root.actionsCfg ? !!root.actionsCfg.show_gift_picture : true
                                 onClicked: {
-                                    if (actionsCfg === null) return;
-                                    actionsCfg.show_gift_picture = checked;
-                                    _saveActions();
+                                    if (root.actionsCfg === null) return;
+                                    root.actionsCfg.show_gift_picture = checked;
+                                    root._saveActions();
                                 }
                             }
                             Item { Layout.fillWidth: true }
@@ -2265,11 +3800,11 @@ Item {
                                 Layout.maximumWidth: 220
                             }
                             Switch {
-                                checked: actionsCfg ? !!actionsCfg.show_action_platform_icon : true
+                                checked: root.actionsCfg ? !!root.actionsCfg.show_action_platform_icon : true
                                 onClicked: {
-                                    if (actionsCfg === null) return;
-                                    actionsCfg.show_action_platform_icon = checked;
-                                    _saveActions();
+                                    if (root.actionsCfg === null) return;
+                                    root.actionsCfg.show_action_platform_icon = checked;
+                                    root._saveActions();
                                 }
                             }
                             Item { Layout.fillWidth: true }
@@ -2278,7 +3813,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: actionsCfgEpoch >= 0 && actionsCfg && !!actionsCfg.show_action_platform_icon
+                            visible: root.actionsCfgEpoch >= 0 && root.actionsCfg && !!root.actionsCfg.show_action_platform_icon
                             Text {
                                 text: "Platform icon flip (slow start, sharp finish)"
                                 color: muted
@@ -2287,11 +3822,11 @@ Item {
                                 Layout.maximumWidth: 220
                             }
                             Switch {
-                                checked: actionsCfg ? !!actionsCfg.platform_icon_flip_enabled : false
+                                checked: root.actionsCfg ? !!root.actionsCfg.platform_icon_flip_enabled : false
                                 onClicked: {
-                                    if (actionsCfg === null) return;
-                                    actionsCfg.platform_icon_flip_enabled = checked;
-                                    _saveActions();
+                                    if (root.actionsCfg === null) return;
+                                    root.actionsCfg.platform_icon_flip_enabled = checked;
+                                    root._saveActions();
                                 }
                             }
                             Item { Layout.fillWidth: true }
@@ -2300,18 +3835,15 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: actionsCfgEpoch >= 0 && actionsCfg && !!actionsCfg.show_action_platform_icon
+                            visible: root.actionsCfgEpoch >= 0 && root.actionsCfg && !!root.actionsCfg.show_action_platform_icon
                             Text { text: "Platform icon size (px)"; color: muted; Layout.preferredWidth: 220 }
-                            StyledSpinBox {
+                            VarMapSpinBox {
+                                syncGroup: "actions"
+                                hostMap: root.actionsCfg
+                                hostKey: "platform_icon_size_px"
+                                hostDefault: 40
                                 from: 16
                                 to: 128
-                                value: (actionsCfg && actionsCfg.platform_icon_size_px !== undefined) ? actionsCfg.platform_icon_size_px : 40
-                                onValueChanged: {
-                                    if (_loadingActionsCfg || actionsCfg === null)
-                                        return;
-                                    actionsCfg.platform_icon_size_px = value;
-                                    _saveActions();
-                                }
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -2321,11 +3853,11 @@ Item {
                             spacing: 10
                             Text { text: "Single Text Line"; color: muted; Layout.preferredWidth: 220 }
                             Switch {
-                                checked: actionsCfg ? !!actionsCfg.single_text_line : false
+                                checked: root.actionsCfg ? !!root.actionsCfg.single_text_line : false
                                 onClicked: {
-                                    if (actionsCfg === null) return;
-                                    actionsCfg.single_text_line = checked;
-                                    _saveActions();
+                                    if (root.actionsCfg === null) return;
+                                    root.actionsCfg.single_text_line = checked;
+                                    root._saveActions();
                                 }
                             }
                             Item { Layout.fillWidth: true }
@@ -2342,11 +3874,11 @@ Item {
                                 Layout.maximumWidth: 220
                             }
                             Switch {
-                                checked: actionsCfg ? !!actionsCfg.parallel_popups_enabled : false
+                                checked: root.actionsCfg ? !!root.actionsCfg.parallel_popups_enabled : false
                                 onClicked: {
-                                    if (actionsCfg === null) return;
-                                    actionsCfg.parallel_popups_enabled = checked;
-                                    _saveActions();
+                                    if (root.actionsCfg === null) return;
+                                    root.actionsCfg.parallel_popups_enabled = checked;
+                                    root._saveActions();
                                 }
                             }
                             Item { Layout.fillWidth: true }
@@ -2359,45 +3891,132 @@ Item {
 
             Component.onCompleted: {
                 if (!api) return;
+                function _clearWidgetCfgLoadingLocks() {
+                    root._loadingCfg = false;
+                    root._loadingActionsCfg = false;
+                    root._loadingOnlineCfg = false;
+                    root._loadingTopLikersCfg = false;
+                    root._loadingTopGiftersCfg = false;
+                    root._loadingKingCfg = false;
+                }
+                try {
+                // This handler lives on the Loader's inner ColumnLayout, not on root Item:
+                // bare `cfg = …` would not assign root.cfg, so _save() would always see root.cfg === null.
+                root._loadingCfg = true;
+                root._loadingActionsCfg = true;
+                root._loadingOnlineCfg = true;
+                root._loadingTopLikersCfg = true;
+                root._loadingTopGiftersCfg = true;
+                root._loadingKingCfg = true;
+
                 var obj = api.loadChatConfigMap();
                 if (!obj || typeof obj !== "object")
                     obj = {};
-                _loadingCfg = true;
-                cfg = _ensureDefaults(obj);
+                root.cfg = root._ensureDefaults(obj);
                 // Initialize derived UI state for pickers.
-                var p = _parseRgba(cfg.bubble_bg_rgba);
-                _bubbleColor = p.c;
-                _bubbleAlpha = p.a;
-                bubbleAlpha.value = _bubbleAlpha;
-                _usernameCustomColor = cfg.username_color_custom || "#93c5fd";
-                var sp = _parseRgba(cfg.text_shadow_rgba || "rgba(0,0,0,0.65)");
-                _textShadowColor = sp.c;
-                _textShadowAlpha = sp.a;
-                shadowAlpha.value = _textShadowAlpha;
-                var wp = _parseRgba(cfg.widget_bg_rgba || "rgba(10,12,18,0.45)");
-                _widgetBgColor = wp.c;
-                _widgetBgAlpha = wp.a;
-                widgetBgAlpha.value = _widgetBgAlpha;
+                var p = root._parseRgba(root.cfg.bubble_bg_rgba);
+                root._bubbleColor = p.c;
+                root._bubbleAlpha = p.a;
+                bubbleAlpha.value = root._bubbleAlpha;
+                root._usernameCustomColor = root.cfg.username_color_custom || "#93c5fd";
+                var sp = root._parseRgba(root.cfg.text_shadow_rgba || "rgba(0,0,0,0.65)");
+                root._textShadowColor = sp.c;
+                root._textShadowAlpha = sp.a;
+                shadowAlpha.value = root._textShadowAlpha;
+                var wp = root._parseRgba(root.cfg.widget_bg_rgba || "rgba(10,12,18,0.45)");
+                root._widgetBgColor = wp.c;
+                root._widgetBgAlpha = wp.a;
+                widgetBgAlpha.value = root._widgetBgAlpha;
 
                 var aobj = api.loadActionsConfigMap();
                 if (!aobj || typeof aobj !== "object")
                     aobj = {};
-                _loadingActionsCfg = true;
-                actionsCfg = _ensureActionsDefaults(aobj);
-                _actionsTextShadowColor = actionsCfg.text_shadow_color || "#000000";
-                _actionsBorderColor = actionsCfg.font_border_color || "#242424";
-                _actionsCustomColor = actionsCfg.username_custom_color || "#32c3a6";
-                _actionsTextColor = actionsCfg.text_color || "#e5e7eb";
+                root.actionsCfg = root._ensureActionsDefaults(aobj);
+                root._actionsTextShadowColor = root.actionsCfg.text_shadow_color || "#000000";
+                root._actionsBorderColor = root.actionsCfg.font_border_color || "#242424";
+                root._actionsCustomColor = root.actionsCfg.username_custom_color || "#32c3a6";
+                root._actionsTextColor = root.actionsCfg.text_color || "#e5e7eb";
 
                 var oobj = api.loadOnlineOverlayConfigMap();
                 if (!oobj || typeof oobj !== "object")
                     oobj = {};
-                _loadingOnlineCfg = true;
-                onlineCfg = _ensureOnlineDefaults(oobj);
-                _onlineTextShadowColor = onlineCfg.text_shadow_color || "#000000";
-                _onlineBorderColor = onlineCfg.font_border_color || "#242424";
-                _onlineTextColor = onlineCfg.text_color || "#e5e7eb";
+                root.onlineCfg = root._ensureOnlineDefaults(oobj);
+                root._onlineTextShadowColor = root.onlineCfg.text_shadow_color || "#000000";
+                root._onlineBorderColor = root.onlineCfg.font_border_color || "#242424";
+                root._onlineTextColor = root.onlineCfg.text_color || "#e5e7eb";
+
+                var tobj = api.loadTopLikersOverlayConfigMap();
+                if (!tobj || typeof tobj !== "object")
+                    tobj = {};
+                root.topLikersCfg = root._ensureTopLikersDefaults(root._detachTierOverlayCfgMap(tobj));
+                root._tlUsernameColor = root.topLikersCfg.color_username || "#c4b5fd";
+                root._tlPointsColor = root.topLikersCfg.color_points || "#f4f4f5";
+                root._tlRankColor = root.topLikersCfg.color_rank || "#d9d9d9";
+                root._tlBorderColor = root.topLikersCfg.font_border_color || "#242424";
+                root._tlUsernameShadowColor = root._tlColorFromCfg(root.topLikersCfg.username_text_shadow_color);
+                root._tlLikesShadowColor = root._tlColorFromCfg(root.topLikersCfg.likes_text_shadow_color);
+                var bsp = root._parseRgba(root.topLikersCfg.bg_shadow_color || "rgba(33,33,33,0.4)");
+                root._tlPanelShadowColor = bsp.c;
+                root._tlPanelShadowAlpha = bsp.a;
+                var tlp = root._parseRgba(root.topLikersCfg.list_bg_rgba || "rgba(18,20,28,0.72)");
+                root._tlListBgColor = tlp.c;
+                root._tlListBgAlpha = tlp.a;
+                if (typeof tlListBgAlphaSb !== "undefined")
+                    tlListBgAlphaSb.value = Math.round(root._tlListBgAlpha * 100);
+                if (typeof tlPanelShadowAlphaSb !== "undefined")
+                    tlPanelShadowAlphaSb.value = Math.round(root._tlPanelShadowAlpha * 100);
+                if (typeof tlFontFamily !== "undefined" && root.topLikersCfg) {
+                    var tff = (root.topLikersCfg.font_family || "").trim();
+                    var ti = tlFontFamily.model.indexOf(tff);
+                    if (ti >= 0) tlFontFamily.currentIndex = ti;
+                    else { tlFontFamily.currentIndex = -1; tlFontFamily.editText = tff || "Segoe UI"; }
+                }
+                if (typeof tlTextFx !== "undefined" && root.topLikersCfg) {
+                    var tx = String(root.topLikersCfg.text_effect_username || "none").toLowerCase();
+                    var foundFx = false;
+                    for (var tj = 0; tj < tlTextFx.count; ++tj) {
+                        if (tlTextFx.model.get(tj).value === tx) {
+                            tlTextFx.currentIndex = tj;
+                            foundFx = true;
+                            break;
+                        }
+                    }
+                    if (!foundFx)
+                        tlTextFx.currentIndex = 0;
+                }
+                if (typeof tlWaveSpd !== "undefined" && root.topLikersCfg) {
+                    var ws = String(root.topLikersCfg.wave_speed || "normal").toLowerCase();
+                    var foundWs = false;
+                    for (var wj = 0; wj < tlWaveSpd.count; ++wj) {
+                        if (tlWaveSpd.model.get(wj).value === ws) {
+                            tlWaveSpd.currentIndex = wj;
+                            foundWs = true;
+                            break;
+                        }
+                    }
+                    if (!foundWs)
+                        tlWaveSpd.currentIndex = 1;
+                }
+                if (typeof tlLeaderSort !== "undefined" && root.topLikersCfg) {
+                    var r2 = String(root.topLikersCfg.leader_sort || "likes_desc").toLowerCase();
+                    if (r2 === "likes_asc") tlLeaderSort.currentIndex = 1;
+                    else if (r2 === "name_asc") tlLeaderSort.currentIndex = 2;
+                    else tlLeaderSort.currentIndex = 0;
+                }
+                var tgobj = api.loadTopGiftersOverlayConfigMap();
+                if (!tgobj || typeof tgobj !== "object")
+                    tgobj = {};
+                root.topGiftersCfg = root._ensureTopLikersDefaults(root._detachTierOverlayCfgMap(tgobj));
+                var kgobj = api.loadKingOfLiveOverlayConfigMap();
+                if (!kgobj || typeof kgobj !== "object")
+                    kgobj = {};
+                root.kingCfg = JSON.parse(JSON.stringify(kgobj));
                 overlayCfgInitGuardTimer.restart();
+                _clearWidgetCfgLoadingLocks();
+                } catch (e) {
+                    console.warn("WidgetsView: settings init failed:", e);
+                    _clearWidgetCfgLoadingLocks();
+                }
             }
         }
     }
@@ -2407,10 +4026,10 @@ Item {
         title: "Bubble background color"
         selectedColor: _bubbleColor
         onAccepted: {
-            if (cfg === null) return;
+            if (root.cfg === null) return;
             _bubbleColor = selectedColor;
-            cfg.bubble_bg_rgba = _rgbaString(_bubbleColor, _bubbleAlpha);
-            _save();
+            root.cfg.bubble_bg_rgba = _rgbaString(_bubbleColor, _bubbleAlpha);
+            root._save();
         }
     }
 
@@ -2419,10 +4038,10 @@ Item {
         title: "Widget background color"
         selectedColor: _widgetBgColor
         onAccepted: {
-            if (cfg === null) return;
+            if (root.cfg === null) return;
             _widgetBgColor = selectedColor;
-            cfg.widget_bg_rgba = _rgbaString(_widgetBgColor, _widgetBgAlpha);
-            _save();
+            root.cfg.widget_bg_rgba = _rgbaString(_widgetBgColor, _widgetBgAlpha);
+            root._save();
         }
     }
 
@@ -2431,21 +4050,21 @@ Item {
         title: "Username color"
         selectedColor: _usernameCustomColor
         onAccepted: {
-            if (cfg === null) return;
+            if (root.cfg === null) return;
             _usernameCustomColor = selectedColor;
-            cfg.username_color_custom = _colorToHex(_usernameCustomColor);
-            _save();
+            root.cfg.username_color_custom = _colorToHex(_usernameCustomColor);
+            root._save();
         }
     }
 
     ColorDialog {
         id: textColorDlg
         title: "Text color"
-        selectedColor: cfg ? (cfg.text_color || "#e5e7eb") : "#e5e7eb"
+        selectedColor: root.cfg ? (root.cfg.text_color || "#e5e7eb") : "#e5e7eb"
         onAccepted: {
-            if (cfg === null) return;
-            cfg.text_color = _colorToHex(selectedColor);
-            _save();
+            if (root.cfg === null) return;
+            root.cfg.text_color = _colorToHex(selectedColor);
+            root._save();
         }
     }
 
@@ -2454,10 +4073,10 @@ Item {
         title: "Text shadow color"
         selectedColor: _textShadowColor
         onAccepted: {
-            if (cfg === null) return;
+            if (root.cfg === null) return;
             _textShadowColor = selectedColor;
-            cfg.text_shadow_rgba = _rgbaString(_textShadowColor, _textShadowAlpha);
-            _save();
+            root.cfg.text_shadow_rgba = _rgbaString(_textShadowColor, _textShadowAlpha);
+            root._save();
         }
     }
 
@@ -2466,10 +4085,10 @@ Item {
         title: "Actions: text shadow color"
         selectedColor: _actionsTextShadowColor
         onAccepted: {
-            if (actionsCfg === null) return;
+            if (root.actionsCfg === null) return;
             _actionsTextShadowColor = selectedColor;
-            actionsCfg.text_shadow_color = _colorToHex(selectedColor);
-            _saveActions();
+            root.actionsCfg.text_shadow_color = _colorToHex(selectedColor);
+            root._saveActions();
         }
     }
 
@@ -2478,10 +4097,10 @@ Item {
         title: "Actions: text color"
         selectedColor: _actionsTextColor
         onAccepted: {
-            if (actionsCfg === null) return;
+            if (root.actionsCfg === null) return;
             _actionsTextColor = selectedColor;
-            actionsCfg.text_color = _colorToHex(selectedColor);
-            _saveActions();
+            root.actionsCfg.text_color = _colorToHex(selectedColor);
+            root._saveActions();
         }
     }
 
@@ -2490,10 +4109,10 @@ Item {
         title: "Actions: border color"
         selectedColor: _actionsBorderColor
         onAccepted: {
-            if (actionsCfg === null) return;
+            if (root.actionsCfg === null) return;
             _actionsBorderColor = selectedColor;
-            actionsCfg.font_border_color = _colorToHex(selectedColor);
-            _saveActions();
+            root.actionsCfg.font_border_color = _colorToHex(selectedColor);
+            root._saveActions();
         }
     }
 
@@ -2502,10 +4121,10 @@ Item {
         title: "Actions: username custom color"
         selectedColor: _actionsCustomColor
         onAccepted: {
-            if (actionsCfg === null) return;
+            if (root.actionsCfg === null) return;
             _actionsCustomColor = selectedColor;
-            actionsCfg.username_custom_color = _colorToHex(selectedColor);
-            _saveActions();
+            root.actionsCfg.username_custom_color = _colorToHex(selectedColor);
+            root._saveActions();
         }
     }
 
@@ -2514,10 +4133,10 @@ Item {
         title: "Online: колір тіні"
         selectedColor: _onlineTextShadowColor
         onAccepted: {
-            if (onlineCfg === null) return;
+            if (root.onlineCfg === null) return;
             _onlineTextShadowColor = selectedColor;
-            onlineCfg.text_shadow_color = _colorToHex(selectedColor);
-            _saveOnline();
+            root.onlineCfg.text_shadow_color = _colorToHex(selectedColor);
+            root._saveOnline();
         }
     }
 
@@ -2526,10 +4145,10 @@ Item {
         title: "Online: колір тексту"
         selectedColor: _onlineTextColor
         onAccepted: {
-            if (onlineCfg === null) return;
+            if (root.onlineCfg === null) return;
             _onlineTextColor = selectedColor;
-            onlineCfg.text_color = _colorToHex(selectedColor);
-            _saveOnline();
+            root.onlineCfg.text_color = _colorToHex(selectedColor);
+            root._saveOnline();
         }
     }
 
@@ -2538,10 +4157,106 @@ Item {
         title: "Online: колір контуру"
         selectedColor: _onlineBorderColor
         onAccepted: {
-            if (onlineCfg === null) return;
+            if (root.onlineCfg === null) return;
             _onlineBorderColor = selectedColor;
-            onlineCfg.font_border_color = _colorToHex(selectedColor);
-            _saveOnline();
+            root.onlineCfg.font_border_color = _colorToHex(selectedColor);
+            root._saveOnline();
+        }
+    }
+
+    ColorDialog {
+        id: tlUsernameDlg
+        title: "Top Likers: колір ніку"
+        selectedColor: _tlUsernameColor
+        onAccepted: {
+            if (root.tierOverlayCfg === null) return;
+            _tlUsernameColor = selectedColor;
+            root.tierOverlayCfg.color_username = _colorToHex(selectedColor);
+            root._saveTierOverlay();
+        }
+    }
+
+    ColorDialog {
+        id: tlPointsDlg
+        title: "Top Likers: колір лайків"
+        selectedColor: _tlPointsColor
+        onAccepted: {
+            if (root.tierOverlayCfg === null) return;
+            _tlPointsColor = selectedColor;
+            root.tierOverlayCfg.color_points = _colorToHex(selectedColor);
+            root._saveTierOverlay();
+        }
+    }
+
+    ColorDialog {
+        id: tlRankDlg
+        title: "Top Likers: колір рангу"
+        selectedColor: _tlRankColor
+        onAccepted: {
+            if (root.tierOverlayCfg === null) return;
+            _tlRankColor = selectedColor;
+            root.tierOverlayCfg.color_rank = _colorToHex(selectedColor);
+            root._saveTierOverlay();
+        }
+    }
+
+    ColorDialog {
+        id: tlBorderDlg
+        title: "Top Likers: колір контуру"
+        selectedColor: _tlBorderColor
+        onAccepted: {
+            if (root.tierOverlayCfg === null) return;
+            _tlBorderColor = selectedColor;
+            root.tierOverlayCfg.font_border_color = _colorToHex(selectedColor);
+            root._saveTierOverlay();
+        }
+    }
+
+    ColorDialog {
+        id: tlListBgDlg
+        title: "Top Likers: колір фону панелі"
+        selectedColor: _tlListBgColor
+        onAccepted: {
+            if (root.tierOverlayCfg === null) return;
+            _tlListBgColor = selectedColor;
+            root.tierOverlayCfg.list_bg_rgba = _rgbaString(_tlListBgColor, _tlListBgAlpha);
+            root._saveTierOverlay();
+        }
+    }
+
+    ColorDialog {
+        id: tlPanelShadowDlg
+        title: "Top Likers: колір тіні панелі"
+        selectedColor: _tlPanelShadowColor
+        onAccepted: {
+            if (root.tierOverlayCfg === null) return;
+            _tlPanelShadowColor = selectedColor;
+            root.tierOverlayCfg.bg_shadow_color = _rgbaString(_tlPanelShadowColor, _tlPanelShadowAlpha);
+            root._saveTierOverlay();
+        }
+    }
+
+    ColorDialog {
+        id: tlUsernameShadowDlg
+        title: "Top Likers: тінь ніку"
+        selectedColor: _tlUsernameShadowColor
+        onAccepted: {
+            if (root.tierOverlayCfg === null) return;
+            _tlUsernameShadowColor = selectedColor;
+            root.tierOverlayCfg.username_text_shadow_color = _colorToHex(selectedColor);
+            root._saveTierOverlay();
+        }
+    }
+
+    ColorDialog {
+        id: tlLikesShadowDlg
+        title: "Top Likers: тінь лайків"
+        selectedColor: _tlLikesShadowColor
+        onAccepted: {
+            if (root.tierOverlayCfg === null) return;
+            _tlLikesShadowColor = selectedColor;
+            root.tierOverlayCfg.likes_text_shadow_color = _colorToHex(selectedColor);
+            root._saveTierOverlay();
         }
     }
 }

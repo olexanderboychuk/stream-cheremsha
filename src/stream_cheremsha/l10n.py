@@ -244,6 +244,11 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "ТРЕК МОДЕРУЄТЬСЯ…",
         "en": "CHECKING THE TRACK…",
     },
+    "telegram.song.musicbrainz_russian_origin": {
+        "uk": "Цей трек не додали: у каталогу виконавець пов’язаний з Росією. Обери інший.",
+        "en": "We didn’t add this track: the performer is linked to Russia in the music catalog. "
+        "Pick another one.",
+    },
     "telegram.song.tiktok_soft_no": {
         "uk": "Цей трек не додали: за словами він так собі для стріму — можуть прилітати скарги чи різко обірвати ефір. Краще щось спокійніше.",
         "en": "We didn’t add this track: the lyrics aren’t a great fit for streaming — reports or a sudden takedown can happen. Pick something calmer.",
@@ -251,6 +256,49 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "telegram.song.tiktok_hard_no": {
         "uk": "Цей трек не додали: текст занадто жорсткий для ефіру, таке на стрім не ставимо. Обери інший.",
         "en": "We didn’t add this track: the lyrics are too heavy for a live stream — we won’t put that on air. Choose another one.",
+    },
+    "telegram.song.risky_sent_to_admin": {
+        "uk": "Трек на межі правил перевірки — я відправив запит адміністратору. Зачекай на рішення в цьому чаті.",
+        "en": "This track is borderline for the safety check — I’ve sent it to the streamer admin. "
+        "Wait here for their decision.",
+    },
+    "telegram.song.risky_approved": {
+        "uk": "✅ Адмін додав трек у чергу: <code>{video_id}</code>",
+        "en": "✅ The admin added your track to the queue: <code>{video_id}</code>",
+    },
+    "telegram.song.risky_rejected": {
+        "uk": "Адмін не схвалив цей трек для черги. Спробуй інше відео.",
+        "en": "The admin didn’t approve this track for the queue. Try another video.",
+    },
+    "telegram.admin.risky_track": {
+        "uk": "⚠️ <b>Ризиковий трек</b> (перевірка)\n"
+        "<b>Назва:</b> {title}\n"
+        "<b>Відео:</b> <code>{video_id}</code>\n"
+        "<b>Хто замовив:</b> {requested_by}\n"
+        "<b>Оцінка ризику:</b> {risk_score}\n"
+        "<b>Примітки:</b> {violations}",
+        "en": "⚠️ <b>Risky track</b> (AI check)\n"
+        "<b>Title:</b> {title}\n"
+        "<b>Video:</b> <code>{video_id}</code>\n"
+        "<b>Requested by:</b> {requested_by}\n"
+        "<b>Risk score:</b> {risk_score}\n"
+        "<b>Notes:</b> {violations}",
+    },
+    "telegram.admin.risky_already_done": {
+        "uk": "Вже оброблено або застаріло.",
+        "en": "Already handled or expired.",
+    },
+    "telegram.admin.risky_approved_answer": {
+        "uk": "Додано в чергу.",
+        "en": "Added to queue.",
+    },
+    "telegram.admin.risky_rejected_answer": {
+        "uk": "Відхилено.",
+        "en": "Rejected.",
+    },
+    "telegram.admin.risky_enqueue_failed": {
+        "uk": "Не вдалося додати в чергу — спробуй ще раз.",
+        "en": "Couldn’t add to the queue — try again.",
     },
     "settings.music_group": {"uk": "Музика", "en": "Music"},
     "settings.music_open_in_mpv": {
@@ -294,6 +342,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "actions.rule_no_actions": {"uk": "немає дій", "en": "no actions"},
     "actions.delete": {"uk": "Видалити", "en": "Delete"},
     "actions.duplicate_btn": {"uk": "Копія", "en": "Copy"},
+    "actions.rule_preview_tt": {
+        "uk": "Перевірити правило (прев'ю дій)",
+        "en": "Test this rule (preview actions)",
+    },
     "actions.rule_name_copy_suffix": {"uk": " (копія)", "en": " (copy)"},
     "actions.placeholders_hint_file": {
         "uk": "Плейсхолдери (в тексті й у шляху файла): giftcount, giftname, …",
@@ -427,6 +479,77 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "phrase or with placeholders…",
     },
     "actions.run_program": {"uk": "Запустити програму", "en": "Run program"},
+    "actions.simulate_keystrokes": {
+        "uk": "Симуляція натискання клавіш",
+        "en": "Simulate keystrokes",
+    },
+    "actions.keystrokes_sequence_label": {
+        "uk": "Послідовність (текст і теги {ENTER}, {F7}…)",
+        "en": "Sequence (text and tags like {ENTER}, {F7}…)",
+    },
+    "actions.keystrokes_sequence_ph": {
+        "uk": "наприклад: {END}{F7} або привіт {username}",
+        "en": "e.g. {END}{F7} or hi {username}",
+    },
+    "actions.keystrokes_insert_hint": {
+        "uk": "Вставка тегів у позицію курсора",
+        "en": "Insert tags at the text cursor",
+    },
+    "actions.keystrokes_tab_nav": {"uk": "Навігація", "en": "Navigation"},
+    "actions.keystrokes_tab_editing": {"uk": "Редагування", "en": "Editing"},
+    "actions.keystrokes_tab_fn": {"uk": "F-клавіші", "en": "Function keys"},
+    "actions.keystrokes_tab_mouse": {"uk": "Миша", "en": "Mouse"},
+    "actions.keystrokes_modifiers": {
+        "uk": "Модифікатори (лише для тегів {…})",
+        "en": "Modifiers (for {…} tags only)",
+    },
+    "actions.keystrokes_advanced": {"uk": "Додатково", "en": "Advanced"},
+    "actions.keystrokes_game_mode": {
+        "uk": "Скан-коди для тегів {F1}, {ENTER}… (частіше потрібно в іграх; літери x, A… — завжди фізично)",
+        "en": "Scan codes for {F1}, {ENTER}, … tags (often needed in games; letters x, A… are always physical on Windows)",
+    },
+    "actions.keystrokes_interception": {
+        "uk": "Драйвер Interception (низькорівневий ввід для ігор)",
+        "en": "Interception driver (low-level input for games)",
+    },
+    "actions.keystrokes_interception_hint": {
+        "uk": (
+            "Потрібен драйвер oblitum Interception. Після встановлення драйвера — перезавантаження ПК. "
+            "Якщо натискань не видно: вимкни цей режим і перевір звичайну симуляцію без Interception. "
+            "Після оновлення застосунку зроби повний перезапуск програми (прив’язка Interception "
+            "робиться один раз при старті). "
+            "Текст у дії відповідає розкладці вікна з фокусом (гра), а не фонового потоку застосунку."
+        ),
+        "en": (
+            "Requires the oblitum Interception driver. Reboot after installing the driver. "
+            "If nothing happens on screen: turn this off and try normal simulation without Interception. "
+            "After an app update, fully restart the program (Interception binds once at startup). "
+            "Typed text follows the focused window's keyboard layout (the game), not a background thread."
+        ),
+    },
+    "actions.keystrokes_hold_ms": {
+        "uk": "Тривалість утримання клавіші (мс)",
+        "en": "Key hold duration (ms)",
+    },
+    "actions.keystrokes_left_click": {"uk": "Лівий клік", "en": "Left click"},
+    "actions.keystrokes_right_click": {"uk": "Правий клік", "en": "Right click"},
+    "actions.keystrokes_admin_hint": {
+        "uk": (
+            "Символи потрапляють у вікно з фокусом клавіатури (клацни в Блокнот і знову "
+            "запусти правило). Windows: за потреби — від адміністратора. macOS: доступність "
+            "(Accessibility) для застосунку. Linux: зазвичай X11; Wayland може блокувати "
+            "синтетичний ввід."
+        ),
+        "en": (
+            "Characters go to the window that has keyboard focus (click in Notepad, then fire "
+            "the rule again). Windows: run as Administrator if needed. macOS: grant Accessibility "
+            "to the app. Linux: typically X11; Wayland may block synthetic input."
+        ),
+    },
+    "actions.keystrokes_placeholders_hint": {
+        "uk": "Плейсхолдери: sender, username, giftname, giftcount, likecount, totallikecount, comment, submonth, platform…",
+        "en": "Placeholders: sender, username, giftname, giftcount, likecount, totallikecount, comment, submonth, platform…",
+    },
     "actions.pick_program": {"uk": "Оберіть виконуваний файл…", "en": "Pick executable…"},
     "actions.program_args": {"uk": "Параметри командного рядка", "en": "Command-line arguments"},
     "actions.program_args_ph": {"uk": "наприклад: --foo bar", "en": "e.g. --foo bar"},

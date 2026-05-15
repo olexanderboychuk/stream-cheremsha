@@ -396,6 +396,7 @@ def test_tiktok_source_suppresses_pre_connect_gifts(
         _icon_url,
         _sender_avatar,
         _diamonds_each,
+        _user_key,
     ):
         gifts.append((sender, gift_id, gift_name, count))
 
@@ -553,7 +554,7 @@ def test_tiktok_source_seeds_like_baseline_silently_on_connect(
         coordinator=_FakeCoordinator(),
         on_status=lambda _s: None,
         on_gift=None,
-        on_like=lambda user, n, _avatar="": likes.append((user, n)),
+        on_like=lambda user, n, _avatar="", _key="": likes.append((user, n)),
         get_locale=lambda: "uk",
         client_factory=lambda _uid: client,  # type: ignore[arg-type]
     )

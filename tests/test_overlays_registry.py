@@ -94,6 +94,34 @@ def test_registry_has_online_overlay() -> None:
     assert st["config"].get("layout_mode") in ("combined", "per_platform")
 
 
+def test_registry_has_top_likers_overlay() -> None:
+    reg = OverlayRegistry()
+    t = reg.get("top_likers")
+    assert t.type == "top_likers"
+
+
+def test_registry_has_top_gifters_overlay() -> None:
+    reg = OverlayRegistry()
+    t = reg.get("top_gifters")
+    assert t.type == "top_gifters"
+    html = t.render_html({"instance": "main"})
+    assert "/ws" in html
+    st = t.initial_state({"instance": "main"})
+    assert "config" in st
+    assert "leaders" in st
+
+
+def test_registry_has_king_of_live_overlay() -> None:
+    reg = OverlayRegistry()
+    t = reg.get("king_of_live")
+    assert t.type == "king_of_live"
+    html = t.render_html({"instance": "main"})
+    assert "/ws" in html
+    st = t.initial_state({"instance": "main"})
+    assert "config" in st
+    assert "king" in st
+
+
 def test_registry_has_actions_overlay() -> None:
     reg = OverlayRegistry()
     t = reg.get("actions")

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from typing import Any
+
+_LOG = logging.getLogger(__name__)
 
 
 @dataclass(slots=True, frozen=True)
@@ -24,6 +27,13 @@ class OverlayPubSub:
         self._subs = [s for s in self._subs if s.q is not q]
 
     async def publish(self, topic: str, patch: dict[str, Any]) -> None:
+        self.publish_sync(topic, patch)
+
+    def publish_sync(self, topic: str, patch: dict[str, Any]) -> None:
+        """Put ``patch`` on subscriber queues immediately.
+
+        GUI-thread safe; no event-loop deferral.
+        """
         payload = dict(patch)
         for s in list(self._subs):
             if s.topic != topic:
@@ -31,4 +41,5 @@ class OverlayPubSub:
             try:
                 s.q.put_nowait(payload.copy())
             except asyncio.QueueFull:
+                _LOG.warning("overlay pubsub: queue full topic=%s (patch dropped)", topic)
                 continue

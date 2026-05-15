@@ -15,6 +15,7 @@ from stream_cheremsha.actions.action_placeholders import (
 from stream_cheremsha.actions.actions_launch_program import launch_program
 from stream_cheremsha.actions.actions_play_random_myinstants_ua import play_random_myinstants_ua
 from stream_cheremsha.actions.actions_play_sound import play_sound_from_file
+from stream_cheremsha.actions.actions_simulate_keystrokes import run_simulate_keystrokes
 from stream_cheremsha.actions.actions_write_file import write_text_to_file
 from stream_cheremsha.actions.events import (
     ChatMessageEvent,
@@ -1456,6 +1457,70 @@ class PlatformActionsEngine:
                             await self._obs_execute(rev)
 
                     coros.append(_obs_then_maybe_revert())
+                    continue
+
+                if t == "simulate_keystrokes":
+                    raw = params.get("sequence", "")
+                    if not isinstance(raw, str):
+                        self._status_callback(
+                            f"Rule {rule.id}: actions[{i}].sequence must be a string"
+                        )
+                        continue
+                    resolved = apply_action_placeholders(raw, ev).strip()
+                    if not resolved:
+                        self._status_callback(
+                            f"Rule {rule.id}: actions[{i}].sequence is empty after placeholders"
+                        )
+                        continue
+                    hold_raw = params.get("hold_ms", 0)
+                    try:
+                        hold_ms = int(hold_raw)
+                    except (TypeError, ValueError):
+                        hold_ms = 0
+                    if hold_ms < 0:
+                        hold_ms = 0
+                    if hold_ms > 60_000:
+                        hold_ms = 60_000
+                    game_mode = _obs_bool_flag(params.get("game_compatibility"), default=False)
+                    m_ctrl = _obs_bool_flag(params.get("modifier_ctrl"), default=False)
+                    m_alt = _obs_bool_flag(params.get("modifier_alt"), default=False)
+                    m_shift = _obs_bool_flag(params.get("modifier_shift"), default=False)
+
+                    use_ic = _obs_bool_flag(params.get("use_interception"), default=False)
+
+                    async def _keys(
+                        seq: str = resolved,
+                        hm: int = hold_ms,
+                        gm: bool = game_mode,
+                        mc: bool = m_ctrl,
+                        ma: bool = m_alt,
+                        ms: bool = m_shift,
+                        ui: bool = use_ic,
+                    ) -> None:
+                        try:
+                            await asyncio.to_thread(
+                                run_simulate_keystrokes,
+                                seq,
+                                hold_ms=hm,
+                                game_mode=gm,
+                                with_ctrl=mc,
+                                with_alt=ma,
+                                with_shift=ms,
+                                use_interception=ui,
+                            )
+                        except ValueError as e:
+                            self._status_callback(f"Rule {rule.id}: simulate_keystrokes: {e}")
+                        except OSError as e:
+                            self._status_callback(
+                                f"Rule {rule.id}: simulate_keystrokes failed: {e}"
+                            )
+                        except Exception as e:
+                            self._status_callback(
+                                f"Rule {rule.id}: simulate_keystrokes failed: "
+                                f"{type(e).__name__}: {e}"
+                            )
+
+                    coros.append(_keys())
                     continue
 
                 # Unknown action types are ignored in v1 (future extensibility).

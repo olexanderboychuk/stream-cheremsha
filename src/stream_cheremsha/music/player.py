@@ -12,6 +12,10 @@ from typing import BinaryIO, Protocol
 from stream_cheremsha.chat.video_id import extract_youtube_video_id
 from stream_cheremsha.domain.protocols import AudioSink
 from stream_cheremsha.music.queue_controller import MusicQueueController
+from stream_cheremsha.music.yt_dlp_resolver import (
+    mpv_ytdl_raw_option_args,
+    resolve_youtube_stream_url_for_mpv,
+)
 
 
 class ResolveResult(Protocol):
@@ -24,6 +28,27 @@ logger = logging.getLogger(__name__)
 ResolveFunc = Callable[[str], ResolveResult]
 
 MusicBackend = str  # "app" | "mpv"
+
+
+def _build_mpv_argv(*, mpv: str, volume_percent: int, ipc_pipe: str) -> list[str]:
+    """mpv command line; points ytdl_hook at yt-dlp when the binary exists on PATH."""
+    argv: list[str] = [mpv]
+    ytdl = shutil.which("yt-dlp") or shutil.which("yt-dlp.exe") or shutil.which("youtube-dl")
+    if ytdl:
+        y_esc = ytdl.replace("\\", "/")
+        argv.append(f"--script-opts=ytdl_hook-ytdl_path={y_esc}")
+    # ytdl_hook spawns yt-dlp separately from our Python YoutubeDL — forward the same cookies.
+    argv.extend(mpv_ytdl_raw_option_args())
+    argv.extend(
+        [
+            "--no-terminal",
+            "--idle=yes",
+            "--force-window=yes",
+            f"--volume={int(volume_percent)}",
+            f"--input-ipc-server={ipc_pipe}",
+        ]
+    )
+    return argv
 
 
 class MusicPlayer:
@@ -392,14 +417,12 @@ class MusicPlayer:
             self._mpv_ipc = rf"\\.\pipe\cheremsha-mpv-{uuid.uuid4()}"
             self._status("Music: starting mpv…")
             try:
-                proc = await asyncio.create_subprocess_exec(
-                    mpv,
-                    "--no-terminal",
-                    "--idle=yes",
-                    "--force-window=yes",
-                    f"--volume={int(self._volume_percent)}",
-                    f"--input-ipc-server={self._mpv_ipc}",
+                argv = _build_mpv_argv(
+                    mpv=mpv,
+                    volume_percent=int(self._volume_percent),
+                    ipc_pipe=self._mpv_ipc,
                 )
+                proc = await asyncio.create_subprocess_exec(*argv)
             except OSError as e:
                 self._status(f"Music: mpv запуск не вдався: {e}")
                 self._mpv_ipc = ""
@@ -586,18 +609,34 @@ class MusicPlayer:
             url = raw
         return url
 
+    async def _mpv_resolve_load_url(self, video_id_or_url: str) -> str:
+        """Resolve URL for ``_play_mpv_track`` (not for skip / ``load_replace``).
+
+        Skip uses normalized watch URLs only so ``skip_now`` never blocks on yt-dlp.
+        """
+
+        def _work() -> str | None:
+            return resolve_youtube_stream_url_for_mpv(video_id_or_url)
+
+        direct = await asyncio.to_thread(_work)
+        if direct:
+            return direct
+        return self._normalize_mpv_url(video_id_or_url)
+
     async def _mpv_stop_playback(self) -> None:
         # Best-effort: stop current file but keep window open (idle).
         await self._mpv_send({"command": ["stop"]})
 
     async def _mpv_load_replace(self, video_id_or_url: str) -> None:
-        url = self._normalize_mpv_url(video_id_or_url)
         if not await self._ensure_mpv_running():
             self._status("Music: mpv not ready for loadfile; restarting")
             await self._abandon_mpv_state("loadfile-not-ready")
             if not await self._ensure_mpv_running():
                 self._status("Music: mpv still not ready")
                 return
+        # Skip / UI path: avoid blocking yt-dlp resolve here (cancel cannot interrupt
+        # to_thread); mpv handles watch URLs when ytdl_hook-ytdl_path is set on spawn.
+        url = self._normalize_mpv_url(video_id_or_url)
         self._status("Music: mpv loadfile (replace)…")
         ok = await self._mpv_send({"command": ["loadfile", url, "replace"]})
         if ok:
@@ -608,6 +647,7 @@ class MusicPlayer:
         if not await self._ensure_mpv_running():
             self._status("Music: mpv restart failed")
             return
+        url = self._normalize_mpv_url(video_id_or_url)
         ok2 = await self._mpv_send({"command": ["loadfile", url, "replace"]})
         self._status("Music: mpv loadfile ok" if ok2 else "Music: mpv loadfile failed")
 
@@ -626,8 +666,6 @@ class MusicPlayer:
         If mpv is closed by the user, restart mpv and continue the *same* track.
         We only return when mpv reports end-of-file (normal completion) or when cancelled.
         """
-        url = self._normalize_mpv_url(video_id_or_url)
-
         while True:
             if self._closing:
                 return
@@ -640,6 +678,7 @@ class MusicPlayer:
             self._status("Music: opening in mpv…")
             self._mpv_events_drain()
 
+            url = await self._mpv_resolve_load_url(video_id_or_url)
             ok = await self._mpv_send({"command": ["loadfile", url, "replace"]})
             if not ok:
                 self._status("Music: mpv loadfile failed; restarting mpv")

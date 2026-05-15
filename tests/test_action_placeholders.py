@@ -118,3 +118,28 @@ def test_tiktok_first_activity_placeholders_kind() -> None:
         received_at=datetime.now(tz=UTC),
     )
     assert apply_action_placeholders("{kind} {user} {count}", ev) == "share bob 3"
+
+
+def test_gift_username_repeatcount_aliases() -> None:
+    ev = GiftReceivedEvent(
+        platform=ChatPlatform.TIKTOK,
+        sender="viewer1",
+        gift_id="gid",
+        gift_name="Rose",
+        count=7,
+        gift_icon_url="",
+        received_at=datetime.now(tz=UTC),
+    )
+    assert (
+        apply_action_placeholders("{username} {nickname} {repeatcount}", ev) == "viewer1 viewer1 7"
+    )
+
+
+def test_chat_comment_username_aliases() -> None:
+    ev = ChatMessageEvent(
+        platform=ChatPlatform.TWITCH,
+        author="bob",
+        text="hello",
+        received_at=datetime.now(tz=UTC),
+    )
+    assert apply_action_placeholders("{comment} {username}", ev) == "hello bob"

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import asyncio
 import json
+import logging
 from typing import Any
 
 from PySide6.QtCore import Property, QObject, Qt, Signal, Slot
 from PySide6.QtGui import QFontDatabase, QGuiApplication
+from PySide6.QtQml import QJSValue
 from PySide6.QtQuick import QQuickView
 
 from stream_cheremsha.overlays.actions_config import (
@@ -20,6 +21,12 @@ from stream_cheremsha.overlays.chat_config import (
     load_chat_config,
     save_chat_config,
 )
+from stream_cheremsha.overlays.king_of_live_overlay_config import (
+    king_of_live_overlay_config_from_json_text,
+    king_of_live_overlay_config_to_json_text,
+    load_king_of_live_overlay_config,
+    save_king_of_live_overlay_config,
+)
 from stream_cheremsha.overlays.online_overlay_config import (
     load_online_overlay_config,
     online_overlay_config_from_json_text,
@@ -27,6 +34,18 @@ from stream_cheremsha.overlays.online_overlay_config import (
     save_online_overlay_config,
 )
 from stream_cheremsha.overlays.pubsub import OverlayPubSub
+from stream_cheremsha.overlays.top_gifters_overlay_config import (
+    load_top_gifters_overlay_config,
+    save_top_gifters_overlay_config,
+    top_gifters_overlay_config_from_json_text,
+    top_gifters_overlay_config_to_json_text,
+)
+from stream_cheremsha.overlays.top_likers_overlay_config import (
+    load_top_likers_overlay_config,
+    save_top_likers_overlay_config,
+    top_likers_overlay_config_from_json_text,
+    top_likers_overlay_config_to_json_text,
+)
 
 
 def _sorted_system_font_families() -> list[str]:
@@ -39,6 +58,75 @@ _FONT_FALLBACK_NO_GUI_APP = sorted(
     {"Segoe UI", "Arial", "Tahoma", "Consolas", "Verdana"},
     key=str.casefold,
 )
+
+_LOG = logging.getLogger(__name__)
+
+
+def _json_normalize_for_dump(value: Any) -> Any:
+    """Make values ``json.dumps``-safe.
+
+    Qt may hand back maps with non-str keys or odd leaf types.
+    """
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_json_normalize_for_dump(v) for v in value]
+    if isinstance(value, dict):
+        return {str(k): _json_normalize_for_dump(value[k]) for k in value}
+    keys_method = getattr(value, "keys", None)
+    if callable(keys_method):
+        try:
+            return {str(k): _json_normalize_for_dump(value[k]) for k in keys_method()}
+        except (TypeError, KeyError, AttributeError):
+            pass
+    return str(value)
+
+
+def _qml_js_to_plain_cfg(cfg_js: object) -> object | None:
+    """Convert a QML ``QJSValue`` (or plain Python ``dict``) to a Python value for JSON."""
+    if cfg_js is None:
+        return None
+    if isinstance(cfg_js, QJSValue):
+        if cfg_js.isUndefined() or cfg_js.isNull():
+            return None
+        return cfg_js.toVariant()
+    return cfg_js
+
+
+def _qml_cfg_map_to_json_text(cfg_map: object) -> str | None:
+    """Serialize a QML ``var``/``QVariantMap`` to JSON for overlay config parsers.
+
+    QML ``JSON.stringify`` on maps returned from ``load*ConfigMap()`` often yields ``"{}"``
+    because those objects are not plain JS objects. Prefer ``save*ConfigMap(QJSValue)``
+    from QML so ``toVariant()`` yields a real ``dict`` before ``json.dumps``.
+    """
+    if cfg_map is None:
+        return None
+    plain_raw: dict[str, Any]
+    if isinstance(cfg_map, dict):
+        plain_raw = dict(cfg_map)
+    else:
+        try:
+            keys_method = getattr(cfg_map, "keys", None)
+            if callable(keys_method):
+                plain_raw = {str(k): cfg_map[k] for k in keys_method()}  # type: ignore[index]
+            else:
+                plain_raw = dict(cfg_map)  # type: ignore[arg-type]
+        except (TypeError, ValueError, AttributeError):
+            return None
+    plain_any = _json_normalize_for_dump(plain_raw)
+    if not isinstance(plain_any, dict):
+        return None
+    plain = plain_any
+    try:
+        return json.dumps(plain, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    except TypeError:
+        try:
+            return json.dumps(
+                plain, ensure_ascii=False, separators=(",", ":"), sort_keys=True, default=str
+            )
+        except TypeError:
+            return None
 
 
 class WidgetsQmlApi(QObject):
@@ -54,7 +142,11 @@ class WidgetsQmlApi(QObject):
         self._base = str(overlay_base_url or "").rstrip("/")
         self._pubsub = pubsub
         self._actions_instance = str(actions_instance or "main").strip() or "main"
+        self._chat_instance = "main"
         self._online_instance = str(online_instance or "main").strip() or "main"
+        self._top_likers_instance = str(online_instance or "main").strip() or "main"
+        self._top_gifters_instance = str(online_instance or "main").strip() or "main"
+        self._king_of_live_instance = str(online_instance or "main").strip() or "main"
         self._system_font_families: list[str] | None = None
 
     @Slot(result="QStringList")
@@ -82,6 +174,9 @@ class WidgetsQmlApi(QObject):
         self.chatOverlayUrlChanged.emit()
         self.actionsOverlayUrlChanged.emit()
         self.onlineOverlayUrlChanged.emit()
+        self.topLikersOverlayUrlChanged.emit()
+        self.topGiftersOverlayUrlChanged.emit()
+        self.kingOfLiveOverlayUrlChanged.emit()
 
     @Property(str, notify=chatOverlayUrlChanged)
     def chatOverlayUrlValue(self) -> str:  # noqa: ANN201 - PySide pattern
@@ -91,7 +186,7 @@ class WidgetsQmlApi(QObject):
     def chatOverlayUrl(self) -> str:
         if not self._base:
             return ""
-        return f"{self._base}/overlay/chat?instance=main"
+        return f"{self._base}/overlay/chat?instance={self._chat_instance}"
 
     @Slot()
     def copyChatOverlayUrl(self) -> None:
@@ -115,7 +210,7 @@ class WidgetsQmlApi(QObject):
     def actionsOverlayUrl(self) -> str:
         if not self._base:
             return ""
-        return f"{self._base}/overlay/actions?instance=main"
+        return f"{self._base}/overlay/actions?instance={self._actions_instance}"
 
     @Slot()
     def copyActionsOverlayUrl(self) -> None:
@@ -128,6 +223,72 @@ class WidgetsQmlApi(QObject):
         clip.setText(url)
 
     onlineOverlayUrlChanged = Signal()
+
+    topLikersOverlayUrlChanged = Signal()
+
+    @Property(str, notify=topLikersOverlayUrlChanged)
+    def topLikersOverlayUrlValue(self) -> str:  # noqa: ANN201 - PySide pattern
+        return self.topLikersOverlayUrl()
+
+    @Slot(result=str)
+    def topLikersOverlayUrl(self) -> str:
+        if not self._base:
+            return ""
+        return f"{self._base}/overlay/top_likers?instance={self._top_likers_instance}"
+
+    @Slot()
+    def copyTopLikersOverlayUrl(self) -> None:
+        url = self.topLikersOverlayUrl()
+        if not url:
+            return
+        clip = QGuiApplication.clipboard()
+        if clip is None:
+            return
+        clip.setText(url)
+
+    topGiftersOverlayUrlChanged = Signal()
+
+    @Property(str, notify=topGiftersOverlayUrlChanged)
+    def topGiftersOverlayUrlValue(self) -> str:  # noqa: ANN201 - PySide pattern
+        return self.topGiftersOverlayUrl()
+
+    @Slot(result=str)
+    def topGiftersOverlayUrl(self) -> str:
+        if not self._base:
+            return ""
+        return f"{self._base}/overlay/top_gifters?instance={self._top_gifters_instance}"
+
+    @Slot()
+    def copyTopGiftersOverlayUrl(self) -> None:
+        url = self.topGiftersOverlayUrl()
+        if not url:
+            return
+        clip = QGuiApplication.clipboard()
+        if clip is None:
+            return
+        clip.setText(url)
+
+    kingOfLiveOverlayUrlChanged = Signal()
+
+    @Property(str, notify=kingOfLiveOverlayUrlChanged)
+    def kingOfLiveOverlayUrlValue(self) -> str:  # noqa: ANN201 - PySide pattern
+        return self.kingOfLiveOverlayUrl()
+
+    @Slot(result=str)
+    def kingOfLiveOverlayUrl(self) -> str:
+        if not self._base:
+            return ""
+        return f"{self._base}/overlay/king_of_live?instance={self._king_of_live_instance}"
+
+    @Slot()
+    def copyKingOfLiveOverlayUrl(self) -> None:
+        url = self.kingOfLiveOverlayUrl()
+        if not url:
+            return
+        clip = QGuiApplication.clipboard()
+        if clip is None:
+            return
+        clip.setText(url)
 
     @Property(str, notify=onlineOverlayUrlChanged)
     def onlineOverlayUrlValue(self) -> str:  # noqa: ANN201 - PySide pattern
@@ -153,16 +314,7 @@ class WidgetsQmlApi(QObject):
         ps = self._pubsub
         if ps is None:
             return
-
-        async def _run() -> None:
-            await ps.publish(topic, patch)
-
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            asyncio.run(_run())
-            return
-        loop.create_task(_run())
+        ps.publish_sync(topic, patch)
 
     @Slot()
     def previewActionsOverlay(self) -> None:
@@ -177,6 +329,75 @@ class WidgetsQmlApi(QObject):
                 # Lets ▶ preview show the asset row without persisting show_action_platform_icon on.
                 "preview_force_platform_icon": True,
             }
+        }
+        self._publish_patch(topic=topic, patch=patch)
+
+    @Slot()
+    def previewTopLikersOverlay(self) -> None:
+        topic = f"overlay:top_likers:{self._top_likers_instance}"
+        cfg = load_top_likers_overlay_config()
+        lim = max(1, min(10, int(cfg.top_count)))
+        leaders: list[dict[str, str | int]] = []
+        for i in range(lim):
+            leaders.append(
+                {
+                    "rank": i + 1,
+                    "user": f"Example User {i + 1}",
+                    "likes": 15005 - i * 1200,
+                    "avatar_url": "",
+                }
+            )
+        patch: dict[str, Any] = {
+            "leaders": leaders,
+            "config": json.loads(top_likers_overlay_config_to_json_text(cfg)),
+        }
+        self._publish_patch(topic=topic, patch=patch)
+
+    @Slot()
+    def previewTopGiftersOverlay(self) -> None:
+        topic = f"overlay:top_gifters:{self._top_gifters_instance}"
+        cfg = load_top_gifters_overlay_config()
+        lim = max(1, min(10, int(cfg.top_count)))
+        leaders: list[dict[str, str | int]] = []
+        for i in range(lim):
+            leaders.append(
+                {
+                    "rank": i + 1,
+                    "user": f"Example User {i + 1}",
+                    "coins": 15005 - i * 1200,
+                    "avatar_url": "",
+                }
+            )
+        patch: dict[str, Any] = {
+            "leaders": leaders,
+            "config": json.loads(top_gifters_overlay_config_to_json_text(cfg)),
+        }
+        self._publish_patch(topic=topic, patch=patch)
+
+    @Slot()
+    def previewKingOfLiveOverlay(self) -> None:
+        topic = f"overlay:king_of_live:{self._king_of_live_instance}"
+        cfg = load_king_of_live_overlay_config()
+        patch: dict[str, Any] = {
+            "config": json.loads(king_of_live_overlay_config_to_json_text(cfg)),
+            "king": {
+                "key": "preview_king",
+                "user": "Preview Monarch",
+                "avatar_url": "",
+                "diamonds": 1_250_000,
+            },
+            "gap_diamonds": 42_000,
+            "runner_up_user": "Runner-up Rex",
+            "session_challenger": {
+                "key": "ch",
+                "user": "Challenger",
+                "coins": 1_100_000,
+                "ratio": 0.88,
+            },
+            "throne_danger": True,
+            "king_revision": 0,
+            "king_presence_seq": 0,
+            "chat_highlight_seq": 0,
         }
         self._publish_patch(topic=topic, patch=patch)
 
@@ -204,12 +425,30 @@ class WidgetsQmlApi(QObject):
             return
         try:
             cfg = chat_config_from_json_text(txt)
-        except (ValueError, TypeError, json.JSONDecodeError):
-            # Ignore invalid payloads to avoid resetting user settings to defaults.
-            return
-        if chat_config_to_json_text(cfg) == chat_config_to_json_text(load_chat_config()):
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            _LOG.warning(
+                "saveChatConfigJson: rejected payload (%s): %s", exc.__class__.__name__, exc
+            )
             return
         save_chat_config(cfg)
+        if self._pubsub is not None:
+            topic = f"overlay:chat:{self._chat_instance}"
+            patch = {"config": json.loads(chat_config_to_json_text(cfg))}
+            self._publish_patch(topic=topic, patch=patch)
+
+    @Slot(QJSValue)
+    def saveChatConfigMap(self, cfg_js: QJSValue) -> None:
+        plain = _qml_js_to_plain_cfg(cfg_js)
+        _LOG.info("widgets ConfigMap save: chat (plain_type=%s)", type(plain).__name__)
+        if plain is None:
+            _LOG.warning("widgets ConfigMap save: chat rejected (null/undefined)")
+            return
+        txt = _qml_cfg_map_to_json_text(plain)
+        if not txt or txt == "{}":
+            _LOG.warning("widgets ConfigMap save: chat rejected empty_or_non_serializable")
+            return
+        _LOG.info("widgets ConfigMap save: chat ok json_len=%d", len(txt))
+        self.saveChatConfigJson(txt)
 
     @Slot(result=str)
     def loadActionsConfigJson(self) -> str:
@@ -224,16 +463,30 @@ class WidgetsQmlApi(QObject):
             return
         try:
             cfg = actions_config_from_json_text(txt)
-        except (ValueError, TypeError, json.JSONDecodeError):
-            # Ignore invalid payloads to avoid resetting user settings to defaults.
-            return
-        if actions_config_to_json_text(cfg) == actions_config_to_json_text(load_actions_config()):
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            _LOG.warning(
+                "saveActionsConfigJson: rejected payload (%s): %s", exc.__class__.__name__, exc
+            )
             return
         save_actions_config(cfg)
         if self._pubsub is not None:
             topic = f"overlay:actions:{self._actions_instance}"
             patch = {"config": json.loads(actions_config_to_json_text(cfg))}
             self._publish_patch(topic=topic, patch=patch)
+
+    @Slot(QJSValue)
+    def saveActionsConfigMap(self, cfg_js: QJSValue) -> None:
+        plain = _qml_js_to_plain_cfg(cfg_js)
+        _LOG.info("widgets ConfigMap save: actions (plain_type=%s)", type(plain).__name__)
+        if plain is None:
+            _LOG.warning("widgets ConfigMap save: actions rejected (null/undefined)")
+            return
+        txt = _qml_cfg_map_to_json_text(plain)
+        if not txt or txt == "{}":
+            _LOG.warning("widgets ConfigMap save: actions rejected empty_or_non_serializable")
+            return
+        _LOG.info("widgets ConfigMap save: actions ok json_len=%d", len(txt))
+        self.saveActionsConfigJson(txt)
 
     @Slot(result="QVariantMap")
     def loadOnlineOverlayConfigMap(self) -> dict[str, Any]:
@@ -252,17 +505,167 @@ class WidgetsQmlApi(QObject):
             return
         try:
             cfg = online_overlay_config_from_json_text(txt)
-        except (ValueError, TypeError, json.JSONDecodeError):
-            return
-        if online_overlay_config_to_json_text(cfg) == online_overlay_config_to_json_text(
-            load_online_overlay_config()
-        ):
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            _LOG.warning(
+                "saveOnlineOverlayConfigJson: rejected payload (%s): %s",
+                exc.__class__.__name__,
+                exc,
+            )
             return
         save_online_overlay_config(cfg)
         if self._pubsub is not None:
             topic = f"overlay:online:{self._online_instance}"
             patch = {"config": json.loads(online_overlay_config_to_json_text(cfg))}
             self._publish_patch(topic=topic, patch=patch)
+
+    @Slot(QJSValue)
+    def saveOnlineOverlayConfigMap(self, cfg_js: QJSValue) -> None:
+        plain = _qml_js_to_plain_cfg(cfg_js)
+        _LOG.info("widgets ConfigMap save: online (plain_type=%s)", type(plain).__name__)
+        if plain is None:
+            _LOG.warning("widgets ConfigMap save: online rejected (null/undefined)")
+            return
+        txt = _qml_cfg_map_to_json_text(plain)
+        if not txt or txt == "{}":
+            _LOG.warning("widgets ConfigMap save: online rejected empty_or_non_serializable")
+            return
+        _LOG.info("widgets ConfigMap save: online ok json_len=%d", len(txt))
+        self.saveOnlineOverlayConfigJson(txt)
+
+    @Slot(result="QVariantMap")
+    def loadTopLikersOverlayConfigMap(self) -> dict[str, Any]:
+        cfg = load_top_likers_overlay_config()
+        return json.loads(top_likers_overlay_config_to_json_text(cfg))
+
+    @Slot(result=str)
+    def loadTopLikersOverlayConfigJson(self) -> str:
+        cfg = load_top_likers_overlay_config()
+        return top_likers_overlay_config_to_json_text(cfg)
+
+    @Slot(str)
+    def saveTopLikersOverlayConfigJson(self, cfg_json: str) -> None:
+        txt = (cfg_json or "").strip()
+        if not txt:
+            return
+        try:
+            cfg = top_likers_overlay_config_from_json_text(txt)
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            _LOG.warning(
+                "saveTopLikersOverlayConfigJson: rejected payload (%s): %s",
+                exc.__class__.__name__,
+                exc,
+            )
+            return
+        save_top_likers_overlay_config(cfg)
+        _LOG.info("widgets overlay persisted: top_likers")
+        if self._pubsub is not None:
+            topic = f"overlay:top_likers:{self._top_likers_instance}"
+            patch = {"config": json.loads(top_likers_overlay_config_to_json_text(cfg))}
+            self._publish_patch(topic=topic, patch=patch)
+
+    @Slot(QJSValue)
+    def saveTopLikersOverlayConfigMap(self, cfg_js: QJSValue) -> None:
+        plain = _qml_js_to_plain_cfg(cfg_js)
+        _LOG.info("widgets ConfigMap save: top_likers (plain_type=%s)", type(plain).__name__)
+        if plain is None:
+            _LOG.warning("widgets ConfigMap save: top_likers rejected (null/undefined)")
+            return
+        txt = _qml_cfg_map_to_json_text(plain)
+        if not txt or txt == "{}":
+            _LOG.warning("widgets ConfigMap save: top_likers rejected empty_or_non_serializable")
+            return
+        _LOG.info("widgets ConfigMap save: top_likers ok json_len=%d", len(txt))
+        self.saveTopLikersOverlayConfigJson(txt)
+
+    @Slot(result="QVariantMap")
+    def loadTopGiftersOverlayConfigMap(self) -> dict[str, Any]:
+        cfg = load_top_gifters_overlay_config()
+        return json.loads(top_gifters_overlay_config_to_json_text(cfg))
+
+    @Slot(result=str)
+    def loadTopGiftersOverlayConfigJson(self) -> str:
+        cfg = load_top_gifters_overlay_config()
+        return top_gifters_overlay_config_to_json_text(cfg)
+
+    @Slot(str)
+    def saveTopGiftersOverlayConfigJson(self, cfg_json: str) -> None:
+        txt = (cfg_json or "").strip()
+        if not txt:
+            return
+        try:
+            cfg = top_gifters_overlay_config_from_json_text(txt)
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            _LOG.warning(
+                "saveTopGiftersOverlayConfigJson: rejected payload (%s): %s",
+                exc.__class__.__name__,
+                exc,
+            )
+            return
+        save_top_gifters_overlay_config(cfg)
+        _LOG.info("widgets overlay persisted: top_gifters")
+        if self._pubsub is not None:
+            topic = f"overlay:top_gifters:{self._top_gifters_instance}"
+            patch = {"config": json.loads(top_gifters_overlay_config_to_json_text(cfg))}
+            self._publish_patch(topic=topic, patch=patch)
+
+    @Slot(QJSValue)
+    def saveTopGiftersOverlayConfigMap(self, cfg_js: QJSValue) -> None:
+        plain = _qml_js_to_plain_cfg(cfg_js)
+        _LOG.info("widgets ConfigMap save: top_gifters (plain_type=%s)", type(plain).__name__)
+        if plain is None:
+            _LOG.warning("widgets ConfigMap save: top_gifters rejected (null/undefined)")
+            return
+        txt = _qml_cfg_map_to_json_text(plain)
+        if not txt or txt == "{}":
+            _LOG.warning("widgets ConfigMap save: top_gifters rejected empty_or_non_serializable")
+            return
+        _LOG.info("widgets ConfigMap save: top_gifters ok json_len=%d", len(txt))
+        self.saveTopGiftersOverlayConfigJson(txt)
+
+    @Slot(result="QVariantMap")
+    def loadKingOfLiveOverlayConfigMap(self) -> dict[str, Any]:
+        cfg = load_king_of_live_overlay_config()
+        return json.loads(king_of_live_overlay_config_to_json_text(cfg))
+
+    @Slot(result=str)
+    def loadKingOfLiveOverlayConfigJson(self) -> str:
+        cfg = load_king_of_live_overlay_config()
+        return king_of_live_overlay_config_to_json_text(cfg)
+
+    @Slot(str)
+    def saveKingOfLiveOverlayConfigJson(self, cfg_json: str) -> None:
+        txt = (cfg_json or "").strip()
+        if not txt:
+            return
+        try:
+            cfg = king_of_live_overlay_config_from_json_text(txt)
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            _LOG.warning(
+                "saveKingOfLiveOverlayConfigJson: rejected payload (%s): %s",
+                exc.__class__.__name__,
+                exc,
+            )
+            return
+        save_king_of_live_overlay_config(cfg)
+        _LOG.info("widgets overlay persisted: king_of_live")
+        if self._pubsub is not None:
+            topic = f"overlay:king_of_live:{self._king_of_live_instance}"
+            patch = {"config": json.loads(king_of_live_overlay_config_to_json_text(cfg))}
+            self._publish_patch(topic=topic, patch=patch)
+
+    @Slot(QJSValue)
+    def saveKingOfLiveOverlayConfigMap(self, cfg_js: QJSValue) -> None:
+        plain = _qml_js_to_plain_cfg(cfg_js)
+        _LOG.info("widgets ConfigMap save: king_of_live (plain_type=%s)", type(plain).__name__)
+        if plain is None:
+            _LOG.warning("widgets ConfigMap save: king_of_live rejected (null/undefined)")
+            return
+        txt = _qml_cfg_map_to_json_text(plain)
+        if not txt or txt == "{}":
+            _LOG.warning("widgets ConfigMap save: king_of_live rejected empty_or_non_serializable")
+            return
+        _LOG.info("widgets ConfigMap save: king_of_live ok json_len=%d", len(txt))
+        self.saveKingOfLiveOverlayConfigJson(txt)
 
 
 class WidgetsWindowQmlApi(QObject):

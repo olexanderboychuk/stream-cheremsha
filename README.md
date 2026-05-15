@@ -150,7 +150,7 @@ Enter a username (with or without `@`) — the app connects via `TikTokLive` and
 2. Paste the token in the app (saved to keyring)
 3. Viewers can send `/play <song name or YouTube URL>` to request music
 
-Optional **TikTok Live lyrics screening** (Settings → Telegram): Genius + **Groq** ([GroqCloud](https://console.groq.com/)). The app uses OpenAI-compatible `POST /openai/v1/chat/completions`. Default model is **`llama-3.1-8b-instant`**. Override with **`STREAM_CHEREMSHA_GROQ_MODEL`** (see Groq’s model list).
+Optional **TikTok Live lyrics screening** (Settings → AI Shield): **[MusicBrainz](https://musicbrainz.org/doc/MusicBrainz_API)** (artist **area** / ISO country) to block performers linked to **Russia** before Genius/Groq; then **Genius** + **Groq** ([GroqCloud](https://console.groq.com/)) for text checks. Groq uses OpenAI-compatible `POST /openai/v1/chat/completions`. Default model is **`llama-3.1-8b-instant`**; override with **`STREAM_CHEREMSHA_GROQ_MODEL`**. Set **`STREAM_CHEREMSHA_MUSICBRAINZ_CONTACT`** to your email or project URL (required style for the MusicBrainz API `User-Agent`). If Genius has no lyrics, Groq can still use the **video title** and **prior knowledge** only for non-language hard checks (e.g. clear extremism); **Russian-language** filtering in Groq applies to **lyrics text only**, not the title alone.
 
 ### OBS WebSocket
 1. In OBS: **Tools → WebSocket Server Settings** → enable, set port `4455` and a password

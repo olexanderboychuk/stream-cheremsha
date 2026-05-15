@@ -7,9 +7,12 @@ from typing import Any, Protocol
 from stream_cheremsha.overlays.actions_overlay import ActionsOverlayType
 from stream_cheremsha.overlays.activity_overlay import ActivityOverlayType
 from stream_cheremsha.overlays.chat_overlay import ChatOverlayType
+from stream_cheremsha.overlays.king_of_live_overlay import KingOfLiveOverlayType
 from stream_cheremsha.overlays.models import normalize_instance_id
 from stream_cheremsha.overlays.music_overlay import MusicOverlayType
 from stream_cheremsha.overlays.online_overlay import OnlineOverlayType
+from stream_cheremsha.overlays.top_gifters_overlay import TopGiftersOverlayType
+from stream_cheremsha.overlays.top_likers_overlay import TopLikersOverlayType
 
 
 class UnknownOverlayTypeError(KeyError):
@@ -124,6 +127,9 @@ class OverlayRegistry:
         self.register(MusicOverlayType())
         self.register(ActivityOverlayType())
         self.register(OnlineOverlayType())
+        self.register(TopLikersOverlayType())
+        self.register(TopGiftersOverlayType())
+        self.register(KingOfLiveOverlayType())
         self.register(ActionsOverlayType())
 
     def register(self, t: OverlayType) -> None:

@@ -70,7 +70,25 @@ _TIKTOK_SYSTEM_PROMPT = (
     "expressed in a lyrical or poetic way; storytelling; social or personal themes in song form; "
     "mild or occasional strong language typical of mainstream music.\n"
     "- Do **not** treat figurative or literary lines as literal threats, hate, or drug use.\n\n"
-    '**"Banned"** — use **only** for clear-cut cases (when in doubt, do **not** choose Banned):\n'
+    "**Hard rules (these override “when in doubt stay soft” below):**\n"
+    "- **Russian-language music (lyrics only):** Output **Banned** only when **lyrics text** is "
+    "present and standard Russian is clearly the **main** language of verses/chorus (not a short "
+    "quote or stray line). Use orthography, grammar, and vocabulary to tell Russian apart from "
+    "**Ukrainian**, **Belarusian**, or other languages; do **not** ban solely because text uses "
+    "Cyrillic. **Never** output Banned for Russian based on **video title**, artist name, or prior "
+    "knowledge when lyrics are missing or empty — in that case **ignore** Russian-language as a "
+    "ban reason.\n"
+    "- **Nationalism / Nazism / supremacism:** If **lyrics** — or, when lyrics are missing, "
+    "**title plus well-known public facts** about the named act — show **clear** Nazi or fascist "
+    "glorification, Holocaust denial, white-supremacist or violent ethnic-nationalist ideology, "
+    "genocide praise, or dehumanization of peoples — output **Banned**.\n"
+    "- **Political extremism in lyrics:** Partisan **hate** propaganda, war crimes celebration, "
+    "occupation glorification tied to dehumanization, or extremist movement slogans as the "
+    "**core** message — output **Banned**. When lyrics are missing, apply only if **title plus "
+    "prior knowledge** makes this **clear** (not guesswork). Ordinary social or historical "
+    "**metaphor** in song (without the above) is **not** enough for Banned.\n\n"
+    '**"Banned"** — also use for other clear-cut cases (when in doubt for these only, do **not** '
+    "choose Banned):\n"
     "- Direct slurs or extreme profanity used **as insults or attacks** (not mild emphasis or "
     "chorus expletives in an otherwise ordinary track).\n"
     "- Explicit **calls** to real-world violence or illegal harm against people.\n"
@@ -79,20 +97,34 @@ _TIKTOK_SYSTEM_PROMPT = (
     "or unambiguous street names). Vague references, metaphor, or mood alone do **not** count.\n\n"
     '**"Risky"** — use **sparingly**: borderline for a very family-friendly livestream but **not** '
     "strong enough for Banned (e.g. gratuitous crude sexual bragging as the main point, without "
-    "literary framing). Do **not** use Risky for normal sad, intense, or metaphorical lyrics.\n\n"
+    "literary framing; or **clearly partisan political** content that is inflammatory but **not** "
+    "hate/extremist enough for Banned). Prefer **Safe** when hard bans clearly do **not** apply "
+    "and only routine artistic ambiguity remains. Do **not** use Risky for normal sad, intense, "
+    "or metaphorical lyrics.\n\n"
     '**"Safe"** — the **default** for most music, including melancholic or "dark" lyrics that '
-    "stay within normal artistic expression.\n\n"
-    "Spirit (follow this): sad songs and metaphors about pain or a broken heart are Safe; only "
-    "direct severe profanity as attacks, weapon propaganda, calls to real violence, or clear "
-    "drug-promotion with specific names belong in Banned.\n\n"
-    "Lyrics may be in any language — judge **meaning and intent in full context**, not isolated "
-    "words.\n\n"
+    "stay within normal artistic expression, **provided** none of the hard rules above apply.\n\n"
+    "Spirit (follow this): sad songs and metaphors about pain or a broken heart are Safe "
+    "**unless** the **lyrics** show predominantly Russian (when lyrics exist), extremist/"
+    "nationalist/Nazi, or hard political hate as above; other Banned cases are direct severe "
+    "profanity as attacks, weapon propaganda, calls to real violence, or clear drug-promotion with "
+    "specific names.\n\n"
+    "Judge **meaning and intent in full context** using title + lyrics together when a title is "
+    "given; the title must **not** trigger a Russian-language **Banned** on its own.\n\n"
+    "**When lyrics are missing or empty:**\n"
+    "- You still get the **video/song title** (often “Artist - Track”) plus your **prior training "
+    "knowledge** of artists and controversies. You **do not** have live web search.\n"
+    "- **Do not** output **Banned** for Russian-language based on the title, artist name, or "
+    "guessing the market — there are no lyrics to analyze for that rule.\n"
+    "- Apply **Nazi / violent nationalism / political hate** bans when **clear** from title plus "
+    "well-known public facts about the act (not guesswork).\n"
+    "- If only the title is available and there is **no** clear extremist/hate signal, prefer "
+    "**Safe** over **Risky** so Ukrainian and other tracks are not blocked by title alone.\n\n"
     "Response format (JSON only — no markdown, no text outside the JSON object):\n"
     "{\n"
     '"status": "Safe" | "Risky" | "Banned",\n'
     '"risk_score": 0-100,\n'
     '"violations": ["list of violations"],\n'
-    '"dangerous_segments": ["verbatim phrases from the lyrics"]\n'
+    '"dangerous_segments": ["verbatim phrases from lyrics or title; may be empty if unknown"]\n'
     "}"
 )
 
@@ -260,7 +292,12 @@ async def analyze_lyrics_with_groq(
     Ask Groq (chat completions) to classify lyrics for stream song-queue risk.
 
     Only ``Safe`` enqueues. Uses JSON object mode when the model supports it.
-    Prompts favour **artistic context** (lyrics are not literal speech) and a **narrow** Banned bar.
+    Prompts favour **artistic context** for ordinary music, plus **hard bans**: predominantly
+    Russian-language **lyrics** (never from title alone), Nazi/violent nationalism, and hard
+    political hate; other Banned cases stay narrow (profanity-as-attack, violence calls,
+    weapon/drug promotion as defined).
+    If lyrics are empty, the model may still use **title + prior knowledge** only for non-Russian
+    hard bans (e.g. clear extremism), not for language-of-title guesses.
     """
     lc = l10n.normalize_locale(ui_locale)
     key = (api_key or "").strip()
@@ -271,18 +308,35 @@ async def analyze_lyrics_with_groq(
     if len(body_lyrics) > _MAX_LYRICS_CHARS:
         body_lyrics = body_lyrics[:_MAX_LYRICS_CHARS]
 
-    user_lines = [
-        "Task: Classify the following text using the artistic-context rules in your system "
-        "message. Prefer **Safe** when lyrics are ordinary music (including sad or metaphorical). "
-        "Use **Banned** only when the strict Banned criteria clearly apply. Use **Risky** rarely.",
-        "",
-        "Lyrics to analyze:",
-        f'"{body_lyrics}"',
-    ]
     meta = (youtube_title or "").strip()
-    if meta:
-        user_lines.insert(0, f"YouTube title (context): {meta}")
-        user_lines.insert(1, "")
+    if not body_lyrics and not meta:
+        raise TikTokLyricsCheckError(l10n.tr(lc, "telegram.song.title_unknown"))
+
+    task = (
+        "Task: Classify using your system rules. **Russian → Banned** applies only when **lyric "
+        "text** is present and is predominantly Russian — **never** from title or artist name "
+        "alone. Apply **Nazi / violent nationalism / political hate** rules as written. When "
+        "lyric **text** is present, use artistic-context defaults (prefer Safe for ordinary sad/"
+        "metaphorical music). When lyrics are **missing**, follow **title + prior knowledge** only "
+        "for extremism/hate (you have no live web). Other Banned/Risky as defined."
+    )
+
+    if body_lyrics:
+        user_lines = [task, "", "Lyrics to analyze:", f'"{body_lyrics}"']
+        if meta:
+            user_lines.insert(0, f"YouTube / song title (context): {meta}")
+            user_lines.insert(1, "")
+    else:
+        user_lines = [
+            task,
+            "",
+            "No lyrics text was retrieved (database had no match).",
+            f'Video / song **title** (context only — do **not** infer Russian from it): "{meta}"',
+            "",
+            "From title + prior knowledge, check only **clear** extremism / hate / political "
+            "hard-ban cases from the system rules. **Do not** use Russian language as a reason "
+            "without lyrics. If nothing clearly warrants Banned, prefer **Safe**.",
+        ]
 
     user_text = "\n".join(user_lines)
     model_id = _groq_model_id()

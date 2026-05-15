@@ -45,6 +45,22 @@ def test_preview_actions_overlay_publishes_append_patch() -> None:
     assert out["append"]["preview_force_platform_icon"] is True
 
 
+def test_save_chat_config_json_publishes_config_patch() -> None:
+    async def _run() -> dict[str, object]:
+        ps = OverlayPubSub()
+        q = ps.subscribe("overlay:chat:main")
+        changed = chat_config_defaults().replace(max_items=25)
+        with patch("stream_cheremsha.ui.widgets_qml_api.save_chat_config"):
+            api = WidgetsQmlApi(pubsub=ps)
+            api.saveChatConfigJson(chat_config_to_json_text(changed))
+        got = await asyncio.wait_for(q.get(), timeout=1.0)
+        return got
+
+    out = asyncio.run(_run())
+    assert "config" in out
+    assert out["config"]["max_items"] == 25
+
+
 def test_save_actions_config_publishes_config_patch() -> None:
     async def _run() -> dict[str, object]:
         ps = OverlayPubSub()
