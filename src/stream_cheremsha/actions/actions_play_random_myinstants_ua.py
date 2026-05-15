@@ -302,11 +302,25 @@ def _prepare_random_myinstants_ua_mp3_sync(
     raise ValueError("No MyInstants sound matched duration filter")
 
 
+def _subprocess_no_console_kwargs() -> dict[str, object]:
+    """Windows: ffprobe/ffmpeg are console-subsystem; avoid flashing a console window."""
+    if os.name != "nt":
+        return {}
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    out: dict[str, object] = {"startupinfo": startupinfo}
+    if creationflags:
+        out["creationflags"] = creationflags
+    return out
+
+
 def _probe_mp3_duration_seconds(path: Path) -> float | None:
     p = Path(path)
     if not p.exists() or not p.is_file():
         return None
 
+    hide_console = _subprocess_no_console_kwargs()
     ffprobe = shutil.which("ffprobe")
     if ffprobe:
         try:
@@ -326,6 +340,7 @@ def _probe_mp3_duration_seconds(path: Path) -> float | None:
                 check=False,
                 text=True,
                 encoding="utf-8",
+                **hide_console,
             )
         except (OSError, subprocess.TimeoutExpired):
             proc = None
@@ -356,6 +371,7 @@ def _probe_mp3_duration_seconds(path: Path) -> float | None:
             check=False,
             text=True,
             encoding="utf-8",
+            **hide_console,
         )
     except (OSError, subprocess.TimeoutExpired):
         return None

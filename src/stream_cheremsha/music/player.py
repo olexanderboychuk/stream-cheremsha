@@ -4,6 +4,8 @@ import asyncio
 import json
 import logging
 import shutil
+import subprocess
+import sys
 import time
 import uuid
 from collections.abc import Callable
@@ -49,6 +51,16 @@ def _build_mpv_argv(*, mpv: str, volume_percent: int, ipc_pipe: str) -> list[str
         ]
     )
     return argv
+
+
+def _mpv_subprocess_kwargs() -> dict[str, object]:
+    """Windows: mpv.exe is console-subsystem; avoid an extra console window."""
+    if not sys.platform.startswith("win"):
+        return {}
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    if not flags:
+        return {}
+    return {"creationflags": flags}
 
 
 class MusicPlayer:
@@ -422,7 +434,7 @@ class MusicPlayer:
                     volume_percent=int(self._volume_percent),
                     ipc_pipe=self._mpv_ipc,
                 )
-                proc = await asyncio.create_subprocess_exec(*argv)
+                proc = await asyncio.create_subprocess_exec(*argv, **_mpv_subprocess_kwargs())
             except OSError as e:
                 self._status(f"Music: mpv запуск не вдався: {e}")
                 self._mpv_ipc = ""
