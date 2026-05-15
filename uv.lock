@@ -3786,7 +3786,7 @@ wheels = [
 
 [[package]]
 name = "stream-cheremsha"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },

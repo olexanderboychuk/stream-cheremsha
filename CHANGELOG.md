@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.0] — 2026-05-15
+
+### Added
+
+- MusicBrainz integration to screen artists linked to Russia during song requests (Telegram / moderation flow).
+- Actions: cross-platform keystroke simulation (`pynput`, Windows `interception-python`).
+- TikTok chat source: stable user identification key for downstream logic.
+
+### Changed
+
+- Dependencies: `pynput`, `interception-python` for input simulation.
+- Localization strings for song-filter / moderation messages.
+
+### Fixed
+
+- CI: validate Genius token before using `lyricsgenius`; module-level imports for reliable test setup.
+
 ## [0.3.0] — 2026-05-13
 
 ### Added
@@ -60,6 +77,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Comment and formatting consistency in several modules after merging PR #5.
 
+[0.4.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.1.8...v0.2.0
 [0.1.8]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.1.7...v0.1.8
