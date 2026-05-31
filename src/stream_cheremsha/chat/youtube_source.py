@@ -130,6 +130,33 @@ def _oauth_channel_id(service: object) -> str | None:
     return cid if isinstance(cid, str) and cid else None
 
 
+_YOUTUBE_WATCH_URL_TMPL = "https://www.youtube.com/watch?v={video_id}"
+
+
+def youtube_watch_url(video_id: str) -> str:
+    return _YOUTUBE_WATCH_URL_TMPL.format(video_id=video_id.strip())
+
+
+def resolve_youtube_fallback_watch_url(
+    service: object,
+    *,
+    manual_video_id: str | None = None,
+    discovered_video_ids: list[str] | None = None,
+) -> str | None:
+    """Pick a watch URL for the non-API chat reader.
+
+    Prefer a concrete ``watch?v=`` link (manual or from API discovery) over
+    ``channel/…/live``, which makes chat-downloader scrape the channel streams tab.
+    """
+    if manual_video_id:
+        return youtube_watch_url(manual_video_id)
+    if discovered_video_ids:
+        for vid in discovered_video_ids:
+            if isinstance(vid, str) and vid.strip():
+                return youtube_watch_url(vid)
+    return _channel_live_fallback_url(service)
+
+
 def _channel_live_fallback_url(service: object) -> str | None:
     cid = _oauth_channel_id(service)
     return f"https://www.youtube.com/channel/{cid}/live" if cid else None
@@ -507,10 +534,12 @@ class YouTubeChatSource:
             else:
                 self._on_status(l10n.tr(self._get_locale(), "yt.multi_streams", n=n))
 
-            if video_id is not None:
-                fb_url = f"https://www.youtube.com/watch?v={video_id}"
-            else:
-                fb_url = await asyncio.to_thread(_channel_live_fallback_url, service)
+            fb_url = await asyncio.to_thread(
+                resolve_youtube_fallback_watch_url,
+                service,
+                manual_video_id=video_id,
+                discovered_video_ids=live_video_ids,
+            )
 
             await self._poll_chats_round_robin(creds, live_chat_ids, fb_url, live_video_ids)
             break
@@ -569,8 +598,7 @@ class YouTubeChatSource:
             await asyncio.gather(worker, return_exceptions=True)
 
     async def _run_fallback_for_video(self, video_id: str) -> None:
-        watch = f"https://www.youtube.com/watch?v={video_id.strip()}"
-        await self._run_fallback_for_watch_url(watch)
+        await self._run_fallback_for_watch_url(youtube_watch_url(video_id))
 
     async def _poll_chats_round_robin(
         self,

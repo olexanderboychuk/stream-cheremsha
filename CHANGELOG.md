@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Battle Royale** TikTok overlay: event PvP by gifts (HP, crit hits, timer, fatality FX), manual/auto start from Widgets, hall of fame on KING overlay, VIP gold chat nick for winners.
 - MusicBrainz integration to screen artists linked to Russia during song requests (Telegram / moderation flow).
 - Actions: cross-platform keystroke simulation (`pynput`, Windows `interception-python`).
 - TikTok chat source: stable user identification key for downstream logic.

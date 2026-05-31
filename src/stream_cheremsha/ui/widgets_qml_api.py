@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any
+from urllib.parse import quote
 
 from PySide6.QtCore import Property, QObject, Qt, Signal, Slot
 from PySide6.QtGui import QFontDatabase, QGuiApplication
@@ -14,6 +15,12 @@ from stream_cheremsha.overlays.actions_config import (
     actions_config_to_json_text,
     load_actions_config,
     save_actions_config,
+)
+from stream_cheremsha.overlays.battle_royale_overlay_config import (
+    battle_royale_overlay_config_from_json_text,
+    battle_royale_overlay_config_to_json_text,
+    load_battle_royale_overlay_config,
+    save_battle_royale_overlay_config,
 )
 from stream_cheremsha.overlays.chat_config import (
     chat_config_from_json_text,
@@ -147,7 +154,21 @@ class WidgetsQmlApi(QObject):
         self._top_likers_instance = str(online_instance or "main").strip() or "main"
         self._top_gifters_instance = str(online_instance or "main").strip() or "main"
         self._king_of_live_instance = str(online_instance or "main").strip() or "main"
+        self._battle_royale_instance = str(online_instance or "main").strip() or "main"
+        self._battle_host: Any | None = None
         self._system_font_families: list[str] | None = None
+
+    def set_battle_host(self, host: Any) -> None:
+        self._battle_host = host
+
+    def _current_tiktok_anchor_username(self) -> str:
+        host = self._battle_host
+        if host is None:
+            return ""
+        getter = getattr(host, "current_tiktok_anchor_username", None)
+        if not callable(getter):
+            return ""
+        return str(getter() or "").strip().lstrip("@").strip()
 
     @Slot(result="QStringList")
     def systemFontFamilies(self) -> list[str]:
@@ -177,6 +198,7 @@ class WidgetsQmlApi(QObject):
         self.topLikersOverlayUrlChanged.emit()
         self.topGiftersOverlayUrlChanged.emit()
         self.kingOfLiveOverlayUrlChanged.emit()
+        self.battleRoyaleOverlayUrlChanged.emit()
 
     @Property(str, notify=chatOverlayUrlChanged)
     def chatOverlayUrlValue(self) -> str:  # noqa: ANN201 - PySide pattern
@@ -278,7 +300,11 @@ class WidgetsQmlApi(QObject):
     def kingOfLiveOverlayUrl(self) -> str:
         if not self._base:
             return ""
-        return f"{self._base}/overlay/king_of_live?instance={self._king_of_live_instance}"
+        qs = f"instance={self._king_of_live_instance}"
+        anchor = self._current_tiktok_anchor_username()
+        if anchor:
+            qs += f"&anchor={quote(anchor, safe='')}"
+        return f"{self._base}/overlay/king_of_live?{qs}"
 
     @Slot()
     def copyKingOfLiveOverlayUrl(self) -> None:
@@ -289,6 +315,103 @@ class WidgetsQmlApi(QObject):
         if clip is None:
             return
         clip.setText(url)
+
+    battleRoyaleOverlayUrlChanged = Signal()
+
+    @Property(str, notify=battleRoyaleOverlayUrlChanged)
+    def battleRoyaleOverlayUrlValue(self) -> str:  # noqa: ANN201 - PySide pattern
+        return self.battleRoyaleOverlayUrl()
+
+    @Slot(result=str)
+    def battleRoyaleOverlayUrl(self) -> str:
+        if not self._base:
+            return ""
+        return f"{self._base}/overlay/battle_royale?instance={self._battle_royale_instance}"
+
+    @Slot()
+    def copyBattleRoyaleOverlayUrl(self) -> None:
+        url = self.battleRoyaleOverlayUrl()
+        if not url:
+            return
+        clip = QGuiApplication.clipboard()
+        if clip is None:
+            return
+        clip.setText(url)
+
+    @Slot()
+    def previewBattleRoyaleOverlay(self) -> None:
+        topic = f"overlay:battle_royale:{self._battle_royale_instance}"
+        cfg = load_battle_royale_overlay_config()
+        patch: dict[str, Any] = {
+            "config": json.loads(battle_royale_overlay_config_to_json_text(cfg)),
+            "phase": "active",
+            "fighters": [
+                {
+                    "user_key": "a",
+                    "user": "RomBom",
+                    "avatar_url": "",
+                    "hp": 850,
+                    "max_hp": 1200,
+                    "side": "left",
+                    "session_donated": 2300,
+                    "wins": 0,
+                    "rank": 11,
+                },
+                {
+                    "user_key": "b",
+                    "user": "StarDust",
+                    "avatar_url": "",
+                    "hp": 1150,
+                    "max_hp": 1300,
+                    "side": "right",
+                    "session_donated": 5800,
+                    "wins": 1,
+                    "rank": 27,
+                },
+            ],
+            "timer_remaining_s": 75,
+            "countdown_remaining_s": 0,
+            "last_hit": {"from": 1, "to": 0, "damage": 150, "heal": 0, "crit": False},
+            "last_attack": {
+                "attacker": "StarDust",
+                "target": "RomBom",
+                "damage": 150,
+                "amount": 200,
+                "crit": False,
+            },
+            "fx_seq": 3,
+            "winner": None,
+        }
+        self._publish_patch(topic=topic, patch=patch)
+
+    @Slot(result=bool)
+    def battleRoyaleStartFromLeaders(self) -> bool:
+        host = self._battle_host
+        if host is None:
+            return False
+        fn = getattr(host, "battle_royale_start_from_leaders", None)
+        if not callable(fn):
+            return False
+        return bool(fn())
+
+    @Slot()
+    def battleRoyaleStop(self) -> None:
+        host = self._battle_host
+        if host is None:
+            return
+        fn = getattr(host, "battle_royale_stop", None)
+        if callable(fn):
+            fn()
+
+    @Slot(result=str)
+    def battleRoyalePhase(self) -> str:
+        host = self._battle_host
+        if host is None:
+            return "idle"
+        ctrl = getattr(host, "_battle_controller", None)
+        if ctrl is None:
+            return "idle"
+        return str(ctrl.state().phase.value)
 
     @Property(str, notify=onlineOverlayUrlChanged)
     def onlineOverlayUrlValue(self) -> str:  # noqa: ANN201 - PySide pattern
@@ -666,6 +789,51 @@ class WidgetsQmlApi(QObject):
             return
         _LOG.info("widgets ConfigMap save: king_of_live ok json_len=%d", len(txt))
         self.saveKingOfLiveOverlayConfigJson(txt)
+
+    @Slot(result="QVariantMap")
+    def loadBattleRoyaleOverlayConfigMap(self) -> dict[str, Any]:
+        cfg = load_battle_royale_overlay_config()
+        return json.loads(battle_royale_overlay_config_to_json_text(cfg))
+
+    @Slot(result=str)
+    def loadBattleRoyaleOverlayConfigJson(self) -> str:
+        cfg = load_battle_royale_overlay_config()
+        return battle_royale_overlay_config_to_json_text(cfg)
+
+    @Slot(str)
+    def saveBattleRoyaleOverlayConfigJson(self, cfg_json: str) -> None:
+        txt = (cfg_json or "").strip()
+        if not txt:
+            return
+        try:
+            cfg = battle_royale_overlay_config_from_json_text(txt)
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            _LOG.warning(
+                "saveBattleRoyaleOverlayConfigJson: rejected payload (%s): %s",
+                exc.__class__.__name__,
+                exc,
+            )
+            return
+        save_battle_royale_overlay_config(cfg)
+        _LOG.info("widgets overlay persisted: battle_royale")
+        if self._pubsub is not None:
+            topic = f"overlay:battle_royale:{self._battle_royale_instance}"
+            patch = {"config": json.loads(battle_royale_overlay_config_to_json_text(cfg))}
+            self._publish_patch(topic=topic, patch=patch)
+
+    @Slot(QJSValue)
+    def saveBattleRoyaleOverlayConfigMap(self, cfg_js: QJSValue) -> None:
+        plain = _qml_js_to_plain_cfg(cfg_js)
+        _LOG.info("widgets ConfigMap save: battle_royale (plain_type=%s)", type(plain).__name__)
+        if plain is None:
+            _LOG.warning("widgets ConfigMap save: battle_royale rejected (null/undefined)")
+            return
+        txt = _qml_cfg_map_to_json_text(plain)
+        if not txt or txt == "{}":
+            _LOG.warning("widgets ConfigMap save: battle_royale rejected empty_or_non_serializable")
+            return
+        _LOG.info("widgets ConfigMap save: battle_royale ok json_len=%d", len(txt))
+        self.saveBattleRoyaleOverlayConfigJson(txt)
 
 
 class WidgetsWindowQmlApi(QObject):

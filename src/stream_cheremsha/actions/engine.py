@@ -695,7 +695,13 @@ class PlatformActionsEngine:
             )
             await self._dispatch_actions(rule, ev)
 
-    async def on_twitch_follow(self, user: str, received_at: datetime) -> None:
+    async def on_twitch_follow(
+        self,
+        user: str,
+        received_at: datetime,
+        *,
+        profile_picture_url: str = "",
+    ) -> None:
         u = (user or "").strip()
         plat = ChatPlatform.TWITCH
         for rule in self._rules:
@@ -716,10 +722,22 @@ class PlatformActionsEngine:
                     break
             if not matched:
                 continue
-            ev = TwitchFollowEvent(platform=plat, user=u, received_at=received_at)
+            ev = TwitchFollowEvent(
+                platform=plat,
+                user=u,
+                received_at=received_at,
+                profile_picture_url=(profile_picture_url or "").strip(),
+            )
             await self._dispatch_actions(rule, ev)
 
-    async def on_twitch_subscribe(self, user: str, months: int, received_at: datetime) -> None:
+    async def on_twitch_subscribe(
+        self,
+        user: str,
+        months: int,
+        received_at: datetime,
+        *,
+        profile_picture_url: str = "",
+    ) -> None:
         u = (user or "").strip()
         try:
             m = max(0, int(months))
@@ -744,11 +762,23 @@ class PlatformActionsEngine:
                     break
             if not matched:
                 continue
-            ev = TwitchSubscribeEvent(platform=plat, user=u, months=m, received_at=received_at)
+            ev = TwitchSubscribeEvent(
+                platform=plat,
+                user=u,
+                months=m,
+                received_at=received_at,
+                profile_picture_url=(profile_picture_url or "").strip(),
+            )
             await self._dispatch_actions(rule, ev)
 
     async def on_twitch_resub(
-        self, user: str, months: int, message: str, received_at: datetime
+        self,
+        user: str,
+        months: int,
+        message: str,
+        received_at: datetime,
+        *,
+        profile_picture_url: str = "",
     ) -> None:
         u = (user or "").strip()
         msg = (message or "").strip()
@@ -776,11 +806,23 @@ class PlatformActionsEngine:
             if not matched:
                 continue
             ev = TwitchResubscribeEvent(
-                platform=plat, user=u, months=m, message=msg, received_at=received_at
+                platform=plat,
+                user=u,
+                months=m,
+                message=msg,
+                received_at=received_at,
+                profile_picture_url=(profile_picture_url or "").strip(),
             )
             await self._dispatch_actions(rule, ev)
 
-    async def on_twitch_sub_gift(self, user: str, months: int, received_at: datetime) -> None:
+    async def on_twitch_sub_gift(
+        self,
+        user: str,
+        months: int,
+        received_at: datetime,
+        *,
+        profile_picture_url: str = "",
+    ) -> None:
         u = (user or "").strip()
         try:
             m = max(0, int(months))
@@ -806,11 +848,22 @@ class PlatformActionsEngine:
             if not matched:
                 continue
             ev = TwitchSubscriptionGiftEvent(
-                platform=plat, user=u, months=m, received_at=received_at
+                platform=plat,
+                user=u,
+                months=m,
+                received_at=received_at,
+                profile_picture_url=(profile_picture_url or "").strip(),
             )
             await self._dispatch_actions(rule, ev)
 
-    async def on_twitch_cheer(self, user: str, bits: int, received_at: datetime) -> None:
+    async def on_twitch_cheer(
+        self,
+        user: str,
+        bits: int,
+        received_at: datetime,
+        *,
+        profile_picture_url: str = "",
+    ) -> None:
         u = (user or "").strip()
         try:
             b = max(0, int(bits))
@@ -835,10 +888,23 @@ class PlatformActionsEngine:
                     break
             if not matched:
                 continue
-            ev = TwitchCheerEvent(platform=plat, user=u, bits=b, received_at=received_at)
+            ev = TwitchCheerEvent(
+                platform=plat,
+                user=u,
+                bits=b,
+                received_at=received_at,
+                profile_picture_url=(profile_picture_url or "").strip(),
+            )
             await self._dispatch_actions(rule, ev)
 
-    async def on_twitch_raid(self, raider: str, viewers: int, received_at: datetime) -> None:
+    async def on_twitch_raid(
+        self,
+        raider: str,
+        viewers: int,
+        received_at: datetime,
+        *,
+        profile_picture_url: str = "",
+    ) -> None:
         r = (raider or "").strip()
         try:
             v = max(0, int(viewers))
@@ -863,7 +929,13 @@ class PlatformActionsEngine:
                     break
             if not matched:
                 continue
-            ev = TwitchRaidEvent(platform=plat, raider=r, viewers=v, received_at=received_at)
+            ev = TwitchRaidEvent(
+                platform=plat,
+                raider=r,
+                viewers=v,
+                received_at=received_at,
+                profile_picture_url=(profile_picture_url or "").strip(),
+            )
             await self._dispatch_actions(rule, ev)
 
     async def on_chat_message(self, ev: ChatMessageEvent) -> None:
@@ -1365,6 +1437,20 @@ class PlatformActionsEngine:
                             getattr(ev, "sender_avatar_url", "") or ""
                         ).strip()
                     elif isinstance(ev, TikTokLikesReceivedEvent):
+                        profile_picture_url = str(
+                            getattr(ev, "profile_picture_url", "") or ""
+                        ).strip()
+                    elif isinstance(
+                        ev,
+                        (
+                            TwitchFollowEvent,
+                            TwitchSubscribeEvent,
+                            TwitchResubscribeEvent,
+                            TwitchSubscriptionGiftEvent,
+                            TwitchCheerEvent,
+                            TwitchRaidEvent,
+                        ),
+                    ):
                         profile_picture_url = str(
                             getattr(ev, "profile_picture_url", "") or ""
                         ).strip()

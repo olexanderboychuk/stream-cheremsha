@@ -111,6 +111,17 @@ def test_registry_has_top_gifters_overlay() -> None:
     assert "leaders" in st
 
 
+def test_registry_has_battle_royale_overlay() -> None:
+    reg = OverlayRegistry()
+    t = reg.get("battle_royale")
+    assert t.type == "battle_royale"
+    html = t.render_html({"instance": "main"})
+    assert "/ws" in html
+    st = t.initial_state({"instance": "main"})
+    assert "config" in st
+    assert st["phase"] == "idle"
+
+
 def test_registry_has_king_of_live_overlay() -> None:
     reg = OverlayRegistry()
     t = reg.get("king_of_live")

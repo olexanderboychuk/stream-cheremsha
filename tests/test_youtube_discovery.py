@@ -8,6 +8,7 @@ from stream_cheremsha.chat.youtube_source import (
     discover_my_live_chat_ids,
     discover_my_live_streams,
     fetch_concurrent_viewers_total,
+    resolve_youtube_fallback_watch_url,
 )
 
 
@@ -152,3 +153,54 @@ def test_fetch_concurrent_viewers_total_returns_none_when_no_data() -> None:
     }
     assert fetch_concurrent_viewers_total(service, ["v1"]) is None
     assert fetch_concurrent_viewers_total(service, []) is None
+
+
+def test_resolve_fallback_watch_url_prefers_manual_video_id() -> None:
+    service = MagicMock()
+    assert (
+        resolve_youtube_fallback_watch_url(
+            service,
+            manual_video_id="dQw4w9WgXcQ",
+            discovered_video_ids=["abc12345678"],
+        )
+        == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    )
+    service.channels.return_value.list.assert_not_called()
+
+
+def test_resolve_fallback_watch_url_uses_discovered_video_before_channel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = MagicMock()
+    channel_called: list[str] = []
+
+    def _channel(_service: object) -> str:
+        channel_called.append("called")
+        return "https://www.youtube.com/channel/UCtest/live"
+
+    monkeypatch.setattr(
+        "stream_cheremsha.chat.youtube_source._channel_live_fallback_url",
+        _channel,
+    )
+    assert (
+        resolve_youtube_fallback_watch_url(
+            service,
+            discovered_video_ids=["dQw4w9WgXcQ", "jfKfPfyJRdk"],
+        )
+        == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    )
+    assert channel_called == []
+
+
+def test_resolve_fallback_watch_url_falls_back_to_channel_live(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = MagicMock()
+    monkeypatch.setattr(
+        "stream_cheremsha.chat.youtube_source._channel_live_fallback_url",
+        lambda _s: "https://www.youtube.com/channel/UCmine/live",
+    )
+    assert (
+        resolve_youtube_fallback_watch_url(service, discovered_video_ids=[])
+        == "https://www.youtube.com/channel/UCmine/live"
+    )

@@ -117,6 +117,48 @@ Item {
                 color: cardBase
                 border.width: 1
                 border.color: cardEdge
+                visible: typeof tunnelApi !== "undefined" && tunnelApi !== null
+                implicitHeight: tunnelHead.implicitHeight + 20
+
+                ColumnLayout {
+                    id: tunnelHead
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 12
+                    spacing: 8
+
+                    CheckBox {
+                        text: tunnelApi ? tunnelApi.tunnelEnabledLabel : ""
+                        checked: tunnelApi ? tunnelApi.tunnelEnabled : false
+                        onToggled: if (tunnelApi) tunnelApi.setTunnelEnabled(checked)
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: tunnelApi ? tunnelApi.tunnelHelpText : ""
+                        color: muted
+                        font.pixelSize: 12
+                        wrapMode: Text.Wrap
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        visible: tunnelApi && tunnelApi.tunnelEnabled
+                        text: tunnelApi ? tunnelApi.tunnelStatusText : ""
+                        color: ink
+                        font.pixelSize: 12
+                        wrapMode: Text.Wrap
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                radius: 14
+                color: cardBase
+                border.width: 1
+                border.color: cardEdge
                 implicitHeight: body.implicitHeight + 20
 
                 ColumnLayout {

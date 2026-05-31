@@ -36,11 +36,12 @@ Item {
             root._loadingTopLikersCfg = false;
             root._loadingTopGiftersCfg = false;
             root._loadingKingCfg = false;
+            root._loadingBattleCfg = false;
         }
     }
 
     readonly property int titleBarH: 44
-    property string widgetMode: "grid" // grid | chat | actions | online | top_likers | top_gifters | king_of_live
+    property string widgetMode: "grid" // grid | chat | actions | online | top_likers | top_gifters | king_of_live | battle_royale
 
     component PillButton: Button {
         id: pillCtl
@@ -244,7 +245,7 @@ Item {
         required property var hostMap
         required property string hostKey
         property int hostDefault: 0
-        /// "chat" | "online" | "actions" | "tier" | "king"
+        /// "chat" | "online" | "actions" | "tier" | "king" | "battle"
         required property string syncGroup
         property bool __vsync: false
 
@@ -259,6 +260,8 @@ Item {
                 return root._tierOverlayLoading;
             if (vsb.syncGroup === "king")
                 return root._loadingKingCfg;
+            if (vsb.syncGroup === "battle")
+                return root._loadingBattleCfg;
             return true;
         }
 
@@ -273,6 +276,8 @@ Item {
                 root._saveTierOverlay();
             else if (vsb.syncGroup === "king")
                 root._saveKing();
+            else if (vsb.syncGroup === "battle")
+                root._saveBattle();
         }
 
         function _pull() {
@@ -340,6 +345,14 @@ Item {
                 if (vsb.syncGroup === "king")
                     vsb._pull();
             }
+            function onBattleCfgChanged() {
+                if (vsb.syncGroup === "battle")
+                    vsb._pull();
+            }
+            function onBattleCfgEpochChanged() {
+                if (vsb.syncGroup === "battle")
+                    vsb._pull();
+            }
         }
 
         onValueChanged: {
@@ -384,6 +397,9 @@ Item {
     property var kingCfg: null
     property bool _loadingKingCfg: false
     property int kingCfgEpoch: 0
+    property var battleCfg: null
+    property bool _loadingBattleCfg: false
+    property int battleCfgEpoch: 0
     property var tierOverlayCfg: null
 
     readonly property bool _tierOverlayLoading: (root.widgetMode === "top_gifters")
@@ -617,7 +633,8 @@ Item {
             (root.widgetMode === "actions" && root.actionsCfg !== null) ||
             (root.widgetMode === "online" && root.onlineCfg !== null) ||
             ((root.widgetMode === "top_likers" || root.widgetMode === "top_gifters") && root.tierOverlayCfg !== null) ||
-            (root.widgetMode === "king_of_live" && root.kingCfg !== null)
+            (root.widgetMode === "king_of_live" && root.kingCfg !== null) ||
+            (root.widgetMode === "battle_royale" && root.battleCfg !== null)
         )
 
     function _flushTierOverlayEditorsIntoCfg() {
@@ -671,7 +688,19 @@ Item {
             root._saveTierOverlay();
         } else if (root.widgetMode === "king_of_live") {
             root._saveKing();
+        } else if (root.widgetMode === "battle_royale") {
+            root._saveBattle();
         }
+    }
+
+    function _saveBattle() {
+        if (!api || root.battleCfg === null) return;
+        root.battleCfgEpoch += 1;
+        // battleCfg is a cloned plain JS object; JSON.stringify is reliable (ConfigMap/toVariant often is not).
+        var txt = JSON.stringify(root.battleCfg);
+        if (!txt || txt === "{}")
+            return;
+        api.saveBattleRoyaleOverlayConfigJson(txt);
     }
 
     function _syncTierOverlayCombosFromCfg() {
@@ -960,6 +989,90 @@ Item {
                         wrapMode: Text.Wrap
                     }
 
+                    Rectangle {
+                        Layout.fillWidth: true
+                        radius: 12
+                        color: "#111827"
+                        border.width: 1
+                        border.color: cardEdge
+                        visible: typeof tunnelApi !== "undefined" && tunnelApi !== null
+                        implicitHeight: tunnelPanel.implicitHeight + 16
+
+                        ColumnLayout {
+                            id: tunnelPanel
+                            anchors.fill: parent
+                            anchors.margins: 12
+                            spacing: 8
+
+                            CheckBox {
+                                text: tunnelApi ? tunnelApi.tunnelEnabledLabel : ""
+                                checked: tunnelApi ? tunnelApi.tunnelEnabled : false
+                                onToggled: if (tunnelApi) tunnelApi.setTunnelEnabled(checked)
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: tunnelApi ? tunnelApi.tunnelHelpText : ""
+                                color: muted
+                                font.pixelSize: 12
+                                wrapMode: Text.Wrap
+                            }
+
+                            TextField {
+                                Layout.fillWidth: true
+                                visible: tunnelApi && tunnelApi.tunnelEnabled && !tunnelApi.tunnelCustomUrl
+                                placeholderText: tunnelApi ? tunnelApi.ngrokDomainPlaceholder : "abc123.ngrok-free.dev"
+                                color: ink
+                                font.pixelSize: 12
+                                selectByMouse: true
+                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                text: tunnelApi ? tunnelApi.ngrokDomain : ""
+                                onEditingFinished: if (tunnelApi) tunnelApi.setNgrokDomain(text)
+                            }
+
+                            TextField {
+                                id: ngrokTokenField
+                                Layout.fillWidth: true
+                                visible: tunnelApi && tunnelApi.tunnelEnabled && !tunnelApi.tunnelCustomUrl
+                                placeholderText: tunnelApi ? tunnelApi.ngrokTokenPlaceholder : "ngrok authtoken"
+                                echoMode: TextInput.Password
+                                color: ink
+                                font.pixelSize: 12
+                                selectByMouse: true
+                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                onTextChanged: if (tunnelApi) tunnelApi.setNgrokToken(text)
+                                onEditingFinished: if (tunnelApi) tunnelApi.saveNgrokToken()
+                            }
+
+                            PillButton {
+                                visible: tunnelApi && tunnelApi.tunnelEnabled && !tunnelApi.tunnelCustomUrl
+                                text: "ngrok domains"
+                                onClicked: if (tunnelApi) tunnelApi.openNgrokDomainsPage()
+                            }
+
+                            TextField {
+                                Layout.fillWidth: true
+                                visible: tunnelApi && tunnelApi.tunnelEnabled
+                                placeholderText: "Свій URL (необов'язково)"
+                                color: ink
+                                font.pixelSize: 12
+                                selectByMouse: true
+                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                text: tunnelApi ? tunnelApi.tunnelCustomUrl : ""
+                                onEditingFinished: if (tunnelApi) tunnelApi.setTunnelCustomUrl(text)
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                visible: tunnelApi && tunnelApi.tunnelEnabled
+                                text: tunnelApi ? tunnelApi.tunnelStatusText : ""
+                                color: ink
+                                font.pixelSize: 12
+                                wrapMode: Text.Wrap
+                            }
+                        }
+                    }
+
                     GridLayout {
                         Layout.fillWidth: true
                         columns: Math.max(1, Math.floor((width + 12) / 320))
@@ -1073,6 +1186,14 @@ Item {
                             onCopy: function() { if (api) api.copyKingOfLiveOverlayUrl(); }
                             onPlay: function() { if (api) api.previewKingOfLiveOverlay(); }
                             onEdit: function() { root.widgetMode = "king_of_live"; }
+                        }
+
+                        WidgetCard {
+                            title: "Battle Royale (TikTok)"
+                            urlText: api ? api.battleRoyaleOverlayUrlValue : ""
+                            onCopy: function() { if (api) api.copyBattleRoyaleOverlayUrl(); }
+                            onPlay: function() { if (api) api.previewBattleRoyaleOverlay(); }
+                            onEdit: function() { root.widgetMode = "battle_royale"; }
                         }
                     }
 
@@ -1395,6 +1516,70 @@ Item {
 
                         PillButton {
                             text: "Зберегти й застосувати"
+                            enabled: root._canSaveCurrentWidget
+                            onClicked: root._saveAndApplyCurrentWidget()
+                        }
+
+                        PillButton {
+                            text: "Назад"
+                            onClicked: root.widgetMode = "grid"
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                radius: 14
+                color: cardBase
+                border.width: 1
+                border.color: cardEdge
+                visible: root.widgetMode === "battle_royale"
+                implicitHeight: editBattleHeader.implicitHeight + 20
+
+                ColumnLayout {
+                    id: editBattleHeader
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 12
+                    spacing: 8
+
+                    Text {
+                        text: "Battle Royale (TikTok)"
+                        color: ink
+                        font.pixelSize: 18
+                        font.bold: true
+                        Layout.fillWidth: true
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+
+                        TextField {
+                            Layout.fillWidth: true
+                            readOnly: true
+                            selectByMouse: true
+                            color: ink
+                            font.pixelSize: 12
+                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                            text: api ? api.battleRoyaleOverlayUrlValue : ""
+                        }
+
+                        PillButton {
+                            text: "Скопіювати URL"
+                            onClicked: if (api) api.copyBattleRoyaleOverlayUrl()
+                        }
+
+                        PillButton {
+                            text: "▶"
+                            pillFontSize: 12
+                            onClicked: if (api) api.previewBattleRoyaleOverlay()
+                        }
+
+                        PillButton {
+                            text: "Зберегти"
                             enabled: root._canSaveCurrentWidget
                             onClicked: root._saveAndApplyCurrentWidget()
                         }
@@ -3296,6 +3481,155 @@ Item {
                         } // kingOfLiveSettings
 
                         ColumnLayout {
+                            id: battleRoyaleSettings
+                            visible: root.widgetMode === "battle_royale"
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                        Rectangle { Layout.fillWidth: true; height: 1; color: cardEdge; opacity: 0.6 }
+
+                        Text {
+                            text: "Battle Royale — правила та керування"
+                            color: ink
+                            font.pixelSize: 16
+                            font.bold: true
+                            Layout.fillWidth: true
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            PillButton {
+                                text: "Старт (топ-2 GIFters)"
+                                onClicked: { if (api) api.battleRoyaleStartFromLeaders(); }
+                            }
+                            PillButton {
+                                text: "Стоп битви"
+                                onClicked: { if (api) api.battleRoyaleStop(); }
+                            }
+                            Text {
+                                color: muted
+                                text: api ? ("Фаза: " + api.battleRoyalePhase()) : ""
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        CheckBox {
+                            id: battleHideWhenIdleChk
+                            text: "Порожній оверлей, коли битви немає"
+                            checked: !root.battleCfg || root.battleCfg.hide_when_idle !== false
+                            onCheckedChanged: {
+                                if (root._loadingBattleCfg || !root.battleCfg) return;
+                                root.battleCfg.hide_when_idle = battleHideWhenIdleChk.checked;
+                                root._saveBattle();
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "HP старт"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "battle"
+                                hostMap: root.battleCfg
+                                hostKey: "max_hp"
+                                hostDefault: 1000
+                                from: 100; to: 10000; stepSize: 50
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Тривалість (с)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "battle"
+                                hostMap: root.battleCfg
+                                hostKey: "round_duration_s"
+                                hostDefault: 120
+                                from: 30; to: 600; stepSize: 10
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Крит (діаманти)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "battle"
+                                hostMap: root.battleCfg
+                                hostKey: "crit_threshold_diamonds"
+                                hostDefault: 500
+                                from: 50; to: 50000; stepSize: 50
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Авто-поріг (кожен)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "battle"
+                                hostMap: root.battleCfg
+                                hostKey: "auto_threshold_each"
+                                hostDefault: 100
+                                from: 1; to: 10000; stepSize: 10
+                            }
+                            CheckBox {
+                                id: battleAutoArmChk
+                                text: "Авто-старт"
+                                checked: !root.battleCfg || root.battleCfg.auto_arm_enabled !== false
+                                onCheckedChanged: {
+                                    if (root._loadingBattleCfg || !root.battleCfg) return;
+                                    root.battleCfg.auto_arm_enabled = battleAutoArmChk.checked;
+                                    root._saveBattle();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Подарунків на бійця"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "battle"
+                                hostMap: root.battleCfg
+                                hostKey: "gifts_per_fighter"
+                                hostDefault: 3
+                                from: 1; to: 6; stepSize: 1
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Розмір шрифту (px)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "battle"
+                                hostMap: root.battleCfg
+                                hostKey: "base_font_size_px"
+                                hostDefault: 14
+                                from: 10; to: 32; stepSize: 1
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        Text {
+                            text: "На старті кожному бійцю випадкові подарунки з каталогу. Будь-хто може підтримати бійця, надіславши один із його подарунків (іконки на картці). Інші подарунки під час бою не рахуються."
+                            color: muted
+                            font.pixelSize: 11
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+
+                        } // battleRoyaleSettings
+
+                        ColumnLayout {
                             id: actionsSettings
                             visible: root.widgetMode === "actions"
                             Layout.fillWidth: true
@@ -3898,6 +4232,7 @@ Item {
                     root._loadingTopLikersCfg = false;
                     root._loadingTopGiftersCfg = false;
                     root._loadingKingCfg = false;
+                    root._loadingBattleCfg = false;
                 }
                 try {
                 // This handler lives on the Loader's inner ColumnLayout, not on root Item:
@@ -3908,6 +4243,7 @@ Item {
                 root._loadingTopLikersCfg = true;
                 root._loadingTopGiftersCfg = true;
                 root._loadingKingCfg = true;
+                root._loadingBattleCfg = true;
 
                 var obj = api.loadChatConfigMap();
                 if (!obj || typeof obj !== "object")
@@ -4011,6 +4347,11 @@ Item {
                 if (!kgobj || typeof kgobj !== "object")
                     kgobj = {};
                 root.kingCfg = JSON.parse(JSON.stringify(kgobj));
+                var bgobj = api.loadBattleRoyaleOverlayConfigMap();
+                if (!bgobj || typeof bgobj !== "object")
+                    bgobj = {};
+                root.battleCfg = JSON.parse(JSON.stringify(bgobj));
+                root.battleCfgEpoch += 1;
                 overlayCfgInitGuardTimer.restart();
                 _clearWidgetCfgLoadingLocks();
                 } catch (e) {

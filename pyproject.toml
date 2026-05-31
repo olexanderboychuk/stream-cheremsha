@@ -16,6 +16,7 @@ dependencies = [
     "qasync>=0.27",
     # Local overlay server (OBS browser source URLs).
     "aiohttp>=3.10",
+    "pyngrok>=7.2",
     "httpx>=0.27",
     # Telegram bot (song requests).
     "python-telegram-bot>=21.0",

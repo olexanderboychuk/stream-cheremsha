@@ -9,6 +9,7 @@ from stream_cheremsha.overlays.king_of_live_overlay_config import (
     load_king_of_live_overlay_config,
 )
 from stream_cheremsha.overlays.models import normalize_instance_id
+from stream_cheremsha.persistence.battle_royale_wins_sqlite import fetch_hall_of_fame
 from stream_cheremsha.persistence.tiktok_gifts_sqlite import fetch_all_time_gifter_totals
 
 
@@ -27,11 +28,15 @@ class KingOfLiveOverlayType:
         except ValueError:
             instance = "default"
 
+        anchor = str(params.get("anchor") or "").strip().lstrip("@").strip()
+        subscribe_params: dict[str, str] = {}
+        if anchor:
+            subscribe_params["anchor"] = anchor
         subscribe_msg = {
             "op": "subscribe",
             "type": "king_of_live",
             "instance": instance,
-            "params": {},
+            "params": subscribe_params,
         }
 
         return f"""<!doctype html>
@@ -244,6 +249,20 @@ class KingOfLiveOverlayType:
         color: rgba(255,255,255,0.55); font-weight:600; font-size: calc(14px * var(--txt-scale, 1)); text-align:center; padding: 20px;
         position:relative; z-index:1;
       }}
+      .hall-of-fame {{
+        display:flex; flex-direction:row; gap:6px; justify-content:center; align-items:center;
+        margin-top:10px; flex-wrap:wrap;
+      }}
+      .hof-icon {{
+        width:28px; height:28px; border-radius:999px; object-fit:cover;
+        border:2px solid rgba(250,204,21,0.75);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.45);
+        background: rgba(30,41,59,0.5);
+      }}
+      .hof-label {{
+        font-size: calc(10px * var(--txt-scale, 1)); font-weight:800; letter-spacing:0.08em;
+        color: rgba(253,230,138,0.9); margin-right:4px;
+      }}
       .firework {{
         position:absolute; width:10px; height:10px; border-radius:2px;
         animation: fw 0.9s ease-out forwards; pointer-events:none; z-index: 6;
@@ -270,6 +289,7 @@ class KingOfLiveOverlayType:
         let kingRevision = 0;
         let presenceSeq = 0;
         let chatSeq = 0;
+        let hallOfFame = [];
         let lastPresenceSeq = 0;
         let lastChatSeq = 0;
         let lastKingKey = '';
@@ -507,6 +527,27 @@ class KingOfLiveOverlayType:
             stage.appendChild(g);
           }}
 
+          if (hallOfFame && hallOfFame.length) {{
+            const hofWrap = document.createElement('div');
+            hofWrap.className = 'hall-of-fame';
+            const lbl = document.createElement('span');
+            lbl.className = 'hof-label';
+            lbl.textContent = 'HALL';
+            hofWrap.appendChild(lbl);
+            for (let hi = 0; hi < hallOfFame.length && hi < 5; hi++) {{
+              const ent = hallOfFame[hi];
+              const im = document.createElement('img');
+              im.className = 'hof-icon';
+              im.width = 28; im.height = 28;
+              im.alt = ent.user || '';
+              im.title = ent.user || '';
+              im.referrerPolicy = 'no-referrer';
+              im.src = (ent.avatar_url && String(ent.avatar_url).trim()) ? ent.avatar_url : '';
+              hofWrap.appendChild(im);
+            }}
+            stage.appendChild(hofWrap);
+          }}
+
           if (king.diamonds > 0 && ratio > 0.05) {{
             const bw = document.createElement('div'); bw.className='bar-wrap';
             const b = document.createElement('div'); b.className='bar'; b.style.width = (ratio * 100).toFixed(1) + '%';
@@ -537,6 +578,7 @@ class KingOfLiveOverlayType:
           if (p.king_revision !== undefined) kingRevision = parseInt(p.king_revision,10)||0;
           if (p.king_presence_seq !== undefined) presenceSeq = parseInt(p.king_presence_seq,10)||0;
           if (p.chat_highlight_seq !== undefined) chatSeq = parseInt(p.chat_highlight_seq,10)||0;
+          if (p.hall_of_fame !== undefined) hallOfFame = p.hall_of_fame || [];
         }}
 
         function handleMsg(data) {{
@@ -552,6 +594,7 @@ class KingOfLiveOverlayType:
             kingRevision = parseInt(st.king_revision,10)||0;
             presenceSeq = parseInt(st.king_presence_seq,10)||0;
             chatSeq = parseInt(st.chat_highlight_seq,10)||0;
+            hallOfFame = st.hall_of_fame || [];
             lastKingKey = '';
             lastPresenceSeq = 0;
             lastChatSeq = 0;
@@ -590,7 +633,11 @@ class KingOfLiveOverlayType:
     def initial_state(self, params: dict[str, Any]) -> dict[str, Any]:
         _ = normalize_instance_id(str(params.get("instance") or ""))
         cfg = load_king_of_live_overlay_config()
-        tops = fetch_all_time_gifter_totals(limit=3)
+        anchor = str(params.get("anchor") or "").strip().lstrip("@").strip()
+        tops = fetch_all_time_gifter_totals(
+            limit=3,
+            anchor_username=anchor if anchor else "",
+        )
         king = tops[0] if tops else None
         runner = tops[1] if len(tops) > 1 else None
         gap = 0
@@ -608,4 +655,5 @@ class KingOfLiveOverlayType:
             "king_revision": 1 if king else 0,
             "king_presence_seq": 0,
             "chat_highlight_seq": 0,
+            "hall_of_fame": fetch_hall_of_fame(limit=5),
         }

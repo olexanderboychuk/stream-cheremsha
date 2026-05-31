@@ -81,12 +81,24 @@ from stream_cheremsha.actions.store import (
     load_rules,
     save_rules,
 )
+from stream_cheremsha.actions.tiktok_gifts import tiktok_catalog_gift_image_url
 from stream_cheremsha.activity.aggregator import LikeShareAggregator
-from stream_cheremsha.activity.models import ActivityItem, activity_append_patch, now_hms
+from stream_cheremsha.activity.models import (
+    ActivityItem,
+    activity_append_patch,
+    activity_join_ticker_patch,
+    now_hms,
+)
 from stream_cheremsha.audio.qt_sink import QtAudioSink
+from stream_cheremsha.battle_royale.controller import BattleRoyaleController
+from stream_cheremsha.battle_royale.models import BattleFighter, BattlePhase
 from stream_cheremsha.chat import twitch_credentials, twitch_oauth_device
 from stream_cheremsha.chat.tiktok_source import TikTokChatSource
-from stream_cheremsha.chat.twitch_eventsub import TwitchEventSubCallbacks, TwitchEventSubClient
+from stream_cheremsha.chat.twitch_eventsub import (
+    TwitchEventSubCallbacks,
+    TwitchEventSubClient,
+    TwitchNotifiedUser,
+)
 from stream_cheremsha.chat.twitch_helix import TwitchHelixClient
 from stream_cheremsha.chat.twitch_source import TwitchSource
 from stream_cheremsha.chat.youtube_source import (
@@ -105,6 +117,10 @@ from stream_cheremsha.music.yt_dlp_resolver import fetch_youtube_meta, fetch_you
 from stream_cheremsha.online.models import now_hms as online_now_hms
 from stream_cheremsha.online.models import online_state_patch
 from stream_cheremsha.openai_moderation import openai_moderation_flagged
+from stream_cheremsha.overlays.battle_royale_overlay_config import (
+    battle_royale_overlay_config_to_json_text,
+    load_battle_royale_overlay_config,
+)
 from stream_cheremsha.overlays.chat_overlay import chat_message_to_patch
 from stream_cheremsha.overlays.king_of_live_overlay_config import (
     king_of_live_overlay_config_to_json_text,
@@ -116,7 +132,21 @@ from stream_cheremsha.overlays.top_gifters_overlay_config import load_top_gifter
 from stream_cheremsha.overlays.top_gifters_session import TikTokSessionTopGifters
 from stream_cheremsha.overlays.top_likers_overlay_config import load_top_likers_overlay_config
 from stream_cheremsha.overlays.top_likers_session import TikTokSessionTopLikers
+from stream_cheremsha.overlays.tunnel import OverlayTunnel
+from stream_cheremsha.overlays.tunnel_install import (
+    install_prompt_labels,
+    install_tunnel_tool_via_winget,
+    is_tunnel_cli_installed,
+    is_winget_available,
+    missing_cli_status_message,
+    provider_needs_cli,
+)
+from stream_cheremsha.overlays.tunnel_types import TunnelProvider
 from stream_cheremsha.paths import stream_cheremsha_root
+from stream_cheremsha.persistence.battle_royale_wins_sqlite import (
+    fetch_hall_of_fame,
+    record_battle_win,
+)
 from stream_cheremsha.persistence.tiktok_gifts_sqlite import (
     append_tiktok_gift_event,
     fetch_all_time_gifter_totals,
@@ -146,6 +176,7 @@ from stream_cheremsha.ui.chat_formatting import (
 from stream_cheremsha.ui.chat_popout import ChatPopoutWindow
 from stream_cheremsha.ui.docks_qml_api import DocksQmlApi
 from stream_cheremsha.ui.donations_qml_api import DonationsQmlApi
+from stream_cheremsha.ui.overlay_tunnel_qml_api import OverlayTunnelQmlApi
 from stream_cheremsha.ui.qml_api import StreamCheremshaQmlApi
 from stream_cheremsha.ui.qt_async_dialog import async_dialog_code
 from stream_cheremsha.ui.tiktok_analytics_api import TikTokAnalyticsApi
@@ -567,6 +598,7 @@ class MainWindow(FramelessWindow):
             host="127.0.0.1",
             port=17171,
         )
+        self._overlay_tunnel = OverlayTunnel()
         self._asyncio_loop: asyncio.AbstractEventLoop | None = None
         self._music_queue = MusicQueueController(instance="main")
         self._music_player: MusicPlayer | None = None
@@ -645,6 +677,13 @@ class MainWindow(FramelessWindow):
         self._king_chat_highlight_seq: int = 0
         self._king_overlay_cached_king_key: str = ""
         self._king_overlay_cached_king_display: str = ""
+        self._battle_controller = BattleRoyaleController()
+        self._battle_controller._on_battle_ended.append(self._on_battle_royale_ended)
+        self._battle_auto_arm_hint_count: int = 0
+        self._battle_overlay_publish_handle: asyncio.TimerHandle | None = None
+        self._battle_tick_timer = QTimer(self)
+        self._battle_tick_timer.setInterval(1000)
+        self._battle_tick_timer.timeout.connect(self._on_battle_tick)
         self._tiktok_username = QLineEdit()
         self._obs_ws_host = QLineEdit()
         self._obs_ws_port = QLineEdit()
@@ -676,6 +715,7 @@ class MainWindow(FramelessWindow):
         self._qml_actions: QQuickWidget | None = None
         self._widgets_qml_api: WidgetsQmlApi | None = None
         self._docks_qml_api: DocksQmlApi | None = None
+        self._overlay_tunnel_qml_api: OverlayTunnelQmlApi | None = None
         self._qml_widgets_win: QQuickView | None = None
         self._qml_widgets: QQuickWidget | None = None
         self._qml_docks: QQuickWidget | None = None
@@ -872,6 +912,7 @@ class MainWindow(FramelessWindow):
         self._qml_donations.setSource(QUrl.fromLocalFile(str(qml_don)))
 
         self._widgets_qml_api = WidgetsQmlApi(pubsub=self._overlay_server.pubsub())
+        self._overlay_tunnel_qml_api = OverlayTunnelQmlApi(self)
         self._qml_widgets = QQuickWidget(self)
         self._qml_widgets.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
         self._qml_widgets.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -881,6 +922,7 @@ class MainWindow(FramelessWindow):
             logger.error("QML not found: %s", qml_widgets)
         wctx = self._qml_widgets.engine().rootContext()
         wctx.setContextProperty("api", self._widgets_qml_api)
+        wctx.setContextProperty("tunnelApi", self._overlay_tunnel_qml_api)
         wctx.setContextProperty("navApi", self._qml_api)
         self._qml_widgets.setSource(QUrl.fromLocalFile(str(qml_widgets)))
 
@@ -894,6 +936,7 @@ class MainWindow(FramelessWindow):
             logger.error("QML not found: %s", qml_docks)
         dctx = self._qml_docks.engine().rootContext()
         dctx.setContextProperty("dockApi", self._docks_qml_api)
+        dctx.setContextProperty("tunnelApi", self._overlay_tunnel_qml_api)
         dctx.setContextProperty("navApi", self._qml_api)
         self._qml_docks.setSource(QUrl.fromLocalFile(str(qml_docks)))
 
@@ -3390,9 +3433,15 @@ class MainWindow(FramelessWindow):
             self._tiktok_enabled = bool(enabled)
             if self._tiktok_enabled:
                 await self._start_tiktok()
+                self._schedule_king_overlay_publish()
+                if self._widgets_qml_api is not None:
+                    self._widgets_qml_api.kingOfLiveOverlayUrlChanged.emit()
             else:
                 await self._tiktok.stop()
                 self._tiktok_analytics.resetSession()
+                self._schedule_king_overlay_publish()
+                if self._widgets_qml_api is not None:
+                    self._widgets_qml_api.kingOfLiveOverlayUrlChanged.emit()
         finally:
             self._tiktok_toggle_busy = False
             self._qml_refresh_if_visible()
@@ -3447,10 +3496,19 @@ class MainWindow(FramelessWindow):
         fragment = self._format_chat_message_fragment(message)
         self._bridge.append_chat.emit(fragment)
         if not self._closing:
+            chat_patch = chat_message_to_patch(message)
+            if message.platform == ChatPlatform.TIKTOK:
+                key = (message.tiktok_stable_key or "").strip()
+                if not key:
+                    key = (message.author or "").strip().casefold()
+                if self._battle_controller.is_vip_user(key):
+                    append = chat_patch.get("append")
+                    if isinstance(append, dict):
+                        append["vip_gold"] = True
             t = asyncio.create_task(
                 self._overlay_server.pubsub().publish(
                     "overlay:chat:main",
-                    chat_message_to_patch(message),
+                    chat_patch,
                 ),
             )
             # Ensure exceptions are retrieved to avoid "Task exception was never retrieved".
@@ -3485,6 +3543,21 @@ class MainWindow(FramelessWindow):
             ps.publish(
                 "overlay:activity:main",
                 activity_append_patch(item),
+            ),
+        )
+        t.add_done_callback(lambda _t: _t.exception())
+
+    def _publish_activity_join_ticker(self, item: ActivityItem) -> None:
+        if self._closing:
+            return
+        try:
+            ps = self._overlay_server.pubsub()
+        except RuntimeError:
+            return
+        t = asyncio.create_task(
+            ps.publish(
+                "overlay:activity:main",
+                activity_join_ticker_patch(item),
             ),
         )
         t.add_done_callback(lambda _t: _t.exception())
@@ -3531,7 +3604,7 @@ class MainWindow(FramelessWindow):
             icon_url="",
             time_hms=now_hms(),
         )
-        self._publish_activity_item(it)
+        self._publish_activity_join_ticker(it)
 
     def _on_tiktok_gift_analytics_any(
         self,
@@ -3550,13 +3623,18 @@ class MainWindow(FramelessWindow):
             diamonds,
             icon_url,
         )
+        gid = (gift_id or "").strip()
+        gname = (gift_name or "").strip()
+        icon = (icon_url or "").strip()
+        if not icon:
+            icon = tiktok_catalog_gift_image_url(gift_id=gid, gift_name=gname)
         it = ActivityItem(
             platform="tiktok",
             kind="gift",
             user=(sender or "").strip() or "?",
-            detail=(gift_name or "").strip() or (gift_id or "").strip(),
+            detail=gname or gid,
             count=max(1, int(count) if isinstance(count, int) else 1),
-            icon_url=(icon_url or "").strip(),
+            icon_url=icon,
             time_hms=now_hms(),
         )
         self._publish_activity_item(it)
@@ -3694,9 +3772,20 @@ class MainWindow(FramelessWindow):
             return
         loop.create_task(self._publish_king_overlay_patch())
 
+    def current_tiktok_anchor_username(self) -> str:
+        """Normalized TikTok live host for the active or configured stream."""
+        streamer = (self._tiktok.connected_stream_unique_id or "").strip()
+        if not streamer:
+            streamer = (self._tiktok_username.text() or "").strip().lstrip("@").strip()
+        return streamer
+
     async def _publish_king_overlay_patch(self) -> None:
         cfg = load_king_of_live_overlay_config()
-        tops = fetch_all_time_gifter_totals(limit=5)
+        anchor = self.current_tiktok_anchor_username()
+        tops = fetch_all_time_gifter_totals(
+            limit=5,
+            anchor_username=anchor if anchor else "",
+        )
         king = tops[0] if tops else None
         runner = tops[1] if len(tops) > 1 else None
         gap = 0
@@ -3739,6 +3828,7 @@ class MainWindow(FramelessWindow):
             "king_revision": 0,
             "king_presence_seq": int(self._king_presence_seq),
             "chat_highlight_seq": int(self._king_chat_highlight_seq),
+            "hall_of_fame": fetch_hall_of_fame(limit=5),
         }
         if king:
             self._king_overlay_cached_king_key = king_key
@@ -3802,6 +3892,123 @@ class MainWindow(FramelessWindow):
         )
         t.add_done_callback(lambda _t: _t.exception())
 
+    def _on_battle_tick(self) -> None:
+        if self._closing:
+            return
+        if self._battle_controller.tick():
+            self._schedule_battle_overlay_publish()
+
+    def _schedule_battle_overlay_publish(self) -> None:
+        if self._closing:
+            return
+        loop = self._asyncio_loop
+        if loop is None:
+            return
+        prev = self._battle_overlay_publish_handle
+        if prev is not None:
+            prev.cancel()
+        self._battle_overlay_publish_handle = loop.call_later(
+            0.35,
+            self._on_battle_overlay_debounced_fire,
+        )
+
+    def _on_battle_overlay_debounced_fire(self) -> None:
+        self._battle_overlay_publish_handle = None
+        if self._closing:
+            return
+        loop = self._asyncio_loop
+        if loop is None:
+            return
+        loop.create_task(self._publish_battle_overlay_patch())
+
+    def _build_battle_overlay_patch(self) -> dict[str, Any]:
+        cfg = load_battle_royale_overlay_config()
+        patch = self._battle_controller.overlay_patch()
+        patch["config"] = json.loads(battle_royale_overlay_config_to_json_text(cfg))
+        return patch
+
+    def _publish_battle_overlay_patch_sync(self) -> None:
+        if self._closing:
+            return
+        try:
+            ps = self._overlay_server.pubsub()
+        except RuntimeError:
+            return
+        ps.publish_sync("overlay:battle_royale:main", self._build_battle_overlay_patch())
+
+    async def _publish_battle_overlay_patch(self) -> None:
+        try:
+            ps = self._overlay_server.pubsub()
+        except RuntimeError:
+            return
+        ps.publish_sync("overlay:battle_royale:main", self._build_battle_overlay_patch())
+
+    def _sync_battle_ui_after_gift(self, *, prev_phase: BattlePhase) -> None:
+        st = self._battle_controller.state()
+        if st.phase in (
+            BattlePhase.COUNTDOWN,
+            BattlePhase.ACTIVE,
+            BattlePhase.VICTORY,
+        ):
+            self._battle_tick_timer.start()
+            self._publish_battle_overlay_patch_sync()
+            self._schedule_battle_overlay_publish()
+            if prev_phase == BattlePhase.IDLE and st.phase == BattlePhase.COUNTDOWN:
+                names = ", ".join(f.display_name for f in st.fighters[:4])
+                self._on_user_status(
+                    self._tr("battle.auto_started", fighters=names),
+                )
+
+    def _on_battle_royale_ended(self, winner: BattleFighter | None) -> None:
+        if winner is not None:
+            record_battle_win(
+                user_key=winner.user_key,
+                display_name=winner.display_name,
+                avatar_url=winner.avatar_url,
+            )
+            self._on_user_status(
+                self._tr("battle.winner_music_toast", user=winner.display_name),
+            )
+            self._schedule_king_overlay_publish()
+        self._schedule_battle_overlay_publish()
+        phase = self._battle_controller.state().phase
+        if phase in (BattlePhase.COUNTDOWN, BattlePhase.ACTIVE, BattlePhase.VICTORY):
+            self._battle_tick_timer.start()
+        else:
+            self._battle_tick_timer.stop()
+
+    def battle_royale_start_from_leaders(self) -> bool:
+        leaders = self._tiktok_top_gifters.leaders(limit=4, sort="likes_desc")
+        fighters = [
+            {
+                "user_key": str(r.get("key") or ""),
+                "user": str(r.get("user") or "?"),
+                "avatar_url": str(r.get("avatar_url") or ""),
+            }
+            for r in leaders[:2]
+        ]
+        return self.battle_royale_start_fighters(fighters)
+
+    def battle_royale_start_fighters(self, fighters: list[dict[str, str]]) -> bool:
+        cfg = load_battle_royale_overlay_config()
+        ok = self._battle_controller.start_manual(fighters, cfg=cfg)
+        if ok:
+            self._battle_tick_timer.start()
+            self._publish_battle_overlay_patch_sync()
+            self._schedule_battle_overlay_publish()
+            names = ", ".join(str(f.get("user") or "?") for f in fighters[:4])
+            self._on_user_status(self._tr("battle.manual_started", fighters=names))
+        else:
+            self._on_user_status(self._tr("battle.start_failed"))
+        return ok
+
+    def battle_royale_stop(self) -> None:
+        self._battle_controller.stop()
+        self._battle_auto_arm_hint_count = 0
+        self._battle_tick_timer.stop()
+        self._publish_battle_overlay_patch_sync()
+        self._schedule_battle_overlay_publish()
+
     def _on_tiktok_stream_start(self) -> None:
         """Reset per-stream counters when TikTokLive indicates a new stream has started."""
         if self._closing:
@@ -3825,6 +4032,11 @@ class MainWindow(FramelessWindow):
         if hk is not None:
             hk.cancel()
             self._king_overlay_publish_handle = None
+        self.battle_royale_stop()
+        hb = self._battle_overlay_publish_handle
+        if hb is not None:
+            hb.cancel()
+            self._battle_overlay_publish_handle = None
         loop = self._asyncio_loop
         if loop is not None:
             loop.create_task(
@@ -3884,16 +4096,17 @@ class MainWindow(FramelessWindow):
     def _actions_scope_key(self, platform: str, account_key: str) -> tuple[str, str]:
         return (platform.strip().lower(), account_key.strip())
 
+    def _get_app_actions_engine(self) -> PlatformActionsEngine:
+        """Rules edited in Actions (stored under tiktok/app for all platforms)."""
+        return self._get_actions_engine(
+            ChatPlatform.TIKTOK.value,
+            constants.TIKTOK_ACTIONS_ACCOUNT_KEY,
+        )
+
     def _actions_account_key_for_platform(self, platform: ChatPlatform) -> str | None:
-        if platform == ChatPlatform.TIKTOK:
-            return constants.TIKTOK_ACTIONS_ACCOUNT_KEY
-        if platform == ChatPlatform.TWITCH:
-            v = (self._twitch_channel.text() or "").strip()
-            return v or None
-        if platform == ChatPlatform.YOUTUBE:
-            v = (self._yt_video.text() or "").strip()
-            return v or None
-        return None
+        # Actions UI persists one ruleset at tiktok/app; live dispatch uses the same scope.
+        _ = platform
+        return constants.TIKTOK_ACTIONS_ACCOUNT_KEY
 
     def _maybe_migrate_tiktok_actions(self) -> None:
         """If the app-wide TikTok rules key is unset, copy from legacy .../tiktok/<nick>/.
@@ -4060,10 +4273,7 @@ class MainWindow(FramelessWindow):
             eng.set_rules(load_rules(k[0], k[1]))
 
     def _dispatch_actions_for_chat(self, message: ChatMessage) -> None:
-        ak = self._actions_account_key_for_platform(message.platform)
-        if not ak:
-            return
-        eng = self._get_actions_engine(message.platform.value, ak)
+        eng = self._get_app_actions_engine()
         ev = ChatMessageEvent(
             platform=message.platform,
             author=message.author,
@@ -4147,6 +4357,37 @@ class MainWindow(FramelessWindow):
             except (OSError, sqlite3.Error) as exc:
                 logger.warning("tiktok gifts sqlite: persist failed: %s", exc)
         if total_coins > 0:
+            prev_battle_phase = self._battle_controller.state().phase
+            battle_hit = self._battle_controller.on_gift(
+                sender_user_key=(sender_user_key or "").strip(),
+                sender_display=(sender or "").strip(),
+                sender_avatar_url=(sender_avatar_url or "").strip(),
+                diamonds=total_coins,
+                gift_id=(gift_id or "").strip(),
+                gift_name=(gift_name or "").strip(),
+            )
+            self._sync_battle_ui_after_gift(prev_phase=prev_battle_phase)
+            if (
+                prev_battle_phase == BattlePhase.IDLE
+                and self._battle_controller.state().phase == BattlePhase.IDLE
+            ):
+                br_cfg = load_battle_royale_overlay_config()
+                if br_cfg.auto_arm_enabled:
+                    n = self._battle_controller.count_auto_arm_candidates(cfg=br_cfg)
+                    if n != self._battle_auto_arm_hint_count:
+                        self._battle_auto_arm_hint_count = n
+                        if n == 1:
+                            self._on_user_status(
+                                self._tr(
+                                    "battle.need_second_viewer",
+                                    threshold=br_cfg.auto_threshold_each,
+                                    count=n,
+                                ),
+                            )
+                        self._publish_battle_overlay_patch_sync()
+            if battle_hit is not None:
+                self._publish_battle_overlay_patch_sync()
+                self._schedule_battle_overlay_publish()
             self._tiktok_top_gifters.add_coins(
                 user_key=(sender_user_key or "").strip(),
                 display_name=(sender or "").strip(),
@@ -4178,16 +4419,18 @@ class MainWindow(FramelessWindow):
         view.resize(QSize(760, 560))
 
         try:
-            base_url = self._overlay_server.base_url()
+            base_url = self._overlay_public_base_url()
         except RuntimeError:
             base_url = ""
         self._widgets_qml_api = WidgetsQmlApi(
             overlay_base_url=base_url,
             pubsub=self._overlay_server.pubsub(),
         )
+        self._widgets_qml_api.set_battle_host(self)
         self._widgets_window_qml_api = WidgetsWindowQmlApi(view=view)
         ctx = view.engine().rootContext()
         ctx.setContextProperty("api", self._widgets_qml_api)
+        ctx.setContextProperty("tunnelApi", self._overlay_tunnel_qml_api)
         ctx.setContextProperty("winApi", self._widgets_window_qml_api)
         ctx.setContextProperty("widgetsWindow", view)
         qml_p = _qml_path("WidgetsView.qml")
@@ -4292,6 +4535,25 @@ class MainWindow(FramelessWindow):
             channel_login=channel,
         )
 
+    async def _resolve_twitch_profile_picture(
+        self,
+        *,
+        user_id: str = "",
+        login: str = "",
+        display_name: str = "",
+    ) -> str:
+        helix = self._twitch_helix
+        if helix is None:
+            return ""
+        try:
+            return await helix.resolve_profile_image_url(
+                user_id=user_id,
+                login=login or display_name,
+            )
+        except httpx.HTTPError as exc:
+            logger.debug("Twitch profile image lookup failed: %s", exc)
+            return ""
+
     async def _start_twitch_analytics(
         self,
         *,
@@ -4326,27 +4588,94 @@ class MainWindow(FramelessWindow):
             name="twitch-viewers",
         )
 
-        def _on_follow(user: str) -> None:
-            self._twitch_analytics.on_follow(user)
+        async def _dispatch_twitch_follow_actions(tu: TwitchNotifiedUser) -> None:
+            if self._closing:
+                return
+            pic = await self._resolve_twitch_profile_picture(
+                user_id=tu.user_id,
+                login=tu.login,
+                display_name=tu.display_name,
+            )
+            eng = self._get_app_actions_engine()
+            await eng.on_twitch_follow(
+                tu.display_name,
+                datetime.now(UTC),
+                profile_picture_url=pic,
+            )
+
+        async def _dispatch_twitch_sub_actions(
+            tu: TwitchNotifiedUser,
+            st: str,
+            months: int,
+            message: str,
+        ) -> None:
+            if self._closing:
+                return
+            pic = await self._resolve_twitch_profile_picture(
+                user_id=tu.user_id,
+                login=tu.login,
+                display_name=tu.display_name,
+            )
+            eng = self._get_app_actions_engine()
+            u_sub = tu.display_name
+            mom = max(0, int(months))
+            msg_sub = (message or "").strip()
+            now_sub = datetime.now(UTC)
+            if st == "sub":
+                await eng.on_twitch_subscribe(u_sub, mom, now_sub, profile_picture_url=pic)
+            elif st == "resub":
+                await eng.on_twitch_resub(u_sub, mom, msg_sub, now_sub, profile_picture_url=pic)
+            elif st == "gift":
+                await eng.on_twitch_sub_gift(u_sub, mom, now_sub, profile_picture_url=pic)
+
+        async def _dispatch_twitch_cheer_actions(tu: TwitchNotifiedUser, bits: int) -> None:
+            if self._closing:
+                return
+            pic = await self._resolve_twitch_profile_picture(
+                user_id=tu.user_id,
+                login=tu.login,
+                display_name=tu.display_name,
+            )
+            eng = self._get_app_actions_engine()
+            await eng.on_twitch_cheer(
+                tu.display_name,
+                int(bits),
+                datetime.now(UTC),
+                profile_picture_url=pic,
+            )
+
+        async def _dispatch_twitch_raid_actions(tu: TwitchNotifiedUser, viewers: int) -> None:
+            if self._closing:
+                return
+            pic = await self._resolve_twitch_profile_picture(
+                user_id=tu.user_id,
+                login=tu.login,
+                display_name=tu.display_name,
+            )
+            eng = self._get_app_actions_engine()
+            await eng.on_twitch_raid(
+                tu.display_name,
+                int(viewers),
+                datetime.now(UTC),
+                profile_picture_url=pic,
+            )
+
+        def _on_follow(tu: TwitchNotifiedUser) -> None:
+            self._twitch_analytics.on_follow(tu.display_name)
             it = ActivityItem(
                 platform="twitch",
                 kind="follow",
-                user=(user or "").strip() or "?",
+                user=tu.display_name or "?",
                 detail="",
                 count=1,
                 icon_url="",
                 time_hms=now_hms(),
             )
             self._publish_activity_item(it)
-            ak_follow = (self._twitch_channel.text() or "").strip()
-            if ak_follow:
-                eng_f = self._get_actions_engine(ChatPlatform.TWITCH.value, ak_follow)
-                asyncio.ensure_future(
-                    eng_f.on_twitch_follow((user or "").strip(), datetime.now(UTC)),
-                )
+            asyncio.ensure_future(_dispatch_twitch_follow_actions(tu))
 
-        def _on_sub(user: str, sub_type: str, months: int, message: str = "") -> None:
-            self._twitch_analytics.on_sub(user, sub_type, months, message)
+        def _on_sub(tu: TwitchNotifiedUser, sub_type: str, months: int, message: str = "") -> None:
+            self._twitch_analytics.on_sub(tu.display_name, sub_type, months, message)
             st = (sub_type or "").strip()
             if st not in ("sub", "resub", "gift"):
                 return
@@ -4357,47 +4686,22 @@ class MainWindow(FramelessWindow):
             it = ActivityItem(
                 platform="twitch",
                 kind=st,  # type: ignore[arg-type]
-                user=(user or "").strip() or "?",
+                user=tu.display_name or "?",
                 detail=detail,
                 count=1,
                 icon_url="",
                 time_hms=now_hms(),
             )
             self._publish_activity_item(it)
-            ak_sub = (self._twitch_channel.text() or "").strip()
-            if not ak_sub:
-                return
-            eng_s = self._get_actions_engine(ChatPlatform.TWITCH.value, ak_sub)
-            u_sub = (user or "").strip()
-            mom = max(0, int(months))
-            msg_sub = (message or "").strip()
-            now_sub = datetime.now(UTC)
-            if st == "sub":
-                asyncio.ensure_future(eng_s.on_twitch_subscribe(u_sub, mom, now_sub))
-            elif st == "resub":
-                asyncio.ensure_future(eng_s.on_twitch_resub(u_sub, mom, msg_sub, now_sub))
-            elif st == "gift":
-                asyncio.ensure_future(eng_s.on_twitch_sub_gift(u_sub, mom, now_sub))
+            asyncio.ensure_future(_dispatch_twitch_sub_actions(tu, st, months, message))
 
-        def _on_cheer(user: str, bits: int) -> None:
-            self._twitch_analytics.on_cheer(user, bits)
-            ak_ch = (self._twitch_channel.text() or "").strip()
-            if not ak_ch:
-                return
-            eng_ch = self._get_actions_engine(ChatPlatform.TWITCH.value, ak_ch)
-            asyncio.ensure_future(
-                eng_ch.on_twitch_cheer((user or "").strip(), int(bits), datetime.now(UTC)),
-            )
+        def _on_cheer(tu: TwitchNotifiedUser, bits: int) -> None:
+            self._twitch_analytics.on_cheer(tu.display_name, bits)
+            asyncio.ensure_future(_dispatch_twitch_cheer_actions(tu, bits))
 
-        def _on_raid(frm: str, viewers: int) -> None:
-            self._twitch_analytics.on_raid(frm, viewers)
-            ak_rd = (self._twitch_channel.text() or "").strip()
-            if not ak_rd:
-                return
-            eng_rd = self._get_actions_engine(ChatPlatform.TWITCH.value, ak_rd)
-            asyncio.ensure_future(
-                eng_rd.on_twitch_raid((frm or "").strip(), int(viewers), datetime.now(UTC)),
-            )
+        def _on_raid(tu: TwitchNotifiedUser, viewers: int) -> None:
+            self._twitch_analytics.on_raid(tu.display_name, viewers)
+            asyncio.ensure_future(_dispatch_twitch_raid_actions(tu, viewers))
 
         cbs = TwitchEventSubCallbacks(
             on_follow=_on_follow,
@@ -4603,6 +4907,127 @@ class MainWindow(FramelessWindow):
         await self._coordinator.flush_tts()
         self._on_user_status(self._tr("audio.flush_queues"))
 
+    def _overlay_public_base_url(self) -> str:
+        local_url = self._overlay_server.base_url()
+        if not bool(self._settings.value(constants.SETTINGS_OVERLAY_TUNNEL_ENABLED, False, bool)):
+            return local_url
+        st = self._overlay_tunnel.state()
+        if st.status == "active" and st.public_url:
+            return st.public_url.rstrip("/")
+        return local_url
+
+    def _apply_overlay_urls_to_qml(self, *, local_url: str) -> None:
+        base = self._overlay_public_base_url() if local_url else ""
+        if self._widgets_qml_api is not None:
+            self._widgets_qml_api.set_overlay_base_url(base)
+        if self._docks_qml_api is not None:
+            self._docks_qml_api.set_base_url(base)
+        if self._overlay_tunnel_qml_api is not None:
+            self._overlay_tunnel_qml_api.refresh_from_tunnel(local_base_url=local_url)
+
+    async def _ensure_tunnel_cli_installed(
+        self, provider_str: str, *, prompt_install: bool
+    ) -> bool:
+        if not provider_needs_cli(provider_str):
+            return True
+        if is_tunnel_cli_installed(provider_str):
+            return True
+
+        uk = self._locale != "en"
+        if not prompt_install:
+            return False
+
+        if not is_winget_available():
+            title = "ngrok"
+            if uk:
+                body = (
+                    f"{title} не знайдено, а winget недоступний. "
+                    "Встановіть вручну або через Microsoft Store."
+                )
+            else:
+                body = (
+                    f"{title} was not found and winget is unavailable. "
+                    "Install manually or from Microsoft Store."
+                )
+            QMessageBox.warning(self, title, body)
+            return False
+
+        dlg_title, dlg_text = install_prompt_labels(provider_str, locale=self._locale)
+        answer = QMessageBox.question(
+            self,
+            dlg_title,
+            dlg_text,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return False
+
+        if self._overlay_tunnel_qml_api is not None:
+            self._overlay_tunnel_qml_api.set_tunnel_status_message(
+                "Встановлення через winget…" if uk else "Installing via winget…",
+            )
+
+        ok, err = await install_tunnel_tool_via_winget(provider_str)
+        if not ok:
+            detail = err or ("Не вдалося встановити" if uk else "Installation failed")
+            QMessageBox.warning(self, dlg_title, detail)
+            return False
+        return True
+
+    async def apply_overlay_tunnel(self, *, prompt_install: bool = False) -> None:
+        if self._closing:
+            return
+        try:
+            local_url = self._overlay_server.base_url()
+        except RuntimeError:
+            return
+
+        enabled = bool(self._settings.value(constants.SETTINGS_OVERLAY_TUNNEL_ENABLED, False, bool))
+        if enabled:
+            custom_url = str(
+                self._settings.value(constants.SETTINGS_OVERLAY_TUNNEL_CUSTOM_URL, "", str) or "",
+            ).strip()
+            provider_str = TunnelProvider.CUSTOM.value if custom_url else TunnelProvider.NGROK.value
+            ngrok_domain = str(
+                self._settings.value(constants.SETTINGS_OVERLAY_NGROK_DOMAIN, "", str) or "",
+            ).strip()
+            ready = True
+            if provider_needs_cli(provider_str):
+                ready = await self._ensure_tunnel_cli_installed(
+                    provider_str,
+                    prompt_install=prompt_install,
+                )
+            if not ready:
+                await self._overlay_tunnel.stop()
+                self._apply_overlay_urls_to_qml(local_url=local_url)
+                if self._overlay_tunnel_qml_api is not None:
+                    self._overlay_tunnel_qml_api.set_tunnel_status_message(
+                        missing_cli_status_message(provider_str, locale=self._locale),
+                    )
+                return
+            token = (keyring_store.get_password(constants.KEY_NGROK_AUTHTOKEN) or "").strip()
+            try:
+                await self._overlay_tunnel.start(
+                    provider=provider_str,
+                    local_url=local_url,
+                    ngrok_authtoken=token,
+                    ngrok_domain=ngrok_domain,
+                    custom_url=custom_url,
+                )
+            except (OSError, ValueError, RuntimeError) as e:
+                logger.exception("Overlay tunnel failed: %s", e)
+            else:
+                domain_used = self._overlay_tunnel.ngrok_domain_used()
+                if domain_used and domain_used != ngrok_domain:
+                    self._settings.setValue(constants.SETTINGS_OVERLAY_NGROK_DOMAIN, domain_used)
+                    if self._overlay_tunnel_qml_api is not None:
+                        self._overlay_tunnel_qml_api.sync_ngrok_domain(domain_used)
+        else:
+            await self._overlay_tunnel.stop()
+
+        self._apply_overlay_urls_to_qml(local_url=local_url)
+
     async def run_startup(self) -> None:
         try:
             self._on_user_status(self._tr("startup.workers"))
@@ -4610,7 +5035,9 @@ class MainWindow(FramelessWindow):
             self._music_queue.set_loop(self._asyncio_loop)
             await self._overlay_server.start()
             logger.info("Overlay server: %s", self._overlay_server.base_url())
+            await self.apply_overlay_tunnel()
             self._schedule_king_overlay_publish()
+            self._publish_battle_overlay_patch_sync()
             self._music_player = MusicPlayer(
                 queue=self._music_queue,
                 sink=self._sink,
@@ -4628,10 +5055,6 @@ class MainWindow(FramelessWindow):
                     self._publish_online_loop(),
                     name="online-publish",
                 )
-            if self._widgets_qml_api is not None:
-                self._widgets_qml_api.set_overlay_base_url(self._overlay_server.base_url())
-            if self._docks_qml_api is not None:
-                self._docks_qml_api.set_base_url(self._overlay_server.base_url())
             await self._swap_tts_backend()
             await self._coordinator.start_workers()
             vol = int(self._settings.value("audio/volume", 100))
@@ -5047,6 +5470,7 @@ class MainWindow(FramelessWindow):
                     logger.exception("Shutdown step failed (music_player.stop): %s", e)
 
             for name, coro in (
+                ("overlay_tunnel.stop", self._overlay_tunnel.stop()),
                 ("overlay_server.stop", self._overlay_server.stop()),
                 ("twitch.stop", self._twitch.stop()),
                 ("youtube.stop", self._youtube.stop()),

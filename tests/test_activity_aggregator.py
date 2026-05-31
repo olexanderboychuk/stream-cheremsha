@@ -1,7 +1,27 @@
 from __future__ import annotations
 
 from stream_cheremsha.activity.aggregator import LikeShareAggregator
-from stream_cheremsha.activity.models import ActivityItem, activity_append_patch
+from stream_cheremsha.activity.models import (
+    ActivityItem,
+    activity_append_patch,
+    activity_join_ticker_patch,
+)
+
+
+def test_activity_join_ticker_patch_shape() -> None:
+    it = ActivityItem(
+        platform="tiktok",
+        kind="join",
+        user="viewer1",
+        detail="",
+        count=1,
+        icon_url="",
+        time_hms="01:02:03",
+    )
+    p = activity_join_ticker_patch(it)
+    assert set(p.keys()) == {"append_join"}
+    assert p["append_join"]["kind"] == "join"
+    assert p["append_join"]["user"] == "viewer1"
 
 
 def test_activity_item_to_dict_shape() -> None:

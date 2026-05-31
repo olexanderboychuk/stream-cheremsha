@@ -198,6 +198,9 @@ async def test_overlay_server_dock_activity_html() -> None:
                 assert "<!doctype html>" in body.lower()
                 assert "/ws" in body
                 assert "activity" in body.lower()
+                assert "joinTicker" in body
+                assert "append_join" in body
+                assert "giftActionText" in body
     finally:
         await srv.stop()
 
@@ -266,6 +269,29 @@ async def test_activity_overlay_ws_receives_append_patch() -> None:
                     if (
                         o2.get("op") == "patch"
                         and o2.get("patch", {}).get("append", {}).get("user") == "a"
+                    ):
+                        break
+
+                await ps.publish(
+                    "overlay:activity:main",
+                    {
+                        "append_join": {
+                            "platform": "tiktok",
+                            "kind": "join",
+                            "user": "joiner",
+                            "detail": "",
+                            "count": 1,
+                            "icon_url": "",
+                            "time": "00:00:02",
+                        }
+                    },
+                )
+                while True:
+                    m3 = await _ws_next_text(ws)
+                    o3 = json.loads(m3.data)
+                    if (
+                        o3.get("op") == "patch"
+                        and o3.get("patch", {}).get("append_join", {}).get("user") == "joiner"
                     ):
                         break
     finally:

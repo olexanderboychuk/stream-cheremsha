@@ -50,6 +50,9 @@ Local overlay server on `http://127.0.0.1:17171` — add these as OBS Browser So
 | Activity feed | `http://127.0.0.1:17171/overlay/activity?instance=main` |
 | Online / viewer count | `http://127.0.0.1:17171/overlay/online?instance=main` |
 | Actions / alerts | `http://127.0.0.1:17171/overlay/actions?instance=main` |
+| Top GIFters (TikTok) | `http://127.0.0.1:17171/overlay/top_gifters?instance=main` |
+| King of the Live (TikTok) | `http://127.0.0.1:17171/overlay/king_of_live?instance=main` |
+| Battle Royale (TikTok) | `http://127.0.0.1:17171/overlay/battle_royale?instance=main` |
 
 OBS Docks (custom browser panels inside OBS):
 
@@ -60,6 +63,18 @@ OBS Docks (custom browser panels inside OBS):
 | Online | `http://127.0.0.1:17171/dock/online` |
 
 Healthcheck: `http://127.0.0.1:17171/health`
+
+**TikTok Live Studio** does not accept `localhost` browser sources. In the **Widgets** or **Docks** tab, enable **Public URL (TikTok Live Studio)** and configure **ngrok**:
+
+1. Create a free account at [ngrok](https://dashboard.ngrok.com/signup)
+2. Copy your **authtoken** and your stable **dev domain** (`*.ngrok-free.dev`) from [dashboard.ngrok.com/domains](https://dashboard.ngrok.com/domains)
+3. Enable the tunnel in Cheremsha — widget URLs become `https://your-name.ngrok-free.dev/overlay/…` and stay the same after restarts
+
+On Windows, if the ngrok CLI is missing, the app can install it via **winget** (`Ngrok.Ngrok`).
+
+Optional **Custom URL** overrides ngrok if you run your own tunnel manually.
+
+When the tunnel is active, copied widget/dock URLs use the public `https://…` link instead of `127.0.0.1`. OBS on the same PC can still use localhost URLs.
 
 ### OBS Studio WebSocket Integration
 - Connects to **OBS WebSocket v5** (via `obsws-python`)

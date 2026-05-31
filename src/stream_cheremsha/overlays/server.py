@@ -139,6 +139,9 @@ class OverlayServer:
             raise web.HTTPBadRequest(text="invalid instance") from e
 
         params: dict[str, Any] = {"instance": instance}
+        anchor = str(req.query.get("anchor", "")).strip().lstrip("@").strip()
+        if anchor:
+            params["anchor"] = anchor
         html = t.render_html(params)
         return web.Response(text=html, content_type="text/html", charset="utf-8")
 

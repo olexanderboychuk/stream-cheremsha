@@ -84,6 +84,7 @@ class TwitchFollowEvent:
     platform: ChatPlatform
     user: str
     received_at: datetime
+    profile_picture_url: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +95,7 @@ class TwitchSubscribeEvent:
     user: str
     months: int
     received_at: datetime
+    profile_picture_url: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +107,7 @@ class TwitchResubscribeEvent:
     months: int
     message: str
     received_at: datetime
+    profile_picture_url: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +118,7 @@ class TwitchSubscriptionGiftEvent:
     user: str
     months: int
     received_at: datetime
+    profile_picture_url: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +127,7 @@ class TwitchCheerEvent:
     user: str
     bits: int
     received_at: datetime
+    profile_picture_url: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,3 +136,4 @@ class TwitchRaidEvent:
     raider: str
     viewers: int
     received_at: datetime
+    profile_picture_url: str = ""

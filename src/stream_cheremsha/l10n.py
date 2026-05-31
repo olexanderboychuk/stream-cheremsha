@@ -258,9 +258,8 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "We didn’t add this track: the lyrics are too heavy for a live stream — we won’t put that on air. Choose another one.",
     },
     "telegram.song.risky_sent_to_admin": {
-        "uk": "Трек на межі правил перевірки — я відправив запит адміністратору. Зачекай на рішення в цьому чаті.",
-        "en": "This track is borderline for the safety check — I’ve sent it to the streamer admin. "
-        "Wait here for their decision.",
+        "uk": "Трек на межі правил перевірки - зачекай на рішення в цьому чаті.",
+        "en": "This track is borderline for the safety check — Wait here for the decision.",
     },
     "telegram.song.risky_approved": {
         "uk": "✅ Адмін додав трек у чергу: <code>{video_id}</code>",
@@ -647,6 +646,26 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Налаштування віджетів (оверлеї, URL для OBS)",
         "en": "Widget settings (overlays, OBS URLs)",
     },
+    "battle.winner_music_toast": {
+        "uk": "BATTLE ROYALE: переможець {user} — може замовити 1 трек у Telegram /music",
+        "en": "BATTLE ROYALE: winner {user} — may request 1 track via Telegram /music",
+    },
+    "battle.auto_started": {
+        "uk": "BATTLE ROYALE: авто-старт — {fighters}",
+        "en": "BATTLE ROYALE: auto-start — {fighters}",
+    },
+    "battle.manual_started": {
+        "uk": "BATTLE ROYALE: бій почався — {fighters}",
+        "en": "BATTLE ROYALE: battle started — {fighters}",
+    },
+    "battle.start_failed": {
+        "uk": "BATTLE ROYALE: не вдалося стартувати (потрібно мінімум 2 різних бійці)",
+        "en": "BATTLE ROYALE: could not start (need at least 2 distinct fighters)",
+    },
+    "battle.need_second_viewer": {
+        "uk": "BATTLE ROYALE: очікуємо 2-го глядача з гіфтом ≥ {threshold} (зараз кваліфіковано: {count})",
+        "en": "BATTLE ROYALE: waiting for a 2nd viewer with gift ≥ {threshold} (qualified: {count})",
+    },
     "ui.nav_docks": {"uk": "Доки", "en": "Docks"},
     "ui.nav_docks_hint": {
         "uk": "Док-панелі для OBS (URL, мультичат)",
@@ -999,10 +1018,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "Do not speak symbols and emoji",
     },
     "audio.strip_non_alpha_hint": {
-        "uk": "Залишаються лише літери (усі підтримувані Unicode-алфавіти); цифри, розділові "
-        "знаки, емодзі та інші символи прибираються. Текст заміни після модерації OpenAI не змінюється.",
-        "en": "Only letters are kept (Unicode alphabets); digits, punctuation, emoji, and other "
-        "symbols are removed. OpenAI moderation replacement lines are left unchanged.",
+        "uk": "Залишаються лише літери та цифри; розділові знаки, емодзі, назви емодзі в "
+        "дужках ([heart]) та інші символи прибираються. Текст заміни після модерації OpenAI не змінюється.",
+        "en": "Only letters and digits are kept; punctuation, emoji, bracketed emote names "
+        "([heart]), and other symbols are removed. OpenAI moderation replacement lines are left unchanged.",
     },
     "audio.card_levels_title": {"uk": "Вихід і рівні", "en": "Output & levels"},
     "settings.ai_shield_group": {"uk": "AI Shield", "en": "AI Shield"},

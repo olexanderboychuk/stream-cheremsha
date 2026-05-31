@@ -131,12 +131,48 @@ def render_activity_dock_html() -> str:
         color: var(--muted);
       }}
       .giftIcon {{
-        width: 18px;
-        height: 18px;
+        width: 22px;
+        height: 22px;
         border-radius: 6px;
         object-fit: cover;
         border: 1px solid rgba(42,49,66,0.8);
         background: rgba(18,22,32,0.6);
+        flex-shrink: 0;
+      }}
+      .joinTicker {{
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        min-height: 44px;
+        border-top: 1px solid var(--border);
+        background: rgba(12, 15, 22, 0.92);
+        opacity: 0;
+        transform: translateY(6px);
+        transition: opacity 0.18s ease, transform 0.18s ease;
+        pointer-events: none;
+      }}
+      .joinTicker.visible {{
+        opacity: 1;
+        transform: translateY(0);
+      }}
+      .joinTicker[hidden] {{
+        display: none;
+      }}
+      .joinUser {{
+        font-weight: 700;
+        font-size: 13px;
+        color: var(--ink);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 70%;
+      }}
+      .joinVerb {{
+        font-size: 12px;
+        color: var(--muted);
+        white-space: nowrap;
       }}
     </style>
   </head>
@@ -151,6 +187,11 @@ def render_activity_dock_html() -> str:
         <button class="btn" id="jumpBtn" hidden>Jump to latest</button>
       </div>
       <div class="list" id="list"></div>
+      <div class="joinTicker" id="joinTicker" hidden>
+        <img class="platformIcon" id="joinPlatformIcon" alt="" />
+        <span class="joinUser" id="joinUser"></span>
+        <span class="joinVerb" id="joinVerb"></span>
+      </div>
     </div>
 
     <script>
@@ -202,11 +243,19 @@ def render_activity_dock_html() -> str:
         const statusEl = document.getElementById('status');
         const listEl = document.getElementById('list');
         const jumpBtn = document.getElementById('jumpBtn');
+        const joinTickerEl = document.getElementById('joinTicker');
+        const joinPlatformIconEl = document.getElementById('joinPlatformIcon');
+        const joinUserEl = document.getElementById('joinUser');
+        const joinVerbEl = document.getElementById('joinVerb');
         if (titleEl) titleEl.textContent = T.title;
         jumpBtn.textContent = T.jump;
+        if (joinVerbEl) joinVerbEl.textContent = T.join;
 
         const MAX_ITEMS = 450;
         const FOLLOW_EPS_PX = 40;
+        const JOIN_TICK_MS = 1000;
+        const joinQueue = [];
+        let joinPumpTimer = null;
 
         let follow = true;
 
@@ -240,13 +289,20 @@ def render_activity_dock_html() -> str:
           return '';
         }}
 
+        function giftActionText(detail, count) {{
+          const nm = String(detail || '').trim();
+          const c = Math.max(1, Number(count || 1));
+          if (nm) return nm + ' × ' + String(c);
+          return T.gift + ' × ' + String(c);
+        }}
+
         function actionText(kind, detail, count) {{
           const k = String(kind || '').toLowerCase();
           const c = Number(count || 0);
           if (k === 'follow') return T.follow;
           if (k === 'sub') return T.sub;
           if (k === 'resub') return T.resub;
-          if (k === 'gift') return T.gift;
+          if (k === 'gift') return giftActionText(detail, count);
           if (k === 'join') return T.join;
           if (k === 'like') return T.like(c);
           if (k === 'share') return T.share(c);
@@ -287,29 +343,77 @@ def render_activity_dock_html() -> str:
 
           const txt = document.createElement('span');
           txt.className = 'text';
+          const kindLc = String(it.kind || '').toLowerCase();
           const detail = String(it.detail || '');
-          const tail = detail ? (T.sep + detail) : '';
-          txt.textContent = actionText(it.kind, it.detail, it.count) + tail;
+          if (kindLc === 'gift') {{
+            txt.textContent = giftActionText(detail, it.count);
+          }} else {{
+            const tail = detail ? (T.sep + detail) : '';
+            txt.textContent = actionText(it.kind, detail, it.count) + tail;
+          }}
 
           line.appendChild(tm);
           line.appendChild(user);
           line.appendChild(txt);
 
           const iconUrl = String(it.icon_url || '');
-          if (iconUrl && (String(it.kind || '').toLowerCase() === 'gift')) {{
+          row.appendChild(picon);
+          if (iconUrl && kindLc === 'gift') {{
             const gi = document.createElement('img');
             gi.className = 'giftIcon';
             gi.src = iconUrl;
+            gi.alt = detail || T.gift;
             gi.loading = 'lazy';
-            row.appendChild(picon);
             row.appendChild(gi);
-          }} else {{
-            row.appendChild(picon);
           }}
 
           body.appendChild(line);
           row.appendChild(body);
           return row;
+        }}
+
+        function showJoinTicker(it) {{
+          if (!joinTickerEl || !joinUserEl) return;
+          const src = platformIconSrc(it.platform);
+          if (joinPlatformIconEl) {{
+            if (src) {{
+              joinPlatformIconEl.src = src;
+              joinPlatformIconEl.alt = String(it.platform || '');
+              joinPlatformIconEl.hidden = false;
+            }} else {{
+              joinPlatformIconEl.hidden = true;
+            }}
+          }}
+          joinUserEl.textContent = String(it.user || '').trim() || '—';
+          joinTickerEl.hidden = false;
+          joinTickerEl.classList.remove('visible');
+          requestAnimationFrame(() => joinTickerEl.classList.add('visible'));
+        }}
+
+        function hideJoinTicker() {{
+          if (!joinTickerEl) return;
+          joinTickerEl.classList.remove('visible');
+        }}
+
+        function enqueueJoin(it) {{
+          joinQueue.push(it);
+          if (joinQueue.length > 200) joinQueue.splice(0, joinQueue.length - 200);
+          if (!joinPumpTimer) pumpJoinTicker();
+        }}
+
+        function pumpJoinTicker() {{
+          if (!joinQueue.length) {{
+            joinPumpTimer = null;
+            hideJoinTicker();
+            if (joinTickerEl) joinTickerEl.hidden = true;
+            return;
+          }}
+          const it = joinQueue.shift();
+          showJoinTicker(it);
+          joinPumpTimer = setTimeout(() => {{
+            joinPumpTimer = null;
+            pumpJoinTicker();
+          }}, JOIN_TICK_MS);
         }}
 
         function renderPrepend(it) {{
@@ -410,6 +514,10 @@ def render_activity_dock_html() -> str:
             }}
             if (obj.op === 'patch') {{
               const p = obj.patch || {{}};
+              if (p.append_join) {{
+                enqueueJoin(p.append_join);
+                return;
+              }}
               if (p.append) {{
                 renderPrepend(p.append);
               }}

@@ -10,3 +10,16 @@ def test_king_of_live_overlay_url_empty_when_base_missing() -> None:
 def test_king_of_live_overlay_url_value() -> None:
     api = WidgetsQmlApi(overlay_base_url="http://127.0.0.1:17171", pubsub=OverlayPubSub())
     assert api.kingOfLiveOverlayUrl() == "http://127.0.0.1:17171/overlay/king_of_live?instance=main"
+
+
+def test_king_of_live_overlay_url_includes_anchor_from_host() -> None:
+    class _Host:
+        def current_tiktok_anchor_username(self) -> str:
+            return "@my_streamer"
+
+    api = WidgetsQmlApi(overlay_base_url="http://127.0.0.1:17171", pubsub=OverlayPubSub())
+    api.set_battle_host(_Host())
+    assert (
+        api.kingOfLiveOverlayUrl()
+        == "http://127.0.0.1:17171/overlay/king_of_live?instance=main&anchor=my_streamer"
+    )

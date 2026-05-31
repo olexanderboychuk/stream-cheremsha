@@ -6,6 +6,7 @@ from typing import Any, Protocol
 
 from stream_cheremsha.overlays.actions_overlay import ActionsOverlayType
 from stream_cheremsha.overlays.activity_overlay import ActivityOverlayType
+from stream_cheremsha.overlays.battle_royale_overlay import BattleRoyaleOverlayType
 from stream_cheremsha.overlays.chat_overlay import ChatOverlayType
 from stream_cheremsha.overlays.king_of_live_overlay import KingOfLiveOverlayType
 from stream_cheremsha.overlays.models import normalize_instance_id
@@ -130,6 +131,7 @@ class OverlayRegistry:
         self.register(TopLikersOverlayType())
         self.register(TopGiftersOverlayType())
         self.register(KingOfLiveOverlayType())
+        self.register(BattleRoyaleOverlayType())
         self.register(ActionsOverlayType())
 
     def register(self, t: OverlayType) -> None:

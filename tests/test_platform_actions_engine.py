@@ -1680,6 +1680,39 @@ def test_engine_gift_received_falls_back_to_name_when_event_missing_id(tmp_path:
     assert sink.mp3_calls == [b"x"]
 
 
+def test_engine_show_overlay_twitch_follow_includes_profile_picture() -> None:
+    async def _run() -> dict[str, object]:
+        ps = OverlayPubSub()
+        q = ps.subscribe("overlay:actions:main")
+        rules = [
+            RuleV1(
+                id="r_tw_overlay",
+                enabled=True,
+                events=({"type": "twitch_follow", "params": {"user": ""}},),
+                actions=[
+                    {
+                        "type": "show_overlay",
+                        "params": {"text": "thanks {user}", "seconds": 5},
+                    }
+                ],
+            )
+        ]
+        engine = PlatformActionsEngine(FakeSink(), rules, pubsub=ps)
+        now = datetime.now(tz=UTC)
+        await engine.on_twitch_follow(
+            "Alice",
+            now,
+            profile_picture_url="https://static-cdn.jtvnw.net/alice.png",
+        )
+        return await asyncio.wait_for(q.get(), timeout=1.0)
+
+    patch = asyncio.run(_run())
+    app = patch.get("append", {})
+    assert app["username"] == "Alice"
+    assert app["profile_picture_url"] == "https://static-cdn.jtvnw.net/alice.png"
+    assert app["platform"] == "twitch"
+
+
 def test_engine_twitch_follow_and_cheer(tmp_path: Path) -> None:
     p = tmp_path / "a.mp3"
     p.write_bytes(b"x")

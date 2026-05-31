@@ -47,3 +47,8 @@ def now_hms() -> str:
 
 def activity_append_patch(item: ActivityItem) -> dict[str, Any]:
     return {"append": item.to_dict()}
+
+
+def activity_join_ticker_patch(item: ActivityItem) -> dict[str, Any]:
+    """Bottom join ticker (TikTok viewer joins); not mixed into the main feed."""
+    return {"append_join": item.to_dict()}

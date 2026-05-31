@@ -18,11 +18,22 @@ _EVENTSUB_WS = "wss://eventsub.wss.twitch.tv/ws"
 
 
 @dataclass(frozen=True, slots=True)
+class TwitchNotifiedUser:
+    """User identity from an EventSub notification (for Helix profile lookup)."""
+
+    display_name: str
+    user_id: str = ""
+    login: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class TwitchEventSubCallbacks:
-    on_follow: Callable[[str], None] | None = None
-    on_sub: Callable[[str, str, int, str], None] | None = None  # user, type, months, message
-    on_cheer: Callable[[str, int], None] | None = None  # user, bits
-    on_raid: Callable[[str, int], None] | None = None  # from_channel, viewers
+    on_follow: Callable[[TwitchNotifiedUser], None] | None = None
+    on_sub: Callable[[TwitchNotifiedUser, str, int, str], None] | None = (
+        None  # user, type, months, msg
+    )
+    on_cheer: Callable[[TwitchNotifiedUser, int], None] | None = None  # user, bits
+    on_raid: Callable[[TwitchNotifiedUser, int], None] | None = None  # raider, viewers
     on_status: Callable[[str], None] | None = None
 
 
@@ -248,6 +259,34 @@ def _parse_eventsub_ws_message(raw: str) -> _ParsedEventSub | None:
     return None
 
 
+def _event_str(event: dict[str, Any], key: str) -> str:
+    v = event.get(key)
+    return v.strip() if isinstance(v, str) else ""
+
+
+def _notified_user(
+    event: dict[str, Any],
+    *,
+    display: str = "",
+    user_id_key: str = "user_id",
+    login_key: str = "user_login",
+) -> TwitchNotifiedUser:
+    disp = (
+        (display or "").strip()
+        or _event_str(event, "user_name")
+        or _event_str(event, "gifter_name")
+        or _event_str(event, "from_broadcaster_user_name")
+        or _event_str(event, "user_login")
+        or _event_str(event, "gifter_user_login")
+        or _event_str(event, "from_broadcaster_user_login")
+    )
+    return TwitchNotifiedUser(
+        display_name=disp or "?",
+        user_id=_event_str(event, user_id_key),
+        login=_event_str(event, login_key),
+    )
+
+
 def _dispatch_notification(
     sub_type: str | None,
     event: dict[str, Any] | None,
@@ -257,9 +296,9 @@ def _dispatch_notification(
         return
 
     if sub_type == "channel.follow":
-        u = event.get("user_name")
-        if isinstance(u, str) and cb.on_follow is not None:
-            cb.on_follow(u)
+        tu = _notified_user(event)
+        if tu.display_name != "?" and cb.on_follow is not None:
+            cb.on_follow(tu)
         return
 
     if sub_type in (
@@ -267,10 +306,14 @@ def _dispatch_notification(
         "channel.subscription.gift",
         "channel.subscription.message",
     ):
-        user = (
-            event.get("user_name") or event.get("gifter_name") or event.get("recipient_user_name")
-        )
-        user_s = user if isinstance(user, str) else "?"
+        if sub_type == "channel.subscription.gift":
+            tu = _notified_user(
+                event,
+                user_id_key="gifter_user_id",
+                login_key="gifter_user_login",
+            )
+        else:
+            tu = _notified_user(event)
         st = "sub"
         if sub_type == "channel.subscription.gift":
             st = "gift"
@@ -286,19 +329,23 @@ def _dispatch_notification(
                 if isinstance(tx, str):
                     msg_text = tx
         if cb.on_sub is not None:
-            cb.on_sub(user_s, st, m, msg_text)
+            cb.on_sub(tu, st, m, msg_text)
         return
 
     if sub_type == "channel.cheer":
-        u = event.get("user_name")
+        tu = _notified_user(event)
         bits = event.get("bits")
-        if isinstance(u, str) and isinstance(bits, int) and cb.on_cheer is not None:
-            cb.on_cheer(u, bits)
+        if tu.display_name != "?" and isinstance(bits, int) and cb.on_cheer is not None:
+            cb.on_cheer(tu, bits)
         return
 
     if sub_type == "channel.raid":
-        frm = event.get("from_broadcaster_user_name")
+        tu = _notified_user(
+            event,
+            user_id_key="from_broadcaster_user_id",
+            login_key="from_broadcaster_user_login",
+        )
         viewers = event.get("viewers")
-        if isinstance(frm, str) and isinstance(viewers, int) and cb.on_raid is not None:
-            cb.on_raid(frm, viewers)
+        if tu.display_name != "?" and isinstance(viewers, int) and cb.on_raid is not None:
+            cb.on_raid(tu, viewers)
         return

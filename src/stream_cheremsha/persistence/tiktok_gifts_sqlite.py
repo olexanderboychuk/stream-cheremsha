@@ -268,27 +268,50 @@ def append_tiktok_gift_event(
             conn.close()
 
 
+def normalize_anchor_username(value: str) -> str:
+    """Normalize TikTok live host handle (same rules as ``TikTokChatSource.start()``)."""
+    return (value or "").strip().lstrip("@").strip()
+
+
 def fetch_all_time_gifter_totals(
     *,
     limit: int = 10,
+    anchor_username: str | None = None,
     db_path: Path | None = None,
 ) -> list[dict[str, Any]]:
-    """Return top gifters by sum of ``diamonds_total`` across all stored streams.
+    """Return top gifters by sum of ``diamonds_total`` across stored streams.
 
     Rows are ordered by total diamonds descending. Only rows with a non-empty
     ``sender_user_key`` participate (same key used for session overlays).
+
+    When ``anchor_username`` is omitted (``None``), totals include every stream host.
+    When it is provided (including ``""``), only gifts for that host are counted;
+    an empty normalized anchor yields no rows.
     """
     lim = max(1, min(50, int(limit)))
+    anchor_filter: str | None
+    if anchor_username is None:
+        anchor_filter = None
+    else:
+        anchor_filter = normalize_anchor_username(anchor_username)
+        if not anchor_filter:
+            return []
     path = db_path if db_path is not None else tiktok_gifts_db_path()
     if not path.is_file():
         return []
     out: list[dict[str, Any]] = []
+    anchor_clause = ""
+    sql_args: list[Any] = []
+    if anchor_filter is not None:
+        anchor_clause = " AND LOWER(TRIM(g.anchor_username)) = LOWER(?) "
+        sql_args.append(anchor_filter)
+    sql_args.append(lim)
     with _LOCK:
         conn = sqlite3.connect(str(path), timeout=60.0)
         try:
             _ensure_schema(conn)
             cur = conn.execute(
-                """
+                f"""
                 SELECT
                     TRIM(g.sender_user_key) AS sender_user_key,
                     SUM(g.diamonds_total) AS diamonds,
@@ -309,12 +332,13 @@ def fetch_all_time_gifter_totals(
                 FROM tiktok_gifts g
                 LEFT JOIN tiktok_users u ON u.stable_key = g.sender_user_key
                 WHERE LENGTH(TRIM(COALESCE(g.sender_user_key, ''))) > 0
+                {anchor_clause}
                 GROUP BY TRIM(g.sender_user_key)
                 HAVING SUM(g.diamonds_total) > 0
                 ORDER BY diamonds DESC, display_name COLLATE NOCASE ASC
                 LIMIT ?
                 """,
-                (lim,),
+                tuple(sql_args),
             )
             for row in cur.fetchall():
                 key_s = str(row[0] or "").strip()

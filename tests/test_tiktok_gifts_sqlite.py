@@ -118,6 +118,39 @@ def test_same_stable_key_reuses_user_row(tmp_path: Path) -> None:
         conn.close()
 
 
+def test_fetch_all_time_gifter_totals_filters_by_anchor(tmp_path: Path) -> None:
+    db = tmp_path / "anchor.sqlite"
+    when = datetime(2026, 3, 1, tzinfo=UTC)
+    for anchor, sk, total in (
+        ("host_a", "u1", 100),
+        ("host_a", "u2", 300),
+        ("host_b", "u1", 900),
+    ):
+        mod.append_tiktok_gift_event(
+            anchor_username=anchor,
+            received_at=when,
+            sender_display=sk,
+            sender_user_key=sk,
+            gift_id="1",
+            gift_name="g",
+            gift_count=1,
+            diamond_each=total,
+            diamonds_total=total,
+            gift_icon_url="",
+            sender_avatar_url="",
+            raw_json="{}",
+            tiktok_user_bundle_json="{}",
+            db_path=db,
+        )
+    host_a = mod.fetch_all_time_gifter_totals(limit=10, anchor_username="host_a", db_path=db)
+    assert [r["key"] for r in host_a] == ["u2", "u1"]
+    assert mod.fetch_all_time_gifter_totals(limit=10, anchor_username="", db_path=db) == []
+    assert (
+        mod.fetch_all_time_gifter_totals(limit=10, anchor_username="@Host_A", db_path=db)[0]["key"]
+        == "u2"
+    )
+
+
 def test_fetch_all_time_gifter_totals_orders_by_diamonds(tmp_path: Path) -> None:
     db = tmp_path / "rank.sqlite"
     when = datetime(2026, 3, 1, tzinfo=UTC)

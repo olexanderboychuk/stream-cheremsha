@@ -96,6 +96,10 @@ class ChatOverlayType:
       .msg {{ margin: 0 0 8px 0; padding: 8px 10px; border-radius: 10px; display:flex; }}
       .msg {{ gap:6px; align-items: baseline; }}
       .author {{ font-weight: 700; margin-right: 6px; }}
+      .author.vip-gold {{
+        color: #fde68a !important;
+        text-shadow: 0 0 10px rgba(250,204,21,0.85), 0 0 18px rgba(234,179,8,0.55);
+      }}
       .picon {{ width: 18px; height: 18px; display:inline-flex; flex:0 0 auto; }}
       .picon {{ align-items:center; justify-content:center; }}
       .pimg {{ width: 18px; height: 18px; display:block; opacity: 0.92; }}
@@ -275,8 +279,8 @@ class ChatOverlayType:
             }}
 
             const a = document.createElement('span');
-            a.className = 'author';
-            a.style.color = usernameColor(it);
+            a.className = 'author' + (it.vip_gold ? ' vip-gold' : '');
+            if (!it.vip_gold) a.style.color = usernameColor(it);
             a.textContent = (it.author || '—') + ':';
             row.appendChild(a);
 

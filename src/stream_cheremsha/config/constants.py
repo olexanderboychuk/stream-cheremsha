@@ -18,10 +18,14 @@ KEY_GROQ_API_KEY = "groq_api_key"
 # Older builds stored a Gemini key here; still read if KEY_GROQ_API_KEY is unset.
 KEY_LEGACY_GEMINI_API_KEY = "gemini_api_key"
 KEY_OPENAI_API_KEY = "openai_api_key"
+KEY_NGROK_AUTHTOKEN = "ngrok_authtoken"
 SETTINGS_OBS_WS_HOST = "obs/websocket_host"
 SETTINGS_OBS_WS_PORT = "obs/websocket_port"
 # When false, the app does not open OBS WebSocket connections (no scene pickers, no actions).
 SETTINGS_OBS_WS_ENABLED = "obs/websocket_enabled"
+SETTINGS_OVERLAY_TUNNEL_ENABLED = "overlay/tunnel_enabled"
+SETTINGS_OVERLAY_TUNNEL_CUSTOM_URL = "overlay/tunnel_custom_url"
+SETTINGS_OVERLAY_NGROK_DOMAIN = "overlay/ngrok_domain"
 
 # Public (non-secret) build/run-time overrides.
 # Example (PowerShell): $env:STREAM_CHEREMSHA_TWITCH_CLIENT_ID="..."

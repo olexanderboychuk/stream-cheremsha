@@ -332,7 +332,38 @@ class MusicPlayer:
     async def _kill_mpv(self) -> None:
         async with self._mpv_lock:
             self._stop_mpv_reader_locked()
-            await self._kill_mpv_locked()
+            p = self._mpv_proc
+            fw = self._mpv_pipe_w
+            ipc = self._mpv_ipc
+            if p is None:
+                return
+            if p.returncode is not None:
+                self._mpv_proc = None
+                self._mpv_ipc = ""
+                return
+
+        # Never hold _mpv_lock across IPC or proc.wait — _mpv_send also needs the lock.
+        try:
+            if ipc and fw is not None:
+                await self._mpv_write(fw, {"command": ["quit"]})
+            self._status(f"Music: stopping mpv (pid={p.pid})")
+            p.terminate()
+        except ProcessLookupError:
+            return
+        try:
+            await asyncio.wait_for(p.wait(), timeout=2.0)
+        except TimeoutError:
+            try:
+                p.kill()
+            except ProcessLookupError:
+                return
+            await asyncio.gather(p.wait(), return_exceptions=True)
+        finally:
+            self._status("Music: mpv stopped")
+            async with self._mpv_lock:
+                if self._mpv_proc is p:
+                    self._mpv_proc = None
+                    self._mpv_ipc = ""
 
     def _stop_mpv_reader_locked(self) -> None:
         t = self._mpv_reader_task
@@ -364,39 +395,6 @@ class MusicPlayer:
         except asyncio.QueueEmpty:
             pass
         self._mpv_proc_exited.clear()
-
-    async def _kill_mpv_locked(self) -> None:
-        """Kill current mpv process. Caller must hold ``_mpv_lock``."""
-        p = self._mpv_proc
-        if p is None:
-            return
-        if p.returncode is not None:
-            # Already exited; just clear refs.
-            if self._mpv_proc is p:
-                self._mpv_proc = None
-                self._mpv_ipc = ""
-            return
-        try:
-            # Ask mpv to quit gracefully (best-effort).
-            if self._mpv_ipc:
-                await self._mpv_send({"command": ["quit"]})
-            self._status(f"Music: stopping mpv (pid={p.pid})")
-            p.terminate()
-        except ProcessLookupError:
-            return
-        try:
-            await asyncio.wait_for(p.wait(), timeout=2.0)
-        except TimeoutError:
-            try:
-                p.kill()
-            except ProcessLookupError:
-                return
-            await asyncio.gather(p.wait(), return_exceptions=True)
-        finally:
-            self._status("Music: mpv stopped")
-            if self._mpv_proc is p:
-                self._mpv_proc = None
-                self._mpv_ipc = ""
 
     async def _ensure_mpv_running(self) -> bool:
         async with self._mpv_lock:
@@ -601,6 +599,9 @@ class MusicPlayer:
         while time.monotonic() < deadline:
             if self._mpv_proc_exited.is_set():
                 return {"event": "proc-exit"}
+            proc = self._mpv_proc
+            if proc is not None and proc.returncode is not None:
+                return {"event": "proc-exit"}
             remaining = max(0.01, deadline - time.monotonic())
             try:
                 msg = await asyncio.wait_for(self._mpv_events.get(), timeout=remaining)
@@ -776,12 +777,8 @@ class MusicPlayer:
         return False
 
     async def _mpv_send(self, obj: dict[str, object]) -> bool:
-        path = self._mpv_ipc
-        if not path:
+        if not self._mpv_ipc:
             return False
-
-        raw = (json.dumps(obj) + "\n").encode("utf-8")
-        # Never block the event loop on pipe I/O; do it in a worker thread.
         async with self._mpv_lock:
             fw = self._mpv_pipe_w
             p = self._mpv_proc
@@ -789,6 +786,10 @@ class MusicPlayer:
                 return False
         if fw is None:
             return False
+        return await self._mpv_write(fw, obj)
+
+    async def _mpv_write(self, fw: BinaryIO, obj: dict[str, object]) -> bool:
+        raw = (json.dumps(obj) + "\n").encode("utf-8")
 
         def _write() -> None:
             fw.write(raw)
