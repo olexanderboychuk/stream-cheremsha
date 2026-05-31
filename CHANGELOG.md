@@ -4,11 +4,29 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.4.0] — 2026-05-15
+## [0.5.0] — 2026-05-31
 
 ### Added
 
 - **Battle Royale** TikTok overlay: event PvP by gifts (HP, crit hits, timer, fatality FX), manual/auto start from Widgets, hall of fame on KING overlay, VIP gold chat nick for winners.
+- Overlay tunnel: ngrok integration for public overlay URLs (install, domain config, QML API).
+- Twitch EventSub/Helix: profile picture handling for chat and overlay display.
+- Battle Royale wins persistence (SQLite) and expanded TikTok gifts catalog support.
+
+### Changed
+
+- Dependencies: `pyngrok` for overlay tunnel support.
+- Activity dock, YouTube discovery, TTS sanitization, and actions engine updates for Battle Royale flow.
+- README: overlay URL and ngrok configuration instructions.
+
+### Fixed
+
+- Windows: suppress console window flash for `ffprobe` and `mpv` subprocesses during audio playback.
+
+## [0.4.0] — 2026-05-15
+
+### Added
+
 - MusicBrainz integration to screen artists linked to Russia during song requests (Telegram / moderation flow).
 - Actions: cross-platform keystroke simulation (`pynput`, Windows `interception-python`).
 - TikTok chat source: stable user identification key for downstream logic.
@@ -78,6 +96,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Comment and formatting consistency in several modules after merging PR #5.
 
+[0.5.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.1.8...v0.2.0
