@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.0] — 2026-06-12
+
+### Added
+
+- qasync-safe asyncio helpers (`asyncio_qt.py`) to prevent task re-entry issues in the Qt event loop.
+- Runtime diagnostics (`diagnostics/runtime.py`) for asyncio and thread failures, with optional heavy diagnostics.
+- Overlay UI locale helper (`ui_locale.py`) for localized overlay strings.
+- Tests for asyncio helpers, runtime diagnostics, and audio backend.
+
+### Changed
+
+- Battle Royale and King of Live overlays: localization support.
+- Main window: asyncio/Qt integration and error-handling improvements.
+
 ## [0.5.0] — 2026-05-31
 
 ### Added
@@ -96,6 +110,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Comment and formatting consistency in several modules after merging PR #5.
 
+[0.6.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.2.0...v0.3.0
