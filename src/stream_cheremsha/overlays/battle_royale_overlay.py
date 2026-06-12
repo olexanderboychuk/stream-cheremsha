@@ -9,6 +9,7 @@ from stream_cheremsha.overlays.battle_royale_overlay_config import (
     load_battle_royale_overlay_config,
 )
 from stream_cheremsha.overlays.models import normalize_instance_id
+from stream_cheremsha.overlays.ui_locale import load_ui_locale
 
 
 def _json_for_script(value: Any) -> str:
@@ -350,7 +351,7 @@ class BattleRoyaleOverlayType:
       <div class="stars"></div>
       <div class="hdr">
         <div id="hdrMain" class="hdr-main">BATTLE ROYALE</div>
-        <div class="hdr-sub">THE DONOR DUEL</div>
+        <div id="hdrSub" class="hdr-sub">THE DONOR DUEL</div>
       </div>
       <div id="stage" class="stage" style="display:none"></div>
       <div id="hint" class="hint"></div>
@@ -360,6 +361,7 @@ class BattleRoyaleOverlayType:
       (function() {{
         const root = document.getElementById('root');
         const hdrMain = document.getElementById('hdrMain');
+        const hdrSub = document.getElementById('hdrSub');
         const stage = document.getElementById('stage');
         const hintEl = document.getElementById('hint');
         const infoPanel = document.getElementById('infoPanel');
@@ -394,6 +396,38 @@ class BattleRoyaleOverlayType:
           return hpA / Math.max(1, hpA + hpB);
         }}
         function animOn(k) {{ return !cfg || cfg[k] !== false; }}
+        function L() {{
+          const uk = String((cfg && cfg.ui_locale) || 'uk') !== 'en';
+          return uk ? {{
+            sub: 'ДУЕЛЬ ДОНАТЕРІВ',
+            support: 'ПІДТРИМКА',
+            challenger1: 'БОЄЦЬ 1',
+            challenger2: 'БОЄЦЬ 2',
+            donated: 'ДОНАТ',
+            wins: 'Перемоги',
+            rank: 'Ранг',
+            lastAttack: 'ОСТАННЯ АТАКА: ',
+            duelLive: 'ДУЕЛЬ ТРИВАЄ',
+            fight: 'БІЙ!',
+            koWins: (nick) => 'K.O. — перемагає ' + nick,
+            waiting: (thr) => '\\u26A1 Очікування дуелі: 2 різні глядачі \\u2265 ' + thr + ' \\uD83D\\uDC8E',
+            pressStart: 'Натисніть «Старт» у Віджетах Cheremsha',
+          }} : {{
+            sub: 'THE DONOR DUEL',
+            support: 'SUPPORT',
+            challenger1: 'CHALLENGER 1',
+            challenger2: 'CHALLENGER 2',
+            donated: 'DONATED',
+            wins: 'Wins',
+            rank: 'Rank',
+            lastAttack: 'LAST ATTACK: ',
+            duelLive: 'DUEL LIVE',
+            fight: 'FIGHT!',
+            koWins: (nick) => 'K.O. — ' + nick + ' WINS',
+            waiting: (thr) => '\\u26A1 Waiting for a duel: 2 different viewers \\u2265 ' + thr + ' \\uD83D\\uDC8E',
+            pressStart: 'Press "Start" in Cheremsha Widgets',
+          }};
+        }}
         function sfxVol() {{
           return cfg && cfg.sfx_volume_pct != null ? Math.max(0, Math.min(1, cfg.sfx_volume_pct/100)) : 0.8;
         }}
@@ -428,6 +462,7 @@ class BattleRoyaleOverlayType:
           root.style.fontSize = px + 'px';
           root.style.setProperty('--bfont', cfg.font_family || 'Rajdhani, system-ui');
           hdrMain.textContent = String(cfg.title_text || 'BATTLE ROYALE').toUpperCase();
+          hdrSub.textContent = L().sub;
         }}
         function escAttr(s) {{
           return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -444,7 +479,7 @@ class BattleRoyaleOverlayType:
               + '" title="' + title + '" alt="" />';
           }}
           if (!icons) return '';
-          return '<div class="support-gifts"><div class="support-label">\u041f\u0406\u0414\u0422\u0420\u0418\u041c\u041a\u0410</div>'
+          return '<div class="support-gifts"><div class="support-label">' + L().support + '</div>'
             + '<div class="gift-row">' + icons + '</div></div>';
         }}
         function buildCard(f, side, label, avSize) {{
@@ -463,10 +498,10 @@ class BattleRoyaleOverlayType:
             + '<div class="hp-label">HP: ' + (f.hp|0) + '/' + (f.max_hp|0) + '</div>'
             + '<div class="hp-wrap"><div class="hp-fill" style="width:' + pct + '%"></div></div>'
             + giftsHtml
-            + '<div class="donated">DONATED: ' + fmtNum(f.session_donated|0) + ' \\uD83D\\uDC8E</div>'
+            + '<div class="donated">' + L().donated + ': ' + fmtNum(f.session_donated|0) + ' \\uD83D\\uDC8E</div>'
             + '<div class="card-foot">'
             + '<span>\\uD83C\\uDFC6 ' + wins + '</span>'
-            + '<span>Rank: ' + rankTxt + '</span>'
+            + '<span>' + L().rank + ': ' + rankTxt + '</span>'
             + '</div></div>';
         }}
         function spawnDmgPop(dmg) {{
@@ -487,17 +522,17 @@ class BattleRoyaleOverlayType:
           infoPanel.style.display = 'block';
           let html = '';
           if (lastAttack && lastAttack.damage > 0) {{
-            html += '<div class="row"><span class="label">LAST ATTACK: </span>'
+            html += '<div class="row"><span class="label">' + L().lastAttack + '</span>'
               + '<span class="val">' + nickAt({{user: lastAttack.attacker}}) + ' (' + (lastAttack.amount|0) + ' \\uD83D\\uDC8E)</span></div>';
             html += '<div class="row"><span class="label"></span>'
               + '<span class="dmg">' + nickAt({{user: lastAttack.target}}) + ': -' + (lastAttack.damage|0) + ' HP</span></div>';
           }} else {{
-            html += '<div class="row"><span class="label">DUEL LIVE</span></div>';
+            html += '<div class="row"><span class="label">' + L().duelLive + '</span></div>';
           }}
           html += '<div class="row"><span class="label">' + nickAt(fighters[0]) + ' </span>'
-            + '<span class="val">Wins ' + (fighters[0].wins|0) + ' \\u2022 Rank ' + ((fighters[0].rank|0) || '\\u2014') + '</span></div>';
+            + '<span class="val">' + L().wins + ' ' + (fighters[0].wins|0) + ' \\u2022 ' + L().rank + ' ' + ((fighters[0].rank|0) || '\\u2014') + '</span></div>';
           html += '<div class="row"><span class="label">' + nickAt(fighters[1]) + ' </span>'
-            + '<span class="val">Wins ' + (fighters[1].wins|0) + ' \\u2022 Rank ' + ((fighters[1].rank|0) || '\\u2014') + '</span></div>';
+            + '<span class="val">' + L().wins + ' ' + (fighters[1].wins|0) + ' \\u2022 ' + L().rank + ' ' + ((fighters[1].rank|0) || '\\u2014') + '</span></div>';
           infoPanel.innerHTML = html;
         }}
         function renderDuel() {{
@@ -508,7 +543,7 @@ class BattleRoyaleOverlayType:
           const beamScaleL = 0.45 + power * 0.55;
           const beamScaleR = 0.45 + (1 - power) * 0.55;
 
-          let html = buildCard(fighters[0], 'left', 'CHALLENGER 1', avSize);
+          let html = buildCard(fighters[0], 'left', L().challenger1, avSize);
           html += '<div class="center">';
           if (phase === 'active' || phase === 'victory') {{
             html += '<div class="timer">' + fmtTime(timerRemaining) + '</div>';
@@ -520,7 +555,7 @@ class BattleRoyaleOverlayType:
             + '</div>'
             + '<div class="tug"><div class="tug-fill" style="width:' + leftW + '%"></div></div>'
             + '</div>';
-          html += buildCard(fighters[1], 'right', 'CHALLENGER 2', avSize);
+          html += buildCard(fighters[1], 'right', L().challenger2, avSize);
           stage.innerHTML = html;
           stage.querySelectorAll('.avatar').forEach(img => {{
             img.onerror = () => {{ img.style.visibility = 'hidden'; }};
@@ -548,9 +583,7 @@ class BattleRoyaleOverlayType:
             hintEl.style.display = 'block';
             const thr = cfg && cfg.auto_threshold_each != null ? cfg.auto_threshold_each : 100;
             const autoOn = !cfg || cfg.auto_arm_enabled !== false;
-            let t = autoOn
-              ? ('\\u26A1 Очікування дуелі: 2 різні глядачі \\u2265 ' + thr + ' \\uD83D\\uDC8E')
-              : 'Натисніть «Старт» у Віджетах Cheremsha';
+            let t = autoOn ? L().waiting(thr) : L().pressStart;
             if (autoOn && autoArmCandidates === 1) t += ' (1/2)';
             hintEl.textContent = t;
             return;
@@ -563,7 +596,7 @@ class BattleRoyaleOverlayType:
             infoPanel.style.display = 'none';
             const co = document.createElement('div');
             co.className = 'countdown-overlay';
-            co.textContent = countdownRemaining > 0 ? String(countdownRemaining) : 'FIGHT!';
+            co.textContent = countdownRemaining > 0 ? String(countdownRemaining) : L().fight;
             root.appendChild(co);
             return;
           }}
@@ -591,7 +624,7 @@ class BattleRoyaleOverlayType:
           if (phase === 'victory' && winner) {{
             const vb = document.createElement('div');
             vb.className = 'victory-banner';
-            vb.textContent = 'K.O. — ' + nickAt(winner) + ' WINS';
+            vb.textContent = L().koWins(nickAt(winner));
             root.appendChild(vb);
             playTone(440, 130);
           }}
@@ -653,8 +686,10 @@ class BattleRoyaleOverlayType:
     def initial_state(self, params: dict[str, Any]) -> dict[str, Any]:
         _ = normalize_instance_id(str(params.get("instance") or ""))
         cfg = load_battle_royale_overlay_config()
+        cfg_payload = json.loads(battle_royale_overlay_config_to_json_text(cfg))
+        cfg_payload["ui_locale"] = load_ui_locale()
         return {
-            "config": json.loads(battle_royale_overlay_config_to_json_text(cfg)),
+            "config": cfg_payload,
             "phase": "idle",
             "fighters": [],
             "timer_remaining_s": 0,

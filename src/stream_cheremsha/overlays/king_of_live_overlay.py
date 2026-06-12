@@ -9,6 +9,7 @@ from stream_cheremsha.overlays.king_of_live_overlay_config import (
     load_king_of_live_overlay_config,
 )
 from stream_cheremsha.overlays.models import normalize_instance_id
+from stream_cheremsha.overlays.ui_locale import load_ui_locale
 from stream_cheremsha.persistence.battle_royale_wins_sqlite import fetch_hall_of_fame
 from stream_cheremsha.persistence.tiktok_gifts_sqlite import fetch_all_time_gifter_totals
 
@@ -296,6 +297,23 @@ class KingOfLiveOverlayType:
 
         const app = document.getElementById('app');
 
+        function L() {{
+          const uk = String((cfg && cfg.ui_locale) || 'uk') !== 'en';
+          return uk ? {{
+            empty: 'Ще немає короля подарунків',
+            toCrown: 'До корони: ',
+            viewer: 'Глядач',
+            ofRecord: '% від рекорду',
+            hall: 'ЗАЛ СЛАВИ',
+          }} : {{
+            empty: 'No gift king yet',
+            toCrown: 'To the crown: ',
+            viewer: 'Viewer',
+            ofRecord: '% of the record',
+            hall: 'HALL OF FAME',
+          }};
+        }}
+
         function animCfg(k) {{
           if (!cfg) return true;
           const v = cfg[k];
@@ -463,7 +481,7 @@ class KingOfLiveOverlayType:
             if (animCfg('anim_coins_fall')) ensureCoins();
             const haloE = document.createElement('div'); haloE.className='halo';
             maybeAppendBlurBubble(haloE);
-            const e = document.createElement('div'); e.className='empty'; e.textContent = 'Ще немає короля подарунків';
+            const e = document.createElement('div'); e.className='empty'; e.textContent = L().empty;
             haloE.appendChild(e);
             app.appendChild(haloE);
             applyRootShell();
@@ -523,7 +541,7 @@ class KingOfLiveOverlayType:
 
           if (showGap && gapDiamonds > 0 && runnerUpUser) {{
             const g = document.createElement('div'); g.className='gapstrip';
-            g.textContent = 'До корони: ' + fmtDiamonds(gapDiamonds) + ' \\uD83D\\uDC8E (' + runnerUpUser + ')';
+            g.textContent = L().toCrown + fmtDiamonds(gapDiamonds) + ' \\uD83D\\uDC8E (' + runnerUpUser + ')';
             stage.appendChild(g);
           }}
 
@@ -532,7 +550,7 @@ class KingOfLiveOverlayType:
             hofWrap.className = 'hall-of-fame';
             const lbl = document.createElement('span');
             lbl.className = 'hof-label';
-            lbl.textContent = 'HALL';
+            lbl.textContent = L().hall;
             hofWrap.appendChild(lbl);
             for (let hi = 0; hi < hallOfFame.length && hi < 5; hi++) {{
               const ent = hallOfFame[hi];
@@ -554,7 +572,7 @@ class KingOfLiveOverlayType:
             bw.appendChild(b);
             stage.appendChild(bw);
             const lab = document.createElement('div'); lab.className='gapstrip';
-            lab.textContent = (challenger && challenger.user ? challenger.user : 'Глядач') + ' — ' + pct + '% від рекорду';
+            lab.textContent = (challenger && challenger.user ? challenger.user : L().viewer) + ' — ' + pct + L().ofRecord;
             stage.appendChild(lab);
           }}
 
@@ -645,8 +663,10 @@ class KingOfLiveOverlayType:
         if king and runner and str(king.get("key")) != str(runner.get("key")):
             gap = max(0, int(king.get("diamonds") or 0) - int(runner.get("diamonds") or 0))
             runner_name = str(runner.get("user") or "")
+        cfg_payload = json.loads(king_of_live_overlay_config_to_json_text(cfg))
+        cfg_payload["ui_locale"] = load_ui_locale()
         return {
-            "config": json.loads(king_of_live_overlay_config_to_json_text(cfg)),
+            "config": cfg_payload,
             "king": king,
             "gap_diamonds": gap,
             "runner_up_user": runner_name,

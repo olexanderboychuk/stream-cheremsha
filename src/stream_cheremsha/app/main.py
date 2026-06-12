@@ -14,6 +14,7 @@ from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtWidgets import QApplication
 from qasync import QEventLoop
 
+from stream_cheremsha.diagnostics.runtime import install_runtime_diagnostics
 from stream_cheremsha.paths import stream_cheremsha_root
 from stream_cheremsha.ui.main_window import MainWindow
 
@@ -103,6 +104,7 @@ def main() -> None:
 
     loop = QEventLoop(app)
     asyncio.set_event_loop(loop)
+    install_runtime_diagnostics(app, loop)
     # Ensure qasync loop stops when Qt is quitting, otherwise the Python process can linger.
     app.aboutToQuit.connect(loop.stop)
 

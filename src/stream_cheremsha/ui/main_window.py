@@ -522,6 +522,9 @@ class MainWindow(FramelessWindow):
     _IX_DOCKS = 7
     _IX_ACTIONS = 8
     _IX_MUSIC = 9
+    _QML_STACK_INDICES = frozenset(
+        {_IX_CONN, _IX_DONATIONS, _IX_WIDGETS, _IX_DOCKS, _IX_ACTIONS},
+    )
 
     @staticmethod
     def _external_link_label(html: str) -> QLabel:
@@ -684,6 +687,8 @@ class MainWindow(FramelessWindow):
         self._battle_tick_timer = QTimer(self)
         self._battle_tick_timer.setInterval(1000)
         self._battle_tick_timer.timeout.connect(self._on_battle_tick)
+        self._qml_pages_loaded: set[int] = set()
+        self._active_qml_stack_index: int | None = None
         self._tiktok_username = QLineEdit()
         self._obs_ws_host = QLineEdit()
         self._obs_ws_port = QLineEdit()
@@ -755,35 +760,8 @@ class MainWindow(FramelessWindow):
         QTimer.singleShot(0, self._apply_windows_animation_if_possible)
 
     def _apply_windows_animation_if_possible(self) -> None:
-        if os.name != "nt":
-            return
-        h = int(self.winId())
-        if h == 0:
-            return
-        try:
-            import win32con  # type: ignore[import-not-found]
-            import win32gui  # type: ignore[import-not-found]
-        except ImportError:
-            return
-
-        # qframelesswindow already has windowEffect; re-apply to ensure styles are set.
-        try:
-            self.windowEffect.addWindowAnimation(h)  # type: ignore[attr-defined]
-        except AttributeError:
-            return
-
-        win32gui.SetWindowPos(
-            h,
-            None,
-            0,
-            0,
-            0,
-            0,
-            win32con.SWP_NOMOVE
-            | win32con.SWP_NOSIZE
-            | win32con.SWP_NOZORDER
-            | win32con.SWP_FRAMECHANGED,
-        )
+        # Disabled: native win32 frameless hooks have caused qasync access violations on idle.
+        return
 
     def _get_locale(self) -> str:
         return self._locale
@@ -892,71 +870,31 @@ class MainWindow(FramelessWindow):
         qml_p = _qml_path("ConnectionsView.qml")
         if not qml_p.is_file():
             logger.error("QML not found: %s", qml_p)
-        ctx_conn = self._qml_conn.engine().rootContext()
-        ctx_conn.setContextProperty("api", self._qml_api)
-        ctx_conn.setContextProperty("tiktokAnalytics", self._tiktok_analytics)
-        ctx_conn.setContextProperty("twitchAnalytics", self._twitch_analytics)
-        ctx_conn.setContextProperty("youtubeAnalytics", self._youtube_analytics)
+        self._bind_qml_context_properties(self._IX_CONN)
         self._qml_conn.setSource(QUrl.fromLocalFile(str(qml_p)))
+        self._qml_pages_loaded.add(self._IX_CONN)
+        self._active_qml_stack_index = self._IX_CONN
 
         self._donations_qml_api = DonationsQmlApi(self)
         self._qml_donations = QQuickWidget(self)
         self._qml_donations.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
         self._qml_donations.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._qml_donations.setClearColor(QColor(10, 11, 14))
-        qml_don = _qml_path("DonationsView.qml")
-        if not qml_don.is_file():
-            logger.error("QML not found: %s", qml_don)
-        don_ctx = self._qml_donations.engine().rootContext()
-        don_ctx.setContextProperty("donApi", self._donations_qml_api)
-        self._qml_donations.setSource(QUrl.fromLocalFile(str(qml_don)))
-
         self._widgets_qml_api = WidgetsQmlApi(pubsub=self._overlay_server.pubsub())
         self._overlay_tunnel_qml_api = OverlayTunnelQmlApi(self)
         self._qml_widgets = QQuickWidget(self)
         self._qml_widgets.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
         self._qml_widgets.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._qml_widgets.setClearColor(QColor(10, 11, 14))
-        qml_widgets = _qml_path("WidgetsView.qml")
-        if not qml_widgets.is_file():
-            logger.error("QML not found: %s", qml_widgets)
-        wctx = self._qml_widgets.engine().rootContext()
-        wctx.setContextProperty("api", self._widgets_qml_api)
-        wctx.setContextProperty("tunnelApi", self._overlay_tunnel_qml_api)
-        wctx.setContextProperty("navApi", self._qml_api)
-        self._qml_widgets.setSource(QUrl.fromLocalFile(str(qml_widgets)))
-
         self._docks_qml_api = DocksQmlApi()
         self._qml_docks = QQuickWidget(self)
         self._qml_docks.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
         self._qml_docks.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._qml_docks.setClearColor(QColor(10, 11, 14))
-        qml_docks = _qml_path("DocksView.qml")
-        if not qml_docks.is_file():
-            logger.error("QML not found: %s", qml_docks)
-        dctx = self._qml_docks.engine().rootContext()
-        dctx.setContextProperty("dockApi", self._docks_qml_api)
-        dctx.setContextProperty("tunnelApi", self._overlay_tunnel_qml_api)
-        dctx.setContextProperty("navApi", self._qml_api)
-        self._qml_docks.setSource(QUrl.fromLocalFile(str(qml_docks)))
-
         self._qml_actions = QQuickWidget(self)
         self._qml_actions.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
         self._qml_actions.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._qml_actions.setClearColor(QColor(10, 11, 14))
-        qml_actions_p = _qml_path("ActionsView.qml")
-        if not qml_actions_p.is_file():
-            logger.error("QML not found: %s", qml_actions_p)
-        act_ctx = self._qml_actions.engine().rootContext()
-        act_ctx.setContextProperty("api", self._qml_api)
-        act_ctx.setContextProperty("actApi", self._actions_qml_api)
-        act_ctx.setContextProperty("navApi", self._qml_api)
-        self._qml_actions.setSource(QUrl.fromLocalFile(str(qml_actions_p)))
-        ro_actions = self._qml_actions.rootObject()
-        if ro_actions is not None:
-            ro_actions.setProperty("platform", "tiktok")
-            ro_actions.setProperty("accountKey", constants.TIKTOK_ACTIONS_ACCOUNT_KEY)
-
         root = QVBoxLayout(self)
         root.setSpacing(0)
         # qframelesswindow title bar is drawn on top of the client area
@@ -1171,9 +1109,129 @@ class MainWindow(FramelessWindow):
         else:
             self.showMaximized()
 
+    def _qml_widget_for_stack_index(self, index: int) -> QQuickWidget | None:
+        attr = {
+            self._IX_CONN: "_qml_conn",
+            self._IX_DONATIONS: "_qml_donations",
+            self._IX_WIDGETS: "_qml_widgets",
+            self._IX_DOCKS: "_qml_docks",
+            self._IX_ACTIONS: "_qml_actions",
+        }.get(index)
+        if attr is None:
+            return None
+        return getattr(self, attr, None)
+
+    def _bind_qml_context_properties(self, index: int) -> None:
+        """Each QQuickWidget must have its own context properties (never share QQmlEngine)."""
+        widget = self._qml_widget_for_stack_index(index)
+        if widget is None:
+            return
+        ctx = widget.rootContext()
+        if index == self._IX_CONN:
+            ctx.setContextProperty("api", self._qml_api)
+            ctx.setContextProperty("tiktokAnalytics", self._tiktok_analytics)
+            ctx.setContextProperty("twitchAnalytics", self._twitch_analytics)
+            ctx.setContextProperty("youtubeAnalytics", self._youtube_analytics)
+        elif index == self._IX_DONATIONS:
+            ctx.setContextProperty("donApi", self._donations_qml_api)
+        elif index == self._IX_WIDGETS:
+            ctx.setContextProperty("api", self._widgets_qml_api)
+            ctx.setContextProperty("tunnelApi", self._overlay_tunnel_qml_api)
+            ctx.setContextProperty("navApi", self._qml_api)
+        elif index == self._IX_DOCKS:
+            ctx.setContextProperty("dockApi", self._docks_qml_api)
+            ctx.setContextProperty("tunnelApi", self._overlay_tunnel_qml_api)
+            ctx.setContextProperty("navApi", self._qml_api)
+        elif index == self._IX_ACTIONS:
+            ctx.setContextProperty("api", self._qml_api)
+            ctx.setContextProperty("actApi", self._actions_qml_api)
+            ctx.setContextProperty("navApi", self._qml_api)
+
+    def _load_qml_page(self, index: int) -> None:
+        """Instantiate one QML tab (each QQuickWidget has its own QQmlEngine/context)."""
+        if index in self._qml_pages_loaded:
+            return
+        widget = self._qml_widget_for_stack_index(index)
+        if widget is None:
+            return
+        if index == self._IX_CONN:
+            qml_path = _qml_path("ConnectionsView.qml")
+        elif index == self._IX_DONATIONS:
+            qml_path = _qml_path("DonationsView.qml")
+        elif index == self._IX_WIDGETS:
+            qml_path = _qml_path("WidgetsView.qml")
+        elif index == self._IX_DOCKS:
+            qml_path = _qml_path("DocksView.qml")
+        elif index == self._IX_ACTIONS:
+            qml_path = _qml_path("ActionsView.qml")
+        else:
+            return
+        if not qml_path.is_file():
+            logger.error("QML not found: %s", qml_path)
+            return
+        self._bind_qml_context_properties(index)
+        widget.setSource(QUrl.fromLocalFile(str(qml_path)))
+        if index == self._IX_ACTIONS:
+            ro_actions = widget.rootObject()
+            if ro_actions is not None:
+                ro_actions.setProperty("platform", "tiktok")
+                ro_actions.setProperty("accountKey", constants.TIKTOK_ACTIONS_ACCOUNT_KEY)
+        elif index == self._IX_WIDGETS:
+            try:
+                local_url = self._overlay_server.base_url() or ""
+            except RuntimeError:
+                local_url = ""
+            self._apply_overlay_urls_to_qml(local_url=local_url)
+        self._qml_pages_loaded.add(index)
+
+    def _unload_qml_page(self, index: int) -> None:
+        """Drop the QML scene for a tab; Python APIs keep working while the tab is away."""
+        if index not in self._qml_pages_loaded:
+            return
+        widget = self._qml_widget_for_stack_index(index)
+        if widget is None:
+            return
+        widget.setSource(QUrl())
+        self._qml_pages_loaded.discard(index)
+
+    def _sync_qml_stack_visibility(self, stack_index: int) -> None:
+        """Keep a single QQuickWidget scene alive — hidden tabs must not run in parallel."""
+        qml_index = stack_index if stack_index in self._QML_STACK_INDICES else None
+        prev = self._active_qml_stack_index
+        if prev == qml_index:
+            if qml_index is not None:
+                self._load_qml_page(qml_index)
+            return
+        if prev is not None:
+            self._unload_qml_page(prev)
+        self._active_qml_stack_index = qml_index
+        if qml_index is not None:
+            self._load_qml_page(qml_index)
+
+    async def _warm_qml_page_cache(self) -> None:
+        """Compile every QML tab once after startup, then leave only the visible scene loaded."""
+        for index in (
+            self._IX_DONATIONS,
+            self._IX_WIDGETS,
+            self._IX_DOCKS,
+            self._IX_ACTIONS,
+        ):
+            if self._closing:
+                return
+            self._load_qml_page(index)
+            await asyncio.sleep(0)
+        current = self._stack.currentIndex()
+        for index in list(self._qml_pages_loaded):
+            if index != current:
+                self._unload_qml_page(index)
+        self._active_qml_stack_index = current if current in self._QML_STACK_INDICES else None
+        if self._active_qml_stack_index is not None:
+            self._load_qml_page(self._active_qml_stack_index)
+
     def _set_main_page(self, index: int) -> None:
         if not hasattr(self, "_stack") or not (0 <= index < self._stack.count()):
             return
+        self._sync_qml_stack_visibility(index)
         self._stack.setCurrentIndex(index)
 
     def _sync_footer_nav(self, _index: int = 0) -> None:
@@ -1205,6 +1263,14 @@ class MainWindow(FramelessWindow):
                 b.style().unpolish(b)
                 b.style().polish(b)
                 b.update()
+        music_timer = getattr(self, "_music_refresh_timer", None)
+        if music_timer is not None:
+            if on_music:
+                if not music_timer.isActive():
+                    music_timer.start()
+                self._refresh_music_tab()
+            else:
+                music_timer.stop()
 
     def _apply_in_app_chrome_texts(self) -> None:
         if hasattr(self, "titleBar") and hasattr(self.titleBar, "settingsBtn"):
@@ -1873,15 +1939,24 @@ class MainWindow(FramelessWindow):
         dlg.addButton(self._tr("updates.btn_not_now"), QMessageBox.ButtonRole.RejectRole)
         dlg.setDefaultButton(btn_update)
 
-        cb_ignore = QCheckBox(self._tr("updates.ignore_this_version"))
+        # Parent the checkbox to the dialog at construction: PySide6 setCheckBox() does not
+        # transfer ownership, so a parentless checkbox is deleted with its Python wrapper
+        # while the (C++-owned) dialog lingers — the next theme/style change then rebuilds
+        # the dialog layout with a dangling pointer and crashes natively (access violation).
+        cb_ignore = QCheckBox(self._tr("updates.ignore_this_version"), dlg)
         dlg.setCheckBox(cb_ignore)
 
-        await async_dialog_code(dlg)
-        clicked = dlg.clickedButton()
-        if clicked != btn_update:
-            if cb_ignore.isChecked():
-                self._settings.setValue(_SETTINGS_UPDATES_IGNORED_VERSION, latest)
-            return
+        try:
+            await async_dialog_code(dlg)
+            clicked = dlg.clickedButton()
+            if clicked != btn_update:
+                if cb_ignore.isChecked():
+                    self._settings.setValue(_SETTINGS_UPDATES_IGNORED_VERSION, latest)
+                return
+        finally:
+            # Destroy the dialog instead of leaving a hidden child of MainWindow that keeps
+            # receiving change events for the rest of the session.
+            dlg.deleteLater()
 
         win = manifest.platforms.windows
         if win is None:
@@ -2029,8 +2104,15 @@ class MainWindow(FramelessWindow):
             return
         if getattr(self, "_music_refresh_inflight", False):
             return
+        loop = self._asyncio_loop
+        if loop is None:
+            return
         self._music_refresh_inflight = True
-        asyncio.ensure_future(self._refresh_music_tab_async())
+
+        def _start() -> None:
+            asyncio.ensure_future(self._refresh_music_tab_async())
+
+        loop.call_soon(_start)
 
     async def _refresh_music_tab_async(self) -> None:
         try:
@@ -2334,6 +2416,8 @@ class MainWindow(FramelessWindow):
         self._retranslate_ui()
         self._refresh_footer()
         self._refresh_connection_panels()
+        self._schedule_king_overlay_publish()
+        self._schedule_battle_overlay_publish()
 
     def _retranslate_ui(self) -> None:
         self.setWindowTitle(self._tr("app.window_title"))
@@ -2540,9 +2624,8 @@ class MainWindow(FramelessWindow):
         lay.addLayout(controls)
 
         self._music_refresh_timer = QTimer(self)
+        self._music_refresh_timer.setInterval(2000)
         self._music_refresh_timer.timeout.connect(self._refresh_music_tab)
-        self._music_refresh_timer.start(700)
-        self._refresh_music_tab()
         self._apply_music_tab_texts()
         return w
 
@@ -3818,8 +3901,10 @@ class MainWindow(FramelessWindow):
         thr_pct = max(50, min(99, int(cfg.danger_threshold_pct)))
         throne_danger = bool(challenger and best_ratio * 100.0 >= float(thr_pct))
 
+        cfg_payload = json.loads(king_of_live_overlay_config_to_json_text(cfg))
+        cfg_payload["ui_locale"] = self._locale
         patch: dict[str, Any] = {
-            "config": json.loads(king_of_live_overlay_config_to_json_text(cfg)),
+            "config": cfg_payload,
             "king": king,
             "gap_diamonds": gap,
             "runner_up_user": runner_name,
@@ -3924,7 +4009,9 @@ class MainWindow(FramelessWindow):
     def _build_battle_overlay_patch(self) -> dict[str, Any]:
         cfg = load_battle_royale_overlay_config()
         patch = self._battle_controller.overlay_patch()
-        patch["config"] = json.loads(battle_royale_overlay_config_to_json_text(cfg))
+        cfg_payload = json.loads(battle_royale_overlay_config_to_json_text(cfg))
+        cfg_payload["ui_locale"] = self._locale
+        patch["config"] = cfg_payload
         return patch
 
     def _publish_battle_overlay_patch_sync(self) -> None:
@@ -4443,11 +4530,6 @@ class MainWindow(FramelessWindow):
         self._set_main_page(self._IX_WIDGETS)
 
     def open_actions(self) -> None:
-        if getattr(self, "_qml_actions", None) is not None:
-            root = self._qml_actions.rootObject()
-            if root is not None:
-                root.setProperty("platform", "tiktok")
-                root.setProperty("accountKey", constants.TIKTOK_ACTIONS_ACCOUNT_KEY)
         self._set_main_page(self._IX_ACTIONS)
         self._qml_api.refresh()
 
@@ -5069,6 +5151,7 @@ class MainWindow(FramelessWindow):
                     self._check_for_updates(interactive=False),
                     name="updates-startup-check",
                 )
+            await self._warm_qml_page_cache()
         finally:
             self.startup_finished.emit()
 
@@ -5366,10 +5449,7 @@ class MainWindow(FramelessWindow):
                         },
                         "updated_at": online_now_hms(),
                     }
-                    t = asyncio.create_task(
-                        ps.publish("overlay:online:main", online_state_patch(state)),  # type: ignore[arg-type]
-                    )
-                    t.add_done_callback(lambda _t: _t.exception())
+                    await ps.publish("overlay:online:main", online_state_patch(state))  # type: ignore[arg-type]
             except asyncio.CancelledError:
                 raise
             except RuntimeError:
