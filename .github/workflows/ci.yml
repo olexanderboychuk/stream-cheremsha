@@ -15,6 +15,11 @@ jobs:
 
       - name: Install system libraries (PySide6)
         run: |
+          for repo in /etc/apt/sources.list.d/*microsoft* /etc/apt/sources.list.d/*azure*; do
+            if [ -e "$repo" ]; then
+              sudo mv "$repo" "${repo}.disabled"
+            fi
+          done
           sudo apt-get update
           sudo apt-get install -y libegl1 libgl1 libpulse0 libxkbcommon0 libxcb-cursor0
 
