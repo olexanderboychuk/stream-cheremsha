@@ -64,15 +64,47 @@ OBS Docks (custom browser panels inside OBS):
 
 Healthcheck: `http://127.0.0.1:17171/health`
 
-**TikTok Live Studio** does not accept `localhost` browser sources. In the **Widgets** or **Docks** tab, enable **Public URL (TikTok Live Studio)** and configure **ngrok**:
+**TikTok Live Studio** does not accept `localhost` browser sources. In the **Widgets** tab, enable **Public URL (TikTok Live Studio)** and choose a provider:
+
+#### Cloudflare Tunnel (recommended, free, no browser warning)
+
+Configure **once** in the Cloudflare dashboard; use the **same tunnel token** on every PC.
+
+1. Add your domain to [Cloudflare DNS](https://dash.cloudflare.com/)
+2. [Zero Trust → Networks → Tunnels](https://one.dash.cloudflare.com/) → **Create a tunnel** → **Cloudflared**
+3. Add a **Public Hostname** route:
+   - **Subdomain:** e.g. `widgets`
+   - **Domain:** your domain
+   - **Service:** `http://127.0.0.1:17171`
+4. Copy the **tunnel token** from **Install connector**
+5. In Cheremsha → **Widgets** → enable Public URL → **Cloudflare Tunnel**
+6. Enter **hostname** (`widgets.your-domain.com`) and paste the **tunnel token**
+
+On another PC: install Cheremsha, enable Cloudflare Tunnel — **cloudflared installs automatically via winget** if missing.
+
+**Build-time embedding (Nuitka):** set env vars before `cheremsha-build` — values are compiled into the `.exe` (extractable; use a dedicated tunnel token):
+
+```powershell
+$env:STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_TOKEN = "eyJ..."
+$env:STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_HOSTNAME = "widgets.your-domain.com"
+cheremsha-build
+```
+
+At runtime the app resolves token/hostname in order: **UI keyring** → **process env** → **build embed**. GitHub Release CI reads the same env names from repository secrets.
+
+On Windows, Cheremsha **auto-installs cloudflared via winget** (`Cloudflare.cloudflared`) when you enable Cloudflare Tunnel. ngrok still asks for confirmation before winget install.
+
+#### ngrok (alternative)
 
 1. Create a free account at [ngrok](https://dashboard.ngrok.com/signup)
-2. Copy your **authtoken** and your stable **dev domain** (`*.ngrok-free.dev`) from [dashboard.ngrok.com/domains](https://dashboard.ngrok.com/domains)
-3. Enable the tunnel in Cheremsha — widget URLs become `https://your-name.ngrok-free.dev/overlay/…` and stay the same after restarts
+2. Copy your **authtoken** and stable **dev domain** (`*.ngrok-free.dev`) from [dashboard.ngrok.com/domains](https://dashboard.ngrok.com/domains)
+3. Select **ngrok** in Cheremsha — widget URLs become `https://your-name.ngrok-free.dev/overlay/…`
 
-On Windows, if the ngrok CLI is missing, the app can install it via **winget** (`Ngrok.Ngrok`).
+Free ngrok shows a **Visit Site** interstitial in browsers; Cloudflare does not.
 
-Optional **Custom URL** overrides ngrok if you run your own tunnel manually.
+#### Custom URL
+
+Select **Свій URL** if you already run your own public HTTPS endpoint (reverse proxy, VPS, etc.). Cheremsha only uses the URL in widget links — it does not start a tunnel.
 
 When the tunnel is active, copied widget/dock URLs use the public `https://…` link instead of `127.0.0.1`. OBS on the same PC can still use localhost URLs.
 
@@ -205,6 +237,14 @@ python -m stream_cheremsha.profile_memory
 
 ```bash
 pip install -e ".[build]"
+cheremsha-build
+```
+
+Optional Cloudflare tunnel defaults (compiled into the binary when set during build):
+
+```powershell
+$env:STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_TOKEN = "eyJ..."
+$env:STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_HOSTNAME = "widgets.example.com"
 cheremsha-build
 ```
 

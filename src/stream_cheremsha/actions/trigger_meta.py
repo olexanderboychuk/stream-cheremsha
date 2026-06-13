@@ -23,6 +23,8 @@ def default_trigger_platform_for_event_type(event_type: str) -> str:
         return "all"
     if t.startswith("twitch_"):
         return "twitch"
+    if t.startswith("youtube_"):
+        return "youtube"
     return "tiktok"
 
 
@@ -57,6 +59,11 @@ def trigger_platform_applies_to_tiktok_likes(ev_blob: Mapping[str, Any]) -> bool
 def trigger_platform_applies_to_twitch_channel_events(ev_blob: Mapping[str, Any]) -> bool:
     tp = trigger_platform_effective(ev_blob)
     return tp in frozenset({"all", "twitch"})
+
+
+def trigger_platform_applies_to_youtube_channel_events(ev_blob: Mapping[str, Any]) -> bool:
+    tp = trigger_platform_effective(ev_blob)
+    return tp in frozenset({"all", "youtube"})
 
 
 def chat_platform_for_preview(trigger_platform: str, *, store_platform: str) -> ChatPlatform:

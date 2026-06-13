@@ -1739,3 +1739,138 @@ def test_engine_twitch_follow_and_cheer(tmp_path: Path) -> None:
     assert sink.mp3_calls == [b"x"]
     asyncio.run(engine.on_twitch_cheer("bob", 100, now))
     assert sink.mp3_calls == [b"x", b"x"]
+
+
+def test_engine_youtube_superchat_min_amount(tmp_path: Path) -> None:
+    p = tmp_path / "a.mp3"
+    p.write_bytes(b"x")
+    sink = FakeSink()
+    rules = [
+        RuleV1(
+            id="r_yt_sc",
+            enabled=True,
+            events=(
+                {
+                    "type": "youtube_superchat",
+                    "params": {"min_amount": 5, "user": ""},
+                    "platform": "youtube",
+                },
+            ),
+            actions=[{"type": "play_sound", "params": {"file_path": str(p)}}],
+        ),
+    ]
+    engine = PlatformActionsEngine(sink, rules)
+    now = datetime.now(tz=UTC)
+    # $2.00 (2_000_000 micros) is below the $5 threshold -> no fire.
+    asyncio.run(engine.on_youtube_superchat("ann", 2_000_000, "USD", "$2.00", "hi", now))
+    assert sink.mp3_calls == []
+    # $5.00 reaches the threshold -> fires.
+    asyncio.run(engine.on_youtube_superchat("ann", 5_000_000, "USD", "$5.00", "hi", now))
+    assert sink.mp3_calls == [b"x"]
+
+
+def test_engine_youtube_supersticker_user_filter(tmp_path: Path) -> None:
+    p = tmp_path / "a.mp3"
+    p.write_bytes(b"x")
+    sink = FakeSink()
+    rules = [
+        RuleV1(
+            id="r_yt_ss",
+            enabled=True,
+            events=(
+                {
+                    "type": "youtube_supersticker",
+                    "params": {"min_amount": 0, "user": "vip"},
+                    "platform": "youtube",
+                },
+            ),
+            actions=[{"type": "play_sound", "params": {"file_path": str(p)}}],
+        ),
+    ]
+    engine = PlatformActionsEngine(sink, rules)
+    now = datetime.now(tz=UTC)
+    asyncio.run(engine.on_youtube_supersticker("someone", 1_000_000, "USD", "$1.00", now))
+    assert sink.mp3_calls == []
+    asyncio.run(engine.on_youtube_supersticker("vip", 1_000_000, "USD", "$1.00", now))
+    assert sink.mp3_calls == [b"x"]
+
+
+def test_engine_youtube_member_dispatches(tmp_path: Path) -> None:
+    p = tmp_path / "a.mp3"
+    p.write_bytes(b"x")
+    sink = FakeSink()
+    rules = [
+        RuleV1(
+            id="r_yt_member",
+            enabled=True,
+            events=({"type": "youtube_member", "params": {"user": ""}, "platform": "youtube"},),
+            actions=[{"type": "play_sound", "params": {"file_path": str(p)}}],
+        ),
+    ]
+    engine = PlatformActionsEngine(sink, rules)
+    now = datetime.now(tz=UTC)
+    asyncio.run(engine.on_youtube_member("newbie", 0, "Member", now))
+    assert sink.mp3_calls == [b"x"]
+
+
+def test_engine_youtube_trigger_ignored_for_twitch_platform(tmp_path: Path) -> None:
+    """A youtube_member trigger pinned to twitch must not fire for a YouTube member event."""
+    p = tmp_path / "a.mp3"
+    p.write_bytes(b"x")
+    sink = FakeSink()
+    rules = [
+        RuleV1(
+            id="r_yt_wrong_plat",
+            enabled=True,
+            events=({"type": "youtube_member", "params": {"user": ""}, "platform": "twitch"},),
+            actions=[{"type": "play_sound", "params": {"file_path": str(p)}}],
+        ),
+    ]
+    engine = PlatformActionsEngine(sink, rules)
+    now = datetime.now(tz=UTC)
+    asyncio.run(engine.on_youtube_member("newbie", 0, "Member", now))
+    assert sink.mp3_calls == []
+
+
+def test_engine_show_overlay_youtube_superchat_includes_profile_picture() -> None:
+    async def _run() -> dict[str, object]:
+        ps = OverlayPubSub()
+        q = ps.subscribe("overlay:actions:main")
+        rules = [
+            RuleV1(
+                id="r_yt_overlay",
+                enabled=True,
+                events=(
+                    {
+                        "type": "youtube_superchat",
+                        "params": {"min_amount": 0, "user": ""},
+                        "platform": "youtube",
+                    },
+                ),
+                actions=[
+                    {
+                        "type": "show_overlay",
+                        "params": {"text": "thanks {user} for {amount}", "seconds": 5},
+                    }
+                ],
+            )
+        ]
+        engine = PlatformActionsEngine(FakeSink(), rules, pubsub=ps)
+        now = datetime.now(tz=UTC)
+        await engine.on_youtube_superchat(
+            "Alice",
+            5_000_000,
+            "USD",
+            "$5.00",
+            "great stream",
+            now,
+            profile_picture_url="https://yt3.ggpht.com/alice.png",
+        )
+        return await asyncio.wait_for(q.get(), timeout=1.0)
+
+    patch_msg = asyncio.run(_run())
+    app = patch_msg.get("append", {})
+    assert app["username"] == "Alice"
+    assert app["text"] == "thanks Alice for $5.00"
+    assert app["profile_picture_url"] == "https://yt3.ggpht.com/alice.png"
+    assert app["platform"] == "youtube"

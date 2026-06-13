@@ -77,6 +77,7 @@ class WindowsPlatform:
 @dataclass(frozen=True, slots=True)
 class LinuxPlatform:
     releases_url: str
+    appimage: FileAsset | None
 
     @staticmethod
     def from_obj(obj: Any, *, path: str) -> LinuxPlatform:
@@ -85,7 +86,13 @@ class LinuxPlatform:
             d.get("releases_url"),
             path=f"{path}.releases_url",
         )
-        return LinuxPlatform(releases_url=releases_url)
+        appimage_obj = d.get("appimage")
+        appimage = (
+            None
+            if appimage_obj is None
+            else FileAsset.from_obj(appimage_obj, path=f"{path}.appimage")
+        )
+        return LinuxPlatform(releases_url=releases_url, appimage=appimage)
 
 
 @dataclass(frozen=True, slots=True)

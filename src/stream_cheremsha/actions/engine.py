@@ -32,6 +32,9 @@ from stream_cheremsha.actions.events import (
     TwitchResubscribeEvent,
     TwitchSubscribeEvent,
     TwitchSubscriptionGiftEvent,
+    YouTubeMemberEvent,
+    YouTubeSuperChatEvent,
+    YouTubeSuperStickerEvent,
 )
 from stream_cheremsha.actions.models import RuleV1
 from stream_cheremsha.actions.registry import match_chat_keyword
@@ -41,6 +44,7 @@ from stream_cheremsha.actions.trigger_meta import (
     trigger_platform_applies_to_gift,
     trigger_platform_applies_to_tiktok_likes,
     trigger_platform_applies_to_twitch_channel_events,
+    trigger_platform_applies_to_youtube_channel_events,
 )
 from stream_cheremsha.config.constants import MAX_MESSAGE_CHARS
 from stream_cheremsha.domain.models import ChatPlatform
@@ -277,6 +281,43 @@ def _twitch_raid_trigger_matches(
     if not _tiktok_simple_user_matches(params.get("user", ""), raider):
         return False
     return int(viewers) >= min_v
+
+
+def _micros_to_major(amount_micros: int) -> float:
+    """YouTube tip amounts are in currency micros (1 unit = 1_000_000 micros)."""
+    try:
+        return max(0, int(amount_micros)) / 1_000_000.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _youtube_amount_trigger_matches(
+    ev_blob: Mapping[str, Any],
+    *,
+    expected_type: str,
+    rule_id: str,
+    status: StatusCallback,
+    actual_user: str,
+    amount_micros: int,
+) -> bool:
+    """Match a YouTube tip trigger (superchat/supersticker) by optional user and min amount."""
+    if ev_blob.get("type") != expected_type:
+        return False
+    params: Any = ev_blob.get("params")
+    if not isinstance(params, dict):
+        status(f"Rule {rule_id}: event.params must be an object")
+        return False
+    min_amount_raw = params.get("min_amount", 0)
+    try:
+        min_amount = float(str(min_amount_raw).replace(",", "."))
+    except (TypeError, ValueError):
+        status(f"Rule {rule_id}: min_amount must be a number")
+        return False
+    if min_amount < 0:
+        min_amount = 0.0
+    if not _tiktok_simple_user_matches(params.get("user", ""), actual_user):
+        return False
+    return _micros_to_major(amount_micros) >= min_amount
 
 
 def _tiktok_share_trigger_matches(
@@ -938,6 +979,140 @@ class PlatformActionsEngine:
             )
             await self._dispatch_actions(rule, ev)
 
+    async def on_youtube_superchat(
+        self,
+        user: str,
+        amount_micros: int,
+        currency: str,
+        amount_display: str,
+        message: str,
+        received_at: datetime,
+        *,
+        profile_picture_url: str = "",
+    ) -> None:
+        u = (user or "").strip()
+        try:
+            micros = max(0, int(amount_micros))
+        except (TypeError, ValueError):
+            micros = 0
+        for rule in self._rules:
+            if not rule.enabled:
+                continue
+            matched = False
+            for ev_blob in rule.events:
+                if not trigger_platform_applies_to_youtube_channel_events(ev_blob):
+                    continue
+                if _youtube_amount_trigger_matches(
+                    ev_blob,
+                    expected_type="youtube_superchat",
+                    rule_id=rule.id,
+                    status=self._status_callback,
+                    actual_user=u,
+                    amount_micros=micros,
+                ):
+                    matched = True
+                    break
+            if not matched:
+                continue
+            ev = YouTubeSuperChatEvent(
+                platform=ChatPlatform.YOUTUBE,
+                user=u,
+                amount_micros=micros,
+                currency=(currency or "").strip(),
+                amount_display=(amount_display or "").strip(),
+                message=(message or "").strip(),
+                received_at=received_at,
+                profile_picture_url=(profile_picture_url or "").strip(),
+            )
+            await self._dispatch_actions(rule, ev)
+
+    async def on_youtube_supersticker(
+        self,
+        user: str,
+        amount_micros: int,
+        currency: str,
+        amount_display: str,
+        received_at: datetime,
+        *,
+        profile_picture_url: str = "",
+    ) -> None:
+        u = (user or "").strip()
+        try:
+            micros = max(0, int(amount_micros))
+        except (TypeError, ValueError):
+            micros = 0
+        for rule in self._rules:
+            if not rule.enabled:
+                continue
+            matched = False
+            for ev_blob in rule.events:
+                if not trigger_platform_applies_to_youtube_channel_events(ev_blob):
+                    continue
+                if _youtube_amount_trigger_matches(
+                    ev_blob,
+                    expected_type="youtube_supersticker",
+                    rule_id=rule.id,
+                    status=self._status_callback,
+                    actual_user=u,
+                    amount_micros=micros,
+                ):
+                    matched = True
+                    break
+            if not matched:
+                continue
+            ev = YouTubeSuperStickerEvent(
+                platform=ChatPlatform.YOUTUBE,
+                user=u,
+                amount_micros=micros,
+                currency=(currency or "").strip(),
+                amount_display=(amount_display or "").strip(),
+                received_at=received_at,
+                profile_picture_url=(profile_picture_url or "").strip(),
+            )
+            await self._dispatch_actions(rule, ev)
+
+    async def on_youtube_member(
+        self,
+        user: str,
+        months: int,
+        level: str,
+        received_at: datetime,
+        *,
+        profile_picture_url: str = "",
+    ) -> None:
+        u = (user or "").strip()
+        try:
+            mo = max(0, int(months))
+        except (TypeError, ValueError):
+            mo = 0
+        for rule in self._rules:
+            if not rule.enabled:
+                continue
+            matched = False
+            for ev_blob in rule.events:
+                if not trigger_platform_applies_to_youtube_channel_events(ev_blob):
+                    continue
+                if _tiktok_simple_user_trigger_matches(
+                    ev_blob,
+                    expected_type="youtube_member",
+                    rule_id=rule.id,
+                    status=self._status_callback,
+                    actual_user=u,
+                ):
+                    matched = True
+                    break
+            if not matched:
+                continue
+            ev = YouTubeMemberEvent(
+                platform=ChatPlatform.YOUTUBE,
+                user=u,
+                months=mo,
+                level=(level or "").strip(),
+                received_at=received_at,
+                profile_picture_url=(profile_picture_url or "").strip(),
+            )
+            await self._dispatch_actions(rule, ev)
+
     async def on_chat_message(self, ev: ChatMessageEvent) -> None:
         if ev.platform == ChatPlatform.TIKTOK:
             await self._maybe_dispatch_tiktok_first_activity(
@@ -1449,6 +1624,9 @@ class PlatformActionsEngine:
                             TwitchSubscriptionGiftEvent,
                             TwitchCheerEvent,
                             TwitchRaidEvent,
+                            YouTubeSuperChatEvent,
+                            YouTubeSuperStickerEvent,
+                            YouTubeMemberEvent,
                         ),
                     ):
                         profile_picture_url = str(

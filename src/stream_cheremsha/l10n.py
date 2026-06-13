@@ -388,11 +388,27 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     },
     "actions.event.twitch_cheer": {"uk": "Біти / cheer (Twitch)", "en": "Bits / cheer (Twitch)"},
     "actions.event.twitch_raid": {"uk": "Рейд (Twitch)", "en": "Raid (Twitch)"},
+    "actions.event.youtube_superchat": {
+        "uk": "Super Chat (YouTube)",
+        "en": "Super Chat (YouTube)",
+    },
+    "actions.event.youtube_supersticker": {
+        "uk": "Super Sticker (YouTube)",
+        "en": "Super Sticker (YouTube)",
+    },
+    "actions.event.youtube_member": {
+        "uk": "Новий учасник (YouTube)",
+        "en": "New member (YouTube)",
+    },
     "actions.twitch_min_bits": {"uk": "Мін. бітів", "en": "Min bits"},
     "actions.twitch_min_viewers": {"uk": "Мін. глядачів у рейді", "en": "Min raid viewers"},
     "actions.twitch_raider_filter": {
         "uk": "Канал рейдера (опційно)",
         "en": "Raider channel (optional)",
+    },
+    "actions.youtube_min_amount": {
+        "uk": "Мін. сума доната",
+        "en": "Min donation amount",
     },
     "actions.likes_min_count": {
         "uk": "Кількість лайків для спрацювання",

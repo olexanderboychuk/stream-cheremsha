@@ -969,26 +969,26 @@ Item {
         }
     }
 
-    // Same pill toggle look as ConnectionsView.qml `ConnMainSwitch`.
-    component ConnToggleSwitch: Switch {
-        id: toggleSw
+    // Same preference toggle as ConnectionsView.qml `ConnPrefSwitch`.
+    component ConnPrefSwitch: Switch {
+        id: prefSw
         padding: 0
         implicitWidth: 46
         implicitHeight: 24
         focusPolicy: Qt.NoFocus
         hoverEnabled: true
         transformOrigin: Item.Right
-        scale: toggleSw.hovered ? 1.06 : 1.0
+        scale: prefSw.hovered ? 1.06 : 1.0
         Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
         indicator: Rectangle {
-            width: toggleSw.implicitWidth
-            height: toggleSw.implicitHeight
+            width: prefSw.implicitWidth
+            height: prefSw.implicitHeight
             radius: 12
-            color: toggleSw.checked ? "#16a34a" : "#dc2626"
+            color: prefSw.checked ? "#134e4a" : "#252d3d"
             border.width: 1
-            border.color: toggleSw.checked ? "#22c55e" : "#ef4444"
-            opacity: toggleSw.enabled ? 1.0 : 0.55
+            border.color: prefSw.checked ? "#14b8a6" : "#3b4a63"
+            opacity: prefSw.enabled ? 1.0 : 0.55
             Behavior on color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
             Behavior on border.color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
@@ -997,11 +997,13 @@ Item {
                 height: 18
                 radius: 9
                 y: 3
-                x: toggleSw.checked ? (parent.width - width - 3) : 3
-                color: "#0b0f17"
+                x: prefSw.checked ? (parent.width - width - 3) : 3
+                color: prefSw.checked ? "#e8eaed" : "#52607a"
                 border.width: 1
-                border.color: "#1f2937"
+                border.color: prefSw.checked ? "#cbd5e1" : "#3d4a60"
                 Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                Behavior on color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                Behavior on border.color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
             }
         }
 
@@ -1160,7 +1162,7 @@ Item {
                     }
                 }
 
-                ConnToggleSwitch {
+                ConnPrefSwitch {
                     Layout.alignment: Qt.AlignTop
                     Layout.topMargin: 2
                     checked: ruleObj ? !!ruleObj.enabled : false
@@ -1751,10 +1753,11 @@ Item {
     component ConnComboBox: ComboBox {
         id: cb
         hoverEnabled: true
+        focusPolicy: Qt.NoFocus
         font.pixelSize: 13
         padding: 10
         contentItem: Text {
-            text: cb.displayText
+            text: cb.editable ? (cb.editText || "") : cb.displayText
             color: root.ink
             font.pixelSize: cb.font.pixelSize
             verticalAlignment: Text.AlignVCenter
@@ -1767,7 +1770,9 @@ Item {
             border.color: cb.hovered ? "#3b4458" : root.cardEdge
         }
         delegate: ItemDelegate {
+            required property int index
             width: ListView.view ? ListView.view.width : implicitWidth
+            implicitHeight: 34
             contentItem: Text {
                 text: cb.textRole ? (modelData[cb.textRole] || "") : (modelData || "")
                 color: root.ink
@@ -1778,6 +1783,88 @@ Item {
                 radius: 6
                 color: highlighted ? "#1a2232" : "#111827"
             }
+        }
+        popup: Popup {
+            y: cb.height
+            width: cb.width
+            implicitHeight: contentItem.implicitHeight
+            padding: 4
+            contentItem: ListView {
+                clip: true
+                implicitHeight: contentHeight
+                model: cb.popup.visible ? cb.delegateModel : null
+                currentIndex: cb.highlightedIndex
+                ScrollIndicator.vertical: ScrollIndicator { }
+            }
+            background: Rectangle {
+                radius: 8
+                color: "#111827"
+                border.width: 1
+                border.color: root.cardEdge
+            }
+        }
+    }
+
+    component ConnCheckBox: CheckBox {
+        id: chk
+        spacing: 8
+        font.pixelSize: 13
+        indicator: Rectangle {
+            implicitWidth: 18
+            implicitHeight: 18
+            x: chk.leftPadding
+            y: parent.height / 2 - height / 2
+            radius: 4
+            color: chk.down ? "#1a2232" : (chk.checked ? "#134e4a" : root.fieldBg)
+            border.width: 1
+            border.color: chk.checked ? "#14b8a6" : (chk.hovered ? "#3b4458" : root.cardEdge)
+            Text {
+                anchors.centerIn: parent
+                text: "✓"
+                font.pixelSize: 11
+                font.bold: true
+                color: root.ink
+                visible: chk.checked
+            }
+        }
+        contentItem: Text {
+            text: chk.text
+            font: chk.font
+            opacity: chk.enabled ? 1.0 : 0.55
+            color: root.ink
+            verticalAlignment: Text.AlignVCenter
+            leftPadding: chk.indicator.width + chk.spacing
+        }
+    }
+
+    component ConnSlider: Slider {
+        id: sl
+        implicitHeight: 28
+        background: Rectangle {
+            x: sl.leftPadding
+            y: sl.topPadding + sl.availableHeight / 2 - height / 2
+            implicitWidth: 200
+            implicitHeight: 4
+            width: sl.availableWidth
+            height: implicitHeight
+            radius: 2
+            color: "#252d3d"
+            Rectangle {
+                width: sl.visualPosition * parent.width
+                height: parent.height
+                color: "#14b8a6"
+                radius: 2
+            }
+        }
+        handle: Rectangle {
+            x: sl.leftPadding + sl.visualPosition * (sl.availableWidth - width)
+            y: sl.topPadding + sl.availableHeight / 2 - height / 2
+            implicitWidth: 14
+            implicitHeight: 14
+            radius: 7
+            color: sl.pressed ? root.ink : "#cbd5e1"
+            border.width: 1
+            border.color: sl.hovered ? "#14b8a6" : "#3b4a63"
         }
     }
 
@@ -1928,6 +2015,20 @@ Item {
         };
     }
 
+    function _youtubeAmountEvent(typ, p) {
+        var plat = "youtube";
+        if (p.platform != null && ("" + p.platform).trim() !== "")
+            plat = ("" + p.platform).trim().toLowerCase();
+        return {
+            type: typ,
+            platform: plat,
+            params: {
+                min_amount: p.min_amount !== undefined && p.min_amount !== null ? p.min_amount : 0,
+                user: p.user != null && p.user !== undefined ? ("" + p.user) : ""
+            }
+        };
+    }
+
     property var triggerKindModel: []
 
     function _effectiveTriggerPlatform(ev) {
@@ -1941,6 +2042,8 @@ Item {
             return "all";
         if (t.indexOf("twitch_") === 0)
             return "twitch";
+        if (t.indexOf("youtube_") === 0)
+            return "youtube";
         return "tiktok";
     }
 
@@ -2028,6 +2131,23 @@ Item {
                 {
                     text: api ? api.loc("actions.event.twitch_raid") : "Raid (Twitch)",
                     value: "twitch_raid"
+                }
+            ];
+        }
+        if (p === "youtube") {
+            return [
+                chat,
+                {
+                    text: api ? api.loc("actions.event.youtube_superchat") : "Super Chat (YouTube)",
+                    value: "youtube_superchat"
+                },
+                {
+                    text: api ? api.loc("actions.event.youtube_supersticker") : "Super Sticker (YouTube)",
+                    value: "youtube_supersticker"
+                },
+                {
+                    text: api ? api.loc("actions.event.youtube_member") : "New member (YouTube)",
+                    value: "youtube_member"
                 }
             ];
         }
@@ -2235,6 +2355,20 @@ Item {
             var mv = trp.min_viewers != null ? trp.min_viewers : 1;
             return (api ? api.loc("actions.event.twitch_raid") : "Raid") + " · ≥" + mv;
         }
+        if (ev.type === "youtube_superchat") {
+            var ycp = ev.params || {};
+            var yca = ycp.min_amount != null ? ycp.min_amount : 0;
+            var ycLabel = api ? api.loc("actions.event.youtube_superchat") : "Super Chat";
+            return yca > 0 ? (ycLabel + " · ≥" + yca) : ycLabel;
+        }
+        if (ev.type === "youtube_supersticker") {
+            var ysp = ev.params || {};
+            var ysa = ysp.min_amount != null ? ysp.min_amount : 0;
+            var ysLabel = api ? api.loc("actions.event.youtube_supersticker") : "Super Sticker";
+            return ysa > 0 ? (ysLabel + " · ≥" + ysa) : ysLabel;
+        }
+        if (ev.type === "youtube_member")
+            return (api ? api.loc("actions.event.youtube_member") : "New member");
         return ev.type || "—";
     }
 
@@ -2865,6 +2999,14 @@ Item {
                                 : val === "tiktok_joined" || val === "tiktok_followed"
                                     || val === "tiktok_paid_subscribed" || val === "tiktok_first_activity"
                                 ? root._simpleUserEvent(val, { platform: plat, user: "" })
+                                : (val === "youtube_superchat" || val === "youtube_supersticker")
+                                ? root._youtubeAmountEvent(val, {
+                                    platform: plat,
+                                    min_amount: 0,
+                                    user: ""
+                                })
+                                : val === "youtube_member"
+                                ? root._simpleUserEvent(val, { platform: plat, user: "" })
                                 : root._chatEvent({
                                     platform: plat,
                                     text: "",
@@ -3061,7 +3203,7 @@ Item {
                             Layout.fillWidth: true
                             spacing: 8
 
-                            ComboBox {
+                            ConnComboBox {
                                 id: tiktokExcludeGiftCombo
                                 Layout.fillWidth: true
                                 model: root.giftOptions || []
@@ -3072,12 +3214,14 @@ Item {
                                 displayText: currentIndex >= 0 && model && model[currentIndex] && model[currentIndex].name
                                     ? model[currentIndex].name
                                     : editText
-                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
                                 contentItem: Text {
                                     text: (tiktokExcludeGiftCombo.displayText && ("" + tiktokExcludeGiftCombo.displayText).trim() !== "")
                                         ? tiktokExcludeGiftCombo.displayText
                                         : tiktokExcludeGiftCombo.placeholderText
-                                    color: ink
+                                    color: (tiktokExcludeGiftCombo.displayText && ("" + tiktokExcludeGiftCombo.displayText).trim() !== "")
+                                        ? root.ink
+                                        : root.muted
+                                    font.pixelSize: 13
                                     verticalAlignment: Text.AlignVCenter
                                     elide: Text.ElideRight
                                     leftPadding: 10
@@ -3108,6 +3252,10 @@ Item {
                                             color: root.muted
                                             font.pixelSize: 12
                                         }
+                                    }
+                                    background: Rectangle {
+                                        radius: 6
+                                        color: highlighted ? "#1a2232" : "#111827"
                                     }
                                 }
                             }
@@ -3286,7 +3434,8 @@ Item {
                                 || root.editingTrigger.type === "twitch_follow"
                                 || root.editingTrigger.type === "twitch_subscribe"
                                 || root.editingTrigger.type === "twitch_resub"
-                                || root.editingTrigger.type === "twitch_sub_gift")
+                                || root.editingTrigger.type === "twitch_sub_gift"
+                                || root.editingTrigger.type === "youtube_member")
                         Layout.fillWidth: true
                         spacing: 6
                         Text { text: api ? api.loc("actions.user_filter") : "User (optional)"; color: muted; font.pixelSize: 12 }
@@ -3406,6 +3555,63 @@ Item {
                                 var r = root._patchSelectedTrigger(root._twitchRaidEvent({
                                     platform: root._platformForEdits(),
                                     min_viewers: ep.min_viewers || 1,
+                                    user: text || ""
+                                }));
+                                if (r == null) return;
+                                root._setRule(root.selectedIdx, r);
+                                root._save();
+                            }
+                        }
+                    }
+
+                    // YouTube Super Chat / Super Sticker editor (min amount + optional user)
+                    ColumnLayout {
+                        visible: root.editingTrigger
+                            && (root.editingTrigger.type === "youtube_superchat"
+                                || root.editingTrigger.type === "youtube_supersticker")
+                        Layout.fillWidth: true
+                        spacing: 6
+                        Text {
+                            text: api ? api.loc("actions.youtube_min_amount") : "Min donation amount"
+                            color: muted
+                            font.pixelSize: 12
+                        }
+                        ConnIntStepper {
+                            Layout.fillWidth: true
+                            fromVal: 0
+                            toVal: 9999999
+                            intValue: root.editingTrigger
+                                ? ((root.editingTrigger.params && root.editingTrigger.params.min_amount) || 0)
+                                : 0
+                            onCommitted: function (v) {
+                                if (root.selectedRule === null) return;
+                                var ep = (root.editingTrigger && root.editingTrigger.params) || {};
+                                var typ = root.editingTrigger.type || "youtube_superchat";
+                                var r = root._patchSelectedTrigger(root._youtubeAmountEvent(typ, {
+                                    platform: root._platformForEdits(),
+                                    min_amount: v,
+                                    user: ep.user || ""
+                                }));
+                                if (r == null) return;
+                                root._setRule(root.selectedIdx, r);
+                                root._save();
+                            }
+                        }
+                        Text { text: api ? api.loc("actions.user_filter") : "User (optional)"; color: muted; font.pixelSize: 12 }
+                        TextField {
+                            Layout.fillWidth: true
+                            color: ink
+                            placeholderTextColor: muted
+                            placeholderText: api ? api.loc("actions.user_filter_ph") : "nickname…"
+                            text: root.editingTrigger ? ((root.editingTrigger.params && root.editingTrigger.params.user) || "") : ""
+                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                            onEditingFinished: {
+                                if (root.selectedRule === null) return;
+                                var ep = (root.editingTrigger && root.editingTrigger.params) || {};
+                                var typ = root.editingTrigger.type || "youtube_superchat";
+                                var r = root._patchSelectedTrigger(root._youtubeAmountEvent(typ, {
+                                    platform: root._platformForEdits(),
+                                    min_amount: ep.min_amount || 0,
                                     user: text || ""
                                 }));
                                 if (r == null) return;
@@ -3728,7 +3934,7 @@ Item {
                                             color: muted
                                             font.pixelSize: 12
                                         }
-                                        Slider {
+                                        ConnSlider {
                                             id: playSoundVolume
                                             Layout.fillWidth: true
                                             from: 0
@@ -3746,7 +3952,7 @@ Item {
                                         }
                                     }
 
-                                    CheckBox {
+                                    ConnCheckBox {
                                         id: playSoundSkipDupCb
                                         text: api ? api.loc("actions.play_sound_skip_if_same_playing") : "Skip if this file is already playing or queued"
                                         checked: !!(modelData && modelData.params && modelData.params.skip_if_same_playing)
@@ -3761,7 +3967,7 @@ Item {
                                         }
                                     }
 
-                                    CheckBox {
+                                    ConnCheckBox {
                                         id: playSoundPlayNowCb
                                         text: api ? api.loc("actions.play_immediately") : "Play immediately (ignore queue)"
                                         checked: !!(modelData && modelData.params && modelData.params.play_immediately)
@@ -3776,7 +3982,7 @@ Item {
                                         }
                                     }
 
-                                    CheckBox {
+                                    ConnCheckBox {
                                         id: playSoundGiftComboCb
                                         text: api ? (api.loc("actions.respect_gift_combo") || "Respect gift combo count") : "Respect gift combo count"
                                         checked: !!(modelData && modelData.params && modelData.params.respect_gift_combo)
@@ -3806,7 +4012,7 @@ Item {
                                             color: muted
                                             font.pixelSize: 12
                                         }
-                                        Slider {
+                                        ConnSlider {
                                             id: playRandomMyinstantsUaVolume
                                             Layout.fillWidth: true
                                             from: 0
@@ -3824,7 +4030,7 @@ Item {
                                         }
                                     }
 
-                                    CheckBox {
+                                    ConnCheckBox {
                                         id: playRandomMyinstantsUaSkipDupCb
                                         text: api ? api.loc("actions.play_sound_skip_if_same_playing") : "Skip if this file is already playing or queued"
                                         checked: !!(modelData && modelData.params && modelData.params.skip_if_same_playing)
@@ -3839,7 +4045,7 @@ Item {
                                         }
                                     }
 
-                                    CheckBox {
+                                    ConnCheckBox {
                                         id: playRandomMyinstantsUaPlayNowCb
                                         text: api ? (api.loc("actions.play_immediately") || "Play immediately (ignore queue)") : "Play immediately (ignore queue)"
                                         checked: !!(modelData && modelData.params && modelData.params.play_immediately)
@@ -3854,7 +4060,7 @@ Item {
                                         }
                                     }
 
-                                    CheckBox {
+                                    ConnCheckBox {
                                         id: playRandomMyinstantsUaGiftComboCb
                                         text: api ? (api.loc("actions.respect_gift_combo") || "Respect gift combo count") : "Respect gift combo count"
                                         checked: !!(modelData && modelData.params && modelData.params.respect_gift_combo)
@@ -4214,7 +4420,7 @@ Item {
                                     RowLayout {
                                         Layout.fillWidth: true
                                         spacing: 12
-                                        CheckBox {
+                                        ConnCheckBox {
                                             id: ksModCtrl
                                             text: "Ctrl"
                                             checked: !!(modelData && modelData.params && modelData.params.modifier_ctrl)
@@ -4231,7 +4437,7 @@ Item {
                                                 page._scheduleCommitSelectedRuleActions();
                                             }
                                         }
-                                        CheckBox {
+                                        ConnCheckBox {
                                             id: ksModAlt
                                             text: "Alt"
                                             checked: !!(modelData && modelData.params && modelData.params.modifier_alt)
@@ -4248,7 +4454,7 @@ Item {
                                                 page._scheduleCommitSelectedRuleActions();
                                             }
                                         }
-                                        CheckBox {
+                                        ConnCheckBox {
                                             id: ksModShift
                                             text: "Shift"
                                             checked: !!(modelData && modelData.params && modelData.params.modifier_shift)
@@ -4353,7 +4559,7 @@ Item {
                                         font.pixelSize: 13
                                         font.bold: true
                                     }
-                                    CheckBox {
+                                    ConnCheckBox {
                                         id: ksInterception
                                         visible: Qt.platform.os === "windows"
                                         text: api ? api.loc("actions.keystrokes_interception") : "Interception driver"
@@ -4379,7 +4585,7 @@ Item {
                                         font.pixelSize: 11
                                         color: page.muted
                                     }
-                                    CheckBox {
+                                    ConnCheckBox {
                                         id: ksGameCompat
                                         visible: Qt.platform.os === "windows"
                                         text: api ? api.loc("actions.keystrokes_game_mode") : "Game compatibility"
@@ -4405,25 +4611,23 @@ Item {
                                             color: muted
                                             font.pixelSize: 12
                                         }
-                                        SpinBox {
-                                            from: 0
-                                            to: 60000
-                                            stepSize: 10
-                                            editable: true
-                                            Layout.preferredWidth: 140
-                                            value: {
+                                        ConnIntStepper {
+                                            Layout.fillWidth: true
+                                            fromVal: 0
+                                            toVal: 60000
+                                            intValue: {
                                                 var v = (modelData && modelData.params && modelData.params.hold_ms !== undefined) ? Number(modelData.params.hold_ms) : 0;
                                                 if (isNaN(v) || v < 0)
                                                     return 0;
-                                                return Math.min(60000, v);
+                                                return Math.min(60000, Math.round(v));
                                             }
-                                            onValueModified: {
+                                            onCommitted: function (v) {
                                                 var aa = page.actionsModel;
                                                 if (!aa || aIdx < 0 || aIdx >= aa.length)
                                                     return;
                                                 if (!aa[aIdx].params)
                                                     aa[aIdx].params = {};
-                                                aa[aIdx].params.hold_ms = value;
+                                                aa[aIdx].params.hold_ms = v;
                                                 page.actionsModel = aa;
                                                 page._scheduleCommitSelectedRuleActions();
                                             }
@@ -4516,17 +4720,21 @@ Item {
                                         Layout.fillWidth: true
                                         spacing: 10
                                         Text { text: api ? api.loc("actions.show_overlay_seconds") : "Seconds"; color: muted; font.pixelSize: 12 }
-                                        SpinBox {
-                                            from: 0
-                                            to: 600
-                                            value: (modelData && modelData.params && modelData.params.seconds !== undefined) ? Number(modelData.params.seconds) : 3
-                                            editable: true
-                                            Layout.preferredWidth: 160
-                                            onValueModified: {
+                                        ConnIntStepper {
+                                            Layout.fillWidth: true
+                                            fromVal: 0
+                                            toVal: 600
+                                            intValue: {
+                                                var v = (modelData && modelData.params && modelData.params.seconds !== undefined) ? Number(modelData.params.seconds) : 3;
+                                                if (isNaN(v) || v < 0)
+                                                    return 3;
+                                                return Math.min(600, Math.round(v));
+                                            }
+                                            onCommitted: function (v) {
                                                 var aa = page.actionsModel;
                                                 if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                                 if (!aa[aIdx].params) aa[aIdx].params = {};
-                                                aa[aIdx].params.seconds = value;
+                                                aa[aIdx].params.seconds = v;
                                                 page.actionsModel = aa;
                                                 page._scheduleCommitSelectedRuleActions();
                                             }
@@ -4773,7 +4981,7 @@ Item {
                                             return m === "source_visible";
                                         }
                                         Text { text: api ? api.loc("actions.obs_visible") : "Visible"; color: muted; font.pixelSize: 12 }
-                                        ConnToggleSwitch {
+                                        ConnPrefSwitch {
                                             Layout.alignment: Qt.AlignVCenter
                                             checked: {
                                                 if (!modelData || !modelData.params) return true;
@@ -4798,7 +5006,7 @@ Item {
                                             var m = (modelData && modelData.params && modelData.params.mode) ? modelData.params.mode : "program_scene";
                                             return m === "source_visible";
                                         }
-                                        CheckBox {
+                                        ConnCheckBox {
                                             id: obsRevertCb
                                             text: api ? api.loc("actions.obs_revert_checkbox") : "Revert visibility to how it was"
                                             checked: !!(modelData && modelData.params && modelData.params.revert_previous_state)
@@ -4821,14 +5029,12 @@ Item {
                                                 font.pixelSize: 12
                                                 Layout.alignment: Qt.AlignVCenter
                                             }
-                                            SpinBox {
-                                                id: obsRevertSec
-                                                from: 1
-                                                to: 3600
-                                                editable: true
-                                                implicitWidth: 140
+                                            ConnIntStepper {
+                                                Layout.fillWidth: true
+                                                fromVal: 1
+                                                toVal: 3600
                                                 enabled: !!(modelData && modelData.params && modelData.params.revert_previous_state)
-                                                value: {
+                                                intValue: {
                                                     if (!modelData || !modelData.params) return 5;
                                                     var v = modelData.params.revert_delay_seconds;
                                                     if (v === undefined || v === null || v === "") return 5;
@@ -4837,11 +5043,11 @@ Item {
                                                     if (n > 3600) return 3600;
                                                     return Math.round(n);
                                                 }
-                                                onValueModified: {
+                                                onCommitted: function (v) {
                                                     var aa = page.actionsModel;
                                                     if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                                     if (!aa[aIdx].params) aa[aIdx].params = {};
-                                                    aa[aIdx].params.revert_delay_seconds = obsRevertSec.value;
+                                                    aa[aIdx].params.revert_delay_seconds = v;
                                                     page.actionsModel = aa;
                                                     page._scheduleCommitSelectedRuleActions();
                                                 }

@@ -55,6 +55,38 @@ Item {
         }
     }
 
+    component StyledCheckBox: CheckBox {
+        id: chk
+        spacing: 8
+        font.pixelSize: 13
+        indicator: Rectangle {
+            implicitWidth: 18
+            implicitHeight: 18
+            x: chk.leftPadding
+            y: parent.height / 2 - height / 2
+            radius: 4
+            color: chk.down ? "#1a2232" : (chk.checked ? "#134e4a" : root.fieldBg)
+            border.width: 1
+            border.color: chk.checked ? "#14b8a6" : (chk.hovered ? "#3b4458" : root.cardEdge)
+            Text {
+                anchors.centerIn: parent
+                text: "✓"
+                font.pixelSize: 11
+                font.bold: true
+                color: root.ink
+                visible: chk.checked
+            }
+        }
+        contentItem: Text {
+            text: chk.text
+            font: chk.font
+            opacity: chk.enabled ? 1.0 : 0.55
+            color: root.ink
+            verticalAlignment: Text.AlignVCenter
+            leftPadding: chk.indicator.width + chk.spacing
+        }
+    }
+
     Loader {
         id: apiGate
         anchors.fill: parent
@@ -128,7 +160,7 @@ Item {
                     anchors.margins: 12
                     spacing: 8
 
-                    CheckBox {
+                    StyledCheckBox {
                         text: tunnelApi ? tunnelApi.tunnelEnabledLabel : ""
                         checked: tunnelApi ? tunnelApi.tunnelEnabled : false
                         onToggled: if (tunnelApi) tunnelApi.setTunnelEnabled(checked)

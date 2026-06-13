@@ -73,6 +73,14 @@ from PySide6.QtWidgets import (
 )
 from qframelesswindow import FramelessWindow, StandardTitleBar
 
+if sys.platform == "win32":
+    try:
+        import win32con
+        import win32gui
+    except ImportError:
+        win32con = None  # type: ignore[misc, assignment]
+        win32gui = None  # type: ignore[misc, assignment]
+
 from stream_cheremsha import l10n
 from stream_cheremsha.actions.engine import PlatformActionsEngine
 from stream_cheremsha.actions.events import ChatMessageEvent, GiftReceivedEvent
@@ -102,12 +110,17 @@ from stream_cheremsha.chat.twitch_eventsub import (
 from stream_cheremsha.chat.twitch_helix import TwitchHelixClient
 from stream_cheremsha.chat.twitch_source import TwitchSource
 from stream_cheremsha.chat.youtube_source import (
+    YouTubeActionSignal,
     YouTubeChatSource,
     clear_youtube_user_session,
     is_google_account_linked,
     parse_google_desktop_client_json,
 )
 from stream_cheremsha.config import constants, keyring_store
+from stream_cheremsha.config.tunnel_secrets import (
+    resolve_cloudflare_tunnel_hostname,
+    resolve_cloudflare_tunnel_token,
+)
 from stream_cheremsha.domain.models import ChatMessage, ChatPlatform
 from stream_cheremsha.domain.protocols import TextToSpeech
 from stream_cheremsha.music.musicbrainz import youtube_title_indicates_russian_artist_area
@@ -134,12 +147,16 @@ from stream_cheremsha.overlays.top_likers_overlay_config import load_top_likers_
 from stream_cheremsha.overlays.top_likers_session import TikTokSessionTopLikers
 from stream_cheremsha.overlays.tunnel import OverlayTunnel
 from stream_cheremsha.overlays.tunnel_install import (
+    find_tunnel_executable,
     install_prompt_labels,
+    install_status_message,
     install_tunnel_tool_via_winget,
     is_tunnel_cli_installed,
     is_winget_available,
     missing_cli_status_message,
+    provider_auto_installs_cli,
     provider_needs_cli,
+    tunnel_cli_title,
 )
 from stream_cheremsha.overlays.tunnel_types import TunnelProvider
 from stream_cheremsha.paths import stream_cheremsha_root
@@ -653,6 +670,7 @@ class MainWindow(FramelessWindow):
             on_analytics_event=self._on_youtube_analytics_event,
             get_locale=self._get_locale,
             on_viewers_current=self._youtube_analytics.on_viewers,
+            on_action_event=self._on_youtube_action_event,
         )
         self._tiktok_analytics = TikTokAnalyticsApi(self)
         self._tiktok = TikTokChatSource(
@@ -760,8 +778,30 @@ class MainWindow(FramelessWindow):
         QTimer.singleShot(0, self._apply_windows_animation_if_possible)
 
     def _apply_windows_animation_if_possible(self) -> None:
-        # Disabled: native win32 frameless hooks have caused qasync access violations on idle.
-        return
+        if sys.platform != "win32" or win32con is None or win32gui is None:
+            return
+        h = int(self.winId())
+        if h == 0:
+            return
+
+        # qframelesswindow already has windowEffect; re-apply to ensure styles are set.
+        try:
+            self.windowEffect.addWindowAnimation(h)  # type: ignore[attr-defined]
+        except AttributeError:
+            return
+
+        win32gui.SetWindowPos(
+            h,
+            None,
+            0,
+            0,
+            0,
+            0,
+            win32con.SWP_NOMOVE
+            | win32con.SWP_NOSIZE
+            | win32con.SWP_NOZORDER
+            | win32con.SWP_FRAMECHANGED,
+        )
 
     def _get_locale(self) -> str:
         return self._locale
@@ -1995,7 +2035,9 @@ class MainWindow(FramelessWindow):
         finally:
             self._btn_updates_check_now.setEnabled(True)
 
-        subprocess.Popen([str(installer_path)], close_fds=True)
+        # Silent in-place update: the installer reuses the recorded install dir,
+        # waits for this process to exit, then relaunches the new version.
+        subprocess.Popen([str(installer_path), "/S"], close_fds=True)
         self.close()
 
     def _verify_windows_installer_signature(self, exe_path: str) -> bool:
@@ -3552,6 +3594,8 @@ class MainWindow(FramelessWindow):
     async def _async_stop_youtube_all(self) -> None:
         await self._youtube.stop()
         self._youtube_analytics.resetSession()
+        self._refresh_footer()
+        self._qml_refresh_if_visible()
 
     @Slot(str)
     def _append_chat(self, html_fragment: str) -> None:
@@ -3614,6 +3658,49 @@ class MainWindow(FramelessWindow):
             time_hms=now_hms(),
         )
         self._publish_activity_item(it)
+
+    def _on_youtube_action_event(self, signal: YouTubeActionSignal) -> None:
+        """Dispatch a structured YouTube live-chat event to the Actions engine."""
+        if self._closing:
+            return
+        eng = self._get_app_actions_engine()
+        user = (signal.user or "").strip()
+        pic = (signal.profile_image_url or "").strip()
+        now = datetime.now(UTC)
+        kind = (signal.kind or "").strip().lower()
+        if kind == "superchat":
+            asyncio.ensure_future(
+                eng.on_youtube_superchat(
+                    user,
+                    int(signal.amount_micros),
+                    signal.currency,
+                    signal.amount_display,
+                    signal.message,
+                    now,
+                    profile_picture_url=pic,
+                )
+            )
+        elif kind == "supersticker":
+            asyncio.ensure_future(
+                eng.on_youtube_supersticker(
+                    user,
+                    int(signal.amount_micros),
+                    signal.currency,
+                    signal.amount_display,
+                    now,
+                    profile_picture_url=pic,
+                )
+            )
+        elif kind == "member":
+            asyncio.ensure_future(
+                eng.on_youtube_member(
+                    user,
+                    int(signal.months),
+                    signal.level,
+                    now,
+                    profile_picture_url=pic,
+                )
+            )
 
     def _publish_activity_item(self, item: ActivityItem) -> None:
         if self._closing:
@@ -4891,6 +4978,8 @@ class MainWindow(FramelessWindow):
         url = self._yt_video.text().strip()
         self._youtube_analytics.resetSession()
         await self._youtube.start(url if url else None)
+        self._refresh_footer()
+        self._qml_refresh_if_visible()
 
     async def _start_tiktok(self) -> None:
         user = self._tiktok_username.text().strip()
@@ -5016,11 +5105,12 @@ class MainWindow(FramelessWindow):
             return True
 
         uk = self._locale != "en"
-        if not prompt_install:
+        auto_install = provider_auto_installs_cli(provider_str)
+        if not auto_install and not prompt_install:
             return False
 
         if not is_winget_available():
-            title = "ngrok"
+            title = tunnel_cli_title(provider_str)
             if uk:
                 body = (
                     f"{title} не знайдено, а winget недоступний. "
@@ -5034,26 +5124,30 @@ class MainWindow(FramelessWindow):
             QMessageBox.warning(self, title, body)
             return False
 
-        dlg_title, dlg_text = install_prompt_labels(provider_str, locale=self._locale)
-        answer = QMessageBox.question(
-            self,
-            dlg_title,
-            dlg_text,
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes,
-        )
-        if answer != QMessageBox.StandardButton.Yes:
-            return False
+        if not auto_install:
+            dlg_title, dlg_text = install_prompt_labels(provider_str, locale=self._locale)
+            answer = QMessageBox.question(
+                self,
+                dlg_title,
+                dlg_text,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return False
+            dlg_title_for_error = dlg_title
+        else:
+            dlg_title_for_error = tunnel_cli_title(provider_str)
 
         if self._overlay_tunnel_qml_api is not None:
             self._overlay_tunnel_qml_api.set_tunnel_status_message(
-                "Встановлення через winget…" if uk else "Installing via winget…",
+                install_status_message(provider_str, locale=self._locale),
             )
 
         ok, err = await install_tunnel_tool_via_winget(provider_str)
         if not ok:
             detail = err or ("Не вдалося встановити" if uk else "Installation failed")
-            QMessageBox.warning(self, dlg_title, detail)
+            QMessageBox.warning(self, dlg_title_for_error, detail)
             return False
         return True
 
@@ -5067,13 +5161,33 @@ class MainWindow(FramelessWindow):
 
         enabled = bool(self._settings.value(constants.SETTINGS_OVERLAY_TUNNEL_ENABLED, False, bool))
         if enabled:
+            if self._overlay_tunnel_qml_api is not None:
+                provider_str = self._overlay_tunnel_qml_api.resolved_tunnel_provider()
+            else:
+                provider_str = str(
+                    self._settings.value(
+                        constants.SETTINGS_OVERLAY_TUNNEL_PROVIDER,
+                        TunnelProvider.NGROK.value,
+                        str,
+                    )
+                    or TunnelProvider.NGROK.value,
+                ).strip()
             custom_url = str(
                 self._settings.value(constants.SETTINGS_OVERLAY_TUNNEL_CUSTOM_URL, "", str) or "",
             ).strip()
-            provider_str = TunnelProvider.CUSTOM.value if custom_url else TunnelProvider.NGROK.value
             ngrok_domain = str(
                 self._settings.value(constants.SETTINGS_OVERLAY_NGROK_DOMAIN, "", str) or "",
             ).strip()
+            cloudflare_hostname = resolve_cloudflare_tunnel_hostname(
+                settings_value=str(
+                    self._settings.value(
+                        constants.SETTINGS_OVERLAY_CLOUDFLARE_HOSTNAME,
+                        "",
+                        str,
+                    )
+                    or "",
+                ),
+            )
             ready = True
             if provider_needs_cli(provider_str):
                 ready = await self._ensure_tunnel_cli_installed(
@@ -5089,6 +5203,8 @@ class MainWindow(FramelessWindow):
                     )
                 return
             token = (keyring_store.get_password(constants.KEY_NGROK_AUTHTOKEN) or "").strip()
+            cloudflare_token = resolve_cloudflare_tunnel_token()
+            cloudflared_executable = find_tunnel_executable(provider_str) or ""
             try:
                 await self._overlay_tunnel.start(
                     provider=provider_str,
@@ -5096,6 +5212,9 @@ class MainWindow(FramelessWindow):
                     ngrok_authtoken=token,
                     ngrok_domain=ngrok_domain,
                     custom_url=custom_url,
+                    cloudflare_hostname=cloudflare_hostname,
+                    cloudflare_tunnel_token=cloudflare_token,
+                    cloudflared_executable=cloudflared_executable,
                 )
             except (OSError, ValueError, RuntimeError) as e:
                 logger.exception("Overlay tunnel failed: %s", e)

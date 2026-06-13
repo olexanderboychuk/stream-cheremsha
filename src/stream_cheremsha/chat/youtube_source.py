@@ -5,6 +5,7 @@ import json
 import logging
 import threading
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -39,6 +40,40 @@ YOUTUBE_MIN_POLL_INTERVAL_MS = 5000
 
 # After quotaExceeded, avoid hammering the API until the daily bucket resets (Pacific midnight).
 YOUTUBE_QUOTA_BACKOFF_SEC = 3600.0
+
+
+@dataclass(frozen=True, slots=True)
+class YouTubeActionSignal:
+    """Structured YouTube live-chat event for the Actions engine (separate from analytics feed).
+
+    `kind` is one of ``superchat`` / ``supersticker`` / ``member``. Tip amounts carry
+    ``amount_micros`` (currency micros) so rules can filter by a minimum threshold.
+    """
+
+    kind: str
+    user: str
+    amount_micros: int = 0
+    currency: str = ""
+    amount_display: str = ""
+    message: str = ""
+    months: int = 0
+    level: str = ""
+    profile_image_url: str = ""
+
+
+def _int_or_zero(raw: object) -> int:
+    """Parse YouTube numeric fields (often strings, e.g. amountMicros) into a non-negative int."""
+    if isinstance(raw, bool):
+        return 0
+    if isinstance(raw, int):
+        return max(0, raw)
+    if isinstance(raw, float):
+        return max(0, int(raw))
+    if isinstance(raw, str):
+        s = raw.strip()
+        if s.isdigit():
+            return int(s)
+    return 0
 
 
 def _http_error_is_quota_exceeded(err: HttpError) -> bool:
@@ -315,11 +350,13 @@ class YouTubeChatSource:
         on_analytics_event: Callable[[str, str, str, int], None] | None = None,
         get_locale: Callable[[], str] | None = None,
         on_viewers_current: Callable[[int], None] | None = None,
+        on_action_event: Callable[[YouTubeActionSignal], None] | None = None,
     ) -> None:
         self._coordinator = coordinator
         self._on_status = on_status
         self._on_analytics_event = on_analytics_event
         self._on_viewers_current = on_viewers_current
+        self._on_action_event = on_action_event
         self._get_locale = get_locale or (lambda: l10n.DEFAULT_LOCALE)
         self._task: asyncio.Task[None] | None = None
         self._running = False
@@ -360,7 +397,11 @@ class YouTubeChatSource:
         self._on_status(l10n.tr(self._get_locale(), "yt.oauth_saved"))
 
     async def start(self, video_url_or_id: str | None = None) -> None:
-        await self.stop()
+        # Cancel any prior run without emitting the "stopped" status: doing so here
+        # would log "youtube stopped" the instant the user turns the toggle on and
+        # trigger a UI refresh while ``_running`` is still False, snapping the switch
+        # back off.
+        await self._cancel_task()
 
         creds = _load_credentials()
         if creds is None:
@@ -379,12 +420,15 @@ class YouTubeChatSource:
             name="youtube-chat",
         )
 
-    async def stop(self) -> None:
+    async def _cancel_task(self) -> None:
         self._running = False
         if self._task is not None:
             self._task.cancel()
             await asyncio.gather(self._task, return_exceptions=True)
             self._task = None
+
+    async def stop(self) -> None:
+        await self._cancel_task()
         self._on_status(l10n.tr(self._get_locale(), "yt.stopped"))
 
     async def _supervisor(self, video_url_or_id: str | None) -> None:
@@ -708,9 +752,16 @@ class YouTubeChatSource:
 
             for item in body.get("items", []):
                 snippet = item.get("snippet") or {}
-                author = (item.get("authorDetails") or {}).get("displayName") or "unknown"
+                author_details = item.get("authorDetails") or {}
+                author = author_details.get("displayName") or "unknown"
+                profile_image_url = str(author_details.get("profileImageUrl") or "")
                 text = snippet.get("displayMessage") or ""
-                self._ingest_analytics_item(author=author, snippet=snippet, text=text)
+                self._ingest_analytics_item(
+                    author=author,
+                    snippet=snippet,
+                    text=text,
+                    profile_image_url=profile_image_url,
+                )
                 msg = ChatMessage(
                     author=author,
                     text=text,
@@ -782,34 +833,83 @@ class YouTubeChatSource:
         )
         return req.execute()
 
-    def _ingest_analytics_item(self, *, author: str, snippet: Mapping[str, Any], text: str) -> None:
-        cb = self._on_analytics_event
+    def _emit_action_event(self, signal: YouTubeActionSignal) -> None:
+        cb = self._on_action_event
         if cb is None:
             return
+        cb(signal)
+
+    def _ingest_analytics_item(
+        self,
+        *,
+        author: str,
+        snippet: Mapping[str, Any],
+        text: str,
+        profile_image_url: str = "",
+    ) -> None:
+        cb = self._on_analytics_event
         kind = snippet.get("type") or "textMessageEvent"
         kind_s = kind if isinstance(kind, str) else "textMessageEvent"
+        author_s = str(author or "")
+        pic = str(profile_image_url or "")
 
         if kind_s == "superChatEvent":
             details = snippet.get("superChatDetails") or {}
-            amount = details.get("amountDisplayString") or ""
-            det = str(amount or "").strip()
+            amount = str(details.get("amountDisplayString") or "").strip()
             msg = str(text or "").strip()
-            if msg:
-                det = f"{det} · {msg}" if det else msg
-            cb("superchat", str(author or ""), det, 1)
+            self._emit_action_event(
+                YouTubeActionSignal(
+                    kind="superchat",
+                    user=author_s,
+                    amount_micros=_int_or_zero(details.get("amountMicros")),
+                    currency=str(details.get("currency") or "").strip(),
+                    amount_display=amount,
+                    message=msg,
+                    profile_image_url=pic,
+                )
+            )
+            if cb is not None:
+                det = f"{amount} · {msg}" if (amount and msg) else (amount or msg)
+                cb("superchat", author_s, det, 1)
             return
         if kind_s == "superStickerEvent":
             details = snippet.get("superStickerDetails") or {}
-            amount = details.get("amountDisplayString") or ""
-            det = str(amount or "").strip()
+            amount = str(details.get("amountDisplayString") or "").strip()
             msg = str(text or "").strip()
-            if msg:
-                det = f"{det} · {msg}" if det else msg
-            cb("supersticker", str(author or ""), det, 1)
+            self._emit_action_event(
+                YouTubeActionSignal(
+                    kind="supersticker",
+                    user=author_s,
+                    amount_micros=_int_or_zero(details.get("amountMicros")),
+                    currency=str(details.get("currency") or "").strip(),
+                    amount_display=amount,
+                    profile_image_url=pic,
+                )
+            )
+            if cb is not None:
+                det = f"{amount} · {msg}" if (amount and msg) else (amount or msg)
+                cb("supersticker", author_s, det, 1)
             return
         if kind_s in ("newSponsorEvent", "memberMilestoneChatEvent"):
-            cb("member", str(author or ""), "", 1)
+            if kind_s == "newSponsorEvent":
+                details = snippet.get("newSponsorDetails") or {}
+                months = 0
+            else:
+                details = snippet.get("memberMilestoneChatDetails") or {}
+                months = _int_or_zero(details.get("memberMonth"))
+            self._emit_action_event(
+                YouTubeActionSignal(
+                    kind="member",
+                    user=author_s,
+                    months=months,
+                    level=str(details.get("memberLevelName") or "").strip(),
+                    profile_image_url=pic,
+                )
+            )
+            if cb is not None:
+                cb("member", author_s, "", 1)
             return
 
         # Default: count as chat message and keep the full message text as detail.
-        cb("chat", str(author or ""), str(text or ""), 1)
+        if cb is not None:
+            cb("chat", author_s, str(text or ""), 1)

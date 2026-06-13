@@ -18,6 +18,9 @@ from stream_cheremsha.actions.events import (
     TwitchResubscribeEvent,
     TwitchSubscribeEvent,
     TwitchSubscriptionGiftEvent,
+    YouTubeMemberEvent,
+    YouTubeSuperChatEvent,
+    YouTubeSuperStickerEvent,
 )
 
 _PLACEHOLDER_RE = re.compile(r"\{([^{}]+)\}")
@@ -323,6 +326,38 @@ def build_placeholder_context(ev: object) -> dict[str, str]:
             "raider": r,
             "viewers": v,
             "count": v,
+            "platform": _platform_str(ev.platform),
+        }
+    if isinstance(ev, (YouTubeSuperChatEvent, YouTubeSuperStickerEvent)):
+        u = ev.user or ""
+        disp = ev.amount_display or ""
+        value = f"{ev.amount_micros / 1_000_000.0:g}" if ev.amount_micros else "0"
+        cur = ev.currency or ""
+        msg = getattr(ev, "message", "") or ""
+        return {
+            "sender": u,
+            "user": u,
+            "username": u,
+            "nickname": u,
+            "amount": disp,
+            "amount_value": value,
+            "currency": cur,
+            "message": msg,
+            "text": msg,
+            "platform": _platform_str(ev.platform),
+        }
+    if isinstance(ev, YouTubeMemberEvent):
+        u = ev.user or ""
+        mo = str(int(ev.months))
+        lvl = ev.level or ""
+        return {
+            "sender": u,
+            "user": u,
+            "username": u,
+            "nickname": u,
+            "months": mo,
+            "submonth": mo,
+            "level": lvl,
             "platform": _platform_str(ev.platform),
         }
     return {}

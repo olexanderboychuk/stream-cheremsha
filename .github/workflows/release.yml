@@ -38,6 +38,9 @@ jobs:
           uv run --frozen python scripts/ci/validate_release_version.py --tag-version "$tagVersion"
 
       - name: Build (Nuitka standalone)
+        env:
+          STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_TOKEN }}
+          STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_HOSTNAME: ${{ secrets.STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_HOSTNAME }}
         run: uv run --frozen cheremsha-build --out dist/nuitka --low-memory --jobs 1
 
       - name: Print Nuitka version
@@ -105,17 +108,126 @@ jobs:
             exit 1
           }
 
-      - name: Generate latest.json manifest
-        shell: pwsh
+      - name: Upload Windows release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: dist/release/*
+
+  linux:
+    name: Linux (Nuitka + AppImage)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system libraries (PySide6 + build)
         run: |
-          $tag = "${{ github.ref_name }}"
-          $installer = "dist/release/Cheremsha-Setup-$tag.exe"
-          $zip = "dist/release/Cheremsha-$tag-windows-x64-portable.zip"
-          uv run --frozen python scripts/ci/generate_latest_json.py `
-            --tag "$tag" `
-            --repo "${{ github.repository }}" `
-            --installer-path "$installer" `
-            --portable-zip-path "$zip" `
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            file \
+            libegl1 \
+            libgl1 \
+            libpulse0 \
+            libxkbcommon0 \
+            libxcb-cursor0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-shape0 \
+            libxcb-sync1 \
+            libxcb-xfixes0 \
+            libxcb-xinerama0 \
+            libxcb-xkb1 \
+            libxkbcommon-x11-0 \
+            patchelf \
+            wget
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          enable-cache: true
+
+      - name: Install dependencies (build)
+        run: uv sync --extra build --frozen
+
+      - name: Validate version matches tag
+        run: |
+          tag="${{ github.ref_name }}"
+          tag_version="${tag#v}"
+          uv run --frozen python scripts/ci/validate_release_version.py --tag-version "$tag_version"
+
+      - name: Build (Nuitka standalone)
+        env:
+          STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_TOKEN }}
+          STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_HOSTNAME: ${{ secrets.STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_HOSTNAME }}
+        run: uv run --frozen cheremsha-build --out dist/nuitka --low-memory --jobs 1
+
+      - name: Print Nuitka version
+        run: uv run --frozen python -m nuitka --version
+
+      - name: Download appimagetool
+        run: |
+          wget -q "https://github.com/AppImage/AppImageKit/releases/download/12/appimagetool-x86_64.AppImage" -O appimagetool
+          chmod +x appimagetool
+
+      - name: Build AppImage
+        run: |
+          sed -i 's/\r$//' scripts/ci/build_appimage.sh
+          chmod +x scripts/ci/build_appimage.sh
+          scripts/ci/build_appimage.sh "${{ github.ref_name }}" dist/nuitka dist/release ./appimagetool
+
+      - name: Upload Linux release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-release
+          path: dist/release/*.AppImage
+
+  release:
+    name: Publish GitHub Release
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-release
+          path: dist/release
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-release
+          path: dist/release
+
+      - name: Generate latest.json manifest
+        run: |
+          tag="${{ github.ref_name }}"
+          installer="dist/release/Cheremsha-Setup-${tag}.exe"
+          zip="dist/release/Cheremsha-${tag}-windows-x64-portable.zip"
+          appimage="dist/release/Cheremsha-${tag}-linux-x86_64.AppImage"
+          python scripts/ci/generate_latest_json.py \
+            --tag "$tag" \
+            --repo "${{ github.repository }}" \
+            --installer-path "$installer" \
+            --portable-zip-path "$zip" \
+            --appimage-path "$appimage" \
             --out "dist/release/latest.json"
 
       - name: Create GitHub Release
@@ -126,4 +238,5 @@ jobs:
           files: |
             dist/release/*.zip
             dist/release/*.exe
+            dist/release/*.AppImage
             dist/release/latest.json

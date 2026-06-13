@@ -31,7 +31,7 @@ build/
 *.msi
 *.json
 *.xml
-rvc_models
+src/stream_cheremsha/config/embedded_local.py
 
 # Allow bundled TikTok gifts catalog (used by UI pickers).
 !src/stream_cheremsha/assets/tiktok_gifts_ua_streamtoearn.json

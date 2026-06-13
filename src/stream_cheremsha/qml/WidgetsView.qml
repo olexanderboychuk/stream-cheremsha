@@ -109,6 +109,25 @@ Item {
                 color: highlighted ? "#1a2232" : "#111827"
             }
         }
+        popup: Popup {
+            y: cb.height
+            width: cb.width
+            implicitHeight: contentItem.implicitHeight
+            padding: 4
+            contentItem: ListView {
+                clip: true
+                implicitHeight: contentHeight
+                model: cb.popup.visible ? cb.delegateModel : null
+                currentIndex: cb.highlightedIndex
+                ScrollIndicator.vertical: ScrollIndicator { }
+            }
+            background: Rectangle {
+                radius: 8
+                color: "#111827"
+                border.width: 1
+                border.color: root.cardEdge
+            }
+        }
     }
 
     component StyledSpinBox: SpinBox {
@@ -236,6 +255,69 @@ Item {
                     onClicked: function (mouse) { mouse.accepted = true; sb._stepBy(1); }
                 }
             }
+        }
+    }
+
+    component StyledCheckBox: CheckBox {
+        id: chk
+        spacing: 8
+        font.pixelSize: 13
+        indicator: Rectangle {
+            implicitWidth: 18
+            implicitHeight: 18
+            x: chk.leftPadding
+            y: parent.height / 2 - height / 2
+            radius: 4
+            color: chk.down ? "#1a2232" : (chk.checked ? "#134e4a" : root.fieldBg)
+            border.width: 1
+            border.color: chk.checked ? "#14b8a6" : (chk.hovered ? "#3b4458" : root.cardEdge)
+            Text {
+                anchors.centerIn: parent
+                text: "✓"
+                font.pixelSize: 11
+                font.bold: true
+                color: root.ink
+                visible: chk.checked
+            }
+        }
+        contentItem: Text {
+            text: chk.text
+            font: chk.font
+            opacity: chk.enabled ? 1.0 : 0.55
+            color: root.ink
+            verticalAlignment: Text.AlignVCenter
+            leftPadding: chk.indicator.width + chk.spacing
+        }
+    }
+
+    component StyledSlider: Slider {
+        id: sl
+        implicitHeight: 28
+        background: Rectangle {
+            x: sl.leftPadding
+            y: sl.topPadding + sl.availableHeight / 2 - height / 2
+            implicitWidth: 200
+            implicitHeight: 4
+            width: sl.availableWidth
+            height: implicitHeight
+            radius: 2
+            color: "#252d3d"
+            Rectangle {
+                width: sl.visualPosition * parent.width
+                height: parent.height
+                color: "#14b8a6"
+                radius: 2
+            }
+        }
+        handle: Rectangle {
+            x: sl.leftPadding + sl.visualPosition * (sl.availableWidth - width)
+            y: sl.topPadding + sl.availableHeight / 2 - height / 2
+            implicitWidth: 14
+            implicitHeight: 14
+            radius: 7
+            color: sl.pressed ? root.ink : "#cbd5e1"
+            border.width: 1
+            border.color: sl.hovered ? "#14b8a6" : "#3b4a63"
         }
     }
 
@@ -1004,7 +1086,7 @@ Item {
                             anchors.margins: 12
                             spacing: 8
 
-                            CheckBox {
+                            StyledCheckBox {
                                 text: tunnelApi ? tunnelApi.tunnelEnabledLabel : ""
                                 checked: tunnelApi ? tunnelApi.tunnelEnabled : false
                                 onToggled: if (tunnelApi) tunnelApi.setTunnelEnabled(checked)
@@ -1018,9 +1100,30 @@ Item {
                                 wrapMode: Text.Wrap
                             }
 
+                            StyledComboBox {
+                                Layout.fillWidth: true
+                                visible: tunnelApi && tunnelApi.tunnelEnabled
+                                model: [
+                                    { label: "Cloudflare Tunnel", value: "cloudflare" },
+                                    { label: "ngrok", value: "ngrok" },
+                                    { label: "Свій URL", value: "custom" }
+                                ]
+                                textRole: "label"
+                                currentIndex: {
+                                    if (!tunnelApi) return 1
+                                    if (tunnelApi.tunnelProvider === "cloudflare") return 0
+                                    if (tunnelApi.tunnelProvider === "custom") return 2
+                                    return 1
+                                }
+                                onActivated: function(index) {
+                                    if (!tunnelApi) return
+                                    tunnelApi.setTunnelProvider(model[index].value)
+                                }
+                            }
+
                             TextField {
                                 Layout.fillWidth: true
-                                visible: tunnelApi && tunnelApi.tunnelEnabled && !tunnelApi.tunnelCustomUrl
+                                visible: tunnelApi && tunnelApi.tunnelEnabled && tunnelApi.tunnelProvider === "ngrok"
                                 placeholderText: tunnelApi ? tunnelApi.ngrokDomainPlaceholder : "abc123.ngrok-free.dev"
                                 color: ink
                                 font.pixelSize: 12
@@ -1033,7 +1136,7 @@ Item {
                             TextField {
                                 id: ngrokTokenField
                                 Layout.fillWidth: true
-                                visible: tunnelApi && tunnelApi.tunnelEnabled && !tunnelApi.tunnelCustomUrl
+                                visible: tunnelApi && tunnelApi.tunnelEnabled && tunnelApi.tunnelProvider === "ngrok"
                                 placeholderText: tunnelApi ? tunnelApi.ngrokTokenPlaceholder : "ngrok authtoken"
                                 echoMode: TextInput.Password
                                 color: ink
@@ -1045,15 +1148,47 @@ Item {
                             }
 
                             PillButton {
-                                visible: tunnelApi && tunnelApi.tunnelEnabled && !tunnelApi.tunnelCustomUrl
+                                visible: tunnelApi && tunnelApi.tunnelEnabled && tunnelApi.tunnelProvider === "ngrok"
                                 text: "ngrok domains"
                                 onClicked: if (tunnelApi) tunnelApi.openNgrokDomainsPage()
                             }
 
                             TextField {
+                                id: cloudflareTokenField
                                 Layout.fillWidth: true
-                                visible: tunnelApi && tunnelApi.tunnelEnabled
-                                placeholderText: "Свій URL (необов'язково)"
+                                visible: tunnelApi && tunnelApi.tunnelEnabled && tunnelApi.tunnelProvider === "cloudflare"
+                                placeholderText: tunnelApi ? tunnelApi.cloudflareTokenPlaceholder : "Cloudflare tunnel token"
+                                echoMode: TextInput.Password
+                                color: ink
+                                font.pixelSize: 12
+                                selectByMouse: true
+                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                onTextChanged: if (tunnelApi) tunnelApi.setCloudflareToken(text)
+                                onEditingFinished: if (tunnelApi) tunnelApi.saveCloudflareToken()
+                            }
+
+                            TextField {
+                                Layout.fillWidth: true
+                                visible: tunnelApi && tunnelApi.tunnelEnabled && tunnelApi.tunnelProvider === "cloudflare"
+                                placeholderText: tunnelApi ? tunnelApi.cloudflareHostnamePlaceholder : "widgets.example.com"
+                                color: ink
+                                font.pixelSize: 12
+                                selectByMouse: true
+                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                text: tunnelApi ? tunnelApi.cloudflareHostname : ""
+                                onEditingFinished: if (tunnelApi) tunnelApi.setCloudflareHostname(text)
+                            }
+
+                            PillButton {
+                                visible: tunnelApi && tunnelApi.tunnelEnabled && tunnelApi.tunnelProvider === "cloudflare"
+                                text: "Cloudflare tunnels"
+                                onClicked: if (tunnelApi) tunnelApi.openCloudflareTunnelsPage()
+                            }
+
+                            TextField {
+                                Layout.fillWidth: true
+                                visible: tunnelApi && tunnelApi.tunnelEnabled && tunnelApi.tunnelProvider === "custom"
+                                placeholderText: "https://widgets.example.com"
                                 color: ink
                                 font.pixelSize: 12
                                 selectByMouse: true
@@ -1718,7 +1853,7 @@ Item {
                                 focusPolicy: Qt.NoFocus
                                 onClicked: widgetBgColorDlg.open()
                             }
-                            Slider {
+                            StyledSlider {
                                 id: widgetBgAlpha
                                 Layout.fillWidth: true
                                 from: 0.0
@@ -1804,7 +1939,7 @@ Item {
                                 focusPolicy: Qt.NoFocus
                                 onClicked: bubbleColorDlg.open()
                             }
-                            Slider {
+                            StyledSlider {
                                 id: bubbleAlpha
                                 Layout.fillWidth: true
                                 from: 0.0
@@ -1954,7 +2089,7 @@ Item {
                                 focusPolicy: Qt.NoFocus
                                 onClicked: textShadowColorDlg.open()
                             }
-                            Slider {
+                            StyledSlider {
                                 id: shadowAlpha
                                 Layout.fillWidth: true
                                 from: 0.0
@@ -2435,7 +2570,7 @@ Item {
                             spacing: 10
                             visible: root.onlineCfg && root.onlineCfg.bubble_bg_enabled
                             Text { text: "Непрозорість фону"; color: muted; Layout.preferredWidth: 220 }
-                            Slider {
+                            StyledSlider {
                                 Layout.fillWidth: true
                                 from: 0.0
                                 to: 1.0
@@ -3231,7 +3366,7 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Показувати смугу «до корони»"; color: muted; Layout.preferredWidth: 160 }
-                            CheckBox {
+                            StyledCheckBox {
                                 checked: root.kingCfg ? !!root.kingCfg.show_gap_strip : true
                                 onClicked: {
                                     if (root._loadingKingCfg || root.kingCfg === null) return;
@@ -3369,7 +3504,7 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Рух аватарки"; color: muted; Layout.preferredWidth: 160 }
-                            CheckBox {
+                            StyledCheckBox {
                                 checked: !root.kingCfg || (root.kingCfg.anim_avatar_motion !== false && root.kingCfg.anim_avatar_motion !== 0)
                                 onClicked: {
                                     if (root._loadingKingCfg || root.kingCfg === null) return;
@@ -3384,7 +3519,7 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Корона (левітація)"; color: muted; Layout.preferredWidth: 160 }
-                            CheckBox {
+                            StyledCheckBox {
                                 checked: !root.kingCfg || (root.kingCfg.anim_crown_float !== false && root.kingCfg.anim_crown_float !== 0)
                                 onClicked: {
                                     if (root._loadingKingCfg || root.kingCfg === null) return;
@@ -3399,7 +3534,7 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Золоті промені (фон)"; color: muted; Layout.preferredWidth: 160 }
-                            CheckBox {
+                            StyledCheckBox {
                                 checked: !root.kingCfg || (root.kingCfg.anim_rays_spin !== false && root.kingCfg.anim_rays_spin !== 0)
                                 onClicked: {
                                     if (root._loadingKingCfg || root.kingCfg === null) return;
@@ -3414,7 +3549,7 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Монети / пил (знизу)"; color: muted; Layout.preferredWidth: 160 }
-                            CheckBox {
+                            StyledCheckBox {
                                 checked: !root.kingCfg || (root.kingCfg.anim_coins_fall !== false && root.kingCfg.anim_coins_fall !== 0)
                                 onClicked: {
                                     if (root._loadingKingCfg || root.kingCfg === null) return;
@@ -3429,7 +3564,7 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Пульсація числа 💎"; color: muted; Layout.preferredWidth: 160 }
-                            CheckBox {
+                            StyledCheckBox {
                                 checked: !root.kingCfg || (root.kingCfg.anim_gem_pulse !== false && root.kingCfg.anim_gem_pulse !== 0)
                                 onClicked: {
                                     if (root._loadingKingCfg || root.kingCfg === null) return;
@@ -3444,7 +3579,7 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Мерехтіння заголовка"; color: muted; Layout.preferredWidth: 160 }
-                            CheckBox {
+                            StyledCheckBox {
                                 checked: !root.kingCfg || (root.kingCfg.anim_title_shimmer !== false && root.kingCfg.anim_title_shimmer !== 0)
                                 onClicked: {
                                     if (root._loadingKingCfg || root.kingCfg === null) return;
@@ -3459,7 +3594,7 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Феєрверки при вході короля"; color: muted; Layout.preferredWidth: 160 }
-                            CheckBox {
+                            StyledCheckBox {
                                 checked: !root.kingCfg || (root.kingCfg.anim_fireworks_on_presence !== false && root.kingCfg.anim_fireworks_on_presence !== 0)
                                 onClicked: {
                                     if (root._loadingKingCfg || root.kingCfg === null) return;
@@ -3514,7 +3649,7 @@ Item {
                             Item { Layout.fillWidth: true }
                         }
 
-                        CheckBox {
+                        StyledCheckBox {
                             id: battleHideWhenIdleChk
                             text: "Порожній оверлей, коли битви немає"
                             checked: !root.battleCfg || root.battleCfg.hide_when_idle !== false
@@ -3578,7 +3713,7 @@ Item {
                                 hostDefault: 100
                                 from: 1; to: 10000; stepSize: 10
                             }
-                            CheckBox {
+                            StyledCheckBox {
                                 id: battleAutoArmChk
                                 text: "Авто-старт"
                                 checked: !root.battleCfg || root.battleCfg.auto_arm_enabled !== false
@@ -4048,7 +4183,7 @@ Item {
                             spacing: 10
                             visible: root.actionsCfg && root.actionsCfg.bubble_bg_enabled
                             Text { text: "Bubble opacity"; color: muted; Layout.preferredWidth: 220 }
-                            Slider {
+                            StyledSlider {
                                 Layout.fillWidth: true
                                 from: 0.0
                                 to: 1.0

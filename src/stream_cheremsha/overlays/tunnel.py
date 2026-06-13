@@ -3,11 +3,19 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 from pyngrok import ngrok
 
+from stream_cheremsha.overlays.cloudflare_tunnel import (
+    cloudflared_exit_detail,
+    public_url_for_hostname,
+    start_cloudflared_process,
+    stop_cloudflared_process,
+    validate_cloudflare_hostname,
+)
 from stream_cheremsha.overlays.ngrok_domain import (
     fetch_ngrok_dev_domain,
     normalize_ngrok_domain,
@@ -80,6 +88,8 @@ class OverlayTunnel:
         self._state = TunnelState()
         self._ngrok_tunnel: Any | None = None
         self._ngrok_domain_used = ""
+        self._cloudflared_proc: Any | None = None
+        self._cloudflared_config_path: Path | None = None
 
     def state(self) -> TunnelState:
         return self._state
@@ -95,6 +105,9 @@ class OverlayTunnel:
         ngrok_authtoken: str = "",
         ngrok_domain: str = "",
         custom_url: str = "",
+        cloudflare_hostname: str = "",
+        cloudflare_tunnel_token: str = "",
+        cloudflared_executable: str = "",
     ) -> str:
         await self.stop()
         try:
@@ -123,6 +136,13 @@ class OverlayTunnel:
         try:
             if resolved == TunnelProvider.NGROK:
                 public_url = await self._start_ngrok(local_url, ngrok_authtoken, ngrok_domain)
+            elif resolved == TunnelProvider.CLOUDFLARE:
+                public_url = await self._start_cloudflare(
+                    local_url,
+                    hostname=cloudflare_hostname,
+                    tunnel_token=cloudflare_tunnel_token,
+                    cloudflared_executable=cloudflared_executable,
+                )
             else:
                 raise ValueError(f"Unsupported tunnel provider: {resolved}")
         except (OSError, RuntimeError, ValueError) as e:
@@ -148,6 +168,15 @@ class OverlayTunnel:
             except (OSError, RuntimeError) as e:
                 logger.warning("ngrok shutdown failed: %s", e)
 
+        cloudflared_proc = self._cloudflared_proc
+        self._cloudflared_proc = None
+        self._cloudflared_config_path = None
+        if cloudflared_proc is not None:
+            try:
+                await asyncio.to_thread(stop_cloudflared_process, cloudflared_proc)
+            except OSError as e:
+                logger.warning("cloudflared shutdown failed: %s", e)
+
     async def _start_ngrok(self, local_url: str, authtoken: str, domain: str) -> str:
         port = _local_port(local_url)
 
@@ -161,4 +190,44 @@ class OverlayTunnel:
         tunnel, public_url, domain_used = await asyncio.to_thread(_connect)
         self._ngrok_tunnel = tunnel
         self._ngrok_domain_used = domain_used
+        return public_url
+
+    async def _start_cloudflare(
+        self,
+        local_url: str,
+        *,
+        hostname: str,
+        tunnel_token: str,
+        cloudflared_executable: str,
+    ) -> str:
+        host = validate_cloudflare_hostname(hostname)
+        public_url = public_url_for_hostname(host)
+        logger.info(
+            "Cloudflare tunnel token mode for %s (dashboard ingress should target %s)",
+            host,
+            local_url,
+        )
+        exe = str(cloudflared_executable or "").strip()
+        if not exe:
+            raise RuntimeError(
+                "cloudflared is required. Install it via winget (Cloudflare.cloudflared) "
+                "or from https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/"
+            )
+
+        token = str(tunnel_token or "").strip()
+        if not token:
+            raise RuntimeError(
+                "Cloudflare tunnel token is required. "
+                "Copy it from Zero Trust → Networks → Tunnels → your tunnel → Install connector."
+            )
+
+        def _connect() -> tuple[Any, Path | None]:
+            proc = start_cloudflared_process(executable=exe, token=token)
+            if proc.poll() is not None:
+                raise RuntimeError(cloudflared_exit_detail(proc))
+            return proc, None
+
+        proc, config_path = await asyncio.to_thread(_connect)
+        self._cloudflared_proc = proc
+        self._cloudflared_config_path = config_path
         return public_url

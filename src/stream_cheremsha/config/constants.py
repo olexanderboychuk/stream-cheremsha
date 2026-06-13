@@ -24,8 +24,13 @@ SETTINGS_OBS_WS_PORT = "obs/websocket_port"
 # When false, the app does not open OBS WebSocket connections (no scene pickers, no actions).
 SETTINGS_OBS_WS_ENABLED = "obs/websocket_enabled"
 SETTINGS_OVERLAY_TUNNEL_ENABLED = "overlay/tunnel_enabled"
+SETTINGS_OVERLAY_TUNNEL_PROVIDER = "overlay/tunnel_provider"
 SETTINGS_OVERLAY_TUNNEL_CUSTOM_URL = "overlay/tunnel_custom_url"
 SETTINGS_OVERLAY_NGROK_DOMAIN = "overlay/ngrok_domain"
+SETTINGS_OVERLAY_CLOUDFLARE_HOSTNAME = "overlay/cloudflare_hostname"
+KEY_CLOUDFLARE_TUNNEL_TOKEN = "cloudflare_tunnel_token"
+ENV_CLOUDFLARE_TUNNEL_TOKEN = "STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_TOKEN"
+ENV_CLOUDFLARE_TUNNEL_HOSTNAME = "STREAM_CHEREMSHA_CLOUDFLARE_HOSTNAME"
 
 # Public (non-secret) build/run-time overrides.
 # Example (PowerShell): $env:STREAM_CHEREMSHA_TWITCH_CLIENT_ID="..."

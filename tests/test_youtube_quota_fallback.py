@@ -11,7 +11,7 @@ from stream_cheremsha.chat.youtube_chat_downloader import (
     ChatDownloaderMessage,
     pump_messages_to_queue,
 )
-from stream_cheremsha.chat.youtube_source import YouTubeChatSource
+from stream_cheremsha.chat.youtube_source import YouTubeActionSignal, YouTubeChatSource
 from stream_cheremsha.domain.models import ChatMessage, ChatPlatform
 
 
@@ -37,6 +37,71 @@ class _Coord:
 
     async def enqueue_chat(self, msg: ChatMessage) -> None:
         self.messages.append(msg)
+
+
+def _make_source(on_action_event: object = None) -> YouTubeChatSource:
+    return YouTubeChatSource(
+        coordinator=_Coord(),  # type: ignore[arg-type]
+        on_status=lambda _s: None,
+        on_analytics_event=None,
+        get_locale=lambda: "uk",
+        on_action_event=on_action_event,  # type: ignore[arg-type]
+    )
+
+
+def test_ingest_emits_superchat_action_signal_with_amount() -> None:
+    signals: list[YouTubeActionSignal] = []
+    src = _make_source(signals.append)
+    snippet = {
+        "type": "superChatEvent",
+        "superChatDetails": {
+            "amountMicros": "5000000",
+            "currency": "USD",
+            "amountDisplayString": "$5.00",
+        },
+    }
+    src._ingest_analytics_item(
+        author="Alice",
+        snippet=snippet,
+        text="great stream",
+        profile_image_url="https://yt3.ggpht.com/alice.png",
+    )
+    assert len(signals) == 1
+    s = signals[0]
+    assert s.kind == "superchat"
+    assert s.user == "Alice"
+    assert s.amount_micros == 5_000_000
+    assert s.currency == "USD"
+    assert s.amount_display == "$5.00"
+    assert s.message == "great stream"
+    assert s.profile_image_url == "https://yt3.ggpht.com/alice.png"
+
+
+def test_ingest_emits_member_milestone_signal_with_months() -> None:
+    signals: list[YouTubeActionSignal] = []
+    src = _make_source(signals.append)
+    snippet = {
+        "type": "memberMilestoneChatEvent",
+        "memberMilestoneChatDetails": {"memberLevelName": "Gold", "memberMonth": 6},
+    }
+    src._ingest_analytics_item(author="Bob", snippet=snippet, text="")
+    assert len(signals) == 1
+    s = signals[0]
+    assert s.kind == "member"
+    assert s.user == "Bob"
+    assert s.months == 6
+    assert s.level == "Gold"
+
+
+def test_ingest_plain_chat_emits_no_action_signal() -> None:
+    signals: list[YouTubeActionSignal] = []
+    src = _make_source(signals.append)
+    src._ingest_analytics_item(
+        author="Carol",
+        snippet={"type": "textMessageEvent"},
+        text="hello",
+    )
+    assert signals == []
 
 
 def _quota_http_error() -> HttpError:

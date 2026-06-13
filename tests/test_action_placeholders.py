@@ -13,6 +13,8 @@ from stream_cheremsha.actions.events import (
     TikTokPaidSubscribedEvent,
     TikTokSharedEvent,
     TwitchCheerEvent,
+    YouTubeMemberEvent,
+    YouTubeSuperChatEvent,
 )
 from stream_cheremsha.domain.models import ChatPlatform
 
@@ -143,3 +145,33 @@ def test_chat_comment_username_aliases() -> None:
         received_at=datetime.now(tz=UTC),
     )
     assert apply_action_placeholders("{comment} {username}", ev) == "hello bob"
+
+
+def test_youtube_superchat_placeholders() -> None:
+    ev = YouTubeSuperChatEvent(
+        platform=ChatPlatform.YOUTUBE,
+        user="alice",
+        amount_micros=5_000_000,
+        currency="USD",
+        amount_display="$5.00",
+        message="great stream",
+        received_at=datetime.now(tz=UTC),
+    )
+    assert (
+        apply_action_placeholders("{user} {amount} {amount_value} {currency} {platform}", ev)
+        == "alice $5.00 5 USD youtube"
+    )
+    assert apply_action_placeholders("{message}", ev) == "great stream"
+
+
+def test_youtube_member_placeholders() -> None:
+    ev = YouTubeMemberEvent(
+        platform=ChatPlatform.YOUTUBE,
+        user="bob",
+        months=3,
+        level="Gold",
+        received_at=datetime.now(tz=UTC),
+    )
+    assert (
+        apply_action_placeholders("{user} {months} {level} {platform}", ev) == "bob 3 Gold youtube"
+    )

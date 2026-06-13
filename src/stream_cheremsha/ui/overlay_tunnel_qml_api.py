@@ -1,4 +1,4 @@
-"""QML bridge for overlay public URL tunnel settings (ngrok)."""
+"""QML bridge for overlay public URL tunnel settings (ngrok / Cloudflare)."""
 
 from __future__ import annotations
 
@@ -12,6 +12,9 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QMessageBox
 
 from stream_cheremsha.config import constants, keyring_store
+from stream_cheremsha.config.tunnel_secrets import (
+    cloudflare_tunnel_token_configured,
+)
 from stream_cheremsha.overlays.tunnel_types import TunnelProvider
 
 if typing.TYPE_CHECKING:
@@ -23,10 +26,14 @@ logger = logging.getLogger(__name__)
 class OverlayTunnelQmlApi(QObject):
     tunnelEnabledChanged = Signal()
     tunnelStatusTextChanged = Signal()
+    tunnelProviderChanged = Signal()
     tunnelCustomUrlChanged = Signal()
     ngrokTokenChanged = Signal()
     ngrokTokenConfiguredChanged = Signal()
     ngrokDomainChanged = Signal()
+    cloudflareHostnameChanged = Signal()
+    cloudflareTokenChanged = Signal()
+    cloudflareTokenConfiguredChanged = Signal()
     localBaseUrlChanged = Signal()
 
     def __init__(self, main: MainWindow) -> None:
@@ -34,9 +41,12 @@ class OverlayTunnelQmlApi(QObject):
         self._m: weakref.ref[MainWindow] = weakref.ref(main)
         self._tunnel_enabled = False
         self._tunnel_status_text = ""
+        self._tunnel_provider = TunnelProvider.NGROK.value
         self._tunnel_custom_url = ""
         self._ngrok_token = ""
         self._ngrok_domain = ""
+        self._cloudflare_hostname = ""
+        self._cloudflare_token = ""
         self._local_base_url = ""
         self._load_from_settings()
 
@@ -55,11 +65,22 @@ class OverlayTunnelQmlApi(QObject):
             return
         s = w._settings  # noqa: SLF001
         self._tunnel_enabled = bool(s.value(constants.SETTINGS_OVERLAY_TUNNEL_ENABLED, False, bool))
+        provider = str(
+            s.value(constants.SETTINGS_OVERLAY_TUNNEL_PROVIDER, TunnelProvider.NGROK.value, str)
+            or ""
+        )
+        if provider not in {p.value for p in TunnelProvider if p not in (TunnelProvider.NONE,)}:
+            provider = TunnelProvider.NGROK.value
+        self._tunnel_provider = provider
         self._tunnel_custom_url = str(
             s.value(constants.SETTINGS_OVERLAY_TUNNEL_CUSTOM_URL, "", str) or ""
         )
         self._ngrok_domain = str(s.value(constants.SETTINGS_OVERLAY_NGROK_DOMAIN, "", str) or "")
+        self._cloudflare_hostname = str(
+            s.value(constants.SETTINGS_OVERLAY_CLOUDFLARE_HOSTNAME, "", str) or ""
+        )
         self._ngrok_token = ""
+        self._cloudflare_token = ""
         self._refresh_status_text()
 
     def refresh_from_tunnel(self, *, local_base_url: str = "") -> None:
@@ -78,7 +99,10 @@ class OverlayTunnelQmlApi(QObject):
         if not self._tunnel_enabled:
             text = "Локальний URL (localhost)" if uk else "Local URL (localhost)"
         elif st.status == "starting":
-            text = "Запуск ngrok…" if uk else "Starting ngrok…"
+            if self._tunnel_provider == TunnelProvider.CLOUDFLARE.value:
+                text = "Запуск cloudflared…" if uk else "Starting cloudflared…"
+            else:
+                text = "Запуск ngrok…" if uk else "Starting ngrok…"
         elif st.status == "active" and st.public_url:
             text = st.public_url
         elif st.status == "error":
@@ -97,6 +121,10 @@ class OverlayTunnelQmlApi(QObject):
     def tunnelStatusText(self) -> str:  # noqa: ANN201 - PySide pattern
         return self._tunnel_status_text
 
+    @Property(str, notify=tunnelProviderChanged)
+    def tunnelProvider(self) -> str:  # noqa: ANN201 - PySide pattern
+        return self._tunnel_provider
+
     @Property(str, notify=localBaseUrlChanged)
     def localBaseUrl(self) -> str:  # noqa: ANN201 - PySide pattern
         return self._local_base_url
@@ -108,6 +136,10 @@ class OverlayTunnelQmlApi(QObject):
     @Property(str, notify=ngrokDomainChanged)
     def ngrokDomain(self) -> str:  # noqa: ANN201 - PySide pattern
         return self._ngrok_domain
+
+    @Property(str, notify=cloudflareHostnameChanged)
+    def cloudflareHostname(self) -> str:  # noqa: ANN201 - PySide pattern
+        return self._cloudflare_hostname
 
     @Property(str, notify=ngrokTokenConfiguredChanged)
     def ngrokTokenPlaceholder(self) -> str:  # noqa: ANN201 - PySide pattern
@@ -128,32 +160,74 @@ class OverlayTunnelQmlApi(QObject):
     def ngrokTokenConfigured(self) -> bool:  # noqa: ANN201 - PySide pattern
         return bool((keyring_store.get_password(constants.KEY_NGROK_AUTHTOKEN) or "").strip())
 
+    @Property(str, notify=cloudflareTokenConfiguredChanged)
+    def cloudflareTokenPlaceholder(self) -> str:  # noqa: ANN201 - PySide pattern
+        uk = self._locale() != "en"
+        if self.cloudflareTokenConfigured:
+            return (
+                "tunnel token збережено — введіть новий для заміни"
+                if uk
+                else "tunnel token saved — enter a new one to replace"
+            )
+        return "Cloudflare tunnel token"
+
+    @Property(str, notify=cloudflareTokenChanged)
+    def cloudflareToken(self) -> str:  # noqa: ANN201 - PySide pattern
+        return ""
+
+    @Property(bool, notify=cloudflareTokenConfiguredChanged)
+    def cloudflareTokenConfigured(self) -> bool:  # noqa: ANN201 - PySide pattern
+        return cloudflare_tunnel_token_configured()
+
     @Property(str, constant=True)
     def tunnelEnabledLabel(self) -> str:  # noqa: ANN201 - PySide pattern
         uk = self._locale() != "en"
         return "Публічний URL (TikTok Live Studio)" if uk else "Public URL (TikTok Live Studio)"
 
-    @Property(str, constant=True)
+    @Property(str, notify=tunnelProviderChanged)
     def tunnelHelpText(self) -> str:  # noqa: ANN201 - PySide pattern
         uk = self._locale() != "en"
+        if self._tunnel_provider == TunnelProvider.CLOUDFLARE.value:
+            if uk:
+                return (
+                    "Один раз налаштуйте tunnel у Cloudflare Zero Trust: Public hostname → "
+                    "http://127.0.0.1:17171. Нижче вкажіть tunnel token і hostname — "
+                    "той самий token можна використовувати на різних комп’ютерах."
+                )
+            return (
+                "Set up the tunnel once in Cloudflare Zero Trust: public hostname → "
+                "http://127.0.0.1:17171. Enter the tunnel token and hostname below — "
+                "the same token works on every PC."
+            )
+        if self._tunnel_provider == TunnelProvider.CUSTOM.value:
+            if uk:
+                return (
+                    "Вкажіть готовий публічний https:// URL (наприклад, власний reverse proxy). "
+                    "Cheremsha не запускає тунель — лише підставляє URL у віджети."
+                )
+            return (
+                "Enter a ready public https:// URL (for example your own reverse proxy). "
+                "Cheremsha does not start a tunnel — it only uses the URL in widget links."
+            )
         if uk:
             return (
                 "TikTok Live Studio не приймає localhost. Увімкніть ngrok — "
-                "URL віджетів буде стабільним https://ваш-домен.ngrok-free.dev/…"
+                "URL віджетів буде стабільним https://ваш-домен.ngrok-free.dev/… "
+                "(на безкоштовному плані ngrok показує попередження у браузері)."
             )
         return (
             "TikTok Live Studio rejects localhost. Enable ngrok for a stable "
-            "https://your-name.ngrok-free.dev/… widget URL."
+            "https://your-name.ngrok-free.dev/… widget URL "
+            "(free ngrok shows a browser warning interstitial)."
         )
 
     @Property(str, constant=True)
     def ngrokDomainPlaceholder(self) -> str:  # noqa: ANN201 - PySide pattern
-        uk = self._locale() != "en"
-        return (
-            "abc123.ngrok-free.dev (dashboard.ngrok.com/domains)"
-            if uk
-            else "abc123.ngrok-free.dev (dashboard.ngrok.com/domains)"
-        )
+        return "abc123.ngrok-free.dev (dashboard.ngrok.com/domains)"
+
+    @Property(str, constant=True)
+    def cloudflareHostnamePlaceholder(self) -> str:  # noqa: ANN201 - PySide pattern
+        return "widgets.example.com"
 
     @Slot(bool)
     def setTunnelEnabled(self, enabled: bool) -> None:
@@ -165,6 +239,25 @@ class OverlayTunnelQmlApi(QObject):
             w._settings.setValue(constants.SETTINGS_OVERLAY_TUNNEL_ENABLED, self._tunnel_enabled)  # noqa: SLF001
         self.tunnelEnabledChanged.emit()
         self._schedule_apply(prompt_install=True)
+
+    @Slot(str)
+    def setTunnelProvider(self, provider: str) -> None:
+        value = str(provider or "").strip()
+        if value not in {
+            TunnelProvider.NGROK.value,
+            TunnelProvider.CLOUDFLARE.value,
+            TunnelProvider.CUSTOM.value,
+        }:
+            value = TunnelProvider.NGROK.value
+        if value == self._tunnel_provider:
+            return
+        self._tunnel_provider = value
+        w = self._main()
+        if w is not None:
+            w._settings.setValue(constants.SETTINGS_OVERLAY_TUNNEL_PROVIDER, value)  # noqa: SLF001
+        self.tunnelProviderChanged.emit()
+        if self._tunnel_enabled:
+            self._schedule_apply(prompt_install=True)
 
     @Slot(str)
     def setTunnelCustomUrl(self, url: str) -> None:
@@ -196,7 +289,7 @@ class OverlayTunnelQmlApi(QObject):
         if w is not None:
             w._settings.setValue(constants.SETTINGS_OVERLAY_NGROK_DOMAIN, value)  # noqa: SLF001
         self.ngrokDomainChanged.emit()
-        if self._tunnel_enabled and not self._tunnel_custom_url.strip():
+        if self._tunnel_enabled and self._tunnel_provider == TunnelProvider.NGROK.value:
             self._schedule_apply()
 
     @Slot(str)
@@ -222,12 +315,55 @@ class OverlayTunnelQmlApi(QObject):
         self._ngrok_token = ""
         self.ngrokTokenChanged.emit()
         self.ngrokTokenConfiguredChanged.emit()
-        if self._tunnel_enabled:
+        if self._tunnel_enabled and self._tunnel_provider == TunnelProvider.NGROK.value:
+            self._schedule_apply(prompt_install=True)
+
+    @Slot(str)
+    def setCloudflareHostname(self, hostname: str) -> None:
+        value = str(hostname or "").strip()
+        if value == self._cloudflare_hostname:
+            return
+        self._cloudflare_hostname = value
+        w = self._main()
+        if w is not None:
+            w._settings.setValue(constants.SETTINGS_OVERLAY_CLOUDFLARE_HOSTNAME, value)  # noqa: SLF001
+        self.cloudflareHostnameChanged.emit()
+        if self._tunnel_enabled and self._tunnel_provider == TunnelProvider.CLOUDFLARE.value:
+            self._schedule_apply()
+
+    @Slot(str)
+    def setCloudflareToken(self, token: str) -> None:
+        value = str(token or "")
+        if value == self._cloudflare_token:
+            return
+        self._cloudflare_token = value
+        self.cloudflareTokenChanged.emit()
+
+    @Slot()
+    def saveCloudflareToken(self) -> None:
+        token = self._cloudflare_token.strip()
+        if not token:
+            return
+        try:
+            keyring_store.set_password(constants.KEY_CLOUDFLARE_TUNNEL_TOKEN, token)
+        except RuntimeError as e:
+            w = self._main()
+            if w is not None:
+                QMessageBox.warning(w, w._tr("dlg.keyring"), str(e))  # noqa: SLF001
+            return
+        self._cloudflare_token = ""
+        self.cloudflareTokenChanged.emit()
+        self.cloudflareTokenConfiguredChanged.emit()
+        if self._tunnel_enabled and self._tunnel_provider == TunnelProvider.CLOUDFLARE.value:
             self._schedule_apply(prompt_install=True)
 
     @Slot()
     def openNgrokDomainsPage(self) -> None:
         QDesktopServices.openUrl("https://dashboard.ngrok.com/domains")
+
+    @Slot()
+    def openCloudflareTunnelsPage(self) -> None:
+        QDesktopServices.openUrl("https://one.dash.cloudflare.com/?to=/:account/networks/tunnels")
 
     @Slot()
     def applyTunnelSettings(self) -> None:
@@ -253,6 +389,4 @@ class OverlayTunnelQmlApi(QObject):
         )
 
     def resolved_tunnel_provider(self) -> str:
-        if self._tunnel_custom_url.strip():
-            return TunnelProvider.CUSTOM.value
-        return TunnelProvider.NGROK.value
+        return self._tunnel_provider

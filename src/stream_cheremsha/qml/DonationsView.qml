@@ -96,6 +96,47 @@ Item {
         }
     }
 
+    // Same preference toggle as ConnectionsView.qml `ConnPrefSwitch`.
+    component ConnPrefSwitch: Switch {
+        id: prefSw
+        padding: 0
+        implicitWidth: 46
+        implicitHeight: 24
+        focusPolicy: Qt.NoFocus
+        hoverEnabled: true
+        transformOrigin: Item.Right
+        scale: prefSw.hovered ? 1.06 : 1.0
+        Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+
+        indicator: Rectangle {
+            width: prefSw.implicitWidth
+            height: prefSw.implicitHeight
+            radius: 12
+            color: prefSw.checked ? "#134e4a" : "#252d3d"
+            border.width: 1
+            border.color: prefSw.checked ? "#14b8a6" : "#3b4a63"
+            opacity: prefSw.enabled ? 1.0 : 0.55
+            Behavior on color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
+            Behavior on border.color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
+
+            Rectangle {
+                width: 18
+                height: 18
+                radius: 9
+                y: 3
+                x: prefSw.checked ? (parent.width - width - 3) : 3
+                color: prefSw.checked ? "#e8eaed" : "#52607a"
+                border.width: 1
+                border.color: prefSw.checked ? "#cbd5e1" : "#3d4a60"
+                Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                Behavior on color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                Behavior on border.color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
+            }
+        }
+
+        contentItem: Item {}
+    }
+
     // `donApi` is injected as a context property from Python. When it is not set yet (or
     // the QML is loaded without it), bindings like `donApi.loc(...)` throw and spam logs.
     // Guard by only instantiating the main UI when `donApi` exists.
@@ -269,11 +310,8 @@ Item {
                                         font.pixelSize: 11
                                         font.weight: Font.Medium
                                     }
-                                    Switch {
+                                    ConnPrefSwitch {
                                         id: swCardDonatikLive
-                                        padding: 0
-                                        focusPolicy: Qt.NoFocus
-                                        scale: 0.88
                                         checked: donApi.donatikLivePoll
                                         onToggled: {
                                             donApi.setDonatikLivePoll(swCardDonatikLive.checked)
@@ -286,11 +324,8 @@ Item {
                                         font.pixelSize: 11
                                         font.weight: Font.Medium
                                     }
-                                    Switch {
+                                    ConnPrefSwitch {
                                         id: swCardDonatikTts
-                                        padding: 0
-                                        focusPolicy: Qt.NoFocus
-                                        scale: 0.88
                                         checked: donApi.donatikTtsNew
                                         onToggled: donApi.setDonatikTtsNew(swCardDonatikTts.checked)
                                     }
@@ -388,11 +423,8 @@ Item {
                                         font.pixelSize: 11
                                         font.weight: Font.Medium
                                     }
-                                    Switch {
+                                    ConnPrefSwitch {
                                         id: swCardDonatelloLive
-                                        padding: 0
-                                        focusPolicy: Qt.NoFocus
-                                        scale: 0.88
                                         checked: donApi.donatelloLivePoll
                                         onToggled: donApi.setDonatelloLivePoll(swCardDonatelloLive.checked)
                                     }
@@ -402,11 +434,8 @@ Item {
                                         font.pixelSize: 11
                                         font.weight: Font.Medium
                                     }
-                                    Switch {
+                                    ConnPrefSwitch {
                                         id: swCardDonatelloTts
-                                        padding: 0
-                                        focusPolicy: Qt.NoFocus
-                                        scale: 0.88
                                         checked: donApi.donatelloTtsNew
                                         onToggled: donApi.setDonatelloTtsNew(swCardDonatelloTts.checked)
                                     }
@@ -600,11 +629,8 @@ Item {
                                     color: muted
                                     font.pixelSize: 12
                                 }
-                                Switch {
+                                ConnPrefSwitch {
                                     id: swDonatikLive
-                                    padding: 0
-                                    focusPolicy: Qt.NoFocus
-                                    hoverEnabled: true
                                     checked: donApi.donatikLivePoll
                                     onToggled: {
                                         donApi.setDonatikLivePoll(swDonatikLive.checked)
@@ -619,11 +645,8 @@ Item {
                                     color: muted
                                     font.pixelSize: 12
                                 }
-                                Switch {
+                                ConnPrefSwitch {
                                     id: swDonatikTts
-                                    padding: 0
-                                    focusPolicy: Qt.NoFocus
-                                    hoverEnabled: true
                                     checked: donApi.donatikTtsNew
                                     onToggled: donApi.setDonatikTtsNew(swDonatikTts.checked)
                                 }
@@ -891,11 +914,8 @@ Item {
                                     color: muted
                                     font.pixelSize: 12
                                 }
-                                Switch {
+                                ConnPrefSwitch {
                                     id: swDonatelloLive
-                                    padding: 0
-                                    focusPolicy: Qt.NoFocus
-                                    hoverEnabled: true
                                     checked: donApi.donatelloLivePoll
                                     onToggled: donApi.setDonatelloLivePoll(swDonatelloLive.checked)
                                 }
@@ -907,11 +927,8 @@ Item {
                                     color: muted
                                     font.pixelSize: 12
                                 }
-                                Switch {
+                                ConnPrefSwitch {
                                     id: swDonatelloTts
-                                    padding: 0
-                                    focusPolicy: Qt.NoFocus
-                                    hoverEnabled: true
                                     checked: donApi.donatelloTtsNew
                                     onToggled: donApi.setDonatelloTtsNew(swDonatelloTts.checked)
                                 }

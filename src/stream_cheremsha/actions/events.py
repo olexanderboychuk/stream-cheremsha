@@ -137,3 +137,46 @@ class TwitchRaidEvent:
     viewers: int
     received_at: datetime
     profile_picture_url: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class YouTubeSuperChatEvent:
+    """YouTube Super Chat (superChatEvent). `amount_micros` is the tip in currency micros."""
+
+    platform: ChatPlatform
+    user: str
+    amount_micros: int
+    currency: str
+    amount_display: str
+    message: str
+    received_at: datetime
+    profile_picture_url: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class YouTubeSuperStickerEvent:
+    """YouTube Super Sticker (superStickerEvent). `amount_micros` is the tip in currency micros."""
+
+    platform: ChatPlatform
+    user: str
+    amount_micros: int
+    currency: str
+    amount_display: str
+    received_at: datetime
+    profile_picture_url: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class YouTubeMemberEvent:
+    """YouTube membership (newSponsorEvent / memberMilestoneChatEvent).
+
+    `months` is the milestone month count (0 for a brand-new member); `level` is the membership
+    tier name when YouTube provides it.
+    """
+
+    platform: ChatPlatform
+    user: str
+    months: int
+    level: str
+    received_at: datetime
+    profile_picture_url: str = ""

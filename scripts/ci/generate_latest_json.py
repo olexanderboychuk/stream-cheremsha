@@ -25,6 +25,11 @@ def main() -> None:
     )
     ap.add_argument("--installer-path", required=True)
     ap.add_argument("--portable-zip-path", required=True)
+    ap.add_argument(
+        "--appimage-path",
+        default=None,
+        help="Optional Linux AppImage artifact for platforms.linux.appimage",
+    )
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
@@ -48,6 +53,19 @@ def main() -> None:
     portable_zip_name = portable_zip_path.name
 
     base = f"https://github.com/{repo}/releases/download/{tag}"
+
+    linux_platform: dict[str, object] = {
+        "releases_url": f"https://github.com/{repo}/releases/tag/{tag}",
+    }
+    if args.appimage_path:
+        appimage_path = Path(args.appimage_path)
+        if not appimage_path.is_file():
+            raise SystemExit(f"appimage not found: {appimage_path}")
+        linux_platform["appimage"] = {
+            "url": f"{base}/{appimage_path.name}",
+            "sha256": _sha256_file(appimage_path),
+        }
+
     manifest = {
         "schema": 1,
         "version": version,
@@ -64,7 +82,7 @@ def main() -> None:
                     "sha256": _sha256_file(portable_zip_path),
                 },
             },
-            "linux": {"releases_url": f"https://github.com/{repo}/releases/tag/{tag}"},
+            "linux": linux_platform,
         },
         "changelog_url": f"https://github.com/{repo}/blob/{tag}/CHANGELOG.md",
     }

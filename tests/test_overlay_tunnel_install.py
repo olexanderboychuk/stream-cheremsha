@@ -9,10 +9,20 @@ from stream_cheremsha.overlays.tunnel_install import (
     is_tunnel_cli_installed,
     is_winget_available,
     missing_cli_status_message,
+    provider_auto_installs_cli,
     provider_needs_cli,
     winget_package_id,
 )
 from stream_cheremsha.overlays.tunnel_types import TunnelProvider
+
+
+def test_provider_auto_installs_cli() -> None:
+    assert provider_auto_installs_cli(TunnelProvider.CLOUDFLARE) is True
+    assert provider_auto_installs_cli(TunnelProvider.NGROK) is False
+
+
+def test_winget_package_id_cloudflare() -> None:
+    assert winget_package_id(TunnelProvider.CLOUDFLARE) == "Cloudflare.cloudflared"
 
 
 def test_winget_package_id_ngrok_only() -> None:
@@ -22,6 +32,7 @@ def test_winget_package_id_ngrok_only() -> None:
 
 def test_provider_needs_cli() -> None:
     assert provider_needs_cli(TunnelProvider.NGROK) is True
+    assert provider_needs_cli(TunnelProvider.CLOUDFLARE) is True
     assert provider_needs_cli(TunnelProvider.CUSTOM) is False
 
 

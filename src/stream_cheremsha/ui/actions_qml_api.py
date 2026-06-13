@@ -77,7 +77,20 @@ _GIFT_PLACEHOLDER_TOKENS = frozenset(
 )
 _CHAT_PLACEHOLDER_TOKENS = frozenset({"author", "text"})
 _ENGAGEMENT_PLACEHOLDER_TOKENS = frozenset(
-    {"sender", "user", "kind", "months", "message", "bits", "raider", "viewers"}
+    {
+        "sender",
+        "user",
+        "kind",
+        "months",
+        "message",
+        "bits",
+        "raider",
+        "viewers",
+        "amount",
+        "amount_value",
+        "currency",
+        "level",
+    }
 )
 
 
@@ -260,6 +273,22 @@ def pick_preview_trigger_for_rule(
                 continue
             if "viewers" in tokens or "raider" in tokens:
                 score += 30
+
+        elif t in ("youtube_superchat", "youtube_supersticker"):
+            if tp not in ("all", "youtube"):
+                continue
+            if {"amount", "amount_value", "currency"} & tokens:
+                score += 30
+            elif hints.engagement_no_count:
+                score += 10
+
+        elif t == "youtube_member":
+            if tp not in ("all", "youtube"):
+                continue
+            if "level" in tokens or "months" in tokens:
+                score += 25
+            elif hints.engagement_no_count and not hints.likes and not hints.gift:
+                score += 15
 
         else:
             score = 0
@@ -902,6 +931,49 @@ class ActionsQmlApi(QObject):
                 received_at=now,
             )
             _schedule_preview_task(eng.on_gift_received(ev))
+            msg = ""
+            if wants_overlay and ps is None:
+                msg = "Overlay preview unavailable (overlay server missing)."
+            return msg
+
+        if ev_type in ("youtube_superchat", "youtube_supersticker"):
+            params = ev0.get("params") or {}
+            min_amount = 0.0
+            u = "preview"
+            if isinstance(params, dict):
+                try:
+                    min_amount = float(str(params.get("min_amount", 0)).replace(",", "."))
+                except (TypeError, ValueError):
+                    min_amount = 0.0
+                u = str(params.get("user") or "preview").strip() or "preview"
+            if min_amount < 0:
+                min_amount = 0.0
+            # Use a value at or above the threshold so the preview matches the rule.
+            amount_major = max(min_amount, 1.0)
+            amount_micros = int(round(amount_major * 1_000_000))
+            amount_display = f"${amount_major:g}"
+            now2 = now
+            if ev_type == "youtube_superchat":
+                _schedule_preview_task(
+                    eng.on_youtube_superchat(
+                        u, amount_micros, "USD", amount_display, "preview message", now2
+                    )
+                )
+            else:
+                _schedule_preview_task(
+                    eng.on_youtube_supersticker(u, amount_micros, "USD", amount_display, now2)
+                )
+            msg = ""
+            if wants_overlay and ps is None:
+                msg = "Overlay preview unavailable (overlay server missing)."
+            return msg
+
+        if ev_type == "youtube_member":
+            params = ev0.get("params") or {}
+            u = "preview"
+            if isinstance(params, dict):
+                u = str(params.get("user") or "preview").strip() or "preview"
+            _schedule_preview_task(eng.on_youtube_member(u, 1, "Member", now))
             msg = ""
             if wants_overlay and ps is None:
                 msg = "Overlay preview unavailable (overlay server missing)."

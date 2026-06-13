@@ -111,6 +111,42 @@ async def test_ngrok_start_uses_dev_domain() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cloudflare_start_with_token() -> None:
+    tunnel = OverlayTunnel()
+    fake_proc = MagicMock()
+    fake_proc.poll.return_value = None
+
+    with patch(
+        "stream_cheremsha.overlays.tunnel.start_cloudflared_process",
+        return_value=fake_proc,
+    ) as start_proc:
+        url = await tunnel.start(
+            provider=TunnelProvider.CLOUDFLARE,
+            local_url="http://127.0.0.1:17171",
+            cloudflare_hostname="widgets.example.com",
+            cloudflare_tunnel_token="eyJ-token",
+            cloudflared_executable=r"C:\tools\cloudflared.exe",
+        )
+
+    start_proc.assert_called_once()
+    assert url == "https://widgets.example.com"
+    await tunnel.stop()
+
+
+@pytest.mark.asyncio
+async def test_cloudflare_requires_token() -> None:
+    tunnel = OverlayTunnel()
+    with pytest.raises(RuntimeError, match="tunnel token is required"):
+        await tunnel.start(
+            provider=TunnelProvider.CLOUDFLARE,
+            local_url="http://127.0.0.1:17171",
+            cloudflare_hostname="widgets.example.com",
+            cloudflared_executable=r"C:\tools\cloudflared.exe",
+        )
+    assert tunnel.state().status == "error"
+
+
+@pytest.mark.asyncio
 async def test_stop_clears_state() -> None:
     tunnel = OverlayTunnel()
     await tunnel.start(

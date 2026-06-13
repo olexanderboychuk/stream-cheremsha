@@ -17,11 +17,27 @@ logger = logging.getLogger(__name__)
 
 _WINGET_PACKAGES: dict[TunnelProvider, str] = {
     TunnelProvider.NGROK: "Ngrok.Ngrok",
+    TunnelProvider.CLOUDFLARE: "Cloudflare.cloudflared",
 }
 
 _NGROK_CANDIDATE_DIRS = (
     lambda: Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "ngrok",
     lambda: Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "ngrok",
+    lambda: Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages",
+)
+
+_CLOUDFLARED_CANDIDATE_DIRS = (
+    lambda: Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "cloudflared",
+    lambda: (
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "cloudflare" / "cloudflared"
+    ),
+    lambda: Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "cloudflared",
+    lambda: (
+        Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"))
+        / "cloudflare"
+        / "cloudflared"
+    ),
+    lambda: Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Links",
     lambda: Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages",
 )
 
@@ -47,7 +63,7 @@ def provider_needs_cli(provider: TunnelProvider | str) -> bool:
         resolved = TunnelProvider(str(provider))
     except ValueError:
         return False
-    return resolved == TunnelProvider.NGROK
+    return resolved in (TunnelProvider.NGROK, TunnelProvider.CLOUDFLARE)
 
 
 def refresh_windows_path() -> None:
@@ -99,6 +115,25 @@ def find_ngrok_executable() -> str | None:
     return _find_exe_in_dirs("ngrok", _NGROK_CANDIDATE_DIRS)
 
 
+def find_cloudflared_executable() -> str | None:
+    hit = shutil.which("cloudflared")
+    if hit:
+        return hit
+    return _find_exe_in_dirs("cloudflared", _CLOUDFLARED_CANDIDATE_DIRS)
+
+
+def find_tunnel_executable(provider: TunnelProvider | str) -> str | None:
+    try:
+        resolved = TunnelProvider(str(provider))
+    except ValueError:
+        return None
+    if resolved == TunnelProvider.NGROK:
+        return find_ngrok_executable()
+    if resolved == TunnelProvider.CLOUDFLARE:
+        return find_cloudflared_executable()
+    return None
+
+
 def is_tunnel_cli_installed(provider: TunnelProvider | str) -> bool:
     try:
         resolved = TunnelProvider(str(provider))
@@ -106,6 +141,8 @@ def is_tunnel_cli_installed(provider: TunnelProvider | str) -> bool:
         return True
     if resolved == TunnelProvider.NGROK:
         return find_ngrok_executable() is not None
+    if resolved == TunnelProvider.CLOUDFLARE:
+        return find_cloudflared_executable() is not None
     return True
 
 
@@ -126,7 +163,40 @@ def install_prompt_labels(provider: TunnelProvider | str, *, locale: str) -> tup
             "Install ngrok?",
             "ngrok was not found in PATH. Install ngrok via winget?",
         )
+    if resolved == TunnelProvider.CLOUDFLARE:
+        if uk:
+            return (
+                "Встановити cloudflared?",
+                "cloudflared не знайдено в PATH. Встановити cloudflared через winget?",
+            )
+        return (
+            "Install cloudflared?",
+            "cloudflared was not found in PATH. Install cloudflared via winget?",
+        )
     return ("Install", "Install tunnel tool?")
+
+
+def provider_auto_installs_cli(provider: TunnelProvider | str) -> bool:
+    try:
+        resolved = TunnelProvider(str(provider))
+    except ValueError:
+        return False
+    return resolved == TunnelProvider.CLOUDFLARE
+
+
+def install_status_message(provider: TunnelProvider | str, *, locale: str) -> str:
+    uk = locale != "en"
+    try:
+        resolved = TunnelProvider(str(provider))
+    except ValueError:
+        return "Встановлення через winget…" if uk else "Installing via winget…"
+    if resolved == TunnelProvider.CLOUDFLARE:
+        return (
+            "Встановлення cloudflared через winget…" if uk else "Installing cloudflared via winget…"
+        )
+    if resolved == TunnelProvider.NGROK:
+        return "Встановлення ngrok через winget…" if uk else "Installing ngrok via winget…"
+    return "Встановлення через winget…" if uk else "Installing via winget…"
 
 
 def missing_cli_status_message(provider: TunnelProvider | str, *, locale: str) -> str:
@@ -141,7 +211,25 @@ def missing_cli_status_message(provider: TunnelProvider | str, *, locale: str) -
             if uk
             else "ngrok is not installed — toggle the tunnel again to install via winget"
         )
+    if resolved == TunnelProvider.CLOUDFLARE:
+        return (
+            "cloudflared не встановлено — перезапустіть Cheremsha або увімкніть тунель знову"
+            if uk
+            else "cloudflared is not installed — restart Cheremsha or toggle the tunnel again"
+        )
     return "Tool not installed" if not uk else "Інструмент не встановлено"
+
+
+def tunnel_cli_title(provider: TunnelProvider | str) -> str:
+    try:
+        resolved = TunnelProvider(str(provider))
+    except ValueError:
+        return "Tunnel"
+    if resolved == TunnelProvider.NGROK:
+        return "ngrok"
+    if resolved == TunnelProvider.CLOUDFLARE:
+        return "cloudflared"
+    return "Tunnel"
 
 
 async def install_tunnel_tool_via_winget(provider: TunnelProvider | str) -> tuple[bool, str]:
