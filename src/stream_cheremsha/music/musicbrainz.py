@@ -20,7 +20,7 @@ _MUSICBRAINZ_BASE = "https://musicbrainz.org/ws/2"
 # MusicBrainz requires a descriptive User-Agent with contact (see https://musicbrainz.org/doc/MusicBrainz_API).
 _ENV_MB_CONTACT = constants.ENV_MUSICBRAINZ_CONTACT
 _DEFAULT_USER_AGENT = (
-    "stream-cheremsha/0.6.0 ( https://pypi.org/project/stream-cheremsha/ ; "
+    "stream-cheremsha/0.7.0 ( https://pypi.org/project/stream-cheremsha/ ; "
     "set STREAM_CHEREMSHA_MUSICBRAINZ_CONTACT to your email or project URL )"
 )
 
@@ -34,7 +34,7 @@ _last_request_mono: float = 0.0
 def _user_agent() -> str:
     extra = (os.environ.get(_ENV_MB_CONTACT) or "").strip()
     if extra:
-        return f"stream-cheremsha/0.6.0 ( {extra} )"
+        return f"stream-cheremsha/0.7.0 ( {extra} )"
     return _DEFAULT_USER_AGENT
 
 

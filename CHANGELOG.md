@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.7.0] — 2026-06-13
+
+### Added
+
+- YouTube Super Chat, Super Sticker, and Member events for actions and donations UI.
+- Cloudflare tunnel provider for overlay URLs (embedded credentials, cloudflared install prompts).
+- Linux AppImage release job in GitHub Actions.
+- RVC voice model assets (Stalker bandit) bundled for release builds.
+- Tests for Cloudflare tunnel, tunnel secrets, embedded build config, and YouTube quota fallback.
+
+### Changed
+
+- Actions engine and QML views extended for new YouTube event types and placeholders.
+- Overlay tunnel API and Connections UI: Cloudflare alongside ngrok.
+- Release workflow: AppImage build, `latest.json` generation, NSIS version injection.
+- README: Cloudflare tunnel setup instructions.
+
 ## [0.6.0] — 2026-06-12
 
 ### Added
@@ -110,6 +127,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Comment and formatting consistency in several modules after merging PR #5.
 
+[0.7.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.3.0...v0.4.0
