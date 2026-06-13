@@ -119,6 +119,57 @@ def tokenize_keystroke_sequence(sequence: str) -> list[_Segment]:
     return out
 
 
+_MOUSE_LEFT_TAGS: Final[frozenset[str]] = frozenset({"LCLICK", "LEFTCLICK", "MOUSELEFT"})
+_MOUSE_RIGHT_TAGS: Final[frozenset[str]] = frozenset({"RCLICK", "RIGHTCLICK", "MOUSERIGHT"})
+
+# Normalized ``{TAG}`` names shared across backends (validation without pynput / SendInput).
+_KNOWN_KEY_TAGS: Final[frozenset[str]] = frozenset(
+    {
+        "ENTER",
+        "RETURN",
+        "SPACE",
+        "ESC",
+        "ESCAPE",
+        "TAB",
+        "BACKSPACE",
+        "BS",
+        "BREAK",
+        "PAUSE",
+        "CAPSLOCK",
+        "CAPS_LOCK",
+        "DELETE",
+        "DEL",
+        "INSERT",
+        "INS",
+        "HOME",
+        "END",
+        "PAGEUP",
+        "PAGE_UP",
+        "PGUP",
+        "PRIOR",
+        "PAGEDOWN",
+        "PAGE_DOWN",
+        "PGDN",
+        "NEXT",
+        "UP",
+        "UPARROW",
+        "DOWN",
+        "DOWNARROW",
+        "LEFT",
+        "LEFTARROW",
+        "RIGHT",
+        "RIGHTARROW",
+    }
+    | {f"F{i}" for i in range(1, 13)}
+)
+
+
+def _is_known_tag(tag: str) -> bool:
+    if tag in _MOUSE_LEFT_TAGS or tag in _MOUSE_RIGHT_TAGS:
+        return True
+    return tag in _KNOWN_KEY_TAGS
+
+
 def _pynput_key_table() -> dict[str, Any]:
     from pynput.keyboard import Key as K
 
@@ -174,10 +225,12 @@ def _key_table() -> dict[str, Any]:
 
 
 def _resolve_tag(tag: str) -> tuple[TagKind, Any] | None:
-    if tag in ("LCLICK", "LEFTCLICK", "MOUSELEFT"):
+    if tag in _MOUSE_LEFT_TAGS:
         return ("mouse_left", None)
-    if tag in ("RCLICK", "RIGHTCLICK", "MOUSERIGHT"):
+    if tag in _MOUSE_RIGHT_TAGS:
         return ("mouse_right", None)
+    if not _is_known_tag(tag):
+        return None
     key = _key_table().get(tag)
     if key is not None:
         return ("key", key)
@@ -191,7 +244,7 @@ def describe_unknown_tags(sequence: str) -> list[str]:
     for seg in tokenize_keystroke_sequence(sequence):
         if seg.kind != "tag":
             continue
-        if _resolve_tag(seg.value) is not None:
+        if _is_known_tag(seg.value):
             continue
         if seg.value not in seen:
             seen.add(seg.value)
