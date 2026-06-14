@@ -47,7 +47,7 @@ exec "\$HERE/usr/$bin_name" "\$@"
 EOF
 chmod +x "$appdir/AppRun"
 
-cp build/appimage/cheremsha.desktop "$appdir/"
+cp scripts/ci/cheremsha.desktop "$appdir/"
 cp src/stream_cheremsha/assets/icon.png "$appdir/cheremsha.png"
 
 mkdir -p "$OUT_DIR"

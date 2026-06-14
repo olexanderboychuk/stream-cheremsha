@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Cheremsha
+Comment=Ukrainian streamer assistant
+Exec=cheremsha
+Icon=cheremsha
+Categories=AudioVideo;
+Terminal=false
