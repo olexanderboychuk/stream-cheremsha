@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.7.1] — 2026-06-14
+
+### Added
+
+- Normalized keystroke and mouse button tags in actions simulation for consistent recognition across input backends.
+
+### Changed
+
+- CI and release workflows: disable Microsoft and Azure apt repositories before installing PySide6 system libraries on Linux.
+
+### Removed
+
+- Audio backend test suite (normalization and settings tests).
+
 ## [0.7.0] — 2026-06-13
 
 ### Added
@@ -127,6 +141,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Comment and formatting consistency in several modules after merging PR #5.
 
+[0.7.1]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.4.0...v0.5.0
