@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.7.2] — 2026-06-14
+
+### Fixed
+
+- Linux AppImage build: correct path when copying `cheremsha.desktop` into the AppDir.
+
+### Added
+
+- `scripts/ci/cheremsha.desktop` for AppImage desktop integration (name, icon, categories).
+
 ## [0.7.1] — 2026-06-14
 
 ### Added
@@ -141,6 +151,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Comment and formatting consistency in several modules after merging PR #5.
 
+[0.7.2]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.5.0...v0.6.0
