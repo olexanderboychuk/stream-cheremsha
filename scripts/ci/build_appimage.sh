@@ -54,7 +54,7 @@ mkdir -p "$OUT_DIR"
 appimage_path="$OUT_DIR/Cheremsha-${TAG}-linux-x86_64.AppImage"
 rm -f "$appimage_path"
 
-ARCH=x86_64 "$APPIMAGETOOL" "$appdir" "$appimage_path"
+ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGETOOL" "$appdir" "$appimage_path"
 
 if [[ ! -f "$appimage_path" ]]; then
   echo "AppImage was not created: $appimage_path" >&2

@@ -133,6 +133,7 @@ jobs:
             build-essential \
             file \
             libegl1 \
+            libfuse2 \
             libgl1 \
             libpulse0 \
             libxkbcommon0 \
