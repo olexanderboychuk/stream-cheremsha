@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.7.3] — 2026-06-15
+
+### Fixed
+
+- Linux AppImage build: set `APPIMAGE_EXTRACT_AND_RUN=1` when invoking appimagetool.
+- Linux release CI: add `libfuse2` so AppImages run on systems without FUSE3.
+
 ## [0.7.2] — 2026-06-14
 
 ### Fixed
@@ -151,6 +158,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Comment and formatting consistency in several modules after merging PR #5.
 
+[0.7.3]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.6.0...v0.7.0
