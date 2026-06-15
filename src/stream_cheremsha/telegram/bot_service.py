@@ -29,6 +29,8 @@ _CB_CANCEL = "cancel"
 _CB_PLAYER = "player"
 _CB_REFRESH = "refresh"
 _CB_SKIP = "skip"
+_CB_BALANCE = "balance"
+_CB_LINK = "link"
 _CB_RM_PREFIX = "rm:"  # rm:<track_id>
 _CB_RISKY_Y = "risky:y:"  # + pending_id (hex)
 _CB_RISKY_N = "risky:n:"
@@ -36,6 +38,14 @@ _CB_RISKY_N = "risky:n:"
 MainLoopCall = Callable[[Callable[[], Awaitable[None]]], None]
 ModerationNoticeFn = Callable[[], str]
 EnqueueSongOutcome = str | tuple[str, Literal["info"]] | None
+# enqueue_song(video_id, requested_by, requester_chat_id, requester_user_id)
+EnqueueSongFn = Callable[[str, str, int, int], Awaitable[EnqueueSongOutcome]]
+# start_tiktok_link_challenge(telegram_id) -> code or None on failure
+StartTikTokLinkChallengeFn = Callable[[int], Awaitable[str | None]]
+# cancel_tiktok_link_challenge(telegram_id) -> None
+CancelTikTokLinkChallengeFn = Callable[[int], Awaitable[None]]
+# points_status(telegram_id) -> (linked_handle | None, balance, song_cost)
+PointsStatusFn = Callable[[int], Awaitable[tuple[str | None, int, int]]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,7 +76,7 @@ class TelegramBotService:
         admin_id: int,
         song_requests_enabled: bool,
         call_on_main_loop: MainLoopCall,
-        enqueue_song: Callable[[str, str, int], Awaitable[EnqueueSongOutcome]],
+        enqueue_song: EnqueueSongFn,
         skip_song: Callable[[], Awaitable[None]],
         remove_song_by_id: Callable[[str], Awaitable[bool]],
         list_queue: Callable[
@@ -76,12 +86,20 @@ class TelegramBotService:
         on_risky_admin_decision: Callable[[str, bool], Awaitable[RiskyDecisionResult]],
         tiktok_lyrics_filter_enabled: bool = False,
         moderation_notice_text: ModerationNoticeFn | None = None,
+        points_enabled: bool = False,
+        start_tiktok_link_challenge: StartTikTokLinkChallengeFn | None = None,
+        cancel_tiktok_link_challenge: CancelTikTokLinkChallengeFn | None = None,
+        points_status: PointsStatusFn | None = None,
     ) -> None:
         self._token = (token or "").strip()
         self._admin_id = int(admin_id)
         self._song_requests_enabled = bool(song_requests_enabled)
         self._tiktok_lyrics_filter_enabled = bool(tiktok_lyrics_filter_enabled)
         self._moderation_notice_text = moderation_notice_text
+        self._points_enabled = bool(points_enabled)
+        self._start_tiktok_link_challenge = start_tiktok_link_challenge
+        self._cancel_tiktok_link_challenge = cancel_tiktok_link_challenge
+        self._points_status = points_status
         self._call_on_main_loop = call_on_main_loop
         self._enqueue_song = enqueue_song
         self._on_risky_admin_decision = on_risky_admin_decision
@@ -194,6 +212,9 @@ class TelegramBotService:
         rows: list[list[InlineKeyboardButton]] = []
         if self._song_requests_enabled:
             rows.append([InlineKeyboardButton("Замовити пісню", callback_data=_CB_ORDER)])
+        if self._points_enabled:
+            rows.append([InlineKeyboardButton("Мій баланс", callback_data=_CB_BALANCE)])
+            rows.append([InlineKeyboardButton("Прив'язати TikTok", callback_data=_CB_LINK)])
         rows.append([InlineKeyboardButton("Меню", callback_data=_CB_MENU)])
         if is_admin:
             rows.append([InlineKeyboardButton("Плеєр", callback_data=_CB_PLAYER)])
@@ -220,6 +241,8 @@ class TelegramBotService:
         app.add_handler(CommandHandler("menu", self._on_start))
         app.add_handler(CommandHandler("music", self._on_music))
         app.add_handler(CommandHandler("player", self._on_player))
+        app.add_handler(CommandHandler("balance", self._on_balance))
+        app.add_handler(CommandHandler("link", self._on_link))
         app.add_handler(CallbackQueryHandler(self._on_callback))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._on_text))
 
@@ -229,6 +252,8 @@ class TelegramBotService:
                 [
                     BotCommand("start", "Меню"),
                     BotCommand("music", "Замовити пісню"),
+                    BotCommand("balance", "Мій баланс балів"),
+                    BotCommand("link", "Прив'язати TikTok-акаунт"),
                     BotCommand("player", "Плеєр (admin)"),
                     BotCommand("menu", "Меню (швидко)"),
                 ],
@@ -279,6 +304,109 @@ class TelegramBotService:
             return
         # show admin controls
         await self._render_player(update.effective_chat)
+
+    async def _run_points_status(self, telegram_id: int) -> tuple[str | None, int, int]:
+        fn = self._points_status
+        if fn is None:
+            return (None, 0, 0)
+        fut: asyncio.Future[tuple[str | None, int, int]] = (
+            asyncio.get_running_loop().create_future()
+        )
+
+        async def _go() -> None:
+            try:
+                fut.set_result(await fn(telegram_id))
+            except Exception as e:
+                fut.set_exception(e)
+
+        self._call_on_main_loop(_go)
+        return await asyncio.wait_for(fut, timeout=30.0)
+
+    async def _send_balance(self, chat, telegram_id: int) -> None:  # telegram.Chat
+        try:
+            handle, balance, cost = await self._run_points_status(telegram_id)
+        except Exception as e:
+            logger.warning("points status failed: %s", e)
+            await chat.send_message("Не вдалося отримати баланс. Спробуй пізніше.")
+            return
+        if handle is None:
+            await chat.send_message(
+                "Спочатку прив'яжи свій TikTok: натисни «Прив'язати TikTok» і надішли свій @нік.",
+                reply_markup=self._cancel_markup(),
+            )
+            return
+        await chat.send_message(
+            f"Твій TikTok: @{handle}\nБаланс: <b>{balance}</b> балів\nЦіна пісні: {cost} балів",
+            parse_mode=ParseMode.HTML,
+        )
+
+    async def _on_balance(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        _ = context
+        if update.effective_user is None or update.effective_chat is None:
+            return
+        if not self._points_enabled:
+            await update.effective_chat.send_message("Бали зараз вимкнені в налаштуваннях.")
+            return
+        await self._send_balance(update.effective_chat, int(update.effective_user.id))
+
+    async def _send_tiktok_link_challenge(self, chat, telegram_id: int) -> None:
+        fn = self._start_tiktok_link_challenge
+        if fn is None:
+            await chat.send_message("Прив'язка зараз недоступна.")
+            return
+        fut: asyncio.Future[str | None] = asyncio.get_running_loop().create_future()
+
+        async def _go() -> None:
+            try:
+                fut.set_result(await fn(int(telegram_id)))
+            except Exception as e:
+                fut.set_exception(e)
+
+        self._call_on_main_loop(_go)
+        try:
+            code = await asyncio.wait_for(fut, timeout=30.0)
+        except Exception as e:
+            logger.warning("start tiktok link challenge failed: %s", e)
+            await chat.send_message("Не вдалося створити код. Спробуй ще раз пізніше.")
+            return
+        if not (code or "").strip():
+            await chat.send_message("Не вдалося створити код. Спробуй ще раз пізніше.")
+            return
+        await chat.send_message(
+            "Щоб прив'язати TikTok, напиши цей код у чаті поточного ефіру "
+            f"(зі свого акаунта):\n\n<code>{code.strip()}</code>\n\n"
+            "Код діє 10 хвилин. Бот підтвердить прив'язку автоматично, "
+            "коли побачить твій коментар.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=self._cancel_markup(),
+        )
+
+    async def _on_link(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        _ = context
+        if update.effective_user is None or update.effective_chat is None:
+            return
+        if not self._points_enabled:
+            await update.effective_chat.send_message("Бали зараз вимкнені в налаштуваннях.")
+            return
+        uid = int(update.effective_user.id)
+        await self._send_tiktok_link_challenge(update.effective_chat, uid)
+
+    async def _cancel_tiktok_link_challenge(self, telegram_id: int) -> None:
+        fn = self._cancel_tiktok_link_challenge
+        if fn is None:
+            return
+        fut: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+
+        async def _go() -> None:
+            try:
+                await fn(int(telegram_id))
+                fut.set_result(None)
+            except Exception as e:
+                fut.set_exception(e)
+
+        self._call_on_main_loop(_go)
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(fut, timeout=15.0)
 
     async def _on_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         _ = context
@@ -336,10 +464,28 @@ class TelegramBotService:
 
         if data == _CB_CANCEL:
             self._awaiting_link.discard(uid)
+            await self._cancel_tiktok_link_challenge(uid)
             if q.message is not None:
                 await q.message.reply_text(
                     "Скасовано.", reply_markup=self._main_menu_markup(is_admin=is_admin)
                 )
+            return
+
+        if data == _CB_BALANCE:
+            if not self._points_enabled:
+                await q.message.reply_text("Бали зараз вимкнені в налаштуваннях.")
+                return
+            if q.message is not None:
+                await self._send_balance(q.message.chat, uid)
+            return
+
+        if data == _CB_LINK:
+            if not self._points_enabled:
+                await q.message.reply_text("Бали зараз вимкнені в налаштуваннях.")
+                return
+            self._awaiting_link.discard(uid)
+            if q.message is not None:
+                await self._send_tiktok_link_challenge(q.message.chat, uid)
             return
 
         if data == _CB_ORDER:
@@ -472,9 +618,10 @@ class TelegramBotService:
 
         fut: asyncio.Future[EnqueueSongOutcome] = asyncio.get_running_loop().create_future()
         chat_id = int(update.effective_chat.id)
+        user_id = int(update.effective_user.id)
 
         async def _enqueue() -> None:
-            out = await self._enqueue_song(vid, who, chat_id)
+            out = await self._enqueue_song(vid, who, chat_id, user_id)
             fut.set_result(out)
 
         self._call_on_main_loop(_enqueue)

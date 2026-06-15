@@ -261,6 +261,42 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Трек на межі правил перевірки - зачекай на рішення в цьому чаті.",
         "en": "This track is borderline for the safety check — Wait here for the decision.",
     },
+    "telegram.song.points_link_required": {
+        "uk": "Щоб замовляти пісні за бали, спочатку прив'яжи свій TikTok: у меню тисни "
+        "«Прив'язати TikTok» (/link), отримай код і напиши його у чаті ефіру.",
+        "en": "To order songs with points, first link your TikTok: tap “Link TikTok” (/link), "
+        "get a code, and post it in the live chat.",
+    },
+    "telegram.link.verified": {
+        "uk": "✅ Прив'язано TikTok: @{handle}. Тепер твоя активність на стрімі дає бали.",
+        "en": "✅ TikTok linked: @{handle}. Your live activity now earns points.",
+    },
+    "telegram.song.points_insufficient": {
+        "uk": "Не вистачає балів: у тебе <b>{balance}</b>, а пісня коштує <b>{cost}</b>.\n\n"
+        "Як заробити на стрімі:\n"
+        "• Подарунок — +{per_coin} за 1 монету\n"
+        "• Лайки — +1 за {likes_per_point} лайків\n"
+        "• Шер — +{per_share}\n"
+        "• Підписка — +{per_follow} (раз за ефір)\n"
+        "• Перегляд — +{watch_points} кожні {watch_interval} хв (потрібна активність у ефірі)",
+        "en": "Not enough points: you have <b>{balance}</b>, a song costs <b>{cost}</b>.\n\n"
+        "How to earn on the live:\n"
+        "• Gift — +{per_coin} per coin\n"
+        "• Likes — +1 per {likes_per_point} likes\n"
+        "• Share — +{per_share}\n"
+        "• Follow — +{per_follow} (once per stream)\n"
+        "• Watch time — +{watch_points} every {watch_interval} min (stay active on the live)",
+    },
+    "telegram.points.earned": {
+        "uk": "✨ +{delta} балів ({reasons})\nБаланс: <b>{balance}</b>",
+        "en": "✨ +{delta} points ({reasons})\nBalance: <b>{balance}</b>",
+    },
+    "telegram.points.reason.gift": {"uk": "подарунок", "en": "gift"},
+    "telegram.points.reason.like": {"uk": "лайки", "en": "likes"},
+    "telegram.points.reason.share": {"uk": "шер", "en": "share"},
+    "telegram.points.reason.follow": {"uk": "підписка", "en": "follow"},
+    "telegram.points.reason.watch": {"uk": "перегляд", "en": "watch"},
+    "telegram.points.reason.other": {"uk": "активність", "en": "activity"},
     "telegram.song.risky_approved": {
         "uk": "✅ Адмін додав трек у чергу: <code>{video_id}</code>",
         "en": "✅ The admin added your track to the queue: <code>{video_id}</code>",
@@ -298,6 +334,73 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "telegram.admin.risky_enqueue_failed": {
         "uk": "Не вдалося додати в чергу — спробуй ще раз.",
         "en": "Couldn’t add to the queue — try again.",
+    },
+    "settings.points_enabled": {
+        "uk": "Бали за пісні (замовлення в Telegram коштують бали)",
+        "en": "Points for songs (Telegram orders cost points)",
+    },
+    "settings.points_configure": {
+        "uk": "Налаштувати бали…",
+        "en": "Configure points…",
+    },
+    "settings.points_hint": {
+        "uk": "Глядачі заробляють бали на TikTok-стрімі і витрачають їх на замовлення пісень "
+        "через Telegram. Прив'язка TikTok — код у чаті ефіру (/link у боті).",
+        "en": "Viewers earn points on the TikTok live and spend them on song requests via "
+        "Telegram. TikTok linking uses a one-time code in live chat (/link in the bot).",
+    },
+    "settings.points_dialog_title": {
+        "uk": "Налаштування балів",
+        "en": "Points settings",
+    },
+    "settings.points_dialog_intro": {
+        "uk": "Задай ціну пісні, курс подарунків і скільки балів дає кожна дія на стрімі. "
+        "Лімітів за ефір немає — глядач заробляє, поки активний.",
+        "en": "Set song price, gift conversion, and how many points each action earns. "
+        "There are no per-stream caps — viewers keep earning while they stay active.",
+    },
+    "settings.points_dialog_hint": {
+        "uk": "Баланс накопичується між стрімами. Підписка — раз за ефір і не частіше "
+        "раз на 24 год; шери — не частіше раз на 5 хв. Після збереження Telegram-бот "
+        "перезапуститься.",
+        "en": "Balance carries over between streams. Follow awards once per stream and at "
+        "most once per 24 h; shares at most once per 5 min. The Telegram bot restarts "
+        "after you save.",
+    },
+    "settings.points_dialog_ok": {"uk": "Зберегти", "en": "Save"},
+    "settings.points_dialog_cancel": {"uk": "Скасувати", "en": "Cancel"},
+    "settings.points_group_general": {"uk": "Загальне", "en": "General"},
+    "settings.points_group_likes": {"uk": "Лайки", "en": "Likes"},
+    "settings.points_group_shares": {"uk": "Шери", "en": "Shares"},
+    "settings.points_group_follow": {"uk": "Підписка", "en": "Follow"},
+    "settings.points_group_watch": {"uk": "Перегляд стріму", "en": "Watch time"},
+    "settings.points_song_cost": {
+        "uk": "Ціна пісні (балів)",
+        "en": "Song price (points)",
+    },
+    "settings.points_per_coin": {
+        "uk": "Балів за 1 монету подарунка",
+        "en": "Points per gift coin",
+    },
+    "settings.points_likes_per_point": {
+        "uk": "Лайків на 1 бал",
+        "en": "Likes per 1 point",
+    },
+    "settings.points_per_share": {
+        "uk": "Балів за один шер",
+        "en": "Points per share",
+    },
+    "settings.points_per_follow": {
+        "uk": "Балів за підписку",
+        "en": "Points per follow",
+    },
+    "settings.points_watch_per_interval": {
+        "uk": "Балів за інтервал перегляду",
+        "en": "Points per watch interval",
+    },
+    "settings.points_watch_interval_min": {
+        "uk": "Інтервал перегляду (хв)",
+        "en": "Watch interval (min)",
     },
     "settings.music_group": {"uk": "Музика", "en": "Music"},
     "settings.music_open_in_mpv": {
@@ -988,6 +1091,13 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "audio.volume_tip": {
         "uk": "Гучність виходу програми (колонки / гарнітура).",
         "en": "App output level (speakers/headset).",
+    },
+    "audio.tts_rate": {"uk": "Швидкість вимови", "en": "Speech rate"},
+    "audio.tts_rate_tip": {
+        "uk": "Швидкість озвучення голосу: 100% — звичайна, нижче — повільніше, вище — швидше "
+        "(50–200%). Працює для Edge (нативно) і Google (через ffmpeg). Зберігається між запусками.",
+        "en": "Voice playback speed: 100% is normal, lower is slower, higher is faster "
+        "(50–200%). Works for Edge (native) and Google (via ffmpeg). Persisted between runs.",
     },
     "audio.tts_gain": {"uk": "Підсилення TTS (ffmpeg)", "en": "TTS gain (ffmpeg)"},
     "audio.tts_gain_tip": {

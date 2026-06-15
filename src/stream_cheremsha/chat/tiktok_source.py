@@ -500,6 +500,24 @@ def tiktok_user_stable_key(user: object | None) -> str:
     return ""
 
 
+def tiktok_user_unique_id(user: object | None) -> str:
+    """Best-effort normalized TikTok handle (``unique_id``) for a viewer.
+
+    This is the human-typeable handle used to link a Telegram account to a wallet.
+    Returns ``""`` when no handle is exposed by the event payload.
+    """
+    if user is None:
+        return ""
+    for attr in ("unique_id", "uniqueId", "username"):
+        raw = getattr(user, attr, None)
+        if isinstance(raw, str) and raw.strip():
+            return _normalize_unique_id(raw)
+    nested = getattr(user, "user_info", None)
+    if nested is not None and nested is not user:
+        return tiktok_user_unique_id(nested)
+    return ""
+
+
 _INT_RE = re.compile(r"[-+]?\d+")
 
 
@@ -612,11 +630,11 @@ class TikTokChatSource:
         self._on_room_viewers = on_room_viewers
         self._on_room_viewers_current = on_room_viewers_current
         self._on_room_viewers_total = on_room_viewers_total
-        self._on_follow = on_follow
+        self._on_follow = TikTokChatSource._wrap_on_follow(on_follow)
         self._on_join = on_join
         self._on_gift_analytics = on_gift_analytics
         self._on_like = TikTokChatSource._wrap_on_like(on_like)
-        self._on_share = on_share
+        self._on_share = TikTokChatSource._wrap_on_share(on_share)
         self._on_stream_start = on_stream_start
         self._on_paid_sub = on_paid_sub
         self._get_locale = get_locale or (lambda: l10n.DEFAULT_LOCALE)
@@ -654,15 +672,48 @@ class TikTokChatSource:
     @staticmethod
     def _wrap_on_like(
         cb: Callable[..., object] | None,
+    ) -> Callable[[str, int, str, str, str], None] | None:
+        if cb is None:
+            return None
+
+        def wrapped(user: str, n: int, avatar: str, user_key: str, unique_id: str) -> None:
+            try:
+                cb(user, n, avatar, user_key, unique_id)
+            except TypeError:
+                try:
+                    cb(user, n, avatar, user_key)
+                except TypeError:
+                    cb(user, n, avatar)
+
+        return wrapped
+
+    @staticmethod
+    def _wrap_on_follow(
+        cb: Callable[..., object] | None,
+    ) -> Callable[[str, str, str], None] | None:
+        if cb is None:
+            return None
+
+        def wrapped(user: str, stable_key: str, unique_id: str) -> None:
+            try:
+                cb(user, stable_key, unique_id)
+            except TypeError:
+                cb(user)
+
+        return wrapped
+
+    @staticmethod
+    def _wrap_on_share(
+        cb: Callable[..., object] | None,
     ) -> Callable[[str, int, str, str], None] | None:
         if cb is None:
             return None
 
-        def wrapped(user: str, n: int, avatar: str, user_key: str) -> None:
+        def wrapped(user: str, n: int, stable_key: str, unique_id: str) -> None:
             try:
-                cb(user, n, avatar, user_key)
+                cb(user, n, stable_key, unique_id)
             except TypeError:
-                cb(user, n, avatar)
+                cb(user, n)
 
         return wrapped
 
@@ -1011,6 +1062,7 @@ class TikTokChatSource:
                         received_at=datetime.now(UTC),
                         author_avatar_url=tiktok_user_avatar_url(user_blob),
                         tiktok_stable_key=tiktok_user_stable_key(user_blob),
+                        tiktok_unique_id=tiktok_user_unique_id(user_blob),
                     )
                     await self._coordinator.enqueue_chat(msg)
 
@@ -1083,7 +1135,11 @@ class TikTokChatSource:
                         logger.info("TikTok follow suppressed (pre-connect backlog)")
                         return
                     user = getattr(event, "user", None)
-                    cb(_display_name_from_user(user))
+                    cb(
+                        _display_name_from_user(user),
+                        tiktok_user_stable_key(user),
+                        tiktok_user_unique_id(user),
+                    )
 
             if JoinEvent is not None:
 
@@ -1126,6 +1182,7 @@ class TikTokChatSource:
                     user = getattr(event, "user", None) or getattr(event, "user_info", None)
                     avatar_u = tiktok_user_avatar_url(user)
                     stable_u = tiktok_user_stable_key(user)
+                    unique_u = tiktok_user_unique_id(user)
                     # Best-effort: TikTokLive differs between versions:
                     # - some expose per-event batch count
                     # - some expose a stream-level running total (often likeCount)
@@ -1154,7 +1211,7 @@ class TikTokChatSource:
                                 n_i,
                             )
                             return
-                        cb(_display_name_from_user(user), n_i, avatar_u, stable_u)
+                        cb(_display_name_from_user(user), n_i, avatar_u, stable_u, unique_u)
                         return
 
                     if is_backlog:
@@ -1164,7 +1221,7 @@ class TikTokChatSource:
                         getattr(event, "like_count", None) or getattr(event, "count", None) or 1
                     )
                     n_i = _parse_int_best_effort(raw_batch, default=1)
-                    cb(_display_name_from_user(user), max(1, n_i), avatar_u, stable_u)
+                    cb(_display_name_from_user(user), max(1, n_i), avatar_u, stable_u, unique_u)
 
             if ShareEvent is not None:
 
@@ -1187,7 +1244,12 @@ class TikTokChatSource:
                         n = int(raw_n)
                     except (TypeError, ValueError):
                         n = 1
-                    cb(_display_name_from_user(user), max(1, n))
+                    cb(
+                        _display_name_from_user(user),
+                        max(1, n),
+                        tiktok_user_stable_key(user),
+                        tiktok_user_unique_id(user),
+                    )
 
             if SubscribeEvent is not None:
 

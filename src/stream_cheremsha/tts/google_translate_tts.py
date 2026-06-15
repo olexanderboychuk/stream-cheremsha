@@ -6,6 +6,7 @@ from typing import Final
 
 import httpx
 
+from stream_cheremsha.audio.tempo import apply_speed_to_audio
 from stream_cheremsha.config.constants import TTS_MIN_INTERVAL_SEC
 
 _TRANSLATE_TTS_URL: Final[str] = "https://translate.google.com/translate_tts"
@@ -24,9 +25,12 @@ class GoogleTranslateTts:
         self,
         language: str = "uk-UA",
         min_interval_sec: float = TTS_MIN_INTERVAL_SEC,
+        rate_percent: int = 100,
     ) -> None:
         self._language = language
         self._min_interval = min_interval_sec
+        # 100 = normal speed; Google has no native rate control, so speed is applied via ffmpeg.
+        self._rate_percent = max(50, min(200, int(rate_percent)))
         self._client = httpx.AsyncClient(
             headers={"User-Agent": _UA},
             follow_redirects=True,
@@ -38,6 +42,10 @@ class GoogleTranslateTts:
     @property
     def language(self) -> str:
         return self._language
+
+    @property
+    def rate_percent(self) -> int:
+        return self._rate_percent
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -67,4 +75,10 @@ class GoogleTranslateTts:
         data = response.content
         if not data:
             raise ValueError("empty TTS response body")
+        if self._rate_percent != 100:
+            data = await asyncio.to_thread(
+                apply_speed_to_audio,
+                data,
+                self._rate_percent / 100.0,
+            )
         return data

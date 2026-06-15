@@ -5,9 +5,10 @@ import json
 import logging
 import threading
 from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, TypeVar
 
 import httpx
 from google.auth.exceptions import RefreshError
@@ -31,6 +32,74 @@ from stream_cheremsha.domain.models import ChatMessage, ChatPlatform
 from stream_cheremsha.pipeline.coordinator import StreamCoordinator
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
+
+
+def _build_youtube_service(creds: Credentials) -> object:
+    return build("youtube", "v3", credentials=creds, cache_discovery=False)
+
+
+class _YouTubeDataApiRunner:
+    """Run all googleapiclient/httplib2 calls on a single OS thread.
+
+    The discovery ``Resource`` and its httplib2 HTTP pool are not thread-safe.
+    qasync schedules ``asyncio.to_thread`` on a shared Qt pool; concurrent chat +
+    viewers polls against one ``service`` corrupted SSL state and crashed the
+    process (heap corruption in libssl).
+    """
+
+    def __init__(self) -> None:
+        self._executor = ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="youtube-data-api",
+        )
+        self._service: object | None = None
+        self._creds_fingerprint: str | None = None
+        self._closed = False
+
+    def _ensure_service(self, creds: Credentials) -> object:
+        fingerprint = creds.to_json()
+        if self._service is None or self._creds_fingerprint != fingerprint:
+            self._service = _build_youtube_service(creds)
+            self._creds_fingerprint = fingerprint
+        return self._service
+
+    def _invoke_sync(
+        self,
+        creds: Credentials,
+        func: Callable[..., T],
+        /,
+        *args: object,
+        **kwargs: object,
+    ) -> T:
+        service = self._ensure_service(creds)
+        return func(service, *args, **kwargs)
+
+    async def invoke(
+        self,
+        creds: Credentials,
+        func: Callable[..., T],
+        /,
+        *args: object,
+        **kwargs: object,
+    ) -> T:
+        if self._closed:
+            raise RuntimeError("YouTube Data API runner is shut down")
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            self._executor,
+            lambda: self._invoke_sync(creds, func, *args, **kwargs),
+        )
+
+    def shutdown(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._service = None
+        self._creds_fingerprint = None
+        self._executor.shutdown(wait=False, cancel_futures=True)
+
 
 # How long to wait between checks when no live chat is available yet (manual URL or auto).
 YOUTUBE_POLL_FOR_LIVE_SEC = 45.0
@@ -360,6 +429,7 @@ class YouTubeChatSource:
         self._get_locale = get_locale or (lambda: l10n.DEFAULT_LOCALE)
         self._task: asyncio.Task[None] | None = None
         self._running = False
+        self._data_api = _YouTubeDataApiRunner()
 
     async def _refresh_oauth_credentials(self, creds: Credentials) -> bool:
         """Refresh access token and persist to keyring.
@@ -402,6 +472,8 @@ class YouTubeChatSource:
         # trigger a UI refresh while ``_running`` is still False, snapping the switch
         # back off.
         await self._cancel_task()
+        self._data_api.shutdown()
+        self._data_api = _YouTubeDataApiRunner()
 
         creds = _load_credentials()
         if creds is None:
@@ -429,6 +501,7 @@ class YouTubeChatSource:
 
     async def stop(self) -> None:
         await self._cancel_task()
+        self._data_api.shutdown()
         self._on_status(l10n.tr(self._get_locale(), "yt.stopped"))
 
     async def _supervisor(self, video_url_or_id: str | None) -> None:
@@ -459,64 +532,15 @@ class YouTubeChatSource:
                     return
 
             try:
-                service = await asyncio.to_thread(
-                    lambda: build("youtube", "v3", credentials=creds, cache_discovery=False),
-                )
-            except (HttpError, OSError) as e:
-                if video_id and isinstance(e, HttpError) and _http_error_is_fallback_worthy(e):
-                    if video_id:
-                        self._on_status(
-                            l10n.tr(self._get_locale(), "yt.fallback_switching"),
-                        )
-                        await self._run_fallback_for_video(video_id)
-                    else:
-                        # Unreachable: guarded by video_id above. Kept symmetrical with
-                        # the auto-discovery path below.
-                        self._on_status(
-                            l10n.tr(
-                                self._get_locale(),
-                                "yt.quota_backoff",
-                                min=YOUTUBE_QUOTA_BACKOFF_SEC / 60.0,
-                            ),
-                        )
-                        await asyncio.sleep(YOUTUBE_QUOTA_BACKOFF_SEC)
-                elif video_id and isinstance(e, OSError):
-                    # Data API init may fail due to networking/system errors; manual URL can
-                    # still proceed via fallback.
-                    self._on_status(l10n.tr(self._get_locale(), "yt.fallback_switching"))
-                    await self._run_fallback_for_video(video_id)
-                elif isinstance(e, HttpError) and _http_error_is_quota_exceeded(e):
-                    if video_id:
-                        self._on_status(
-                            l10n.tr(self._get_locale(), "yt.fallback_switching"),
-                        )
-                        await self._run_fallback_for_video(video_id)
-                    else:
-                        self._on_status(
-                            l10n.tr(
-                                self._get_locale(),
-                                "yt.quota_backoff",
-                                min=YOUTUBE_QUOTA_BACKOFF_SEC / 60.0,
-                            ),
-                        )
-                        await asyncio.sleep(YOUTUBE_QUOTA_BACKOFF_SEC)
-                else:
-                    self._on_status(
-                        l10n.tr(self._get_locale(), "yt.api_init_retry", err=str(e), sec=wait),
-                    )
-                    await asyncio.sleep(wait)
-                continue
-
-            try:
                 if video_id is not None:
-                    live_chat_ids = await asyncio.to_thread(
+                    live_chat_ids = await self._data_api.invoke(
+                        creds,
                         self._resolve_live_chat_ids_for_videos,
-                        service,
                         [video_id],
                     )
                     live_video_ids: list[str] = [video_id]
                 else:
-                    pairs = await asyncio.to_thread(discover_my_live_streams, service)
+                    pairs = await self._data_api.invoke(creds, discover_my_live_streams)
                     live_chat_ids = [cid for cid, _ in pairs]
                     live_video_ids = [vid for _, vid in pairs if isinstance(vid, str) and vid]
             except HttpError as e:
@@ -554,6 +578,16 @@ class YouTubeChatSource:
                     self._on_status(l10n.tr(self._get_locale(), "yt.retry", err=str(e), sec=wait))
                     await asyncio.sleep(wait)
                 continue
+            except OSError as e:
+                if video_id:
+                    self._on_status(l10n.tr(self._get_locale(), "yt.fallback_switching"))
+                    await self._run_fallback_for_video(video_id)
+                else:
+                    self._on_status(
+                        l10n.tr(self._get_locale(), "yt.api_init_retry", err=str(e), sec=wait),
+                    )
+                    await asyncio.sleep(wait)
+                continue
             except (httpx.RequestError, httpx.HTTPStatusError) as e:
                 self._on_status(l10n.tr(self._get_locale(), "yt.retry", err=str(e), sec=wait))
                 await asyncio.sleep(wait)
@@ -578,9 +612,9 @@ class YouTubeChatSource:
             else:
                 self._on_status(l10n.tr(self._get_locale(), "yt.multi_streams", n=n))
 
-            fb_url = await asyncio.to_thread(
+            fb_url = await self._data_api.invoke(
+                creds,
                 resolve_youtube_fallback_watch_url,
-                service,
                 manual_video_id=video_id,
                 discovered_video_ids=live_video_ids,
             )
@@ -659,35 +693,11 @@ class YouTubeChatSource:
         """
         if not live_chat_ids:
             return
-        try:
-            service = await asyncio.to_thread(
-                lambda: build("youtube", "v3", credentials=creds, cache_discovery=False),
-            )
-        except HttpError as e:
-            if _http_error_is_quota_exceeded(e):
-                self._on_status(l10n.tr(self._get_locale(), "yt.fallback_switching"))
-                if fallback_watch_url:
-                    await self._run_fallback_for_watch_url(fallback_watch_url)
-                    return
-                self._on_status(
-                    l10n.tr(
-                        self._get_locale(),
-                        "yt.quota_backoff",
-                        min=YOUTUBE_QUOTA_BACKOFF_SEC / 60.0,
-                    ),
-                )
-                await asyncio.sleep(YOUTUBE_QUOTA_BACKOFF_SEC)
-                return
-            self._on_status(l10n.tr(self._get_locale(), "yt.api_init", err=str(e)))
-            return
-        except OSError as e:
-            self._on_status(l10n.tr(self._get_locale(), "yt.api_init", err=str(e)))
-            return
 
         viewers_task: asyncio.Task[None] | None = None
         if video_ids and self._on_viewers_current is not None:
             viewers_task = asyncio.create_task(
-                self._poll_concurrent_viewers(service, list(video_ids)),
+                self._poll_concurrent_viewers(creds, list(video_ids)),
                 name="youtube-viewers",
             )
 
@@ -696,7 +706,7 @@ class YouTubeChatSource:
         rr = 0
 
         try:
-            await self._chat_round_robin_loop(service, order, page_tokens, rr, fallback_watch_url)
+            await self._chat_round_robin_loop(creds, order, page_tokens, rr, fallback_watch_url)
         finally:
             if viewers_task is not None and not viewers_task.done():
                 viewers_task.cancel()
@@ -704,7 +714,7 @@ class YouTubeChatSource:
 
     async def _chat_round_robin_loop(
         self,
-        service: object,
+        creds: Credentials,
         order: list[str],
         page_tokens: dict[str, str | None],
         rr: int,
@@ -714,9 +724,9 @@ class YouTubeChatSource:
             lcid = order[rr % len(order)]
             rr += 1
             try:
-                body = await asyncio.to_thread(
+                body = await self._data_api.invoke(
+                    creds,
                     self._list_messages,
-                    service,
                     lcid,
                     page_tokens[lcid],
                 )
@@ -774,7 +784,7 @@ class YouTubeChatSource:
                 max(interval_ms, YOUTUBE_MIN_POLL_INTERVAL_MS) / 1000.0,
             )
 
-    async def _poll_concurrent_viewers(self, service: object, video_ids: list[str]) -> None:
+    async def _poll_concurrent_viewers(self, creds: Credentials, video_ids: list[str]) -> None:
         """Periodically pull ``concurrentViewers`` for the active broadcast(s).
 
         Failures (HTTP, transport, parse) are logged and the loop continues so a transient
@@ -785,9 +795,9 @@ class YouTubeChatSource:
             return
         while self._running:
             try:
-                total = await asyncio.to_thread(
+                total = await self._data_api.invoke(
+                    creds,
                     fetch_concurrent_viewers_total,
-                    service,
                     video_ids,
                 )
             except asyncio.CancelledError:

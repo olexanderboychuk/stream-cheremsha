@@ -56,6 +56,16 @@ def _nick_unique_from_bundle(bundle: str) -> tuple[str, str]:
     return nick, uniq
 
 
+def unique_id_from_user_bundle(bundle: str) -> str:
+    """Extract the normalized TikTok handle (``unique_id``) from a user bundle JSON.
+
+    Returns ``""`` when the bundle is missing or has no handle. Used by the points
+    economy to resolve a gifter's wallet to a Telegram link.
+    """
+    _nick, uniq = _nick_unique_from_bundle(bundle)
+    return (uniq or "").strip().lstrip("@").strip().lower()
+
+
 def _ensure_schema(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA journal_mode=WAL")

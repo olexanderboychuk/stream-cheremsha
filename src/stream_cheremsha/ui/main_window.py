@@ -122,7 +122,14 @@ from stream_cheremsha.config.tunnel_secrets import (
     resolve_cloudflare_tunnel_token,
 )
 from stream_cheremsha.domain.models import ChatMessage, ChatPlatform
+from stream_cheremsha.domain.points import (
+    PointsConfig,
+    StreamEarnTracker,
+    earn_rate_template_vars,
+    normalize_tiktok_username,
+)
 from stream_cheremsha.domain.protocols import TextToSpeech
+from stream_cheremsha.domain.tiktok_link_challenge import extract_link_code_from_comment
 from stream_cheremsha.music.musicbrainz import youtube_title_indicates_russian_artist_area
 from stream_cheremsha.music.player import MusicPlayer
 from stream_cheremsha.music.queue_controller import MusicQueueController
@@ -164,9 +171,23 @@ from stream_cheremsha.persistence.battle_royale_wins_sqlite import (
     fetch_hall_of_fame,
     record_battle_win,
 )
+from stream_cheremsha.persistence.points_sqlite import (
+    add_points,
+    cancel_telegram_link_challenge,
+    create_telegram_link_challenge,
+    engagement_cooldown_remaining_sec,
+    get_balance_for_unique_id,
+    get_telegram_id_for_unique_id,
+    get_telegram_link,
+    get_wallet_for_stable_key,
+    refund_for_unique_id,
+    try_complete_telegram_link_challenge,
+    try_spend_for_unique_id,
+)
 from stream_cheremsha.persistence.tiktok_gifts_sqlite import (
     append_tiktok_gift_event,
     fetch_all_time_gifter_totals,
+    unique_id_from_user_bundle,
 )
 from stream_cheremsha.pipeline.coordinator import StreamCoordinator
 from stream_cheremsha.pipeline.tts_sanitize import strip_non_alphabetic_for_tts
@@ -194,6 +215,11 @@ from stream_cheremsha.ui.chat_popout import ChatPopoutWindow
 from stream_cheremsha.ui.docks_qml_api import DocksQmlApi
 from stream_cheremsha.ui.donations_qml_api import DonationsQmlApi
 from stream_cheremsha.ui.overlay_tunnel_qml_api import OverlayTunnelQmlApi
+from stream_cheremsha.ui.points_settings_dialog import (
+    SETTINGS_POINTS_ENABLED,
+    PointsSettingsDialog,
+    load_points_config_from_settings,
+)
 from stream_cheremsha.ui.qml_api import StreamCheremshaQmlApi
 from stream_cheremsha.ui.qt_async_dialog import async_dialog_code
 from stream_cheremsha.ui.tiktok_analytics_api import TikTokAnalyticsApi
@@ -264,6 +290,11 @@ _SETTINGS_TTS_CHAT_TIKTOK = "tts_chat/tiktok_enabled"
 _SETTINGS_TTS_OPENAI_MODERATE = "tts/openai_moderate_enabled"
 _SETTINGS_TTS_SPEAK_AUTHOR = "tts/speak_chat_author_name"
 _SETTINGS_TTS_STRIP_NON_ALPHA = "tts/strip_non_alphabetic"
+# TTS playback speed as a percentage (100 = normal); 50..200 maps to 0.5x..2.0x.
+_SETTINGS_TTS_RATE_PERCENT = "tts/rate_percent"
+_TTS_RATE_MIN = 50
+_TTS_RATE_MAX = 200
+_TTS_RATE_DEFAULT = 100
 
 _SETTINGS_TELEGRAM_ENABLED = "telegram/enabled"
 _SETTINGS_TELEGRAM_ADMIN_ID = "telegram/admin_id"
@@ -521,6 +552,20 @@ class _RiskyPendingTrack(NamedTuple):
     requested_by: str
     title: str
     requester_chat_id: int
+    # Points already reserved (debited) for this order; refunded if the admin denies
+    # or the enqueue ultimately fails. ``charged_unique_id`` is empty when the points
+    # economy is disabled (no charge was made).
+    charged_unique_id: str = ""
+    charged_amount: int = 0
+
+
+class _PointsNotifyPending(NamedTuple):
+    delta: int
+    reasons: frozenset[str]
+    balance: int
+
+
+_POINTS_EARN_REASON_ORDER = ("gift", "like", "share", "follow", "watch")
 
 
 class MainWindow(FramelessWindow):
@@ -693,6 +738,17 @@ class MainWindow(FramelessWindow):
         self._top_likers_publish_handle: asyncio.TimerHandle | None = None
         self._tiktok_top_gifters = TikTokSessionTopGifters()
         self._top_gifters_publish_handle: asyncio.TimerHandle | None = None
+        # Points economy: per-stream earn tracker + watch-time sampling.
+        self._earn_tracker = StreamEarnTracker(load_points_config_from_settings(self._settings))
+        self._points_watch_active: dict[str, tuple[str, str]] = {}
+        self._points_watch_timer = QTimer(self)
+        self._points_watch_timer.timeout.connect(self._on_points_watch_tick)
+        self._restart_points_watch_timer()
+        self._points_notify_pending: dict[int, _PointsNotifyPending] = {}
+        self._points_notify_timer = QTimer(self)
+        self._points_notify_timer.setSingleShot(True)
+        self._points_notify_timer.setInterval(2500)
+        self._points_notify_timer.timeout.connect(self._flush_points_earn_notifications)
         self._king_overlay_publish_handle: asyncio.TimerHandle | None = None
         self._king_presence_seq: int = 0
         self._king_chat_highlight_seq: int = 0
@@ -734,6 +790,9 @@ class MainWindow(FramelessWindow):
         self._lbl_music_max_duration = MainWindow._obs_settings_label("")
         self._music_max_duration_min = QSpinBox()
         self._lbl_music_max_duration_hint = QLabel()
+        self._points_enabled_cb = QCheckBox()
+        self._btn_points_configure = QPushButton()
+        self._lbl_points_hint = QLabel()
         self._actions_qml_api = ActionsQmlApi(self)
         self._qml_actions: QQuickWidget | None = None
         self._widgets_qml_api: WidgetsQmlApi | None = None
@@ -892,10 +951,29 @@ class MainWindow(FramelessWindow):
                 return d.strip()
         return self._tts_language_from_settings()
 
+    def _tts_rate_percent_from_settings(self) -> int:
+        raw = self._settings.value(_SETTINGS_TTS_RATE_PERCENT, _TTS_RATE_DEFAULT)
+        try:
+            v = int(raw)
+        except (TypeError, ValueError):
+            v = _TTS_RATE_DEFAULT
+        return max(_TTS_RATE_MIN, min(_TTS_RATE_MAX, v))
+
+    @staticmethod
+    def _edge_rate_string(rate_percent: int) -> str | None:
+        """Map absolute speed percent (100 = normal) to Edge's relative rate, e.g. ``+25%``."""
+        delta = int(rate_percent) - 100
+        if delta == 0:
+            return None
+        return f"{delta:+d}%"
+
     def _construct_initial_tts(self) -> TextToSpeech:
         """Lightweight TTS for startup; other engines load in :meth:`run_startup` if selected."""
         lang = self._tts_language_from_settings()
-        return GoogleTranslateTts(language=lang)
+        return GoogleTranslateTts(
+            language=lang,
+            rate_percent=self._tts_rate_percent_from_settings(),
+        )
 
     def _build_ui(self) -> None:
         self._connections_root = self._build_connections_tab()
@@ -1770,12 +1848,29 @@ class MainWindow(FramelessWindow):
         music_grid.addWidget(self._lbl_music_max_duration_hint, mr, 0, 1, 2)
         mr += 1
 
+        self._points_enabled_cb.setText(self._tr("settings.points_enabled"))
+        music_grid.addWidget(self._points_enabled_cb, mr, 0, 1, 2)
+        mr += 1
+        self._btn_points_configure.setMinimumHeight(34)
+        self._btn_points_configure.setSizePolicy(
+            QSizePolicy.Policy.Maximum,
+            QSizePolicy.Policy.Fixed,
+        )
+        music_grid.addWidget(self._btn_points_configure, mr, 0, 1, 2, Qt.AlignmentFlag.AlignLeft)
+        mr += 1
+        self._lbl_points_hint.setWordWrap(True)
+        self._lbl_points_hint.setStyleSheet("color: #8b95a5; font-size: 11px;")
+        music_grid.addWidget(self._lbl_points_hint, mr, 0, 1, 2)
+        mr += 1
+
         music_outer.addLayout(music_grid)
         lay.addWidget(self._gb_music)
 
         self._music_use_mpv.stateChanged.connect(self._persist_music_backend)
         self._btn_mpv_check.clicked.connect(self._check_mpv_installed)
         self._music_max_duration_min.valueChanged.connect(self._persist_music_max_duration_min)
+        self._points_enabled_cb.stateChanged.connect(self._persist_points_enabled)
+        self._btn_points_configure.clicked.connect(self._open_points_settings_dialog)
 
         # Updates (Windows: download+launch installer; Linux: redirect to releases).
         self._gb_updates = QGroupBox()
@@ -2410,6 +2505,9 @@ class MainWindow(FramelessWindow):
         self._lbl_music_max_duration.setText(self._tr("settings.music_max_duration"))
         self._lbl_music_max_duration_hint.setText(self._tr("settings.music_max_duration_hint"))
         self._btn_mpv_check.setText(self._tr("settings.music_check_mpv"))
+        self._points_enabled_cb.setText(self._tr("settings.points_enabled"))
+        self._btn_points_configure.setText(self._tr("settings.points_configure"))
+        self._lbl_points_hint.setText(self._tr("settings.points_hint"))
 
         self._gb_updates.setTitle(self._tr("settings.updates_group"))
         self._cb_updates_check_on_startup.setText(self._tr("settings.updates_check_on_startup"))
@@ -2931,6 +3029,20 @@ class MainWindow(FramelessWindow):
         self._cb_tts_strip_non_alpha = QCheckBox()
         self._cb_tts_strip_non_alpha.stateChanged.connect(self._persist_tts_strip_non_alpha)
         tts_body.addWidget(self._cb_tts_strip_non_alpha)
+
+        self._lbl_tts_rate = QLabel()
+        self._tts_rate_spin = QSpinBox()
+        self._tts_rate_spin.setRange(_TTS_RATE_MIN, _TTS_RATE_MAX)
+        self._tts_rate_spin.setSingleStep(5)
+        self._tts_rate_spin.setSuffix(" %")
+        self._tts_rate_spin.setValue(self._tts_rate_percent_from_settings())
+        self._tts_rate_spin.valueChanged.connect(self._on_tts_rate_changed)
+        rate_form = QFormLayout()
+        rate_form.setContentsMargins(0, 0, 0, 0)
+        rate_form.setHorizontalSpacing(10)
+        rate_form.setVerticalSpacing(8)
+        rate_form.addRow(self._lbl_tts_rate, self._tts_rate_spin)
+        tts_body.addLayout(rate_form)
         main_lay.addWidget(self._frm_audio_tts)
 
         # --- Edge card (voice selection per language) ---
@@ -3023,6 +3135,10 @@ class MainWindow(FramelessWindow):
         self._cb_tts_speak_author.setToolTip(self._tr("audio.speak_author_name_hint"))
         self._cb_tts_strip_non_alpha.setText(self._tr("audio.strip_non_alpha"))
         self._cb_tts_strip_non_alpha.setToolTip(self._tr("audio.strip_non_alpha_hint"))
+        self._lbl_tts_rate.setText(self._tr("audio.tts_rate"))
+        _rate_tip = self._tr("audio.tts_rate_tip")
+        self._tts_rate_spin.setToolTip(_rate_tip)
+        self._lbl_tts_rate.setToolTip(_rate_tip)
         self._lbl_audio_edge_card_h.setText(self._tr("audio.edge_voice_group"))
         self._lbl_edge_voice.setText(self._tr("audio.edge_voice_label"))
         self._update_tts_engine_related_visibility()
@@ -3197,6 +3313,7 @@ class MainWindow(FramelessWindow):
             self._update_tts_engine_related_visibility()
 
         lang = self._current_tts_language()
+        rate_percent = self._tts_rate_percent_from_settings()
         if eng == _TTS_ENGINE_EDGE:
             voice = None
             if hasattr(self, "_combo_edge_voice"):
@@ -3208,16 +3325,16 @@ class MainWindow(FramelessWindow):
                 voice = (m.get(lang, "") or "").strip() or None
             if not voice:
                 self._on_user_status(self._tr("status.edge_voices_failed"))
-                new_tts = GoogleTranslateTts(language=lang)
+                new_tts = GoogleTranslateTts(language=lang, rate_percent=rate_percent)
             else:
                 try:
-                    new_tts = EdgeTts(voice)
+                    new_tts = EdgeTts(voice, rate=self._edge_rate_string(rate_percent))
                 except (ImportError, ValueError, OSError) as e:
                     QMessageBox.warning(self, self._tr("dlg.tts"), str(e))
                     _revert_to_google_combo()
-                    new_tts = GoogleTranslateTts(language=lang)
+                    new_tts = GoogleTranslateTts(language=lang, rate_percent=rate_percent)
         else:
-            new_tts = GoogleTranslateTts(language=lang)
+            new_tts = GoogleTranslateTts(language=lang, rate_percent=rate_percent)
 
         old = self._tts
         oid = getattr(old, "ENGINE_ID", "")
@@ -3225,10 +3342,14 @@ class MainWindow(FramelessWindow):
         if oid == nid == _TTS_ENGINE_GOOGLE:
             old_lang = getattr(old, "language", None)
             new_lang = getattr(new_tts, "language", None)
-            if old_lang == new_lang:
+            old_rate = getattr(old, "rate_percent", None)
+            new_rate = getattr(new_tts, "rate_percent", None)
+            if old_lang == new_lang and old_rate == new_rate:
                 return
         if oid == nid == _TTS_ENGINE_EDGE:
-            if getattr(old, "voice", None) == getattr(new_tts, "voice", None):
+            same_voice = getattr(old, "voice", None) == getattr(new_tts, "voice", None)
+            same_rate = getattr(old, "rate", None) == getattr(new_tts, "rate", None)
+            if same_voice and same_rate:
                 return
 
         self._coordinator.set_tts(new_tts)
@@ -3296,6 +3417,11 @@ class MainWindow(FramelessWindow):
             self._tts_gain_spin.setValue(max(0, min(36, gv)))
             self._tts_gain_spin.blockSignals(False)
             self._sink.set_tts_gain_db(self._tts_gain_spin.value())
+
+        if hasattr(self, "_tts_rate_spin"):
+            self._tts_rate_spin.blockSignals(True)
+            self._tts_rate_spin.setValue(self._tts_rate_percent_from_settings())
+            self._tts_rate_spin.blockSignals(False)
         self._load_chat_font_from_settings()
 
         obs_ws_on = bool(self._settings.value(constants.SETTINGS_OBS_WS_ENABLED, True, bool))
@@ -3390,6 +3516,11 @@ class MainWindow(FramelessWindow):
             self._music_max_duration_min.setValue(mm)
             self._music_max_duration_min.blockSignals(False)
 
+        if hasattr(self, "_points_enabled_cb"):
+            self._points_enabled_cb.blockSignals(True)
+            self._points_enabled_cb.setChecked(self._points_enabled())
+            self._points_enabled_cb.blockSignals(False)
+
     @Slot(int)
     def _persist_music_max_duration_min(self, _value: int) -> None:
         mm = int(self._music_max_duration_min.value())
@@ -3397,9 +3528,35 @@ class MainWindow(FramelessWindow):
         self._settings.setValue(_SETTINGS_MUSIC_MAX_DURATION_MIN, mm)
 
     @Slot(int)
+    def _persist_points_enabled(self, _state: int) -> None:
+        on = bool(self._points_enabled_cb.isChecked())
+        self._settings.setValue(SETTINGS_POINTS_ENABLED, on)
+        self._refresh_points_config()
+        asyncio.ensure_future(self._apply_telegram_from_settings())
+
+    def _open_points_settings_dialog(self) -> None:
+        dlg = PointsSettingsDialog(
+            parent=self,
+            settings=self._settings,
+            tr=self._tr,
+            on_saved=self._on_points_settings_saved,
+        )
+        dlg.exec()
+
+    def _on_points_settings_saved(self) -> None:
+        self._refresh_points_config()
+        asyncio.ensure_future(self._apply_telegram_from_settings())
+
+    @Slot(int)
     def _on_tts_gain_changed(self, value: int) -> None:
         self._settings.setValue(_SETTINGS_TTS_GAIN_DB, value)
         self._sink.set_tts_gain_db(value)
+
+    @Slot(int)
+    def _on_tts_rate_changed(self, value: int) -> None:
+        v = max(_TTS_RATE_MIN, min(_TTS_RATE_MAX, int(value)))
+        self._settings.setValue(_SETTINGS_TTS_RATE_PERCENT, v)
+        asyncio.ensure_future(self._swap_tts_backend())
 
     @Slot(int)
     def _persist_autostart_twitch(self, _state: int) -> None:
@@ -3642,6 +3799,38 @@ class MainWindow(FramelessWindow):
             t.add_done_callback(lambda _t: _t.exception())
         self._dispatch_actions_for_chat(message)
         self._maybe_bump_king_chat_highlight(message)
+        self._try_tiktok_link_from_comment(message)
+
+    def _try_tiktok_link_from_comment(self, message: ChatMessage) -> None:
+        if self._closing or not self._points_enabled():
+            return
+        if message.platform != ChatPlatform.TIKTOK:
+            return
+        code = extract_link_code_from_comment(message.text)
+        if not code:
+            return
+        sk = (message.tiktok_stable_key or "").strip()
+        if not sk:
+            return
+        try:
+            result = try_complete_telegram_link_challenge(
+                code=code,
+                stable_key=sk,
+                unique_id=message.tiktok_unique_id,
+            )
+        except (OSError, sqlite3.Error) as exc:
+            logger.warning("points: tiktok link challenge failed: %s", exc)
+            return
+        if not result.ok:
+            return
+        tg = self._telegram
+        if tg is None:
+            return
+        msg = self._tr(
+            "telegram.link.verified",
+            handle=result.unique_id,
+        )
+        tg.send_html_message_to_chat(int(result.telegram_id), msg)
 
     def _on_youtube_analytics_event(self, kind: str, user: str, detail: str, count: int) -> None:
         self._youtube_analytics.enqueue_event(kind, user, detail, count)
@@ -3732,7 +3921,7 @@ class MainWindow(FramelessWindow):
         )
         t.add_done_callback(lambda _t: _t.exception())
 
-    def _on_tiktok_follow_any(self, user: str) -> None:
+    def _on_tiktok_follow_any(self, user: str, stable_key: str = "", unique_id: str = "") -> None:
         if self._closing:
             return
         eng = self._get_actions_engine(
@@ -3741,6 +3930,24 @@ class MainWindow(FramelessWindow):
         )
         asyncio.ensure_future(eng.on_tiktok_followed((user or "").strip(), datetime.now(UTC)))
         self._tiktok_analytics.on_follow(user)
+        if self._points_enabled():
+            self._register_watch_activity(
+                stable_key=stable_key,
+                unique_id=unique_id,
+                display_name=user,
+            )
+            sk = (stable_key or "").strip()
+            cfg = self._load_points_config()
+            if sk and self._engagement_award_allowed(sk, "follow", cfg.follow_cooldown_sec):
+                delta = self._earn_tracker.on_follow(sk)
+                if delta > 0:
+                    self._award_points(
+                        stable_key=stable_key,
+                        unique_id=unique_id,
+                        display_name=user,
+                        delta=delta,
+                        reason="follow",
+                    )
         it = ActivityItem(
             platform="tiktok",
             kind="follow",
@@ -3761,6 +3968,12 @@ class MainWindow(FramelessWindow):
         )
         asyncio.ensure_future(eng.on_tiktok_joined((user or "").strip(), datetime.now(UTC)))
         self._tiktok_analytics.on_join(user)
+        if self._points_enabled():
+            self._register_watch_activity(
+                stable_key=stable_key,
+                unique_id="",
+                display_name=user,
+            )
         self._maybe_bump_king_presence(
             display_name=(user or "").strip(),
             stable_key=(stable_key or "").strip(),
@@ -3815,6 +4028,7 @@ class MainWindow(FramelessWindow):
         n: int,
         profile_picture_url: str = "",
         user_key: str = "",
+        unique_id: str = "",
     ) -> None:
         # Activity dock aggregates likes; actions engine evaluates tiktok_likes_received rules.
         if self._closing:
@@ -3850,6 +4064,20 @@ class MainWindow(FramelessWindow):
             avatar_url=(profile_picture_url or "").strip(),
         )
         self._schedule_top_likers_overlay_publish()
+        if self._points_enabled():
+            self._register_watch_activity(
+                stable_key=user_key,
+                unique_id=unique_id,
+                display_name=user,
+            )
+            delta = self._earn_tracker.on_like((user_key or "").strip(), n_i)
+            self._award_points(
+                stable_key=user_key,
+                unique_id=unique_id,
+                display_name=user,
+                delta=delta,
+                reason="like",
+            )
 
     def _schedule_top_likers_overlay_publish(self) -> None:
         if self._closing:
@@ -4183,10 +4411,181 @@ class MainWindow(FramelessWindow):
         self._publish_battle_overlay_patch_sync()
         self._schedule_battle_overlay_publish()
 
+    def _load_points_config(self) -> PointsConfig:
+        return load_points_config_from_settings(self._settings)
+
+    def _points_enabled(self) -> bool:
+        return bool(self._settings.value(SETTINGS_POINTS_ENABLED, False, bool))
+
+    def _points_insufficient_message(self, balance: int, cost: int) -> str:
+        return self._tr(
+            "telegram.song.points_insufficient",
+            balance=str(balance),
+            cost=str(cost),
+            **earn_rate_template_vars(self._load_points_config()),
+        )
+
+    def _restart_points_watch_timer(self) -> None:
+        cfg = self._earn_tracker.config
+        self._points_watch_timer.stop()
+        self._points_watch_timer.setInterval(max(1, cfg.watch_interval_minutes) * 60_000)
+        if self._points_enabled():
+            self._points_watch_timer.start()
+
+    def _refresh_points_config(self) -> None:
+        self._earn_tracker.set_config(self._load_points_config())
+        self._restart_points_watch_timer()
+
+    def _engagement_award_allowed(
+        self,
+        stable_key: str,
+        reason: str,
+        cooldown_sec: int,
+    ) -> bool:
+        try:
+            rem = engagement_cooldown_remaining_sec(
+                stable_key=stable_key,
+                reason=reason,
+                cooldown_sec=int(cooldown_sec),
+            )
+        except (OSError, sqlite3.Error) as exc:
+            logger.warning("points: cooldown check failed (%s): %s", reason, exc)
+            return False
+        return rem <= 0
+
+    def _award_points(
+        self,
+        *,
+        stable_key: str,
+        unique_id: str,
+        display_name: str,
+        delta: int,
+        reason: str,
+    ) -> None:
+        if delta <= 0:
+            return
+        sk = (stable_key or "").strip()
+        if not sk:
+            return
+        try:
+            balance = add_points(
+                stable_key=sk,
+                unique_id=unique_id,
+                display_name=display_name,
+                delta=int(delta),
+                reason=reason,
+            )
+        except (OSError, sqlite3.Error) as exc:
+            logger.warning("points: award failed (%s): %s", reason, exc)
+            return
+        if not self._points_enabled():
+            return
+        uid = normalize_tiktok_username(unique_id)
+        if not uid:
+            wallet = get_wallet_for_stable_key(sk)
+            uid = normalize_tiktok_username(wallet.unique_id) if wallet is not None else ""
+        if not uid:
+            return
+        telegram_id = get_telegram_id_for_unique_id(uid)
+        if telegram_id is None:
+            return
+        self._schedule_points_earn_notify(
+            telegram_id=telegram_id,
+            delta=int(delta),
+            reason=(reason or "").strip(),
+            balance=balance,
+        )
+
+    def _schedule_points_earn_notify(
+        self,
+        *,
+        telegram_id: int,
+        delta: int,
+        reason: str,
+        balance: int,
+    ) -> None:
+        if telegram_id <= 0 or delta <= 0:
+            return
+        reason_key = (reason or "").strip() or "other"
+        prev = self._points_notify_pending.get(telegram_id)
+        if prev is None:
+            reasons = frozenset({reason_key})
+            pending = _PointsNotifyPending(delta, reasons, balance)
+        else:
+            reasons = prev.reasons | {reason_key}
+            pending = _PointsNotifyPending(prev.delta + delta, reasons, balance)
+        self._points_notify_pending[telegram_id] = pending
+        self._points_notify_timer.start()
+
+    def _format_points_earn_reasons(self, reasons: frozenset[str]) -> str:
+        labels: list[str] = []
+        for key in _POINTS_EARN_REASON_ORDER:
+            if key in reasons:
+                labels.append(self._tr(f"telegram.points.reason.{key}"))
+        for key in sorted(reasons):
+            if key not in _POINTS_EARN_REASON_ORDER:
+                labels.append(key)
+        return ", ".join(labels) if labels else self._tr("telegram.points.reason.other")
+
+    def _flush_points_earn_notifications(self) -> None:
+        if self._closing:
+            self._points_notify_pending.clear()
+            return
+        tg = self._telegram
+        pending_map = self._points_notify_pending
+        self._points_notify_pending = {}
+        if tg is None:
+            return
+        for telegram_id, batch in pending_map.items():
+            if batch.delta <= 0:
+                continue
+            msg = self._tr(
+                "telegram.points.earned",
+                delta=str(batch.delta),
+                reasons=self._format_points_earn_reasons(batch.reasons),
+                balance=str(batch.balance),
+            )
+            tg.send_html_message_to_chat(telegram_id, msg)
+
+    def _register_watch_activity(
+        self,
+        *,
+        stable_key: str,
+        unique_id: str,
+        display_name: str,
+    ) -> None:
+        sk = (stable_key or "").strip()
+        if not sk:
+            return
+        prev = self._points_watch_active.get(sk)
+        uid = normalize_tiktok_username(unique_id) or (prev[0] if prev else "")
+        name = (display_name or "").strip() or (prev[1] if prev else "")
+        self._points_watch_active[sk] = (uid, name)
+
+    def _on_points_watch_tick(self) -> None:
+        if self._closing or not self._points_enabled():
+            return
+        active = self._points_watch_active
+        self._points_watch_active = {}
+        for sk, (uid, name) in active.items():
+            delta = self._earn_tracker.on_watch_tick(sk)
+            if delta > 0:
+                self._award_points(
+                    stable_key=sk,
+                    unique_id=uid,
+                    display_name=name,
+                    delta=delta,
+                    reason="watch",
+                )
+
     def _on_tiktok_stream_start(self) -> None:
         """Reset per-stream counters when TikTokLive indicates a new stream has started."""
         if self._closing:
             return
+        self._earn_tracker.set_config(self._load_points_config())
+        self._earn_tracker.reset()
+        self._points_watch_active.clear()
+        self._restart_points_watch_timer()
         eng = self._get_actions_engine(
             ChatPlatform.TIKTOK.value,
             constants.TIKTOK_ACTIONS_ACCOUNT_KEY,
@@ -4227,7 +4626,13 @@ class MainWindow(FramelessWindow):
             )
             self._schedule_king_overlay_publish()
 
-    def _on_tiktok_share_any(self, user: str, n: int) -> None:
+    def _on_tiktok_share_any(
+        self,
+        user: str,
+        n: int,
+        stable_key: str = "",
+        unique_id: str = "",
+    ) -> None:
         if self._closing:
             return
         eng = self._get_actions_engine(
@@ -4245,6 +4650,24 @@ class MainWindow(FramelessWindow):
         )
         for it in self._like_share_agg.flush_ready(now_mono=time.monotonic()):
             self._publish_activity_item(it)
+        if self._points_enabled():
+            self._register_watch_activity(
+                stable_key=stable_key,
+                unique_id=unique_id,
+                display_name=user,
+            )
+            sk = (stable_key or "").strip()
+            cfg = self._load_points_config()
+            if sk and self._engagement_award_allowed(sk, "share", cfg.share_cooldown_sec):
+                delta = self._earn_tracker.on_share(sk, int(n))
+                if delta > 0:
+                    self._award_points(
+                        stable_key=stable_key,
+                        unique_id=unique_id,
+                        display_name=user,
+                        delta=delta,
+                        reason="share",
+                    )
 
     def _on_tiktok_paid_sub_any(self, user: str) -> None:
         if self._closing:
@@ -4530,6 +4953,20 @@ class MainWindow(FramelessWindow):
                 )
             except (OSError, sqlite3.Error) as exc:
                 logger.warning("tiktok gifts sqlite: persist failed: %s", exc)
+        if total_coins > 0 and self._points_enabled():
+            gifter_unique = unique_id_from_user_bundle(tiktok_user_bundle_json or "")
+            self._register_watch_activity(
+                stable_key=sender_user_key,
+                unique_id=gifter_unique,
+                display_name=sender,
+            )
+            self._award_points(
+                stable_key=sender_user_key,
+                unique_id=gifter_unique,
+                display_name=sender,
+                delta=self._earn_tracker.config.coins_to_points(total_coins),
+                reason="gift",
+            )
         if total_coins > 0:
             prev_battle_phase = self._battle_controller.state().phase
             battle_hit = self._battle_controller.on_gift(
@@ -5317,11 +5754,48 @@ class MainWindow(FramelessWindow):
             video_id: str,
             requested_by: str,
             requester_chat_id: int,
+            requester_user_id: int = 0,
         ) -> str | tuple[str, Literal["info"]] | None:
             loc = self._get_locale()
             vid = (video_id or "").strip()
             if not vid:
                 return self._tr("telegram.song.empty_link")
+
+            # Points economy: resolve wallet and fail fast before any network calls.
+            points_on = self._points_enabled()
+            cost = self._load_points_config().song_cost if points_on else 0
+            charged_unique = ""
+            if points_on and cost > 0:
+                charged_unique = get_telegram_link(int(requester_user_id)) or ""
+                if not charged_unique:
+                    return self._tr("telegram.song.points_link_required")
+                balance = get_balance_for_unique_id(charged_unique)
+                if balance < cost:
+                    return self._points_insufficient_message(balance, cost)
+
+            def _reserve_points() -> bool:
+                if not (points_on and cost > 0):
+                    return True
+                return try_spend_for_unique_id(
+                    unique_id=charged_unique,
+                    amount=cost,
+                    reason="song_order",
+                    ref=vid,
+                )
+
+            def _refund_points() -> None:
+                if points_on and cost > 0 and charged_unique:
+                    refund_for_unique_id(
+                        unique_id=charged_unique,
+                        amount=cost,
+                        reason="song_refund",
+                        ref=vid,
+                    )
+
+            def _insufficient_now() -> str:
+                bal = get_balance_for_unique_id(charged_unique)
+                return self._points_insufficient_message(bal, cost)
+
             max_min_raw = self._settings.value(_SETTINGS_MUSIC_MAX_DURATION_MIN, 5)
             try:
                 max_min = int(max_min_raw)
@@ -5410,6 +5884,8 @@ class MainWindow(FramelessWindow):
                 if verdict.status == "Banned":
                     return format_tiktok_reject_reason(verdict, ui_locale=loc)
                 if verdict.status == "Risky":
+                    if not _reserve_points():
+                        return _insufficient_now()
                     pending_id = secrets.token_hex(8)
                     vline = ", ".join(verdict.violations[:6]) if verdict.violations else "—"
                     rs = verdict.risk_score
@@ -5427,6 +5903,8 @@ class MainWindow(FramelessWindow):
                         requested_by=requested_by,
                         title=title,
                         requester_chat_id=int(requester_chat_id),
+                        charged_unique_id=charged_unique if (points_on and cost > 0) else "",
+                        charged_amount=cost if (points_on and cost > 0) else 0,
                     )
                     tg = self._telegram
                     if tg is not None:
@@ -5436,7 +5914,13 @@ class MainWindow(FramelessWindow):
                         )
                     return (self._tr("telegram.song.risky_sent_to_admin"), "info")
 
-            new_track = await self._music_queue.enqueue(video_id=vid, requested_by=requested_by)
+            if not _reserve_points():
+                return _insufficient_now()
+            try:
+                new_track = await self._music_queue.enqueue(video_id=vid, requested_by=requested_by)
+            except Exception:
+                _refund_points()
+                raise
             if title:
                 asyncio.create_task(self._music_queue.set_track_title(new_track.id, title))
             else:
@@ -5505,6 +5989,13 @@ class MainWindow(FramelessWindow):
                     handled=True,
                     answer_hint=self._tr("telegram.admin.risky_approved_answer"),
                 )
+            if pending.charged_amount > 0 and pending.charged_unique_id:
+                refund_for_unique_id(
+                    unique_id=pending.charged_unique_id,
+                    amount=pending.charged_amount,
+                    reason="song_refund_denied",
+                    ref=pending.video_id,
+                )
             if tg is not None and pending.requester_chat_id > 0:
                 tg.send_html_message_to_chat(
                     pending.requester_chat_id,
@@ -5514,6 +6005,31 @@ class MainWindow(FramelessWindow):
                 handled=True,
                 answer_hint=self._tr("telegram.admin.risky_rejected_answer"),
             )
+
+        async def start_tiktok_link_challenge(telegram_id: int) -> str | None:
+            try:
+                return create_telegram_link_challenge(telegram_id=int(telegram_id))
+            except (OSError, sqlite3.Error, RuntimeError) as exc:
+                logger.warning("points: create link challenge failed: %s", exc)
+                return None
+
+        async def cancel_tiktok_link_challenge_cb(telegram_id: int) -> None:
+            try:
+                cancel_telegram_link_challenge(telegram_id=int(telegram_id))
+            except (OSError, sqlite3.Error) as exc:
+                logger.warning("points: cancel link challenge failed: %s", exc)
+
+        async def points_status(telegram_id: int) -> tuple[str | None, int, int]:
+            cost = self._load_points_config().song_cost if self._points_enabled() else 0
+            try:
+                handle = get_telegram_link(int(telegram_id))
+                if not handle:
+                    return (None, 0, cost)
+                bal = get_balance_for_unique_id(handle)
+            except (OSError, sqlite3.Error) as exc:
+                logger.warning("points: status failed: %s", exc)
+                return (None, 0, cost)
+            return (handle, bal, cost)
 
         self._telegram = TelegramBotService(
             token=tok,
@@ -5529,6 +6045,10 @@ class MainWindow(FramelessWindow):
                 self._settings.value(_SETTINGS_TELEGRAM_TIKTOK_LYRICS_FILTER, False, bool),
             ),
             moderation_notice_text=lambda: self._tr("telegram.song.moderating_line"),
+            points_enabled=self._points_enabled(),
+            start_tiktok_link_challenge=start_tiktok_link_challenge,
+            cancel_tiktok_link_challenge=cancel_tiktok_link_challenge_cb,
+            points_status=points_status,
         )
         self._telegram.start()
 

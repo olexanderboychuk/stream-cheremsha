@@ -136,6 +136,10 @@ class EdgeTts:
     def voice(self) -> str:
         return self._voice
 
+    @property
+    def rate(self) -> str | None:
+        return self._rate
+
     async def synthesize(self, text: str) -> bytes:
         stripped = text.strip()
         if not stripped:

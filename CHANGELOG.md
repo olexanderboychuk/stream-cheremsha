@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- TTS speech rate control in Audio settings (50–200%, 100% = normal). Applies natively for Edge voices and via ffmpeg `atempo` (pitch-preserving) for Google, persisted between runs.
+
 ## [0.7.3] — 2026-06-15
 
 ### Fixed
