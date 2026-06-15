@@ -6,9 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-06-16
+
 ### Added
 
+- **Points economy** for song requests: viewers earn balance from likes, shares, follows, watch time, and TikTok gifts; configurable costs and rates in a new Points settings dialog.
+- **TikTok ↔ Telegram linking** via a one-time word code typed in live chat, with anti-abuse cooldowns for follow/share farming.
+- SQLite persistence for points balances, ledger, and cross-stream cooldowns.
 - TTS speech rate control in Audio settings (50–200%, 100% = normal). Applies natively for Edge voices and via ffmpeg `atempo` (pitch-preserving) for Google, persisted between runs.
+- Tests for points domain, SQLite store, settings dialog, TikTok link challenge, TTS rate, and YouTube Data API runner.
+
+### Changed
+
+- TikTok chat source: engagement events feed the points ledger; gift coin totals stored for conversion.
+- Telegram bot: points balance checks and TikTok link flow for song requests.
+- YouTube chat source refactored for clearer Data API polling.
+
+### Removed
+
+- Bundled RVC voice model assets (Stalker bandit `.pth` / index files).
 
 ## [0.7.3] — 2026-06-15
 
@@ -164,6 +180,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Comment and formatting consistency in several modules after merging PR #5.
 
+[0.8.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.7.3...v0.8.0
 [0.7.3]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.7.0...v0.7.1
