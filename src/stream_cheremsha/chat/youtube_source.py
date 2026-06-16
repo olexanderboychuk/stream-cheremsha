@@ -10,6 +10,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, TypeVar
 
+try:
+    import certifi
+except ImportError:
+    certifi = None  # type: ignore[assignment]
+
+import httplib2
 import httpx
 from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
@@ -36,8 +42,29 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
+def _youtube_ca_bundle() -> str | None:
+    if certifi is None:
+        return None
+    path = certifi.where()
+    return path if path else None
+
+
+def _build_youtube_http() -> httplib2.Http:
+    """Build httplib2 with an explicit CA bundle (required in Nuitka standalone)."""
+    ca = _youtube_ca_bundle()
+    if ca:
+        return httplib2.Http(ca_certs=ca)
+    return httplib2.Http()
+
+
 def _build_youtube_service(creds: Credentials) -> object:
-    return build("youtube", "v3", credentials=creds, cache_discovery=False)
+    return build(
+        "youtube",
+        "v3",
+        credentials=creds,
+        cache_discovery=False,
+        http=_build_youtube_http(),
+    )
 
 
 class _YouTubeDataApiRunner:
@@ -92,12 +119,16 @@ class _YouTubeDataApiRunner:
             lambda: self._invoke_sync(creds, func, *args, **kwargs),
         )
 
+    def invalidate_service(self) -> None:
+        """Drop cached discovery client (e.g. after SSL errors in standalone builds)."""
+        self._service = None
+        self._creds_fingerprint = None
+
     def shutdown(self) -> None:
         if self._closed:
             return
         self._closed = True
-        self._service = None
-        self._creds_fingerprint = None
+        self.invalidate_service()
         self._executor.shutdown(wait=False, cancel_futures=True)
 
 
@@ -429,6 +460,7 @@ class YouTubeChatSource:
         self._get_locale = get_locale or (lambda: l10n.DEFAULT_LOCALE)
         self._task: asyncio.Task[None] | None = None
         self._running = False
+        self._supervisor_video_url: str | None = None
         self._data_api = _YouTubeDataApiRunner()
 
     async def _refresh_oauth_credentials(self, creds: Credentials) -> bool:
@@ -453,7 +485,10 @@ class YouTubeChatSource:
 
     @property
     def running(self) -> bool:
-        return self._running and self._task is not None and not self._task.done()
+        # ``_running`` reflects user intent (toggle on). The supervisor task may
+        # finish briefly between poll/fallback cycles or while restarting; tying the
+        # UI switch to ``task.done()`` made Nuitka builds snap back off immediately.
+        return self._running
 
     async def browser_login(self, client_config: dict[str, Any]) -> None:
         """Run Google OAuth in the system browser; persist refresh/user token to keyring."""
@@ -486,11 +521,32 @@ class YouTubeChatSource:
             if not await self._refresh_oauth_credentials(creds):
                 return
 
+        self._supervisor_video_url = video_url_or_id
         self._running = True
+        self._spawn_supervisor()
+
+    def _spawn_supervisor(self) -> None:
         self._task = asyncio.create_task(
-            self._supervisor(video_url_or_id),
+            self._supervisor(self._supervisor_video_url),
             name="youtube-chat",
         )
+        self._task.add_done_callback(self._on_supervisor_done)
+
+    def _on_supervisor_done(self, task: asyncio.Task[None]) -> None:
+        if not self._running or task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.exception("YouTube supervisor exited unexpectedly: %s", exc)
+            self._on_status(l10n.tr(self._get_locale(), "yt.error", err=str(exc)))
+        self._data_api.invalidate_service()
+        asyncio.ensure_future(self._restart_supervisor())
+
+    async def _restart_supervisor(self) -> None:
+        await asyncio.sleep(2.0)
+        if not self._running:
+            return
+        self._spawn_supervisor()
 
     async def _cancel_task(self) -> None:
         self._running = False
@@ -579,6 +635,7 @@ class YouTubeChatSource:
                     await asyncio.sleep(wait)
                 continue
             except OSError as e:
+                self._data_api.invalidate_service()
                 if video_id:
                     self._on_status(l10n.tr(self._get_locale(), "yt.fallback_switching"))
                     await self._run_fallback_for_video(video_id)
@@ -594,6 +651,12 @@ class YouTubeChatSource:
                 continue
             except ValueError as e:
                 self._on_status(l10n.tr(self._get_locale(), "yt.wait_live", err=str(e), sec=wait))
+                await asyncio.sleep(wait)
+                continue
+            except Exception as e:
+                logger.exception("YouTube discovery failed: %s", e)
+                self._data_api.invalidate_service()
+                self._on_status(l10n.tr(self._get_locale(), "yt.error", err=str(e)))
                 await asyncio.sleep(wait)
                 continue
 
@@ -620,7 +683,11 @@ class YouTubeChatSource:
             )
 
             await self._poll_chats_round_robin(creds, live_chat_ids, fb_url, live_video_ids)
-            break
+            if not self._running:
+                return
+            # Poll/fallback finished (quota, stream ended, etc.) — rediscover instead of
+            # exiting the supervisor, which used to flip the UI toggle off in Nuitka.
+            continue
 
     async def _run_fallback_for_watch_url(self, watch_url: str) -> None:
         self._on_status(l10n.tr(self._get_locale(), "yt.fallback_polling"))
@@ -753,6 +820,7 @@ class YouTubeChatSource:
                 continue
             except OSError as e:
                 logger.warning("YouTube poll error: %s", e)
+                self._data_api.invalidate_service()
                 self._on_status(l10n.tr(self._get_locale(), "yt.error", err=str(e)))
                 await asyncio.sleep(5.0)
                 continue

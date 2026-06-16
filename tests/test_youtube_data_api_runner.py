@@ -79,3 +79,48 @@ def test_data_api_runner_reuses_service_for_same_creds(monkeypatch) -> None:
     asyncio.run(_run())
     assert builds == 1
     runner.shutdown()
+
+
+def test_data_api_runner_invalidate_forces_rebuild(monkeypatch) -> None:
+    runner = _YouTubeDataApiRunner()
+    creds = _fake_creds()
+    builds = 0
+
+    def fake_build(c: Credentials) -> object:
+        nonlocal builds
+        builds += 1
+        assert c is creds
+        return MagicMock(name=f"service-{builds}")
+
+    monkeypatch.setattr(
+        "stream_cheremsha.chat.youtube_source._build_youtube_service",
+        fake_build,
+    )
+
+    async def _run() -> None:
+        await runner.invoke(creds, lambda s: s)
+        runner.invalidate_service()
+        await runner.invoke(creds, lambda s: s)
+
+    asyncio.run(_run())
+    assert builds == 2
+    runner.shutdown()
+
+
+def test_running_reflects_user_intent_not_task_liveness() -> None:
+    from stream_cheremsha.chat.youtube_source import YouTubeChatSource
+
+    class _Coord:
+        async def enqueue_chat(self, _msg: object) -> None:
+            return None
+
+    src = YouTubeChatSource(
+        coordinator=_Coord(),  # type: ignore[arg-type]
+        on_status=lambda _s: None,
+    )
+    assert src.running is False
+    src._running = True  # noqa: SLF001
+    assert src.running is True
+    assert src._task is None  # noqa: SLF001
+    src._running = False  # noqa: SLF001
+    assert src.running is False

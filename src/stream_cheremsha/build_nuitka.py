@@ -174,6 +174,18 @@ def _nuitka_cmd(
             cmd.append("--include-package=certifi")
             cmd.append(f"--include-data-file={cacert}=certifi/cacert.pem")
 
+    for pkg in (
+        "googleapiclient",
+        "google_auth_httplib2",
+        "httplib2",
+        "google.auth",
+        "requests",
+        "chat_downloader",
+        "uritemplate",
+    ):
+        if _has_pkg(pkg):
+            cmd.append(f"--include-package={pkg}")
+
     if clang:
         cmd.append("--clang")
     if mingw64:

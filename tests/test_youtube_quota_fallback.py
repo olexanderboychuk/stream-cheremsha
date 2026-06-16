@@ -159,11 +159,14 @@ def test_youtube_switches_to_fallback_on_quota_exceeded(monkeypatch: pytest.Monk
     async def _run() -> None:
         await src.start("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
         assert src._task is not None
-        await asyncio.wait_for(src._task, timeout=2.0)
+        deadline = asyncio.get_running_loop().time() + 2.0
+        while asyncio.get_running_loop().time() < deadline and not coord.messages:
+            await asyncio.sleep(0.02)
+        await src.stop()
 
     asyncio.run(_run())
     assert any("фоллбек" in s.lower() for s in statuses)
-    assert [m.text for m in coord.messages] == ["hi"]
+    assert coord.messages and coord.messages[0].text == "hi"
 
 
 def test_youtube_switches_to_fallback_when_api_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -203,8 +206,11 @@ def test_youtube_switches_to_fallback_when_api_disabled(monkeypatch: pytest.Monk
     async def _run() -> None:
         await src.start("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
         assert src._task is not None
-        await asyncio.wait_for(src._task, timeout=2.0)
+        deadline = asyncio.get_running_loop().time() + 2.0
+        while asyncio.get_running_loop().time() < deadline and not coord.messages:
+            await asyncio.sleep(0.02)
+        await src.stop()
 
     asyncio.run(_run())
     assert any("фоллбек" in s.lower() for s in statuses)
-    assert [m.text for m in coord.messages] == ["hi"]
+    assert coord.messages and coord.messages[0].text == "hi"
