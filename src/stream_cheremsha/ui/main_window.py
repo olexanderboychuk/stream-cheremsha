@@ -2827,8 +2827,6 @@ class MainWindow(FramelessWindow):
         )
         self._settings.setValue(_SETTINGS_CHAT_FONT_PT, self._spin_chat_font_pt.value())
         self._rebuild_chat_from_history()
-        if self._chat_popout is not None:
-            self._chat_popout.sync_from_main()
 
     def _open_or_raise_chat_popout(self) -> None:
         w = self._chat_popout
@@ -2884,6 +2882,9 @@ class MainWindow(FramelessWindow):
     def _clear_chat_view(self) -> None:
         self._chat_view.clear()
         self._chat_message_history.clear()
+        pop = self._chat_popout
+        if pop is not None and shiboken6.isValid(pop):
+            pop.clear_view()
 
     def _on_test_chat_message_clicked(self) -> None:
         """Preview-only samples (not sent to stream chat or TTS)."""
@@ -3779,6 +3780,9 @@ class MainWindow(FramelessWindow):
         self._chat_message_history.append(message)
         fragment = self._format_chat_message_fragment(message)
         self._bridge.append_chat.emit(fragment)
+        pop = self._chat_popout
+        if pop is not None and shiboken6.isValid(pop):
+            pop.append_message(message)
         if not self._closing:
             chat_patch = chat_message_to_patch(message)
             if message.platform == ChatPlatform.TIKTOK:
@@ -6122,6 +6126,10 @@ class MainWindow(FramelessWindow):
         if self._closing:
             event.accept()
             return
+        pop = self._chat_popout
+        if pop is not None and shiboken6.isValid(pop):
+            pop.close()
+            self._chat_popout = None
         save_window_geometry(KEY_MAIN_WINDOW, self)
         try:
             self._settings.sync()

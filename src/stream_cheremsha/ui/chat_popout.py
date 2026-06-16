@@ -6,7 +6,7 @@ import sys
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QPoint, QPointF, QRect, QSettings, Qt, Slot
-from PySide6.QtGui import QCloseEvent, QFont, QMouseEvent
+from PySide6.QtGui import QCloseEvent, QFont, QMouseEvent, QTextCursor
 from PySide6.QtWidgets import (
     QDialog,
     QFontComboBox,
@@ -26,6 +26,12 @@ from PySide6.QtWidgets import (
 if TYPE_CHECKING:
     from stream_cheremsha.ui.main_window import MainWindow
 
+from stream_cheremsha.domain.models import ChatMessage
+from stream_cheremsha.ui.chat_formatting import (
+    CHAT_DEFAULT_FONT_FAMILY,
+    chat_font_stack_css,
+    format_chat_message_html,
+)
 from stream_cheremsha.ui.window_geometry import (
     KEY_CHAT_POPOUT,
     restore_window_geometry,
@@ -34,6 +40,9 @@ from stream_cheremsha.ui.window_geometry import (
 
 _SETTINGS_POPOUT_OPACITY = "ui/chat_popout_opacity"
 _SETTINGS_POPOUT_CONTROLS = "ui/chat_popout_controls_visible"
+_SETTINGS_POPOUT_FONT_PT = "ui/chat_popout_font_pt"
+_SETTINGS_POPOUT_FONT_FAMILY = "ui/chat_popout_font_family"
+_MAX_CHAT_DOCUMENT_BLOCKS = 450
 
 
 def _read_bool_settings(value: object, default: bool) -> bool:
@@ -70,9 +79,10 @@ def _build_popout_stylesheet(bg_opacity: float) -> str:
         f"color: #e6e6e6; border: 1px solid #2a3142; border-radius: 8px; padding: 4px; }}"
         f"QPushButton {{ background-color: #1a2130; color: #e6e6e6; "
         f"border: 1px solid #2f3a4d; border-radius: 8px; padding: 6px 12px; }}"
-        f"QPushButton#chatPopoutMinBtn, QPushButton#chatPopoutPanelBtn {{ background: transparent; "
+        f"QPushButton#chatPopoutCloseBtn, QPushButton#chatPopoutPanelBtn {{ "
+        f"background: transparent; "
         f"border: 1px solid #3d4a5c; max-width: 40px; min-width: 36px; padding: 2px; }}"
-        f"QPushButton#chatPopoutMinBtn:hover, QPushButton#chatPopoutPanelBtn:hover {{ "
+        f"QPushButton#chatPopoutCloseBtn:hover, QPushButton#chatPopoutPanelBtn:hover {{ "
         f"background: #1e2535; border-color: #5c6a7d; }}"
         f"QPushButton:hover {{ background-color: #202a3a; border-color: #3b4458; }}"
         f"QSlider::groove:horizontal {{ height: 6px; background: #1e2430; border-radius: 3px; }}"
@@ -263,11 +273,11 @@ class _PopoutTitleBar(QFrame):
         self._btn_controls.setChecked(controls_visible)
         self._btn_controls.toggled.connect(popout._on_controls_toggled)  # noqa: SLF001
         h.addWidget(self._btn_controls, 0, Qt.AlignmentFlag.AlignTop)
-        self._min = QPushButton("—")
-        self._min.setObjectName("chatPopoutMinBtn")
-        self._min.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._min.clicked.connect(popout.showMinimized)
-        h.addWidget(self._min, 0, Qt.AlignmentFlag.AlignTop)
+        self._close = QPushButton("×")
+        self._close.setObjectName("chatPopoutCloseBtn")
+        self._close.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._close.clicked.connect(popout.close)
+        h.addWidget(self._close, 0, Qt.AlignmentFlag.AlignTop)
 
     def set_title(self, text: str) -> None:
         self._title.setText(text)
@@ -326,7 +336,8 @@ def _win32_nchit_result(pop: ChatPopoutWindow, p: QPoint) -> int:
 
 class ChatPopoutWindow(QDialog):
     def __init__(self, main: MainWindow) -> None:
-        super().__init__(main)
+        # Top-level window: no Qt parent — otherwise Windows minimizes this with MainWindow.
+        super().__init__(None)
         self._main = main
         self.setObjectName("chatPopout")
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
@@ -419,7 +430,6 @@ class ChatPopoutWindow(QDialog):
         self._view.setAcceptRichText(True)
         self._view.setUndoRedoEnabled(False)
         self._view.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
-        self._view.setDocument(self._main._chat_view.document())  # noqa: SLF001
         self._view.document().setDefaultStyleSheet(
             "body { margin: 0; } a { color: #38bdf8; }",
         )
@@ -459,7 +469,83 @@ class ChatPopoutWindow(QDialog):
         grid.addWidget(bottom_w, 2, 0, 1, 3)
 
         self.apply_texts()
-        self.sync_from_main()
+        self._load_font_from_settings()
+        self._rebuild_from_history()
+
+    def append_message(self, message: ChatMessage) -> None:
+        self._append_html(self._format_chat_message_fragment(message))
+
+    def clear_view(self) -> None:
+        self._view.clear()
+
+    def _load_font_from_settings(self) -> None:
+        st = QSettings("stream-cheremsha", "cheremsha")
+        m = self._main
+        if st.contains(_SETTINGS_POPOUT_FONT_PT):
+            pt = int(st.value(_SETTINGS_POPOUT_FONT_PT, 14, int))
+        else:
+            pt = m._spin_chat_font_pt.value() if hasattr(m, "_spin_chat_font_pt") else 14  # noqa: SLF001
+        pt = max(10, min(28, pt))
+        if st.contains(_SETTINGS_POPOUT_FONT_FAMILY):
+            fam = str(st.value(_SETTINGS_POPOUT_FONT_FAMILY, "", str)).strip()
+        else:
+            fam = (
+                m._font_combo_chat.currentFont().family()  # noqa: SLF001
+                if hasattr(m, "_font_combo_chat")
+                else ""
+            )
+        self._font.blockSignals(True)
+        self._spin.blockSignals(True)
+        if fam:
+            self._font.setCurrentFont(QFont(fam))
+        else:
+            self._font.setCurrentFont(QFont(CHAT_DEFAULT_FONT_FAMILY))
+        self._spin.setValue(pt)
+        self._font.blockSignals(False)
+        self._spin.blockSignals(False)
+
+    def _persist_font_appearance(self) -> None:
+        st = QSettings("stream-cheremsha", "cheremsha")
+        st.setValue(_SETTINGS_POPOUT_FONT_FAMILY, self._font.currentFont().family())
+        st.setValue(_SETTINGS_POPOUT_FONT_PT, self._spin.value())
+        self._rebuild_from_history()
+
+    def _format_chat_message_fragment(self, message: ChatMessage) -> str:
+        m = self._main
+        pt = self._spin.value()
+        fam = self._font.currentFont().family()
+        stack = chat_font_stack_css(fam)
+        return format_chat_message_html(
+            message,
+            font_pt=pt,
+            font_stack_css=stack,
+            twitch_icon_uri=m._chat_ic_tw,  # noqa: SLF001
+            youtube_icon_uri=m._chat_ic_yt,  # noqa: SLF001
+            tiktok_icon_uri=m._chat_ic_tk,  # noqa: SLF001
+        )
+
+    def _rebuild_from_history(self) -> None:
+        self._view.clear()
+        for message in self._main._chat_message_history:  # noqa: SLF001
+            self._append_html(self._format_chat_message_fragment(message))
+
+    def _append_html(self, html_fragment: str) -> None:
+        doc = self._view.document()
+        cursor = self._view.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        if not doc.isEmpty():
+            cursor.insertBlock()
+        cursor.insertHtml(html_fragment)
+        self._view.setTextCursor(cursor)
+        sb = self._view.verticalScrollBar()
+        sb.setValue(sb.maximum())
+        doc = self._view.document()
+        while doc.blockCount() > _MAX_CHAT_DOCUMENT_BLOCKS:
+            c = QTextCursor(doc)
+            c.movePosition(QTextCursor.MoveOperation.Start)
+            c.select(QTextCursor.SelectionType.BlockUnderCursor)
+            c.removeSelectedText()
+            c.deleteChar()
 
     def closeEvent(self, event: QCloseEvent) -> None:
         save_window_geometry(KEY_CHAT_POPOUT, self)
@@ -509,7 +595,7 @@ class ChatPopoutWindow(QDialog):
         title = m._tr("chat.popout_title")  # noqa: SLF001
         self.setWindowTitle(title)
         self._title_bar.set_title(title)
-        self._title_bar._min.setToolTip(m._tr("chat.popout_minimize"))  # noqa: SLF001
+        self._title_bar._close.setToolTip(m._tr("chat.popout_close"))  # noqa: SLF001
         self._refresh_controls_toggle_tooltip()
         self._lbl_opacity.setText(m._tr("chat.popout_opacity"))  # noqa: SLF001
         self._lbl_font.setText(m._tr("chat.font"))  # noqa: SLF001
@@ -520,30 +606,13 @@ class ChatPopoutWindow(QDialog):
         self._btn_clear.setToolTip(m._tr("chat.clear_hint"))  # noqa: SLF001
         self._refresh_opacity_label()
 
-    def sync_from_main(self) -> None:
-        m = self._main
-        self._font.blockSignals(True)
-        self._spin.blockSignals(True)
-        self._font.setCurrentFont(m._font_combo_chat.currentFont())  # noqa: SLF001
-        self._spin.setValue(m._spin_chat_font_pt.value())  # noqa: SLF001
-        self._font.blockSignals(False)
-        self._spin.blockSignals(False)
-
     @Slot(QFont)
-    def _on_popout_font_changed(self, font: QFont) -> None:
-        m = self._main
-        m._font_combo_chat.blockSignals(True)  # noqa: SLF001
-        m._font_combo_chat.setCurrentFont(font)  # noqa: SLF001
-        m._font_combo_chat.blockSignals(False)  # noqa: SLF001
-        m._persist_chat_appearance()  # noqa: SLF001
+    def _on_popout_font_changed(self, _font: QFont) -> None:
+        self._persist_font_appearance()
 
     @Slot(int)
-    def _on_popout_size_changed(self, v: int) -> None:
-        m = self._main
-        m._spin_chat_font_pt.blockSignals(True)  # noqa: SLF001
-        m._spin_chat_font_pt.setValue(v)  # noqa: SLF001
-        m._spin_chat_font_pt.blockSignals(False)  # noqa: SLF001
-        m._persist_chat_appearance()  # noqa: SLF001
+    def _on_popout_size_changed(self, _v: int) -> None:
+        self._persist_font_appearance()
 
     def _on_opacity_value_changed(self) -> None:
         self._bg_opacity = self._op_slider.value() / 100.0

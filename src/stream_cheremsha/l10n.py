@@ -51,7 +51,7 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "Chat — Stream Cheremsha",
     },
     "chat.popout_opacity": {"uk": "Прозорість", "en": "Opacity"},
-    "chat.popout_minimize": {"uk": "Згорнути", "en": "Minimize"},
+    "chat.popout_close": {"uk": "Закрити", "en": "Close"},
     "chat.popout_show_controls": {
         "uk": "Показати панель керування",
         "en": "Show control bar",
