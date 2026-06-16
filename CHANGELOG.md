@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-06-16
+
+### Changed
+
+- YouTube integration: explicit CA bundle for httplib2 in standalone (Nuitka) builds; invalidate and rebuild the Data API client after SSL/runtime errors.
+- YouTube chat supervisor restarts after poll/fallback cycles instead of exiting (fixes UI toggle snapping off in Nuitka builds).
+- Nuitka build: bundle `googleapiclient`, `httplib2`, `chat_downloader`, and related packages for YouTube.
+
 ## [0.8.0] — 2026-06-16
 
 ### Added
@@ -180,6 +188,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Comment and formatting consistency in several modules after merging PR #5.
 
+[0.9.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.7.3...v0.8.0
 [0.7.3]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.7.1...v0.7.2
