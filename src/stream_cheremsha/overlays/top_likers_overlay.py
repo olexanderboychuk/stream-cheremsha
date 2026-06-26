@@ -101,27 +101,50 @@ class TopLikersOverlayType:
       .avatarWrap {{
         position: relative;
         flex: 0 0 auto;
+        overflow: visible;
+      }}
+      .avatarStack {{
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
       }}
       .avatar {{
         display: block;
         border-radius: 999px;
         object-fit: cover;
         background: rgba(148,163,184,0.18);
+        position: relative;
+        z-index: 1;
       }}
       .avatar.ph {{ background: rgba(148,163,184,0.25); }}
+      .crown-wrap {{
+        position: relative;
+        height: calc(var(--av, 48px) * 0.42);
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        margin-bottom: calc(var(--av, 48px) * -0.14);
+        z-index: 4;
+        pointer-events: none;
+      }}
       .crown {{
-        position: absolute;
-        top: -10px;
-        left: -4px;
-        width: 26px;
-        height: 22px;
-        z-index: 2;
-        filter: drop-shadow(0 1px 2px rgba(0,0,0,0.45));
+        font-size: calc(var(--av, 48px) * 0.625);
+        line-height: 1;
+        filter: drop-shadow(0 3px 6px rgba(0,0,0,0.55));
+        transform-origin: 50% 100%;
+        animation: crownFloat 3.2s ease-in-out infinite;
+        user-select: none;
+      }}
+      @keyframes crownFloat {{
+        0%, 100% {{ transform: translateY(0) rotate(-2deg) scale(1); }}
+        50% {{ transform: translateY(-5px) rotate(2deg) scale(1.04); }}
       }}
       .medal {{
-        width: 34px;
-        height: 34px;
+        width: 32px;
+        height: 38px;
         flex: 0 0 auto;
+        filter: drop-shadow(0 1px 3px rgba(0,0,0,0.45));
       }}
       .textCol {{
         flex: 1 1 auto;
@@ -424,32 +447,103 @@ class TopLikersOverlayType:
         }}
 
         function medalSvg(place) {{
-          const colors =
-            place === 1
-              ? {{ ring: '#f5d742', fill1: '#fff7c2', fill2: '#e6b422', num: '#5c4300' }}
-              : place === 2
-                ? {{ ring: '#c0c6d4', fill1: '#f3f4f8', fill2: '#9aa3b5', num: '#2b3347' }}
-                : {{ ring: '#cd7f32', fill1: '#ffd7b0', fill2: '#a65a1e', num: '#3b2208' }};
-          const c = colors;
-          const num = String(place);
+          const p = clampInt(place, 1, 3, 1);
+          const t =
+            p === 1
+              ? {{
+                  rim: '#b8860b',
+                  g0: '#fff9c4',
+                  g1: '#fde047',
+                  g2: '#ca8a04',
+                  rbL: '#b91c1c',
+                  rbR: '#1d4ed8',
+                  num: '#713f12',
+                  sh: 'rgba(255,255,255,0.55)',
+                }}
+              : p === 2
+                ? {{
+                    rim: '#64748b',
+                    g0: '#f8fafc',
+                    g1: '#cbd5e1',
+                    g2: '#64748b',
+                    rbL: '#334155',
+                    rbR: '#94a3b8',
+                    num: '#1e293b',
+                    sh: 'rgba(255,255,255,0.65)',
+                  }}
+                : {{
+                    rim: '#92400e',
+                    g0: '#ffedd5',
+                    g1: '#d97706',
+                    g2: '#9a3412',
+                    rbL: '#14532d',
+                    rbR: '#166534',
+                    num: '#431407',
+                    sh: 'rgba(255,255,255,0.35)',
+                  }};
+          const gid = 'medalG' + p;
           return (
-            '<svg class="medal" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
-            '<circle cx="20" cy="20" r="17" fill="' + c.fill1 + '" stroke="' + c.ring + '" stroke-width="2"/>' +
-            '<circle cx="20" cy="20" r="12" fill="' + c.fill2 + '" opacity="0.35"/>' +
-            '<text x="20" y="25" text-anchor="middle" font-size="15" font-weight="900" fill="' +
-            c.num +
-            '">' +
-            num +
+            '<svg class="medal" viewBox="0 0 40 48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+            '<defs><linearGradient id="' +
+            gid +
+            '" x1="18%" y1="8%" x2="82%" y2="92%">' +
+            '<stop offset="0%" stop-color="' +
+            t.g0 +
+            '"/>' +
+            '<stop offset="52%" stop-color="' +
+            t.g1 +
+            '"/>' +
+            '<stop offset="100%" stop-color="' +
+            t.g2 +
+            '"/></linearGradient></defs>' +
+            '<path d="M11 1 L17 17 L20 14 L23 17 L29 1 L26 1 L20 12 L14 1 Z" fill="' +
+            t.rbL +
+            '"/>' +
+            '<path d="M20 14 L23 17 L29 1 L20 1 L11 1 L17 17 Z" fill="' +
+            t.rbR +
+            '" opacity="0.92"/>' +
+            '<circle cx="20" cy="33" r="14.5" fill="url(#' +
+            gid +
+            ')" stroke="' +
+            t.rim +
+            '" stroke-width="1.8"/>' +
+            '<circle cx="20" cy="33" r="11" fill="none" stroke="' +
+            t.rim +
+            '" stroke-width="0.8" opacity="0.55"/>' +
+            '<ellipse cx="15.5" cy="28.5" rx="4.2" ry="2.8" fill="' +
+            t.sh +
+            '"/>' +
+            '<text x="20" y="38" text-anchor="middle" font-size="13" font-weight="900" fill="' +
+            t.num +
+            '" font-family="system-ui,sans-serif">' +
+            p +
             '</text></svg>'
           );
         }}
 
-        function crownSvg() {{
+        function crownHtml() {{
           return (
-            '<svg class="crown" viewBox="0 0 48 40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
-            '<path fill="#f5d742" stroke="#b8860b" stroke-width="1" d="M6 28 L10 14 L18 20 L24 8 L30 20 L38 14 L42 28 Z"/>' +
-            '<rect x="4" y="28" width="40" height="8" rx="2" fill="#e6b422" stroke="#a67c00" stroke-width="1"/></svg>'
+            '<div class="crown-wrap"><div class="crown" aria-hidden="true">👑</div></div>'
           );
+        }}
+
+        function syncAvatarCrown(avWrap, wantCrown, av) {{
+          if (!avWrap) return;
+          avWrap.style.setProperty('--av', av + 'px');
+          let stack = avWrap.querySelector('.avatarStack');
+          if (!stack) {{
+            avWrap.querySelectorAll('svg.crown, .crown-wrap, :scope > .crown').forEach(function (el) {{ el.remove(); }});
+            stack = document.createElement('div');
+            stack.className = 'avatarStack';
+            const img = avWrap.querySelector('img.avatar');
+            if (img) stack.appendChild(img);
+            avWrap.appendChild(stack);
+          }}
+          const legacySvg = avWrap.querySelector('svg.crown');
+          if (legacySvg) legacySvg.remove();
+          const crownWrap = stack.querySelector('.crown-wrap');
+          if (wantCrown && !crownWrap) stack.insertAdjacentHTML('afterbegin', crownHtml());
+          else if (!wantCrown && crownWrap) crownWrap.remove();
         }}
 
         function heartSvg(px) {{
@@ -598,7 +692,7 @@ class TopLikersOverlayType:
               if (wantM !== rankCellHasMedalSvg(rankCell)) return false;
               const avWrap = row.children[1];
               const wantCr = !!(showCrown && rank === 1);
-              const hasCr = !!(avWrap && avWrap.querySelector('svg.crown'));
+              const hasCr = !!(avWrap && avWrap.querySelector('.crown-wrap'));
               if (wantCr !== hasCr) return false;
             }}
             return true;
@@ -640,10 +734,7 @@ class TopLikersOverlayType:
               rankCell.innerHTML = '&nbsp;';
             }}
             const avWrap = row.children[1];
-            const wantCrown = showCrown && rank === 1;
-            const oldCrown = avWrap.querySelector('svg.crown');
-            if (wantCrown && !oldCrown) avWrap.insertAdjacentHTML('beforeend', crownSvg());
-            if (!wantCrown && oldCrown) oldCrown.remove();
+            syncAvatarCrown(avWrap, showCrown && rank === 1, av);
             const img = avWrap.querySelector('img.avatar');
             if (img) {{
               img.className = 'avatar' + (avu ? '' : ' ph');
@@ -762,8 +853,11 @@ class TopLikersOverlayType:
 
             const avWrap = document.createElement('div');
             avWrap.className = 'avatarWrap';
+            avWrap.style.setProperty('--av', av + 'px');
+            const avStack = document.createElement('div');
+            avStack.className = 'avatarStack';
             if (showCrown && rank === 1) {{
-              avWrap.insertAdjacentHTML('beforeend', crownSvg());
+              avStack.insertAdjacentHTML('afterbegin', crownHtml());
             }}
             const img = document.createElement('img');
             img.className = 'avatar' + (avu ? '' : ' ph');
@@ -787,7 +881,8 @@ class TopLikersOverlayType:
             img.style.width = av + 'px';
             img.style.height = av + 'px';
             img.style.border = ring;
-            avWrap.appendChild(img);
+            avStack.appendChild(img);
+            avWrap.appendChild(avStack);
 
             const textCol = document.createElement('div');
             textCol.className = 'textCol';

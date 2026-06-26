@@ -21,6 +21,7 @@ from xml.sax.saxutils import quoteattr
 import httpx
 import shiboken6
 from PySide6.QtCore import (
+    QByteArray,
     QEvent,
     QObject,
     QSettings,
@@ -37,9 +38,11 @@ from PySide6.QtGui import (
     QDesktopServices,
     QFont,
     QIcon,
+    QKeySequence,
     QPainter,
     QPen,
     QPixmap,
+    QShortcut,
     QTextCursor,
 )
 from PySide6.QtQuick import QQuickView
@@ -148,6 +151,7 @@ from stream_cheremsha.overlays.king_of_live_overlay_config import (
 )
 from stream_cheremsha.overlays.registry import OverlayRegistry
 from stream_cheremsha.overlays.server import OverlayServer
+from stream_cheremsha.overlays.stream_pet_controller import StreamPetController
 from stream_cheremsha.overlays.top_gifters_overlay_config import load_top_gifters_overlay_config
 from stream_cheremsha.overlays.top_gifters_session import TikTokSessionTopGifters
 from stream_cheremsha.overlays.top_likers_overlay_config import load_top_likers_overlay_config
@@ -239,6 +243,10 @@ _STREAM_ROOT = stream_cheremsha_root()
 
 def _qml_path(name: str) -> Path:
     return _STREAM_ROOT / "qml" / name
+
+
+def _setup_qml_import_path(widget: QQuickWidget) -> None:
+    widget.engine().addImportPath(str(_STREAM_ROOT / "qml"))
 
 
 def _asset_path(name: str) -> Path:
@@ -456,6 +464,23 @@ class _CheremshaTitleBar(StandardTitleBar):
         self.maxBtn.setPressedColor(ink)
         self.closeBtn.setNormalColor(ink)
 
+        # Big Picture mode toggle (before settings).
+        self.bigPictureBtn = QToolButton(self)
+        self.bigPictureBtn.setObjectName("titleBigPicture")
+        self.bigPictureBtn.setAutoRaise(True)
+        self.bigPictureBtn.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarMaxButton),
+        )
+        self.bigPictureBtn.setIconSize(QSize(18, 18))
+        self.bigPictureBtn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.bigPictureBtn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.bigPictureBtn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.bigPictureBtn.setCheckable(True)
+        self.bigPictureBtn.setToolTip("Big Picture")
+        self.bigPictureBtn.clicked.connect(
+            lambda: self.window()._toggle_big_picture(),  # noqa: SLF001
+        )
+
         # Settings button (moved from footer).
         self.settingsBtn = QToolButton(self)
         self.settingsBtn.setObjectName("titleSettings")
@@ -480,10 +505,16 @@ class _CheremshaTitleBar(StandardTitleBar):
             lambda: self.window()._set_main_page(self.window()._IX_SETTINGS),  # noqa: SLF001
         )
 
-        # Insert right before min/max/close buttons.
+        # Insert right before min/max/close buttons (settings, then Big Picture).
         self.hBoxLayout.insertWidget(
             self.hBoxLayout.count() - 3,
             self.settingsBtn,
+            0,
+            Qt.AlignRight,
+        )
+        self.hBoxLayout.insertWidget(
+            self.hBoxLayout.count() - 4,
+            self.bigPictureBtn,
             0,
             Qt.AlignRight,
         )
@@ -504,6 +535,17 @@ class _CheremshaTitleBar(StandardTitleBar):
             }
             QToolButton#titleSettings:hover { background: #263246; }
             QToolButton#titleSettings:pressed { background: #303a50; }
+
+            QToolButton#titleBigPicture {
+              background: rgba(0, 0, 0, 0);
+              border: none;
+              border-radius: 8px;
+              padding: 0px;
+              margin-right: 4px;
+            }
+            QToolButton#titleBigPicture:hover { background: #263246; }
+            QToolButton#titleBigPicture:pressed { background: #303a50; }
+            QToolButton#titleBigPicture:checked { background: #1e3a5f; }
 
             TitleBarButton {
               qproperty-normalColor: #e8eaed;
@@ -526,10 +568,11 @@ class _CheremshaTitleBar(StandardTitleBar):
         )
 
     def canDrag(self, pos):  # type: ignore[override]
-        # Avoid starting system move when interacting with the settings button.
+        # Avoid starting system move when interacting with title-bar controls.
         try:
-            if self.settingsBtn.isVisible() and self.settingsBtn.geometry().contains(pos):
-                return False
+            for btn in (getattr(self, "bigPictureBtn", None), self.settingsBtn):
+                if btn is not None and btn.isVisible() and btn.geometry().contains(pos):
+                    return False
         except RuntimeError:
             return False
         return super().canDrag(pos)
@@ -584,6 +627,7 @@ class MainWindow(FramelessWindow):
     _IX_DOCKS = 7
     _IX_ACTIONS = 8
     _IX_MUSIC = 9
+    _IX_BIG_PICTURE = 10
     _QML_STACK_INDICES = frozenset(
         {_IX_CONN, _IX_DONATIONS, _IX_WIDGETS, _IX_DOCKS, _IX_ACTIONS},
     )
@@ -761,6 +805,12 @@ class MainWindow(FramelessWindow):
         self._battle_tick_timer = QTimer(self)
         self._battle_tick_timer.setInterval(1000)
         self._battle_tick_timer.timeout.connect(self._on_battle_tick)
+        self._stream_pet = StreamPetController(
+            pubsub=self._overlay_server.pubsub(),
+            get_locale=lambda: self._locale,
+            instance="main",
+            parent=self,
+        )
         self._qml_pages_loaded: set[int] = set()
         self._active_qml_stack_index: int | None = None
         self._tiktok_username = QLineEdit()
@@ -810,6 +860,11 @@ class MainWindow(FramelessWindow):
             maxlen=_MAX_CHAT_DOCUMENT_BLOCKS,
         )
         self._chat_popout: ChatPopoutWindow | None = None
+        self._big_picture_active = False
+        self._bp_return_index = self._IX_CONN
+        self._bp_saved_geometry: QByteArray | None = None
+        self._bp_was_maximized = False
+        self._bp_was_fullscreen = False
 
         self._build_ui()
         self._warm_chat_icons()
@@ -985,6 +1040,7 @@ class MainWindow(FramelessWindow):
         self._qml_conn.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
         self._qml_conn.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._qml_conn.setClearColor(QColor(10, 11, 14))
+        _setup_qml_import_path(self._qml_conn)
         qml_p = _qml_path("ConnectionsView.qml")
         if not qml_p.is_file():
             logger.error("QML not found: %s", qml_p)
@@ -1033,6 +1089,11 @@ class MainWindow(FramelessWindow):
         self._stack.addWidget(self._qml_docks)
         self._stack.addWidget(self._qml_actions)
         self._stack.addWidget(self._build_music_tab())
+        self._stack.addWidget(self._build_big_picture_tab())
+
+        self._bp_esc_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        self._bp_esc_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+        self._bp_esc_shortcut.activated.connect(self._on_big_picture_esc)
 
         self._footer_frame = QFrame()
         self._footer_frame.setObjectName("appFooter")
@@ -1221,6 +1282,193 @@ class MainWindow(FramelessWindow):
         self._stack.currentChanged.connect(self._sync_footer_nav)
         self._sync_footer_nav()
 
+    def _bind_big_picture_qml_context(self, ctx) -> None:
+        ctx.setContextProperty("api", self._qml_api)
+        ctx.setContextProperty("tiktokAnalytics", self._tiktok_analytics)
+        ctx.setContextProperty("twitchAnalytics", self._twitch_analytics)
+        ctx.setContextProperty("youtubeAnalytics", self._youtube_analytics)
+
+    def _create_bp_qml_widget(self, qml_name: str) -> QQuickWidget:
+        widget = QQuickWidget(self)
+        widget.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
+        widget.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        widget.setClearColor(QColor(10, 11, 14))
+        _setup_qml_import_path(widget)
+        self._bind_big_picture_qml_context(widget.rootContext())
+        qml_p = _qml_path(qml_name)
+        if not qml_p.is_file():
+            logger.error("QML not found: %s", qml_p)
+        widget.setSource(QUrl.fromLocalFile(str(qml_p)))
+        return widget
+
+    def _build_big_picture_tab(self) -> QWidget:
+        w = QWidget()
+        w.setObjectName("bigPictureRoot")
+        w.setStyleSheet("QWidget#bigPictureRoot { background: #080a0f; }")
+        lay = QHBoxLayout(w)
+        lay.setSpacing(0)
+        lay.setContentsMargins(0, 0, 0, 0)
+
+        self._qml_bp_platforms = self._create_bp_qml_widget("BigPicturePlatformsPanel.qml")
+        self._qml_bp_platforms.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
+
+        chat_col = QWidget()
+        chat_col.setObjectName("bigPictureChatHost")
+        chat_col.setStyleSheet(
+            """
+            QWidget#bigPictureChatHost {
+                background: #0c0f16;
+                border-left: 1px solid #2a3142;
+                border-right: 1px solid #2a3142;
+            }
+            QWidget#bigPictureChatHeaderBar {
+                background: #151b27;
+                border-bottom: 1px solid #2a3142;
+            }
+            QLabel#bigPictureChatHeader {
+                color: #e8eaed;
+                font-size: 13px;
+                font-weight: 600;
+                padding: 10px 14px;
+                background: transparent;
+            }
+            QWidget#chatToolbar[bpMode="true"] {
+                background: #0c0f16;
+                border-bottom: 1px solid #1e2430;
+            }
+            QWidget#chatToolbar[bpMode="true"] QLabel {
+                font-size: 11px;
+            }
+            QWidget#chatToolbar[bpMode="true"] QPushButton {
+                font-size: 11px;
+                padding: 4px 8px;
+            }
+            QWidget#chatToolbar[bpMode="true"] QComboBox,
+            QWidget#chatToolbar[bpMode="true"] QSpinBox {
+                font-size: 11px;
+                max-height: 26px;
+            }
+            QTextEdit#chatMessageView {
+                background: #0a0b0e;
+                border: none;
+                padding: 8px 12px;
+            }
+            """,
+        )
+        self._bp_chat_host_layout = QVBoxLayout(chat_col)
+        self._bp_chat_host_layout.setSpacing(0)
+        self._bp_chat_host_layout.setContentsMargins(10, 10, 10, 10)
+
+        chat_hdr_bar = QWidget()
+        chat_hdr_bar.setObjectName("bigPictureChatHeaderBar")
+        chat_hdr_lay = QHBoxLayout(chat_hdr_bar)
+        chat_hdr_lay.setContentsMargins(0, 0, 0, 0)
+        chat_hdr = QLabel()
+        chat_hdr.setObjectName("bigPictureChatHeader")
+        self._lbl_bp_chat_header = chat_hdr
+        chat_hdr_lay.addWidget(chat_hdr)
+        self._bp_chat_host_layout.addWidget(chat_hdr_bar)
+
+        chat_body = QWidget()
+        chat_body.setObjectName("bigPictureChatBody")
+        chat_body.setStyleSheet(
+            "QWidget#bigPictureChatBody { background: #0c0f16; "
+            "border: 1px solid #2a3142; border-radius: 12px; }",
+        )
+        self._bp_chat_body_layout = QVBoxLayout(chat_body)
+        self._bp_chat_body_layout.setSpacing(0)
+        self._bp_chat_body_layout.setContentsMargins(0, 0, 0, 0)
+        self._bp_chat_host_layout.addWidget(chat_body, stretch=1)
+
+        self._qml_bp_analytics = self._create_bp_qml_widget("BigPictureAnalyticsPanel.qml")
+        self._qml_bp_analytics.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
+
+        lay.addWidget(self._qml_bp_platforms, 24)
+        lay.addWidget(chat_col, 46)
+        lay.addWidget(self._qml_bp_analytics, 30)
+        return w
+
+    def _toggle_big_picture(self) -> None:
+        if self._big_picture_active:
+            self._exit_big_picture()
+        else:
+            self._enter_big_picture()
+
+    def _on_big_picture_esc(self) -> None:
+        if self._big_picture_active:
+            self._exit_big_picture()
+
+    def _enter_big_picture(self) -> None:
+        if self._big_picture_active:
+            return
+        self._bp_return_index = self._stack.currentIndex()
+        self._bp_saved_geometry = self.saveGeometry()
+        self._bp_was_maximized = self.isMaximized()
+        self._bp_was_fullscreen = self.isFullScreen()
+        self._reparent_chat_to_big_picture()
+        self._footer_frame.hide()
+        self._set_main_page(self._IX_BIG_PICTURE)
+        self._big_picture_active = True
+        if hasattr(self, "titleBar") and hasattr(self.titleBar, "bigPictureBtn"):
+            try:
+                self.titleBar.bigPictureBtn.setChecked(True)
+            except RuntimeError:
+                pass
+        self._qml_api.notify_big_picture_active_changed()
+        self._apply_in_app_chrome_texts()
+        self.showFullScreen()
+
+    def _exit_big_picture(self) -> None:
+        if not self._big_picture_active:
+            return
+        self._big_picture_active = False
+        self._reparent_chat_to_chat_tab()
+        self._footer_frame.show()
+        return_index = self._bp_return_index
+        if not (0 <= return_index < self._stack.count()):
+            return_index = self._IX_CONN
+        self._set_main_page(return_index)
+        if self._bp_was_fullscreen:
+            self.showFullScreen()
+        elif self._bp_was_maximized:
+            self.showMaximized()
+        else:
+            self.showNormal()
+            saved = self._bp_saved_geometry
+            if saved is not None and not saved.isEmpty():
+                self.restoreGeometry(saved)
+        if hasattr(self, "titleBar") and hasattr(self.titleBar, "bigPictureBtn"):
+            try:
+                self.titleBar.bigPictureBtn.setChecked(False)
+            except RuntimeError:
+                pass
+        self._qml_api.notify_big_picture_active_changed()
+        self._apply_in_app_chrome_texts()
+
+    def _reparent_chat_to_big_picture(self) -> None:
+        if not hasattr(self, "_chat_toolbar") or not hasattr(self, "_bp_chat_body_layout"):
+            return
+        self._chat_toolbar.setProperty("bpMode", "true")
+        self._chat_toolbar.setParent(None)
+        self._chat_view.setParent(None)
+        self._bp_chat_body_layout.addWidget(self._chat_toolbar)
+        self._bp_chat_body_layout.addWidget(self._chat_view, stretch=1)
+
+    def _reparent_chat_to_chat_tab(self) -> None:
+        if not hasattr(self, "_chat_page_layout") or not hasattr(self, "_chat_toolbar"):
+            return
+        self._chat_toolbar.setProperty("bpMode", "false")
+        self._chat_toolbar.setParent(None)
+        self._chat_view.setParent(None)
+        self._chat_page_layout.addWidget(self._chat_toolbar)
+        self._chat_page_layout.addWidget(self._chat_view, stretch=1)
+
     def _toggle_maximized(self) -> None:
         if self.isMaximized():
             self.showNormal()
@@ -1391,11 +1639,25 @@ class MainWindow(FramelessWindow):
                 music_timer.stop()
 
     def _apply_in_app_chrome_texts(self) -> None:
-        if hasattr(self, "titleBar") and hasattr(self.titleBar, "settingsBtn"):
-            try:
-                self.titleBar.settingsBtn.setToolTip(self._tr("ui.settings_tooltip"))
-            except RuntimeError:
-                pass
+        if hasattr(self, "titleBar"):
+            tb = self.titleBar
+            if hasattr(tb, "bigPictureBtn"):
+                try:
+                    tip = (
+                        self._tr("ui.big_picture_exit_tooltip")
+                        if self._big_picture_active
+                        else self._tr("ui.big_picture_tooltip")
+                    )
+                    tb.bigPictureBtn.setToolTip(tip)
+                except RuntimeError:
+                    pass
+            if hasattr(tb, "settingsBtn"):
+                try:
+                    tb.settingsBtn.setToolTip(self._tr("ui.settings_tooltip"))
+                except RuntimeError:
+                    pass
+        if hasattr(self, "_lbl_bp_chat_header"):
+            self._lbl_bp_chat_header.setText(self._tr("ui.big_picture_chat"))
         if hasattr(self, "_btn_footer_home"):
             th = self._tr("ui.nav_home")
             self._btn_footer_home.setText(th)
@@ -2642,12 +2904,15 @@ class MainWindow(FramelessWindow):
     def _build_chat_tab(self) -> QWidget:
         w = QWidget()
         w.setObjectName("chatPageRoot")
+        self._chat_page_root = w
         lay = QVBoxLayout(w)
+        self._chat_page_layout = lay
         lay.setSpacing(0)
         lay.setContentsMargins(0, 0, 0, 0)
 
         bar = QWidget()
         bar.setObjectName("chatToolbar")
+        self._chat_toolbar = bar
         bar_lay = QHBoxLayout(bar)
         bar_lay.setContentsMargins(8, 6, 8, 6)
         bar_lay.setSpacing(10)
@@ -3804,6 +4069,7 @@ class MainWindow(FramelessWindow):
         self._dispatch_actions_for_chat(message)
         self._maybe_bump_king_chat_highlight(message)
         self._try_tiktok_link_from_comment(message)
+        self._stream_pet.on_chat(author=message.author, text=message.text)
 
     def _try_tiktok_link_from_comment(self, message: ChatMessage) -> None:
         if self._closing or not self._points_enabled():
@@ -3894,6 +4160,16 @@ class MainWindow(FramelessWindow):
                     profile_picture_url=pic,
                 )
             )
+        if kind in ("superchat", "supersticker"):
+            gift_label = (signal.amount_display or kind).strip()
+            self._stream_pet.on_gift(
+                platform=ChatPlatform.YOUTUBE.value,
+                user=user,
+                gift_name=gift_label,
+                youtube_amount_micros=int(signal.amount_micros),
+            )
+        elif kind == "member":
+            self._stream_pet.on_member(user=user)
 
     def _publish_activity_item(self, item: ActivityItem) -> None:
         if self._closing:
@@ -3909,6 +4185,8 @@ class MainWindow(FramelessWindow):
             ),
         )
         t.add_done_callback(lambda _t: _t.exception())
+        if item.kind == "like":
+            self._stream_pet.on_like_burst(user=item.user)
 
     def _publish_activity_join_ticker(self, item: ActivityItem) -> None:
         if self._closing:
@@ -3962,6 +4240,7 @@ class MainWindow(FramelessWindow):
             time_hms=now_hms(),
         )
         self._publish_activity_item(it)
+        self._stream_pet.on_follow(user=user)
 
     def _on_tiktok_join_any(self, user: str, stable_key: str = "") -> None:
         if self._closing:
@@ -3992,6 +4271,7 @@ class MainWindow(FramelessWindow):
             time_hms=now_hms(),
         )
         self._publish_activity_join_ticker(it)
+        self._stream_pet.on_join(user=user)
 
     def _on_tiktok_gift_analytics_any(
         self,
@@ -4614,6 +4894,7 @@ class MainWindow(FramelessWindow):
         if hb is not None:
             hb.cancel()
             self._battle_overlay_publish_handle = None
+        self._stream_pet.reset_for_new_stream()
         loop = self._asyncio_loop
         if loop is not None:
             loop.create_task(
@@ -5011,6 +5292,12 @@ class MainWindow(FramelessWindow):
             )
             self._schedule_top_gifters_overlay_publish()
             self._schedule_king_overlay_publish()
+            self._stream_pet.on_gift(
+                platform=ChatPlatform.TIKTOK.value,
+                user=sender,
+                gift_name=gift_name,
+                tiktok_coins=total_coins,
+            )
 
     def _ensure_widgets_window(self) -> QQuickView:
         if self._qml_widgets_win is not None:
@@ -5283,6 +5570,7 @@ class MainWindow(FramelessWindow):
             )
             self._publish_activity_item(it)
             asyncio.ensure_future(_dispatch_twitch_follow_actions(tu))
+            self._stream_pet.on_follow(user=tu.display_name)
 
         def _on_sub(tu: TwitchNotifiedUser, sub_type: str, months: int, message: str = "") -> None:
             self._twitch_analytics.on_sub(tu.display_name, sub_type, months, message)
@@ -5308,6 +5596,12 @@ class MainWindow(FramelessWindow):
         def _on_cheer(tu: TwitchNotifiedUser, bits: int) -> None:
             self._twitch_analytics.on_cheer(tu.display_name, bits)
             asyncio.ensure_future(_dispatch_twitch_cheer_actions(tu, bits))
+            self._stream_pet.on_gift(
+                platform=ChatPlatform.TWITCH.value,
+                user=tu.display_name,
+                gift_name=f"{int(bits)} bits",
+                twitch_bits=int(bits),
+            )
 
         def _on_raid(tu: TwitchNotifiedUser, viewers: int) -> None:
             self._twitch_analytics.on_raid(tu.display_name, viewers)
@@ -5677,6 +5971,9 @@ class MainWindow(FramelessWindow):
             self._music_queue.set_loop(self._asyncio_loop)
             await self._overlay_server.start()
             logger.info("Overlay server: %s", self._overlay_server.base_url())
+            self._stream_pet.set_pubsub(self._overlay_server.pubsub())
+            self._stream_pet.set_event_loop(self._asyncio_loop)
+            self._stream_pet.start()
             await self.apply_overlay_tunnel()
             self._schedule_king_overlay_publish()
             self._publish_battle_overlay_patch_sync()

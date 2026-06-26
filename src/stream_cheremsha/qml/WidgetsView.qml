@@ -41,7 +41,7 @@ Item {
     }
 
     readonly property int titleBarH: 44
-    property string widgetMode: "grid" // grid | chat | actions | online | top_likers | top_gifters | king_of_live | battle_royale
+    property string widgetMode: "grid" // grid | chat | actions | online | top_likers | top_gifters | king_of_live | battle_royale | stream_pet
 
     component PillButton: Button {
         id: pillCtl
@@ -482,6 +482,13 @@ Item {
     property var battleCfg: null
     property bool _loadingBattleCfg: false
     property int battleCfgEpoch: 0
+    property var streamPetCfg: null
+    property bool _loadingStreamPetCfg: false
+    property int streamPetCfgEpoch: 0
+    property color _spBodyColor: "#fbbf24"
+    property color _spEarColor: "#f59e0b"
+    property color _spCollarColor: "#ef4444"
+    property color _spBubbleBgColor: "#ffffff"
     property var tierOverlayCfg: null
 
     readonly property bool _tierOverlayLoading: (root.widgetMode === "top_gifters")
@@ -716,7 +723,8 @@ Item {
             (root.widgetMode === "online" && root.onlineCfg !== null) ||
             ((root.widgetMode === "top_likers" || root.widgetMode === "top_gifters") && root.tierOverlayCfg !== null) ||
             (root.widgetMode === "king_of_live" && root.kingCfg !== null) ||
-            (root.widgetMode === "battle_royale" && root.battleCfg !== null)
+            (root.widgetMode === "battle_royale" && root.battleCfg !== null) ||
+            (root.widgetMode === "stream_pet" && root.streamPetCfg !== null)
         )
 
     function _flushTierOverlayEditorsIntoCfg() {
@@ -772,6 +780,8 @@ Item {
             root._saveKing();
         } else if (root.widgetMode === "battle_royale") {
             root._saveBattle();
+        } else if (root.widgetMode === "stream_pet") {
+            root._saveStreamPet();
         }
     }
 
@@ -784,6 +794,36 @@ Item {
             return;
         api.saveBattleRoyaleOverlayConfigJson(txt);
     }
+
+    function _saveStreamPet() {
+        if (!api || root.streamPetCfg === null) return;
+        root.streamPetCfgEpoch += 1;
+        if (typeof api.saveStreamPetOverlayConfigMap === "function")
+            api.saveStreamPetOverlayConfigMap(root.streamPetCfg);
+        else
+            api.saveStreamPetOverlayConfigJson(JSON.stringify(root.streamPetCfg));
+    }
+
+    function _applyStreamPetPreset(presetId) {
+        if (!api || root.streamPetCfg === null) return;
+        var pid = String(presetId || "classic_gold");
+        if (typeof api.streamPetPresetDefaultsMap !== "function") {
+            root.streamPetCfg.preset = pid;
+            root._saveStreamPet();
+            return;
+        }
+        var patch = api.streamPetPresetDefaultsMap(pid);
+        if (!patch || typeof patch !== "object") return;
+        root.streamPetCfg = JSON.parse(JSON.stringify(patch));
+        root._spBodyColor = root.streamPetCfg.pet_body_color || "#fbbf24";
+        root._spEarColor = root.streamPetCfg.pet_ear_color || "#f59e0b";
+        root._spCollarColor = root.streamPetCfg.collar_color || "#ef4444";
+        root._spBubbleBgColor = root.streamPetCfg.bubble_bg_color || "#ffffff";
+        root._saveStreamPet();
+    }
+
+    readonly property bool _streamPetCustom:
+        root.streamPetCfg && String(root.streamPetCfg.preset || "classic_gold").toLowerCase() === "custom"
 
     function _syncTierOverlayCombosFromCfg() {
         if (!root.tierOverlayCfg)
@@ -1324,6 +1364,14 @@ Item {
                         }
 
                         WidgetCard {
+                            title: "StreamPet (Тамагочі)"
+                            urlText: api ? api.streamPetOverlayUrlValue : ""
+                            onCopy: function() { if (api) api.copyStreamPetOverlayUrl(); }
+                            onPlay: function() { if (api) api.previewStreamPetOverlay(); }
+                            onEdit: function() { root.widgetMode = "stream_pet"; }
+                        }
+
+                        WidgetCard {
                             title: "Battle Royale (TikTok)"
                             urlText: api ? api.battleRoyaleOverlayUrlValue : ""
                             onCopy: function() { if (api) api.copyBattleRoyaleOverlayUrl(); }
@@ -1651,6 +1699,70 @@ Item {
 
                         PillButton {
                             text: "Зберегти й застосувати"
+                            enabled: root._canSaveCurrentWidget
+                            onClicked: root._saveAndApplyCurrentWidget()
+                        }
+
+                        PillButton {
+                            text: "Назад"
+                            onClicked: root.widgetMode = "grid"
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                radius: 14
+                color: cardBase
+                border.width: 1
+                border.color: cardEdge
+                visible: root.widgetMode === "stream_pet"
+                implicitHeight: editStreamPetHeader.implicitHeight + 20
+
+                ColumnLayout {
+                    id: editStreamPetHeader
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 12
+                    spacing: 8
+
+                    Text {
+                        text: "StreamPet (Тамагочі)"
+                        color: ink
+                        font.pixelSize: 18
+                        font.bold: true
+                        Layout.fillWidth: true
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+
+                        TextField {
+                            Layout.fillWidth: true
+                            readOnly: true
+                            selectByMouse: true
+                            color: ink
+                            font.pixelSize: 12
+                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                            text: api ? api.streamPetOverlayUrlValue : ""
+                        }
+
+                        PillButton {
+                            text: "Скопіювати URL"
+                            onClicked: if (api) api.copyStreamPetOverlayUrl()
+                        }
+
+                        PillButton {
+                            text: "▶"
+                            pillFontSize: 12
+                            onClicked: if (api) api.previewStreamPetOverlay()
+                        }
+
+                        PillButton {
+                            text: "Зберегти"
                             enabled: root._canSaveCurrentWidget
                             onClicked: root._saveAndApplyCurrentWidget()
                         }
@@ -3765,6 +3877,339 @@ Item {
                         } // battleRoyaleSettings
 
                         ColumnLayout {
+                            id: streamPetSettings
+                            visible: root.widgetMode === "stream_pet"
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                        Rectangle { Layout.fillWidth: true; height: 1; color: cardEdge; opacity: 0.6 }
+
+                        Text {
+                            text: "StreamPet — енергія та вигляд"
+                            color: ink
+                            font.pixelSize: 16
+                            font.bold: true
+                            Layout.fillWidth: true
+                        }
+
+                        Text {
+                            text: "Пресет пета"
+                            color: ink
+                            font.pixelSize: 14
+                            font.bold: true
+                            Layout.fillWidth: true
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Стиль"; color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: streamPetPreset
+                                Layout.fillWidth: true
+                                textRole: "text"
+                                valueRole: "value"
+                                model: ListModel {
+                                    ListElement { text: "Classic Gold"; value: "classic_gold" }
+                                    ListElement { text: "Cyber Purple"; value: "cyber_purple" }
+                                    ListElement { text: "Cotton Candy"; value: "cotton_candy" }
+                                    ListElement { text: "Forest Fox"; value: "forest_fox" }
+                                    ListElement { text: "Midnight Shadow"; value: "midnight_shadow" }
+                                    ListElement { text: "Sunset Shiba"; value: "sunset_shiba" }
+                                    ListElement { text: "Custom (свій)"; value: "custom" }
+                                }
+                                onActivated: {
+                                    if (root._loadingStreamPetCfg || root.streamPetCfg === null) return;
+                                    var v = model.get(index).value;
+                                    if (v) root._applyStreamPetPreset(v);
+                                }
+                                Component.onCompleted: {
+                                    if (!root.streamPetCfg) return;
+                                    var p = String(root.streamPetCfg.preset || "classic_gold").toLowerCase();
+                                    for (var i = 0; i < count; ++i) {
+                                        if (model.get(i).value === p) { currentIndex = i; return; }
+                                    }
+                                    currentIndex = 0;
+                                }
+                            }
+                        }
+
+                        StyledCheckBox {
+                            text: "Нашийник"
+                            checked: !root.streamPetCfg || root.streamPetCfg.collar_enabled !== false
+                            onCheckedChanged: {
+                                if (root._loadingStreamPetCfg || !root.streamPetCfg) return;
+                                root.streamPetCfg.collar_enabled = checked;
+                                root.streamPetCfg.preset = "custom";
+                                root._saveStreamPet();
+                            }
+                        }
+
+                        StyledCheckBox {
+                            text: "Рум'янці на щоках"
+                            checked: !root.streamPetCfg || root.streamPetCfg.blush_enabled !== false
+                            onCheckedChanged: {
+                                if (root._loadingStreamPetCfg || !root.streamPetCfg) return;
+                                root.streamPetCfg.blush_enabled = checked;
+                                root.streamPetCfg.preset = "custom";
+                                root._saveStreamPet();
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            visible: root._streamPetCustom
+                            Text { text: "Колір тіла"; color: muted; Layout.preferredWidth: 160 }
+                            Rectangle { width: 26; height: 26; radius: 8; color: _spBodyColor; border.width: 1; border.color: cardEdge }
+                            PillButton { text: "Вибрати"; onClicked: spBodyColorDlg.open() }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            visible: root._streamPetCustom
+                            Text { text: "Колір вух"; color: muted; Layout.preferredWidth: 160 }
+                            Rectangle { width: 26; height: 26; radius: 8; color: _spEarColor; border.width: 1; border.color: cardEdge }
+                            PillButton { text: "Вибрати"; onClicked: spEarColorDlg.open() }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            visible: root._streamPetCustom
+                            Text { text: "Колір нашийника"; color: muted; Layout.preferredWidth: 160 }
+                            Rectangle { width: 26; height: 26; radius: 8; color: _spCollarColor; border.width: 1; border.color: cardEdge }
+                            PillButton { text: "Вибрати"; onClicked: spCollarColorDlg.open() }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            visible: root._streamPetCustom
+                            Text { text: "Фон хмарки"; color: muted; Layout.preferredWidth: 160 }
+                            Rectangle { width: 26; height: 26; radius: 8; color: _spBubbleBgColor; border.width: 1; border.color: cardEdge }
+                            PillButton { text: "Вибрати"; onClicked: spBubbleBgColorDlg.open() }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Масштаб пета (%)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "stream_pet"
+                                hostMap: root.streamPetCfg
+                                hostKey: "pet_scale_pct"
+                                hostDefault: 100
+                                from: 50; to: 200; stepSize: 5
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        Rectangle { Layout.fillWidth: true; height: 1; color: cardEdge; opacity: 0.6 }
+
+                        Text {
+                            text: "Енергія та поведінка"
+                            color: ink
+                            font.pixelSize: 14
+                            font.bold: true
+                            Layout.fillWidth: true
+                        }
+
+                        StyledCheckBox {
+                            text: "Увімкнено"
+                            checked: !root.streamPetCfg || !!root.streamPetCfg.enabled
+                            onCheckedChanged: {
+                                if (root._loadingStreamPetCfg || !root.streamPetCfg) return;
+                                root.streamPetCfg.enabled = checked;
+                                root._saveStreamPet();
+                            }
+                        }
+
+                        StyledCheckBox {
+                            text: "Показувати шкалу енергії"
+                            checked: !root.streamPetCfg || root.streamPetCfg.show_energy_bar !== false
+                            onCheckedChanged: {
+                                if (root._loadingStreamPetCfg || !root.streamPetCfg) return;
+                                root.streamPetCfg.show_energy_bar = checked;
+                                root._saveStreamPet();
+                            }
+                        }
+
+                        StyledCheckBox {
+                            text: "Еволюція за енергією (рівні 1–3)"
+                            checked: !root.streamPetCfg || root.streamPetCfg.evolution_enabled !== false
+                            onCheckedChanged: {
+                                if (root._loadingStreamPetCfg || !root.streamPetCfg) return;
+                                root.streamPetCfg.evolution_enabled = checked;
+                                root._saveStreamPet();
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Макс. довжина фрази"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "stream_pet"
+                                hostMap: root.streamPetCfg
+                                hostKey: "bubble_max_chars"
+                                hostDefault: 110
+                                from: 40; to: 200; stepSize: 10
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "VIP-бонус L3 (с)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "stream_pet"
+                                hostMap: root.streamPetCfg
+                                hostKey: "level3_vip_interval_sec"
+                                hostDefault: 180
+                                from: 30; to: 3600; stepSize: 30
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Енергія після еволюції (%)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "stream_pet"
+                                hostMap: root.streamPetCfg
+                                hostKey: "post_evolution_energy"
+                                hostDefault: 50
+                                from: 31; to: 100
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Дискотека L3 (мс)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "stream_pet"
+                                hostMap: root.streamPetCfg
+                                hostKey: "disco_duration_ms"
+                                hostDefault: 5000
+                                from: 1000; to: 30000; stepSize: 500
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Початкова енергія (%)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "stream_pet"
+                                hostMap: root.streamPetCfg
+                                hostKey: "initial_energy"
+                                hostDefault: 70
+                                from: 0; to: 100
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Спад енергії / 2 хв (%)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "stream_pet"
+                                hostMap: root.streamPetCfg
+                                hostKey: "decay_per_2min"
+                                hostDefault: 1
+                                from: 0; to: 10
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Авто-сон (с)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "stream_pet"
+                                hostMap: root.streamPetCfg
+                                hostKey: "sleep_idle_sec"
+                                hostDefault: 900
+                                from: 60; to: 3600; stepSize: 60
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Шрифт хмарки"; color: muted; Layout.preferredWidth: 160 }
+                            TextField {
+                                Layout.fillWidth: true
+                                color: ink
+                                font.pixelSize: 13
+                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                text: root.streamPetCfg ? (root.streamPetCfg.bubble_font_family || "Press Start 2P") : "Press Start 2P"
+                                onEditingFinished: {
+                                    if (root._loadingStreamPetCfg || !root.streamPetCfg) return;
+                                    root.streamPetCfg.bubble_font_family = text;
+                                    root._saveStreamPet();
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Розмір шрифту (px)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "stream_pet"
+                                hostMap: root.streamPetCfg
+                                hostKey: "bubble_font_size_px"
+                                hostDefault: 20
+                                from: 12; to: 48; stepSize: 2
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "URL спрайта (опц.)"; color: muted; Layout.preferredWidth: 160 }
+                            TextField {
+                                Layout.fillWidth: true
+                                color: ink
+                                font.pixelSize: 13
+                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                text: root.streamPetCfg ? (root.streamPetCfg.pet_sprite_url || "") : ""
+                                placeholderText: "https://..."
+                                onEditingFinished: {
+                                    if (root._loadingStreamPetCfg || !root.streamPetCfg) return;
+                                    root.streamPetCfg.pet_sprite_url = text;
+                                    root._saveStreamPet();
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: "Команди в чаті: !sleep — сон, !wake / !прокинься — пробудити. Реакції на подарунки, follow і спам працюють на всіх платформах."
+                            color: muted
+                            font.pixelSize: 11
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+
+                        } // streamPetSettings
+
+                        ColumnLayout {
                             id: actionsSettings
                             visible: root.widgetMode === "actions"
                             Layout.fillWidth: true
@@ -4368,6 +4813,7 @@ Item {
                     root._loadingTopGiftersCfg = false;
                     root._loadingKingCfg = false;
                     root._loadingBattleCfg = false;
+                    root._loadingStreamPetCfg = false;
                 }
                 try {
                 // This handler lives on the Loader's inner ColumnLayout, not on root Item:
@@ -4379,6 +4825,7 @@ Item {
                 root._loadingTopGiftersCfg = true;
                 root._loadingKingCfg = true;
                 root._loadingBattleCfg = true;
+                root._loadingStreamPetCfg = true;
 
                 var obj = api.loadChatConfigMap();
                 if (!obj || typeof obj !== "object")
@@ -4487,6 +4934,24 @@ Item {
                     bgobj = {};
                 root.battleCfg = JSON.parse(JSON.stringify(bgobj));
                 root.battleCfgEpoch += 1;
+                var spobj = api.loadStreamPetOverlayConfigMap();
+                if (!spobj || typeof spobj !== "object")
+                    spobj = {};
+                root.streamPetCfg = JSON.parse(JSON.stringify(spobj));
+                root.streamPetCfgEpoch += 1;
+                root._spBodyColor = root.streamPetCfg.pet_body_color || "#fbbf24";
+                root._spEarColor = root.streamPetCfg.pet_ear_color || "#f59e0b";
+                root._spCollarColor = root.streamPetCfg.collar_color || "#ef4444";
+                root._spBubbleBgColor = root.streamPetCfg.bubble_bg_color || "#ffffff";
+                if (typeof streamPetPreset !== "undefined" && root.streamPetCfg) {
+                    var spp = String(root.streamPetCfg.preset || "classic_gold").toLowerCase();
+                    for (var spi = 0; spi < streamPetPreset.count; ++spi) {
+                        if (streamPetPreset.model.get(spi).value === spp) {
+                            streamPetPreset.currentIndex = spi;
+                            break;
+                        }
+                    }
+                }
                 overlayCfgInitGuardTimer.restart();
                 _clearWidgetCfgLoadingLocks();
                 } catch (e) {
@@ -4733,6 +5198,58 @@ Item {
             _tlLikesShadowColor = selectedColor;
             root.tierOverlayCfg.likes_text_shadow_color = _colorToHex(selectedColor);
             root._saveTierOverlay();
+        }
+    }
+
+    ColorDialog {
+        id: spBodyColorDlg
+        title: "StreamPet: колір тіла"
+        selectedColor: _spBodyColor
+        onAccepted: {
+            if (root.streamPetCfg === null) return;
+            _spBodyColor = selectedColor;
+            root.streamPetCfg.pet_body_color = _colorToHex(selectedColor);
+            root.streamPetCfg.preset = "custom";
+            root._saveStreamPet();
+        }
+    }
+
+    ColorDialog {
+        id: spEarColorDlg
+        title: "StreamPet: колір вух"
+        selectedColor: _spEarColor
+        onAccepted: {
+            if (root.streamPetCfg === null) return;
+            _spEarColor = selectedColor;
+            root.streamPetCfg.pet_ear_color = _colorToHex(selectedColor);
+            root.streamPetCfg.preset = "custom";
+            root._saveStreamPet();
+        }
+    }
+
+    ColorDialog {
+        id: spCollarColorDlg
+        title: "StreamPet: колір нашийника"
+        selectedColor: _spCollarColor
+        onAccepted: {
+            if (root.streamPetCfg === null) return;
+            _spCollarColor = selectedColor;
+            root.streamPetCfg.collar_color = _colorToHex(selectedColor);
+            root.streamPetCfg.preset = "custom";
+            root._saveStreamPet();
+        }
+    }
+
+    ColorDialog {
+        id: spBubbleBgColorDlg
+        title: "StreamPet: фон хмарки"
+        selectedColor: _spBubbleBgColor
+        onAccepted: {
+            if (root.streamPetCfg === null) return;
+            _spBubbleBgColor = selectedColor;
+            root.streamPetCfg.bubble_bg_color = _colorToHex(selectedColor);
+            root.streamPetCfg.preset = "custom";
+            root._saveStreamPet();
         }
     }
 }

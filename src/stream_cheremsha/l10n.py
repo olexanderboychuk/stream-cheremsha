@@ -103,6 +103,14 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "Security error: invalid installer signature. Update aborted.",
     },
     "ui.settings_tooltip": {"uk": "Налаштування", "en": "Settings"},
+    "ui.big_picture_tooltip": {"uk": "Режим Big Picture", "en": "Big Picture mode"},
+    "ui.big_picture_exit_tooltip": {
+        "uk": "Вийти з Big Picture (Esc)",
+        "en": "Exit Big Picture (Esc)",
+    },
+    "ui.big_picture_platforms": {"uk": "Платформи", "en": "Platforms"},
+    "ui.big_picture_chat": {"uk": "Чат", "en": "Chat"},
+    "ui.big_picture_analytics": {"uk": "Аналітика", "en": "Analytics"},
     "ui.nav_music": {"uk": "Музика", "en": "Music"},
     "ui.nav_music_hint": {"uk": "Черга музики", "en": "Music queue"},
     # App chrome (QML + shell)
@@ -1366,6 +1374,895 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     },
     "dlg.tts": {"uk": "TTS", "en": "TTS"},
     "dlg.json_filter": {"uk": "JSON (*.json);;Усі файли (*)", "en": "JSON (*.json);;All files (*)"},
+    # StreamPet overlay
+    "stream_pet.hungry.1": {
+        "uk": "Тут так тихо... Про мене всі забули? 🥺",
+        "en": "It's so quiet... Did everyone forget me? 🥺",
+    },
+    "stream_pet.hungry.2": {
+        "uk": "Стрімер, твій чат спить! Скиньте хоч троянду, я зараз зникну...",
+        "en": "Streamer, chat is asleep! Drop a rose or I'll fade away...",
+    },
+    "stream_pet.hungry.3": {
+        "uk": "{last_donor}, врятуй мене, у мене пустий шлунок! 💔",
+        "en": "{last_donor}, save me, my tummy is empty! 💔",
+    },
+    "stream_pet.hungry.3_fallback": {
+        "uk": "Глядачі, хто мене нагодує? 💔",
+        "en": "Viewers, who will feed me? 💔",
+    },
+    "stream_pet.hungry.4": {
+        "uk": "Звуки бурчання в животі 👾",
+        "en": "*stomach growling sounds* 👾",
+    },
+    "stream_pet.chill.1": {
+        "uk": "О, а що це за гра? Стрімер, ти знову нубиш? 😏",
+        "en": "Oh, what game is this? Streamer, you're noobing again? 😏",
+    },
+    "stream_pet.chill.2": {
+        "uk": "Глядачі, ви топ. Накидайте лайків, піднімемо вайб!",
+        "en": "Viewers, you're the best. Drop some likes, let's raise the vibe!",
+    },
+    "stream_pet.chill.3": {
+        "uk": "Хтось бачив мої печеньки?",
+        "en": "Has anyone seen my cookies?",
+    },
+    "stream_pet.chill.4": {
+        "uk": "Зараз би чіпсіків... 🍟",
+        "en": "Some chips would hit right now... 🍟",
+    },
+    "stream_pet.hyper.1": {
+        "uk": "АААА! МЕНЕ ПРЕЕЕЕ! 🔥🚀",
+        "en": "AAAA! I'M HYPED! 🔥🚀",
+    },
+    "stream_pet.hyper.2": {
+        "uk": "Я бачу космос! Енергія зашкалює! 🌌",
+        "en": "I see space! Energy is off the charts! 🌌",
+    },
+    "stream_pet.hyper.3": {
+        "uk": "ТАК СТОЯТИ! ЦЕЙ СТРІМ ОФІЦІЙНО ГАРЯЧИЙ!",
+        "en": "THAT'S IT! THIS STREAM IS OFFICIALLY HOT!",
+    },
+    "stream_pet.sleep.1": {
+        "uk": "Zzz... я трохи посплю... 😴",
+        "en": "Zzz... I'll nap a bit... 😴",
+    },
+    "stream_pet.sleep.2": {
+        "uk": "Тихо-тихо, я бачу сни про чіпси...",
+        "en": "Shhh, I'm dreaming about chips...",
+    },
+    "stream_pet.hungry.5": {
+        "uk": "Мій метаболізм — це чорна діра... 🕳️",
+        "en": "My metabolism is a black hole... 🕳️",
+    },
+    "stream_pet.hungry.6": {
+        "uk": "Стрімер, мені потрібен хоч один донат — я вже прозорий!",
+        "en": "Streamer, I need at least one donation — I'm turning transparent!",
+    },
+    "stream_pet.hungry.7": {
+        "uk": "Чуєте? Це мій живіт грає джаз... 🎷",
+        "en": "Hear that? My stomach is playing jazz... 🎷",
+    },
+    "stream_pet.hungry.8": {
+        "uk": "Голодний пет — злий пет. Не перевіряйте... 😤",
+        "en": "A hungry pet is a grumpy pet. Don't test it... 😤",
+    },
+    "stream_pet.hungry.9": {
+        "uk": "Останній раз їв, коли чат був активний. Той самий вік...",
+        "en": "Last ate when chat was active. Same era...",
+    },
+    "stream_pet.hungry.10": {
+        "uk": "Може хтось кинуть сердечко? Я не про романтику... 💔",
+        "en": "Maybe drop a heart? Not the romantic kind... 💔",
+    },
+    "stream_pet.hungry.11": {
+        "uk": "Тут так пусто, що я чую власне бурчання в HD 🔊",
+        "en": "It's so empty I hear my own growling in HD 🔊",
+    },
+    "stream_pet.hungry.12": {
+        "uk": "Якщо зараз ніхто не нагодує — їстиму алерти...",
+        "en": "If nobody feeds me now — I'll eat the alerts...",
+    },
+    "stream_pet.chill.5": {
+        "uk": "Стрімер, не забудь попити водички 💧",
+        "en": "Streamer, don't forget to drink some water 💧",
+    },
+    "stream_pet.chill.6": {
+        "uk": "Чілл-режим активовано. Мур. 😌",
+        "en": "Chill mode activated. Purr. 😌",
+    },
+    "stream_pet.chill.7": {
+        "uk": "Чат сьогодні солодкий, як цукерка 🍬",
+        "en": "Chat is sweet as candy today 🍬",
+    },
+    "stream_pet.chill.8": {
+        "uk": "Я б зараз полежав на клавіатурі...",
+        "en": "I'd lie on the keyboard right about now...",
+    },
+    "stream_pet.chill.9": {
+        "uk": "Хтось розказує історію? Я слухаю 👂",
+        "en": "Someone telling a story? I'm listening 👂",
+    },
+    "stream_pet.chill.10": {
+        "uk": "Стрім норм, пет задоволений ✅",
+        "en": "Stream's good, pet is pleased ✅",
+    },
+    "stream_pet.chill.11": {
+        "uk": "Не стресуй, все під контролем (майже) 😅",
+        "en": "Don't stress, everything's under control (mostly) 😅",
+    },
+    "stream_pet.chill.12": {
+        "uk": "О, новий віп! ...ні, то просто алерт 😹",
+        "en": "Oh, a new VIP! ...nope, just an alert 😹",
+    },
+    "stream_pet.hyper.4": {
+        "uk": "ПОЛЕТІЛИ! ЧАТ, ВИ БОМБА! 💣",
+        "en": "WE'RE FLYING! CHAT, YOU'RE A BOMB! 💣",
+    },
+    "stream_pet.hyper.5": {
+        "uk": "ЕНЕРГІЯ 9999! НЕ ЗУПИНЯЙТЕСЯ!",
+        "en": "ENERGY 9999! DON'T STOP!",
+    },
+    "stream_pet.hyper.6": {
+        "uk": "Я танцюю так, ніби мене ніхто не бачить! 💃",
+        "en": "I'm dancing like nobody's watching! 💃",
+    },
+    "stream_pet.hyper.7": {
+        "uk": "Стрімер, тримай темп — я не встигаю! ⚡",
+        "en": "Streamer, keep the pace — I can't keep up! ⚡",
+    },
+    "stream_pet.hyper.8": {
+        "uk": "Це не хайп — це торнадо! 🌪️",
+        "en": "This isn't hype — it's a tornado! 🌪️",
+    },
+    "stream_pet.hyper.9": {
+        "uk": "МЕНЕ НЕСЕ! Хтось натисніть гальмо! 🛸",
+        "en": "I'M BEING CARRIED AWAY! Someone hit the brakes! 🛸",
+    },
+    "stream_pet.hyper.10": {
+        "uk": "Лайки йдуть — пет літає! 🚀",
+        "en": "Likes incoming — pet is airborne! 🚀",
+    },
+    "stream_pet.sleep.3": {
+        "uk": "Ннн... ще п'ять хвилиночок... 😴",
+        "en": "Mmm... five more minutes... 😴",
+    },
+    "stream_pet.sleep.4": {
+        "uk": "Не будити... сниться перемога... 🏆",
+        "en": "Don't wake me... dreaming of victory... 🏆",
+    },
+    "stream_pet.sleep.5": {
+        "uk": "Zzz... *тихо мурчить*",
+        "en": "Zzz... *soft purring*",
+    },
+    "stream_pet.sleep.6": {
+        "uk": "Я в режимі економії батарейки 🔋",
+        "en": "Battery saver mode engaged 🔋",
+    },
+    "stream_pet.sleep.7": {
+        "uk": "Сни про донат-вірус... 💤",
+        "en": "Dreaming of a donation virus... 💤",
+    },
+    "stream_pet.sleep.8": {
+        "uk": "Тихше... я на рейді в Morpheus 🌙",
+        "en": "Shhh... I'm raiding Morpheus 🌙",
+    },
+    "stream_pet.react.follow": {
+        "uk": "О, новий друг! Привіт, {user}! Ставай у чергу на погладжування!",
+        "en": "Oh, a new friend! Hi, {user}! Get in line for pets!",
+    },
+    "stream_pet.react.small_gift": {
+        "uk": "Ням! Дякую, {user}, це було смачно! +5% до ситості!",
+        "en": "Yum! Thanks, {user}, that was tasty! +5% fullness!",
+    },
+    "stream_pet.react.large_gift": {
+        "uk": "БОЖЕ МІЙ! {user} — ти мій герой! Стрімер, вклонися йому!",
+        "en": "OH MY! {user} — you're my hero! Streamer, bow to them!",
+    },
+    "stream_pet.react.spam": {
+        "uk": "{user}, чого ти кричиш? У мене аж вуха заклало! 😵",
+        "en": "{user}, why are you yelling? My ears are ringing! 😵",
+    },
+    "stream_pet.event_label.chat": {
+        "uk": "повідомлення в чаті",
+        "en": "your chat message",
+    },
+    "stream_pet.event_label.like": {
+        "uk": "лайки",
+        "en": "the likes",
+    },
+    "stream_pet.event_label.follow": {
+        "uk": "підписку",
+        "en": "the follow",
+    },
+    "stream_pet.event_label.join": {
+        "uk": "візит на стрім",
+        "en": "joining the stream",
+    },
+    "stream_pet.event_label.member": {
+        "uk": "членство на каналі",
+        "en": "channel membership",
+    },
+    "stream_pet.event_label.gift": {
+        "uk": "подарунок «{gift_name}»",
+        "en": "the gift «{gift_name}»",
+    },
+    "stream_pet.event_label.gift_fallback": {
+        "uk": "подарунок",
+        "en": "the gift",
+    },
+    "stream_pet.event_label.gift_big_fallback": {
+        "uk": "мега-подарунок",
+        "en": "the mega gift",
+    },
+    "stream_pet.event_label.cheer_fallback": {
+        "uk": "bits",
+        "en": "the bits",
+    },
+    "stream_pet.event_label.superchat_fallback": {
+        "uk": "Super Chat",
+        "en": "the Super Chat",
+    },
+    "stream_pet.event_label.spam": {
+        "uk": "той крик у чаті",
+        "en": "all that yelling",
+    },
+    "stream_pet.event_label.chat_burst": {
+        "uk": "такий жвавий чат",
+        "en": "this lively chat",
+    },
+    "stream_pet.thanks.1": {
+        "uk": "{user}, дякую за {event}! 🙏",
+        "en": "{user}, thanks for {event}! 🙏",
+    },
+    "stream_pet.thanks.2": {
+        "uk": "Ого, {user}! Дякую за {event}! ✨",
+        "en": "Wow, {user}! Thanks for {event}! ✨",
+    },
+    "stream_pet.thanks.3": {
+        "uk": "{user}, ти топ! Дякую за {event}! 💛",
+        "en": "{user}, you're awesome! Thanks for {event}! 💛",
+    },
+    "stream_pet.thanks.4": {
+        "uk": "Йее! {user}, дякую за {event}! Я це помітив 👀",
+        "en": "Yay! {user}, thanks for {event}! I noticed 👀",
+    },
+    "stream_pet.thanks.hype.1": {
+        "uk": "ВАУ! {user}, дякую за {event}! Я в шоці! 🔥",
+        "en": "WOW! {user}, thanks for {event}! I'm shook! 🔥",
+    },
+    "stream_pet.thanks.hype.2": {
+        "uk": "{user} — ЛЕГЕНДА! Дякую за {event}! 🚀",
+        "en": "{user} — LEGEND! Thanks for {event}! 🚀",
+    },
+    "stream_pet.thanks.hype.3": {
+        "uk": "ААА! {user}, дякую за {event}! Я лечу в космос! 🌟",
+        "en": "AAA! {user}, thanks for {event}! I'm flying to space! 🌟",
+    },
+    "stream_pet.thanks.5": {
+        "uk": "{user}, ти зробив мій день! Дякую за {event}! ☀️",
+        "en": "{user}, you made my day! Thanks for {event}! ☀️",
+    },
+    "stream_pet.thanks.6": {
+        "uk": "О, {user}! Це було мило — дякую за {event}! 🥰",
+        "en": "Oh, {user}! That was sweet — thanks for {event}! 🥰",
+    },
+    "stream_pet.thanks.7": {
+        "uk": "{user}, я це запам'ятаю! Дякую за {event}! 📝",
+        "en": "{user}, I'll remember this! Thanks for {event}! 📝",
+    },
+    "stream_pet.thanks.8": {
+        "uk": "Клас, {user}! Дякую за {event}! Ти в топі! 🏅",
+        "en": "Nice one, {user}! Thanks for {event}! You're in the top tier! 🏅",
+    },
+    "stream_pet.thanks.9": {
+        "uk": "{user}, дякую за {event}! Обіймаю віртуально! 🤗",
+        "en": "{user}, thanks for {event}! Virtual hug! 🤗",
+    },
+    "stream_pet.thanks.10": {
+        "uk": "Ура! {user} зробив(ла) {event} — я щасливий! 💫",
+        "en": "Yay! {user} did {event} — I'm happy! 💫",
+    },
+    "stream_pet.thanks.11": {
+        "uk": "{user}, дякую за {event}! Стрімер, подивись на цього героя!",
+        "en": "{user}, thanks for {event}! Streamer, look at this hero!",
+    },
+    "stream_pet.thanks.12": {
+        "uk": "Пет схвалює! {user}, дякую за {event}! 👍",
+        "en": "Pet approves! {user}, thanks for {event}! 👍",
+    },
+    "stream_pet.thanks.hype.4": {
+        "uk": "НЕМОЖЛИВО! {user}, дякую за {event}! Я ПЛАВЛЮ! 🔥",
+        "en": "UNREAL! {user}, thanks for {event}! I'M MELTING! 🔥",
+    },
+    "stream_pet.thanks.hype.5": {
+        "uk": "{user} — БОС РЕЙДУ! Дякую за {event}! 👑",
+        "en": "{user} — RAID BOSS! Thanks for {event}! 👑",
+    },
+    "stream_pet.thanks.hype.6": {
+        "uk": "ЧАТ, ДИВІТЬСЯ! {user} зробив(ла) {event}! 🎉",
+        "en": "CHAT, LOOK! {user} did {event}! 🎉",
+    },
+    "stream_pet.thanks.hype.7": {
+        "uk": "{user}, це було ЕПІЧНО! Дякую за {event}! ⚔️",
+        "en": "{user}, that was EPIC! Thanks for {event}! ⚔️",
+    },
+    "stream_pet.thanks.hype.8": {
+        "uk": "Я КРИЧУ! {user}, дякую за {event}! 📢",
+        "en": "I'M SCREAMING! {user}, thanks for {event}! 📢",
+    },
+    "stream_pet.thanks.hype.9": {
+        "uk": "{user}, ти зламав(ла) шкалу хайпу! {event} — топ! 📈",
+        "en": "{user}, you broke the hype meter! {event} — top tier! 📈",
+    },
+    "stream_pet.thanks.hype.10": {
+        "uk": "МІСІЯ ВИКОНАНА! {user}, дякую за {event}! 🎯",
+        "en": "MISSION COMPLETE! {user}, thanks for {event}! 🎯",
+    },
+    "stream_pet.thanks.chat.1": {
+        "uk": "{user}, круте повідомлення! Дякую за {event}! 💬",
+        "en": "{user}, great message! Thanks for {event}! 💬",
+    },
+    "stream_pet.thanks.chat.2": {
+        "uk": "{user}, я прочитав — і усміхнувся! Дякую за {event}! 😊",
+        "en": "{user}, I read it and smiled! Thanks for {event}! 😊",
+    },
+    "stream_pet.thanks.chat.3": {
+        "uk": "О, {user}! Гарні слова — дякую за {event}! ✨",
+        "en": "Oh, {user}! Nice words — thanks for {event}! ✨",
+    },
+    "stream_pet.thanks.chat.4": {
+        "uk": "{user}, чат оживає завдяки тобі! {event} — супер!",
+        "en": "{user}, chat comes alive because of you! {event} — awesome!",
+    },
+    "stream_pet.thanks.chat.5": {
+        "uk": "{user}, дякую за {event}! Я це зберіг у пам'яті! 🧠",
+        "en": "{user}, thanks for {event}! Saved to memory! 🧠",
+    },
+    "stream_pet.thanks.chat.6": {
+        "uk": "Ха! {user}, дякую за {event}! Ти підняв(ла) настрій!",
+        "en": "Ha! {user}, thanks for {event}! You boosted the mood!",
+    },
+    "stream_pet.thanks.chat.7": {
+        "uk": "{user}, дякую за {event}! Пиши ще! ✍️",
+        "en": "{user}, thanks for {event}! Keep typing! ✍️",
+    },
+    "stream_pet.thanks.chat.8": {
+        "uk": "Стрімер, {user} написав(ла) щось цікаве! Дякую за {event}!",
+        "en": "Streamer, {user} wrote something cool! Thanks for {event}!",
+    },
+    "stream_pet.thanks.chat.9": {
+        "uk": "{user}, твій {event} — як печиво для пета! 🍪",
+        "en": "{user}, your {event} is like cookies for the pet! 🍪",
+    },
+    "stream_pet.thanks.chat.10": {
+        "uk": "Пет киває! {user}, дякую за {event}! 🙂",
+        "en": "Pet nods! {user}, thanks for {event}! 🙂",
+    },
+    "stream_pet.thanks.like.1": {
+        "uk": "{user}, ці {event} — вогонь! Дякую! 🔥",
+        "en": "{user}, those {event} are fire! Thanks! 🔥",
+    },
+    "stream_pet.thanks.like.2": {
+        "uk": "{user}, дякую за {event}! Ще трохи — і я злітаю! 🎈",
+        "en": "{user}, thanks for {event}! A bit more and I'll take off! 🎈",
+    },
+    "stream_pet.thanks.like.3": {
+        "uk": "Лайк від {user}! Дякую за {event}! ❤️",
+        "en": "A like from {user}! Thanks for {event}! ❤️",
+    },
+    "stream_pet.thanks.like.4": {
+        "uk": "{user}, ти машина лайків! Дякую за {event}! ⚙️",
+        "en": "{user}, you're a like machine! Thanks for {event}! ⚙️",
+    },
+    "stream_pet.thanks.like.5": {
+        "uk": "Ого, {user}! {event} — це сила! Дякую! 💪",
+        "en": "Whoa, {user}! {event} — that's power! Thanks! 💪",
+    },
+    "stream_pet.thanks.like.6": {
+        "uk": "{user}, дякую за {event}! Пет світиться! ✨",
+        "en": "{user}, thanks for {event}! Pet is glowing! ✨",
+    },
+    "stream_pet.thanks.like.7": {
+        "uk": "Так-так! {user}, дякую за {event}! 👆",
+        "en": "Yes yes! {user}, thanks for {event}! 👆",
+    },
+    "stream_pet.thanks.like.8": {
+        "uk": "{user}, кожен лайк — як цукерка для мене! Дякую за {event}! 🍬",
+        "en": "{user}, every like is candy for me! Thanks for {event}! 🍬",
+    },
+    "stream_pet.thanks.like.9": {
+        "uk": "{user}, дякую за {event}! Чат, беремо приклад!",
+        "en": "{user}, thanks for {event}! Chat, take notes!",
+    },
+    "stream_pet.thanks.like.10": {
+        "uk": "Плюс вайб від {user}! Дякую за {event}! 📈",
+        "en": "Plus vibe from {user}! Thanks for {event}! 📈",
+    },
+    "stream_pet.thanks.follow.1": {
+        "uk": "{user}, ласкаво просимо в зграю! Дякую за {event}! 🐾",
+        "en": "{user}, welcome to the pack! Thanks for {event}! 🐾",
+    },
+    "stream_pet.thanks.follow.2": {
+        "uk": "Новий друг! {user}, дякую за {event}! 🤝",
+        "en": "New friend! {user}, thanks for {event}! 🤝",
+    },
+    "stream_pet.thanks.follow.3": {
+        "uk": "{user}, ти тепер з нами! Дякую за {event}! 🎊",
+        "en": "{user}, you're with us now! Thanks for {event}! 🎊",
+    },
+    "stream_pet.thanks.follow.4": {
+        "uk": "Ого, {user} підписав(лася)! Дякую за {event}! ⭐",
+        "en": "Whoa, {user} followed! Thanks for {event}! ⭐",
+    },
+    "stream_pet.thanks.follow.5": {
+        "uk": "{user}, дякую за {event}! Ставай у чергу на погладжування!",
+        "en": "{user}, thanks for {event}! Get in line for pets!",
+    },
+    "stream_pet.thanks.follow.6": {
+        "uk": "Пет танцює! {user}, дякую за {event}! 💃",
+        "en": "Pet is dancing! {user}, thanks for {event}! 💃",
+    },
+    "stream_pet.thanks.follow.7": {
+        "uk": "{user}, дякую за {event}! Тепер ти офіційно крутий(а)!",
+        "en": "{user}, thanks for {event}! You're officially cool now!",
+    },
+    "stream_pet.thanks.follow.8": {
+        "uk": "Вітаю, {user}! Дякую за {event}! Не зникай! 👋",
+        "en": "Welcome, {user}! Thanks for {event}! Don't disappear! 👋",
+    },
+    "stream_pet.thanks.follow.9": {
+        "uk": "{user}, дякую за {event}! +1 до родини стріму!",
+        "en": "{user}, thanks for {event}! +1 to the stream family!",
+    },
+    "stream_pet.thanks.follow.10": {
+        "uk": "Стрімер, дивись — {user} зробив(ла) {event}! Клас!",
+        "en": "Streamer, look — {user} did {event}! Nice!",
+    },
+    "stream_pet.thanks.join.1": {
+        "uk": "{user}, привіт! Дякую за {event}! 👋",
+        "en": "{user}, hi! Thanks for {event}! 👋",
+    },
+    "stream_pet.thanks.join.2": {
+        "uk": "О, {user} зайшов(ла)! Дякую за {event}! 🚪",
+        "en": "Oh, {user} joined! Thanks for {event}! 🚪",
+    },
+    "stream_pet.thanks.join.3": {
+        "uk": "{user}, раді тебе бачити! Дякую за {event}! 😄",
+        "en": "{user}, glad you're here! Thanks for {event}! 😄",
+    },
+    "stream_pet.thanks.join.4": {
+        "uk": "Вітаю на стрімі, {user}! Дякую за {event}! 🎬",
+        "en": "Welcome to the stream, {user}! Thanks for {event}! 🎬",
+    },
+    "stream_pet.thanks.join.5": {
+        "uk": "{user}, заходь зручніше! Дякую за {event}! 🛋️",
+        "en": "{user}, make yourself comfy! Thanks for {event}! 🛋️",
+    },
+    "stream_pet.thanks.join.6": {
+        "uk": "Пет махає лапкою! {user}, дякую за {event}! 🐾",
+        "en": "Pet waves a paw! {user}, thanks for {event}! 🐾",
+    },
+    "stream_pet.thanks.join.7": {
+        "uk": "{user}, ти вчасно! Дякую за {event}! ⏰",
+        "en": "{user}, perfect timing! Thanks for {event}! ⏰",
+    },
+    "stream_pet.thanks.join.8": {
+        "uk": "Нове обличчя! {user}, дякую за {event}! 🌟",
+        "en": "New face! {user}, thanks for {event}! 🌟",
+    },
+    "stream_pet.thanks.gift.1": {
+        "uk": "Ням! {user}, дякую за {event}! Смачно! 🍽️",
+        "en": "Yum! {user}, thanks for {event}! Tasty! 🍽️",
+    },
+    "stream_pet.thanks.gift.2": {
+        "uk": "{user}, дякую за {event}! +енергія для пета! ⚡",
+        "en": "{user}, thanks for {event}! +energy for the pet! ⚡",
+    },
+    "stream_pet.thanks.gift.3": {
+        "uk": "Ого, {user}! {event} — це любов! Дякую! 💝",
+        "en": "Wow, {user}! {event} — that's love! Thanks! 💝",
+    },
+    "stream_pet.thanks.gift.4": {
+        "uk": "{user}, дякую за {event}! Я ситий(а) і щасливий(а)! 😋",
+        "en": "{user}, thanks for {event}! I'm full and happy! 😋",
+    },
+    "stream_pet.thanks.gift.5": {
+        "uk": "Подарунок від {user}! Дякую за {event}! 🎁",
+        "en": "A gift from {user}! Thanks for {event}! 🎁",
+    },
+    "stream_pet.thanks.gift.6": {
+        "uk": "{user}, дякую за {event}! Стрімер, це для тебе теж!",
+        "en": "{user}, thanks for {event}! Streamer, this is for you too!",
+    },
+    "stream_pet.thanks.gift.7": {
+        "uk": "Чмок! {user}, дякую за {event}! 😘",
+        "en": "Mwah! {user}, thanks for {event}! 😘",
+    },
+    "stream_pet.thanks.gift.8": {
+        "uk": "{user}, ти нагодував(ла) пета! Дякую за {event}! 🥣",
+        "en": "{user}, you fed the pet! Thanks for {event}! 🥣",
+    },
+    "stream_pet.thanks.gift.9": {
+        "uk": "Дякую, {user}! {event} — як домашня їжа! 🏠",
+        "en": "Thanks, {user}! {event} — like home cooking! 🏠",
+    },
+    "stream_pet.thanks.gift.10": {
+        "uk": "{user}, дякую за {event}! Пет облизується! 👅",
+        "en": "{user}, thanks for {event}! Pet is licking lips! 👅",
+    },
+    "stream_pet.thanks.gift_large.1": {
+        "uk": "БОЖЕ МІЙ! {user} — легенда! Дякую за {event}! 👑",
+        "en": "OH MY! {user} — a legend! Thanks for {event}! 👑",
+    },
+    "stream_pet.thanks.gift_large.2": {
+        "uk": "{user}, це МЕГА! Дякую за {event}! Стрімер, вклонися!",
+        "en": "{user}, that's MEGA! Thanks for {event}! Streamer, bow down!",
+    },
+    "stream_pet.thanks.gift_large.3": {
+        "uk": "ВАУ! {user}, дякую за {event}! Я в шоці! 🤯",
+        "en": "WOW! {user}, thanks for {event}! I'm shook! 🤯",
+    },
+    "stream_pet.thanks.gift_large.4": {
+        "uk": "{user} — WHALE ALERT! Дякую за {event}! 🐋",
+        "en": "{user} — WHALE ALERT! Thanks for {event}! 🐋",
+    },
+    "stream_pet.thanks.gift_large.5": {
+        "uk": "НЕМОЖЛИВО! {user}, дякую за {event}! Пет сяє! ✨",
+        "en": "UNREAL! {user}, thanks for {event}! Pet is shining! ✨",
+    },
+    "stream_pet.thanks.gift_large.6": {
+        "uk": "{user}, ти зламав(ла) банк! Дякую за {event}! 💰",
+        "en": "{user}, you broke the bank! Thanks for {event}! 💰",
+    },
+    "stream_pet.thanks.gift_large.7": {
+        "uk": "ЧАТ, АПЛОДУЙТЕ! {user} — {event}! 👏",
+        "en": "CHAT, APPLAUD! {user} — {event}! 👏",
+    },
+    "stream_pet.thanks.gift_large.8": {
+        "uk": "{user}, дякую за {event}! Я пам'ятатиму це вічно! 🏆",
+        "en": "{user}, thanks for {event}! I'll remember this forever! 🏆",
+    },
+    "stream_pet.thanks.gift_large.9": {
+        "uk": "ЕПІК ДОНАТ! {user}, дякую за {event}! 🎆",
+        "en": "EPIC DONATION! {user}, thanks for {event}! 🎆",
+    },
+    "stream_pet.thanks.gift_large.10": {
+        "uk": "{user} — MVP стріму! Дякую за {event}! 🥇",
+        "en": "{user} — stream MVP! Thanks for {event}! 🥇",
+    },
+    "stream_pet.thanks.member.1": {
+        "uk": "{user}, дякую за {event}! Ти VIP пета! 💎",
+        "en": "{user}, thanks for {event}! You're pet VIP! 💎",
+    },
+    "stream_pet.thanks.member.2": {
+        "uk": "О, член каналу! {user}, дякую за {event}! 🎖️",
+        "en": "Oh, a channel member! {user}, thanks for {event}! 🎖️",
+    },
+    "stream_pet.thanks.member.3": {
+        "uk": "{user}, дякую за {event}! Елітний статус підтверджено!",
+        "en": "{user}, thanks for {event}! Elite status confirmed!",
+    },
+    "stream_pet.thanks.member.4": {
+        "uk": "Пет вітає свого! {user}, дякую за {event}! 🫡",
+        "en": "Pet salutes their own! {user}, thanks for {event}! 🫡",
+    },
+    "stream_pet.thanks.member.5": {
+        "uk": "{user}, дякую за {event}! Ти — сім'я! ❤️",
+        "en": "{user}, thanks for {event}! You're family! ❤️",
+    },
+    "stream_pet.thanks.member.6": {
+        "uk": "Преміум! {user}, дякую за {event}! 🌟",
+        "en": "Premium! {user}, thanks for {event}! 🌟",
+    },
+    "stream_pet.thanks.member.7": {
+        "uk": "{user}, дякую за {event}! Спеціальне мурчання для тебе!",
+        "en": "{user}, thanks for {event}! Special purring for you!",
+    },
+    "stream_pet.thanks.member.8": {
+        "uk": "Стрімер, {user} — член! Дякую за {event}! 🎉",
+        "en": "Streamer, {user} is a member! Thanks for {event}! 🎉",
+    },
+    "stream_pet.thanks.spam.1": {
+        "uk": "{user}, полегше! Дякую за {event}... мабуть 😅",
+        "en": "{user}, easy there! Thanks for {event}... I guess 😅",
+    },
+    "stream_pet.thanks.spam.2": {
+        "uk": "{user}, чого ти кричиш? Дякую за {event}! 😵",
+        "en": "{user}, why are you yelling? Thanks for {event}! 😵",
+    },
+    "stream_pet.thanks.spam.3": {
+        "uk": "У мене вуха дзвенять, {user}! {event} — гучно! 🔊",
+        "en": "My ears are ringing, {user}! {event} — loud! 🔊",
+    },
+    "stream_pet.thanks.spam.4": {
+        "uk": "{user}, дякую за {event}! Але тихіше, будь ласка! 🤫",
+        "en": "{user}, thanks for {event}! But quieter, please! 🤫",
+    },
+    "stream_pet.thanks.spam.5": {
+        "uk": "Пет здригнувся від {event}! {user}, дякую... 🫨",
+        "en": "Pet flinched from {event}! {user}, thanks... 🫨",
+    },
+    "stream_pet.thanks.spam.6": {
+        "uk": "{user}, CAPS LOCK застряг? Дякую за {event}! ⌨️",
+        "en": "{user}, CAPS LOCK stuck? Thanks for {event}! ⌨️",
+    },
+    "stream_pet.thanks.spam.7": {
+        "uk": "Ой! {user}, дякую за {event}! Я в шоку! 😱",
+        "en": "Ouch! {user}, thanks for {event}! I'm shocked! 😱",
+    },
+    "stream_pet.thanks.spam.8": {
+        "uk": "{user}, дякую за {event}! Наступного разу — без емодзі-бомби!",
+        "en": "{user}, thanks for {event}! Next time — no emoji bomb!",
+    },
+    "stream_pet.thanks.chat_burst.1": {
+        "uk": "ЧАТ ВИБУХАЄ! {user}, дякую за {event}! 💥",
+        "en": "CHAT IS EXPLODING! {user}, thanks for {event}! 💥",
+    },
+    "stream_pet.thanks.chat_burst.2": {
+        "uk": "{user}, дякую за {event}! Вайб зашкалює! 📈",
+        "en": "{user}, thanks for {event}! Vibe is off the charts! 📈",
+    },
+    "stream_pet.thanks.chat_burst.3": {
+        "uk": "Ого, який актив! {user}, дякую за {event}! 🎊",
+        "en": "Whoa, such activity! {user}, thanks for {event}! 🎊",
+    },
+    "stream_pet.thanks.chat_burst.4": {
+        "uk": "{user}, дякую за {event}! Чат — як новорічна ялинка! 🎄",
+        "en": "{user}, thanks for {event}! Chat is like a Christmas tree! 🎄",
+    },
+    "stream_pet.thanks.chat_burst.5": {
+        "uk": "Пет в захваті! {user}, дякую за {event}! 🤩",
+        "en": "Pet is thrilled! {user}, thanks for {event}! 🤩",
+    },
+    "stream_pet.thanks.chat_burst.6": {
+        "uk": "{user}, дякую за {event}! Стрімер, чат живий!",
+        "en": "{user}, thanks for {event}! Streamer, chat is alive!",
+    },
+    "stream_pet.thanks.chat_burst.7": {
+        "uk": "ТАК СТОЯТИ! {user}, дякую за {event}! 🔥",
+        "en": "THAT'S IT! {user}, thanks for {event}! 🔥",
+    },
+    "stream_pet.thanks.chat_burst.8": {
+        "uk": "{user}, дякую за {event}! Я танцюю разом з чатом! 💃",
+        "en": "{user}, thanks for {event}! I'm dancing with chat! 💃",
+    },
+    "stream_pet.evolve.2": {
+        "uk": "АПГРЕЙД! Тепер я бачу чат у 4K! 😎",
+        "en": "UPGRADE! I see chat in 4K now! 😎",
+    },
+    "stream_pet.evolve.3": {
+        "uk": "МАКСИМАЛЬНИЙ РІВЕНЬ! ДИСКОТЕКА! 🎉",
+        "en": "MAX LEVEL! DISCO TIME! 🎉",
+    },
+    "stream_pet.l1.idle.1": {
+        "uk": "мм... тут тихо... може хтось напише? 🥺",
+        "en": "mm... it's quiet... maybe someone types? 🥺",
+    },
+    "stream_pet.l1.idle.2": {
+        "uk": "пі-пі! я маленький пет... голодний трохи",
+        "en": "beep beep! i'm a tiny pet... a bit hungry",
+    },
+    "stream_pet.l1.idle.3": {
+        "uk": "хтось... є тут? 👀",
+        "en": "anyone... here? 👀",
+    },
+    "stream_pet.l1.idle.4": {
+        "uk": "я чекаю на друзя...",
+        "en": "waiting for frens...",
+    },
+    "stream_pet.l1.idle.5": {
+        "uk": "пі! мені холодно без лайків",
+        "en": "peep! i'm cold without likes",
+    },
+    "stream_pet.l1.idle.6": {
+        "uk": "може печевко? ...ні, донат краще",
+        "en": "maybe cookie? ...no, donation better",
+    },
+    "stream_pet.l1.idle.7": {
+        "uk": "я трохи соромлюсь... але я тут!",
+        "en": "i'm a bit shy... but i'm here!",
+    },
+    "stream_pet.l1.idle.8": {
+        "uk": "пі-пі-пі! стрімер, привіт!",
+        "en": "beep beep beep! hi streamer!",
+    },
+    "stream_pet.l1.thanks.1": {
+        "uk": "мм... {user}, дякую за {event}! 🙏",
+        "en": "mm... {user}, thanks for {event}! 🙏",
+    },
+    "stream_pet.l1.thanks.2": {
+        "uk": "пі! {user}, це за {event}? дякую! ✨",
+        "en": "peep! {user}, that's for {event}? thanks! ✨",
+    },
+    "stream_pet.l1.thanks.3": {
+        "uk": "{user}... дякую за {event}... ти добрий(а)",
+        "en": "{user}... thanks for {event}... you're kind",
+    },
+    "stream_pet.l1.thanks.4": {
+        "uk": "ого! {user} зробив(ла) {event}! дякую!",
+        "en": "wow! {user} did {event}! thanks!",
+    },
+    "stream_pet.l1.thanks.5": {
+        "uk": "{user}, я це помітив! дякую за {event}! 👀",
+        "en": "{user}, i noticed! thanks for {event}! 👀",
+    },
+    "stream_pet.l1.thanks.6": {
+        "uk": "пі-пі! {user}, дякую за {event}! 💛",
+        "en": "beep! {user}, thanks for {event}! 💛",
+    },
+    "stream_pet.l1.thanks.7": {
+        "uk": "{user}, ти мене нагодував(ла) {event}! ням",
+        "en": "{user}, you fed me {event}! yum",
+    },
+    "stream_pet.l1.thanks.8": {
+        "uk": "дякую, {user}! {event} — це тепло",
+        "en": "thanks, {user}! {event} feels warm",
+    },
+    "stream_pet.l2.idle.1": {
+        "uk": "О, тепер я бачу чат у 4K! Непогано...",
+        "en": "Oh, I see chat in 4K now! Not bad...",
+    },
+    "stream_pet.l2.idle.2": {
+        "uk": "Стрімер, грай краще — на моє оновлення скидалися!",
+        "en": "Streamer, play better — they donated for MY upgrade!",
+    },
+    "stream_pet.l2.idle.3": {
+        "uk": "Чат, я тепер крутіший за вас. Майже.",
+        "en": "Chat, I'm cooler than you now. Almost.",
+    },
+    "stream_pet.l2.idle.4": {
+        "uk": "Окуляри ON. Сарказм ON. 😎",
+        "en": "Glasses ON. Sarcasm ON. 😎",
+    },
+    "stream_pet.l2.idle.5": {
+        "uk": "Хто там без донату? Я бачу всіх.",
+        "en": "Who's here without donating? I see everyone.",
+    },
+    "stream_pet.l2.idle.6": {
+        "uk": "Мій firmware оновили — тепер я дерзкий.",
+        "en": "They patched my firmware — now I'm sassy.",
+    },
+    "stream_pet.l2.idle.7": {
+        "uk": "Стрімер, не фейли — я тут заради вайбу.",
+        "en": "Streamer, no fails — I'm here for the vibe.",
+    },
+    "stream_pet.l2.idle.8": {
+        "uk": "Кібер-панк режим: активовано.",
+        "en": "Cyber-punk mode: activated.",
+    },
+    "stream_pet.l2.thanks.1": {
+        "uk": "О, {user}! Твій {event} ну такий собі... але дякую. 😏",
+        "en": "Oh, {user}! Your {event} is meh... but thanks. 😏",
+    },
+    "stream_pet.l2.thanks.2": {
+        "uk": "{user}, дякую за {event}. Давай краще троянду наступного разу.",
+        "en": "{user}, thanks for {event}. Drop a rose next time though.",
+    },
+    "stream_pet.l2.thanks.3": {
+        "uk": "Непогано, {user}! {event} — зарахую.",
+        "en": "Not bad, {user}! {event} — i'll count it.",
+    },
+    "stream_pet.l2.thanks.4": {
+        "uk": "{user}, дякую за {event}! Чат, беремо приклад... ні, не беремо.",
+        "en": "{user}, thanks for {event}! Chat, follow... nah don't.",
+    },
+    "stream_pet.l2.thanks.5": {
+        "uk": "Ого, {user}! {event} — нарешті щось норм.",
+        "en": "Whoa, {user}! {event} — finally something decent.",
+    },
+    "stream_pet.l2.thanks.6": {
+        "uk": "{user}, дякую за {event}! Я це бачу в HD.",
+        "en": "{user}, thanks for {event}! I see it in HD.",
+    },
+    "stream_pet.l2.thanks.7": {
+        "uk": "Стрімер, {user} скинув(ла) {event}! Подивись, як треба.",
+        "en": "Streamer, {user} did {event}! That's how it's done.",
+    },
+    "stream_pet.l2.thanks.8": {
+        "uk": "{user}, дякую за {event}! Не розслабляйся.",
+        "en": "{user}, thanks for {event}! Don't get comfy.",
+    },
+    "stream_pet.l3.idle.1": {
+        "uk": "Я БОС ЦЬОГО СТРІМУ! Чуєте?! 👑",
+        "en": "I'M THE BOSS OF THIS STREAM! Hear me?! 👑",
+    },
+    "stream_pet.l3.idle.2": {
+        "uk": "ДИНАМІКИ НА МАКСИМУМ! БАС ЙДЕ!",
+        "en": "SPEAKERS AT MAX! FEEL THE BASS!",
+    },
+    "stream_pet.l3.idle.3": {
+        "uk": "Стрімер, танцюй! Я кручу диск!",
+        "en": "Streamer, dance! I'm spinning the deck!",
+    },
+    "stream_pet.l3.idle.4": {
+        "uk": "Чат, хто не донатив — ви в бані... жартую. Майже.",
+        "en": "Chat, no donate — banned... kidding. Almost.",
+    },
+    "stream_pet.l3.idle.5": {
+        "uk": "VIP-режим увімкнено. Я роздаю бонуси!",
+        "en": "VIP mode on. I'm handing out bonuses!",
+    },
+    "stream_pet.l3.idle.6": {
+        "uk": "МЕГА-ПЕТ АКТИВНИЙ! ЕНЕРГІЯ 9999!",
+        "en": "MEGA PET ACTIVE! ENERGY 9999!",
+    },
+    "stream_pet.l3.idle.7": {
+        "uk": "Цей стрім тепер МІЙ. Ви лише гості.",
+        "en": "This stream is MINE now. You're just guests.",
+    },
+    "stream_pet.l3.idle.8": {
+        "uk": "ДИСКОТЕКА НЕ ЗАКІНЧУЄТЬСЯ! 🎶",
+        "en": "THE DISCO NEVER ENDS! 🎶",
+    },
+    "stream_pet.l3.thanks.1": {
+        "uk": "ЛЕГЕНДА! {user}, дякую за {event}! БОС СХВАЛЮЄ! 👑",
+        "en": "LEGEND! {user}, thanks for {event}! BOSS APPROVES! 👑",
+    },
+    "stream_pet.l3.thanks.2": {
+        "uk": "{user}! {event} — ЕПІЧНО! Чат, аплодуйте!",
+        "en": "{user}! {event} — EPIC! Chat, applaud!",
+    },
+    "stream_pet.l3.thanks.3": {
+        "uk": "Стрімер, {user} зробив(ла) {event}! Вклонися!",
+        "en": "Streamer, {user} did {event}! Bow down!",
+    },
+    "stream_pet.l3.thanks.4": {
+        "uk": "{user}, дякую за {event}! Ти в моєму топі!",
+        "en": "{user}, thanks for {event}! You're in my top tier!",
+    },
+    "stream_pet.l3.thanks.5": {
+        "uk": "ВАУ! {user}, {event} — це донат боса!",
+        "en": "WOW! {user}, {event} — boss-tier donation!",
+    },
+    "stream_pet.l3.thanks.6": {
+        "uk": "{user}, дякую за {event}! +100 до репутації!",
+        "en": "{user}, thanks for {event}! +100 rep!",
+    },
+    "stream_pet.l3.thanks.7": {
+        "uk": "ЧАТ! Дивіться на {user} — {event}! Так треба!",
+        "en": "CHAT! Look at {user} — {event}! That's the way!",
+    },
+    "stream_pet.l3.thanks.8": {
+        "uk": "{user}, дякую за {event}! Я оголошую тебе крутим(ою)!",
+        "en": "{user}, thanks for {event}! I declare you cool!",
+    },
+    "stream_pet.l3.vip.1": {
+        "uk": "{user} — VIP-персона хвилини! Усі, вітайте! 👑",
+        "en": "{user} — VIP of the minute! Everyone, greet them! 👑",
+    },
+    "stream_pet.l3.vip.2": {
+        "uk": "Оголошую: {user} — король/королева чату! 🎉",
+        "en": "I declare: {user} — chat royalty! 🎉",
+    },
+    "stream_pet.l3.vip.3": {
+        "uk": "{user} отримує бонус від БОС-пета! ⭐",
+        "en": "{user} gets a bonus from BOSS pet! ⭐",
+    },
+    "stream_pet.l3.vip.4": {
+        "uk": "VIP-алерт! {user} — зірка цього моменту! ✨",
+        "en": "VIP alert! {user} — star of this moment! ✨",
+    },
+    "stream_pet.l3.vip.5": {
+        "uk": "Чат, аплодуйте {user} — VIP хвилини! 👏",
+        "en": "Chat, applaud {user} — VIP of the minute! 👏",
+    },
+    "stream_pet.l3.vip.6": {
+        "uk": "{user} — обраний(а) петом! Почувайтесь особливо!",
+        "en": "{user} — chosen by the pet! Feel special!",
+    },
+    "stream_pet.l3.vip.7": {
+        "uk": "Бонус! {user} — почесний гість стріму! 🏅",
+        "en": "Bonus! {user} — honorary stream guest! 🏅",
+    },
+    "stream_pet.l3.vip.8": {
+        "uk": "Увага! {user} — VIP! Стрімер, запам'ятай ім'я!",
+        "en": "Attention! {user} — VIP! Streamer, remember the name!",
+    },
+    "widgets.stream_pet.title": {
+        "uk": "StreamPet (Тамагочі)",
+        "en": "StreamPet (Tamagotchi)",
+    },
 }
 
 

@@ -41,6 +41,15 @@ from stream_cheremsha.overlays.online_overlay_config import (
     save_online_overlay_config,
 )
 from stream_cheremsha.overlays.pubsub import OverlayPubSub
+from stream_cheremsha.overlays.stream_pet_overlay_config import (
+    apply_stream_pet_preset,
+    load_stream_pet_overlay_config,
+    save_stream_pet_overlay_config,
+    stream_pet_overlay_config_defaults,
+    stream_pet_overlay_config_from_json_text,
+    stream_pet_overlay_config_to_json_text,
+    stream_pet_overlay_config_to_public_dict,
+)
 from stream_cheremsha.overlays.top_gifters_overlay_config import (
     load_top_gifters_overlay_config,
     save_top_gifters_overlay_config,
@@ -155,6 +164,7 @@ class WidgetsQmlApi(QObject):
         self._top_gifters_instance = str(online_instance or "main").strip() or "main"
         self._king_of_live_instance = str(online_instance or "main").strip() or "main"
         self._battle_royale_instance = str(online_instance or "main").strip() or "main"
+        self._stream_pet_instance = str(online_instance or "main").strip() or "main"
         self._battle_host: Any | None = None
         self._system_font_families: list[str] | None = None
 
@@ -199,6 +209,7 @@ class WidgetsQmlApi(QObject):
         self.topGiftersOverlayUrlChanged.emit()
         self.kingOfLiveOverlayUrlChanged.emit()
         self.battleRoyaleOverlayUrlChanged.emit()
+        self.streamPetOverlayUrlChanged.emit()
 
     @Property(str, notify=chatOverlayUrlChanged)
     def chatOverlayUrlValue(self) -> str:  # noqa: ANN201 - PySide pattern
@@ -337,6 +348,48 @@ class WidgetsQmlApi(QObject):
         if clip is None:
             return
         clip.setText(url)
+
+    streamPetOverlayUrlChanged = Signal()
+
+    @Property(str, notify=streamPetOverlayUrlChanged)
+    def streamPetOverlayUrlValue(self) -> str:  # noqa: ANN201 - PySide pattern
+        return self.streamPetOverlayUrl()
+
+    @Slot(result=str)
+    def streamPetOverlayUrl(self) -> str:
+        if not self._base:
+            return ""
+        return f"{self._base}/overlay/stream_pet?instance={self._stream_pet_instance}"
+
+    @Slot()
+    def copyStreamPetOverlayUrl(self) -> None:
+        url = self.streamPetOverlayUrl()
+        if not url:
+            return
+        clip = QGuiApplication.clipboard()
+        if clip is None:
+            return
+        clip.setText(url)
+
+    @Slot()
+    def previewStreamPetOverlay(self) -> None:
+        topic = f"overlay:stream_pet:{self._stream_pet_instance}"
+        cfg = load_stream_pet_overlay_config()
+        patch: dict[str, Any] = {
+            "config": stream_pet_overlay_config_to_public_dict(cfg),
+            "energy": 88,
+            "mood": "hyper",
+            "sleeping": False,
+            "anim_seq": 1,
+            "last_donor": "PreviewDonor",
+            "speech": {
+                "text": "АААА! МЕНЕ ПРЕЕЕЕ! 🔥🚀",
+                "kind": "idle",
+                "ttl_ms": 5000,
+                "anim": "dance",
+            },
+        }
+        self._publish_patch(topic=topic, patch=patch)
 
     @Slot()
     def previewBattleRoyaleOverlay(self) -> None:
@@ -834,6 +887,56 @@ class WidgetsQmlApi(QObject):
             return
         _LOG.info("widgets ConfigMap save: battle_royale ok json_len=%d", len(txt))
         self.saveBattleRoyaleOverlayConfigJson(txt)
+
+    @Slot(str, result="QVariantMap")
+    def streamPetPresetDefaultsMap(self, preset: str) -> dict[str, Any]:
+        cfg = apply_stream_pet_preset(stream_pet_overlay_config_defaults(), preset)
+        return stream_pet_overlay_config_to_public_dict(cfg)
+
+    @Slot(result="QVariantMap")
+    def loadStreamPetOverlayConfigMap(self) -> dict[str, Any]:
+        cfg = load_stream_pet_overlay_config()
+        return stream_pet_overlay_config_to_public_dict(cfg)
+
+    @Slot(result=str)
+    def loadStreamPetOverlayConfigJson(self) -> str:
+        cfg = load_stream_pet_overlay_config()
+        return stream_pet_overlay_config_to_json_text(cfg)
+
+    @Slot(str)
+    def saveStreamPetOverlayConfigJson(self, cfg_json: str) -> None:
+        txt = (cfg_json or "").strip()
+        if not txt:
+            return
+        try:
+            cfg = stream_pet_overlay_config_from_json_text(txt)
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            _LOG.warning(
+                "saveStreamPetOverlayConfigJson: rejected payload (%s): %s",
+                exc.__class__.__name__,
+                exc,
+            )
+            return
+        save_stream_pet_overlay_config(cfg)
+        _LOG.info("widgets overlay persisted: stream_pet")
+        if self._pubsub is not None:
+            topic = f"overlay:stream_pet:{self._stream_pet_instance}"
+            patch = {"config": stream_pet_overlay_config_to_public_dict(cfg)}
+            self._publish_patch(topic=topic, patch=patch)
+
+    @Slot(QJSValue)
+    def saveStreamPetOverlayConfigMap(self, cfg_js: QJSValue) -> None:
+        plain = _qml_js_to_plain_cfg(cfg_js)
+        _LOG.info("widgets ConfigMap save: stream_pet (plain_type=%s)", type(plain).__name__)
+        if plain is None:
+            _LOG.warning("widgets ConfigMap save: stream_pet rejected (null/undefined)")
+            return
+        txt = _qml_cfg_map_to_json_text(plain)
+        if not txt or txt == "{}":
+            _LOG.warning("widgets ConfigMap save: stream_pet rejected empty_or_non_serializable")
+            return
+        _LOG.info("widgets ConfigMap save: stream_pet ok json_len=%d", len(txt))
+        self.saveStreamPetOverlayConfigJson(txt)
 
 
 class WidgetsWindowQmlApi(QObject):

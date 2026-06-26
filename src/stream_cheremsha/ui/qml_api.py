@@ -19,6 +19,7 @@ class StreamCheremshaQmlApi(QObject):
     """Bridges the QML «Connections» view to :class:`MainWindow` (hidden QWidgets + slots)."""
 
     refreshCounterChanged = Signal()
+    bigPictureActiveChanged = Signal()
 
     def __init__(self, main: MainWindow) -> None:
         super().__init__(parent=main)
@@ -105,6 +106,8 @@ class StreamCheremshaQmlApi(QObject):
         w = self._win()
         if w is None:
             return 0
+        if getattr(w, "_big_picture_active", False):
+            return 0
         try:
             foot = w._footer_frame  # noqa: SLF001
         except AttributeError:
@@ -113,6 +116,24 @@ class StreamCheremshaQmlApi(QObject):
             return int(foot.height())
         except RuntimeError:
             return 0
+
+    @Property(bool, notify=bigPictureActiveChanged)
+    def bigPictureActive(self) -> bool:  # noqa: ANN201 - PySide pattern
+        w = self._win()
+        if w is None:
+            return False
+        return bool(getattr(w, "_big_picture_active", False))
+
+    @Slot()
+    def exitBigPicture(self) -> None:
+        w = self._win()
+        if w is None:
+            return
+        w._exit_big_picture()  # noqa: SLF001
+
+    def notify_big_picture_active_changed(self) -> None:
+        self.bigPictureActiveChanged.emit()
+        self.refresh()
 
     @Property(int, notify=refreshCounterChanged)
     def qmlConnHeightPx(self) -> int:  # noqa: ANN201 - PySide pattern

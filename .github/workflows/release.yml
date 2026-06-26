@@ -197,9 +197,71 @@ jobs:
           name: linux-release
           path: dist/release/*.AppImage
 
+  virustotal:
+    name: VirusTotal scan
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-release
+          path: dist/release
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-release
+          path: dist/release
+
+      - name: Scan release artifacts with VirusTotal
+        env:
+          VIRUSTOTAL_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
+        run: |
+          tag="${{ github.ref_name }}"
+          installer="dist/release/Cheremsha-Setup-${tag}.exe"
+          portable_zip="dist/release/Cheremsha-${tag}-windows-x64-portable.zip"
+          appimage="dist/release/Cheremsha-${tag}-linux-x86_64.AppImage"
+          for artifact in "$installer" "$portable_zip" "$appimage"; do
+            if [ ! -f "$artifact" ]; then
+              echo "Missing artifact: $artifact"
+              exit 1
+            fi
+          done
+          uv run --frozen python scripts/ci/virustotal_scan.py \
+            --tag "$tag" \
+            --out-dir dist/release \
+            "$installer" \
+            "$portable_zip" \
+            "$appimage"
+
+      - name: Upload VirusTotal report
+        uses: actions/upload-artifact@v4
+        with:
+          name: virustotal-report
+          path: |
+            dist/release/virustotal-report.json
+            dist/release/virustotal-report.md
+
   release:
     name: Publish GitHub Release
-    needs: [windows, linux]
+    needs: [windows, linux, virustotal]
     runs-on: ubuntu-latest
 
     steps:
@@ -220,6 +282,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: linux-release
+          path: dist/release
+
+      - name: Download VirusTotal report
+        uses: actions/download-artifact@v4
+        with:
+          name: virustotal-report
           path: dist/release
 
       - name: Generate latest.json manifest
@@ -246,3 +314,5 @@ jobs:
             dist/release/*.exe
             dist/release/*.AppImage
             dist/release/latest.json
+            dist/release/virustotal-report.json
+            dist/release/virustotal-report.md
