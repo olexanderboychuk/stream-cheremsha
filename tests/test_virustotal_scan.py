@@ -128,6 +128,7 @@ def test_upload_file_large_uses_upload_url(tmp_path: Path) -> None:
     client.get.assert_called_once()
     client.post.assert_called_once()
     assert client.post.call_args.args[0] == "https://upload.example/vt"
+    assert client.post.call_args.kwargs["headers"]["x-apikey"] == "key"
 
 
 def test_wait_for_analysis_polls_until_completed() -> None:

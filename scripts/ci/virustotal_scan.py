@@ -89,6 +89,7 @@ def _upload_file(client: httpx.Client, api_key: str, file_path: Path) -> str:
         with file_path.open("rb") as handle:
             response = client.post(
                 upload_url,
+                headers=headers,
                 files={"file": (file_path.name, handle)},
                 timeout=upload_timeout,
             )
