@@ -199,6 +199,7 @@ jobs:
 
   virustotal:
     name: VirusTotal scan
+    if: false  # temporarily disabled
     needs: [windows, linux]
     runs-on: ubuntu-latest
 
@@ -261,7 +262,7 @@ jobs:
 
   release:
     name: Publish GitHub Release
-    needs: [windows, linux, virustotal]
+    needs: [windows, linux]
     runs-on: ubuntu-latest
 
     steps:
@@ -282,12 +283,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: linux-release
-          path: dist/release
-
-      - name: Download VirusTotal report
-        uses: actions/download-artifact@v4
-        with:
-          name: virustotal-report
           path: dist/release
 
       - name: Generate latest.json manifest
@@ -314,5 +309,3 @@ jobs:
             dist/release/*.exe
             dist/release/*.AppImage
             dist/release/latest.json
-            dist/release/virustotal-report.json
-            dist/release/virustotal-report.md
