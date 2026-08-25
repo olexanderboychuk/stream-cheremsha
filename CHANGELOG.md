@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-08-25
+
 ### Added
 
 - **Community World** overlay (`/overlay/community_world`): a live Ukrainian-village that grows with chat — follows build houses, likes fill the well, shares build bridges, gifts unlock monuments and towers, and level-ups unlock the castle. Includes live quest board (4 quest slots), XP/levels, recognition feed, viewer passports with badges, all-time village elders (SQLite), and animated celebrations (confetti, new-building pop-ins). Configurable themes (pixel / fantasy / cyber / ukrainian), **compact vertical layout** for narrow widgets under the chat on vertical streams (the village stays as a live background scene), quiet mode, XP weights, quest targets, and display toggles in the Widgets editor.
@@ -225,6 +227,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Comment and formatting consistency in several modules after merging PR #5.
 
+[0.12.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.11.2...v0.12.0
 [0.11.2]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/olexanderboychuk/stream-cheremsha/compare/v0.10.0...v0.11.0
