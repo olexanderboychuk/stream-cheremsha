@@ -167,6 +167,47 @@ class YouTubeSuperStickerEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class KickFollowEvent:
+    platform: ChatPlatform
+    user: str
+    received_at: datetime
+    profile_picture_url: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class KickSubscriptionEvent:
+    """New or renewed Kick channel subscription."""
+
+    platform: ChatPlatform
+    user: str
+    months: int
+    received_at: datetime
+    profile_picture_url: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class KickGiftSubscriptionEvent:
+    """One or more Kick gift subscriptions sent by a user."""
+
+    platform: ChatPlatform
+    user: str
+    count: int
+    received_at: datetime
+    profile_picture_url: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class KickGiftEvent:
+    """A KICKs tip (Kick's currency). `amount` is the number of KICKs gifted."""
+
+    platform: ChatPlatform
+    user: str
+    amount: int
+    received_at: datetime
+    profile_picture_url: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class YouTubeMemberEvent:
     """YouTube membership (newSponsorEvent / memberMilestoneChatEvent).
 

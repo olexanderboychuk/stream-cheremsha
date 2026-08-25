@@ -15,4 +15,6 @@ QtObject {
     readonly property color ytHi: "#f87171"
     readonly property color tkBar: "#0ea5e9"
     readonly property color tkHi: "#7dd3fc"
+    readonly property color kkBar: "#22c55e"
+    readonly property color kkHi: "#4ade80"
 }

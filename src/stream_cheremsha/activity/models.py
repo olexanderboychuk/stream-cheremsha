@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 
-ActivityPlatform = Literal["twitch", "tiktok", "youtube"]
+ActivityPlatform = Literal["twitch", "tiktok", "youtube", "kick"]
 ActivityKind = Literal[
     "follow",
     "sub",
@@ -16,6 +16,8 @@ ActivityKind = Literal[
     "superchat",
     "supersticker",
     "member",
+    "kick_gift",
+    "subscription",
 ]
 
 

@@ -7,7 +7,9 @@ from typing import Any
 
 from stream_cheremsha.domain.models import ChatPlatform
 
-ALLOWED_TRIGGER_PLATFORMS: frozenset[str] = frozenset({"all", "tiktok", "twitch", "youtube"})
+ALLOWED_TRIGGER_PLATFORMS: frozenset[str] = frozenset(
+    {"all", "tiktok", "twitch", "youtube", "kick"}
+)
 
 
 def normalize_trigger_platform(raw: object) -> str | None:
@@ -25,6 +27,8 @@ def default_trigger_platform_for_event_type(event_type: str) -> str:
         return "twitch"
     if t.startswith("youtube_"):
         return "youtube"
+    if t.startswith("kick_"):
+        return "kick"
     return "tiktok"
 
 
@@ -66,6 +70,11 @@ def trigger_platform_applies_to_youtube_channel_events(ev_blob: Mapping[str, Any
     return tp in frozenset({"all", "youtube"})
 
 
+def trigger_platform_applies_to_kick_channel_events(ev_blob: Mapping[str, Any]) -> bool:
+    tp = trigger_platform_effective(ev_blob)
+    return tp in frozenset({"all", "kick"})
+
+
 def chat_platform_for_preview(trigger_platform: str, *, store_platform: str) -> ChatPlatform:
     """Pick a concrete ChatPlatform for previewing chat_keyword."""
     tp = (trigger_platform or "all").strip().lower()
@@ -75,9 +84,13 @@ def chat_platform_for_preview(trigger_platform: str, *, store_platform: str) -> 
         return ChatPlatform.YOUTUBE
     if tp == "tiktok":
         return ChatPlatform.TIKTOK
+    if tp == "kick":
+        return ChatPlatform.KICK
     sp = (store_platform or "tiktok").strip().lower()
     if sp == "twitch":
         return ChatPlatform.TWITCH
     if sp == "youtube":
         return ChatPlatform.YOUTUBE
+    if sp == "kick":
+        return ChatPlatform.KICK
     return ChatPlatform.TIKTOK

@@ -14,10 +14,12 @@ Item {
     readonly property bool _tkOn: { if (!api) return false; api.refreshCounter; return api.tiktokEnabled() }
     readonly property bool _twOn: { if (!api) return false; api.refreshCounter; return api.twitchRunning() }
     readonly property bool _ytOn: { if (!api) return false; api.refreshCounter; return api.youtubeRunning() }
+    readonly property bool _kkOn: { if (!api) return false; api.refreshCounter; return api.kickEnabled() }
     readonly property bool _tkShow: bigPictureMode || _tkOn
     readonly property bool _twShow: bigPictureMode || _twOn
     readonly property bool _ytShow: bigPictureMode || _ytOn
-    readonly property bool _anyPanelEnabled: bigPictureMode || _tkOn || _twOn || _ytOn
+    readonly property bool _kkShow: bigPictureMode || _kkOn
+    readonly property bool _anyPanelEnabled: bigPictureMode || _tkOn || _twOn || _ytOn || _kkOn
 
     visible: alwaysVisible || (_anyPanelEnabled && _visibilityWide)
     property bool _visibilityWide: true
@@ -48,11 +50,21 @@ Item {
         return api.loc("connections.youtube_analytics_chat")
     }
 
+    function _kkEvVerb(kind) {
+        if (!api) return ""
+        api.refreshCounter
+        if (kind === "follow") return api.loc("connections.kick_analytics_follow")
+        if (kind === "subscription") return api.loc("connections.kick_analytics_sub")
+        if (kind === "gift") return api.loc("connections.kick_analytics_gift_sub")
+        if (kind === "kick_gift") return api.loc("connections.kick_analytics_kick_gift")
+        return "·"
+    }
+
     readonly property int _minCardW: bigPictureMode ? 200 : (alwaysVisible ? 280 : 360)
     readonly property int _gap: 12
     readonly property int _panelCount: bigPictureMode
-        ? 3
-        : ((_tkOn ? 1 : 0) + (_ytOn ? 1 : 0) + (_twOn ? 1 : 0))
+        ? 4
+        : ((_tkOn ? 1 : 0) + (_ytOn ? 1 : 0) + (_twOn ? 1 : 0) + (_kkOn ? 1 : 0))
 
     readonly property int _gridCols: {
         if (bigPictureMode)
@@ -737,6 +749,169 @@ Item {
                                         if (kind === "cheer") return u + " · " + verb + " × " + String(c)
                                         if (kind === "raid") return u + " · " + verb + " · " + String(c)
                                         if (kind === "sub") return u + " · " + verb + (d.length ? (" · " + d) : "")
+                                        return u + " · " + verb
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                AnalyticsCard {
+                    id: kkCard
+                    visible: analyticsSlot._kkShow
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: analyticsSlot._minCardW
+                    readonly property int _contentH: kkCardBody.implicitHeight + 28
+                    implicitHeight: analyticsSlot.bigPictureMode ? _contentH : analyticsSlot._cellCardH
+                    Layout.preferredHeight: analyticsSlot.bigPictureMode ? _contentH : analyticsSlot._cellCardH
+                    Layout.maximumHeight: analyticsSlot.bigPictureMode ? _contentH : analyticsSlot._cellCardH
+                    topLine: "#166534"
+
+                    ColumnLayout {
+                        id: kkCardBody
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: 14
+                        height: analyticsSlot.bigPictureMode ? implicitHeight : (parent.height - 28)
+                        spacing: 10
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Rectangle { width: 3; height: 24; radius: 1; color: ConnTheme.kkBar; Layout.alignment: Qt.AlignVCenter }
+                            Image {
+                                source: Qt.resolvedUrl("../../assets/kick.svg")
+                                sourceSize: Qt.size(64, 64)
+                                width: 26
+                                height: 26
+                                fillMode: Image.PreserveAspectFit
+                                smooth: true
+                                asynchronous: true
+                                Layout.alignment: Qt.AlignVCenter
+                            }
+                            Text {
+                                text: { if (!api) return ""; api.refreshCounter; return api.loc("connections.kick_analytics_title") }
+                                color: ConnTheme.kkHi
+                                font.pixelSize: 17
+                                font.bold: true
+                                Layout.fillWidth: true
+                                elide: Text.ElideRight
+                            }
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            visible: { if (!api) return true; api.refreshCounter; return !api.kickEnabled() }
+                            text: { if (!api) return ""; api.refreshCounter; return api.loc("connections.kick_analytics_offline") }
+                            color: ConnTheme.muted
+                            font.pixelSize: 12
+                            wrapMode: Text.Wrap
+                        }
+
+                        GridLayout {
+                            Layout.fillWidth: true
+                            columns: analyticsSlot._compact ? 2 : 4
+                            columnSpacing: 8
+                            rowSpacing: 8
+                            visible: { if (!api) return false; api.refreshCounter; return api.kickEnabled() }
+
+                            StatMini {
+                                Layout.fillWidth: true
+                                capPx: analyticsSlot._compact ? 10 : 11
+                                valPx: analyticsSlot._compact ? 16 : 18
+                                cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.kick_analytics_viewers") }
+                                val: kickAnalytics ? kickAnalytics.viewersCurrent : 0
+                            }
+                            StatMini {
+                                Layout.fillWidth: true
+                                capPx: analyticsSlot._compact ? 10 : 11
+                                valPx: analyticsSlot._compact ? 16 : 18
+                                cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.kick_analytics_peak") }
+                                val: kickAnalytics ? kickAnalytics.viewersPeak : 0
+                            }
+                            StatMini {
+                                Layout.fillWidth: true
+                                capPx: analyticsSlot._compact ? 10 : 11
+                                valPx: analyticsSlot._compact ? 16 : 18
+                                cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.kick_analytics_messages") }
+                                val: kickAnalytics ? kickAnalytics.messagesSession : 0
+                            }
+                            StatMini {
+                                Layout.fillWidth: true
+                                capPx: analyticsSlot._compact ? 10 : 11
+                                valPx: analyticsSlot._compact ? 16 : 18
+                                cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.kick_analytics_follows") }
+                                val: kickAnalytics ? kickAnalytics.followsSession : 0
+                            }
+                            StatMini {
+                                Layout.fillWidth: true
+                                capPx: analyticsSlot._compact ? 10 : 11
+                                valPx: analyticsSlot._compact ? 16 : 18
+                                cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.kick_analytics_subs") }
+                                val: kickAnalytics ? kickAnalytics.subscriptionsSession : 0
+                            }
+                            StatMini {
+                                Layout.fillWidth: true
+                                capPx: analyticsSlot._compact ? 10 : 11
+                                valPx: analyticsSlot._compact ? 16 : 18
+                                cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.kick_analytics_gift_subs") }
+                                val: kickAnalytics ? kickAnalytics.giftSubsSession : 0
+                            }
+                            StatMini {
+                                Layout.fillWidth: true
+                                capPx: analyticsSlot._compact ? 10 : 11
+                                valPx: analyticsSlot._compact ? 16 : 18
+                                cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.kick_analytics_kicks") }
+                                val: kickAnalytics ? kickAnalytics.kicksSession : 0
+                            }
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            visible: { if (!api) return false; api.refreshCounter; return api.kickEnabled() }
+                            text: { if (!api) return ""; api.refreshCounter; return api.loc("connections.kick_analytics_activity") }
+                            color: ConnTheme.muted
+                            font.pixelSize: 12
+                            font.weight: Font.DemiBold
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            visible: { if (!api) return false; api.refreshCounter; return api.kickEnabled() }
+                            Layout.fillHeight: !analyticsSlot.bigPictureMode
+                            Layout.preferredHeight: analyticsSlot.bigPictureMode ? analyticsSlot._bpEventsH : 0
+                            Layout.minimumHeight: analyticsSlot.bigPictureMode ? analyticsSlot._bpEventsH : 120
+                            radius: 10
+                            color: ConnTheme.fieldBg
+                            border.width: 1
+                            border.color: ConnTheme.cardEdge
+                            clip: true
+
+                            ListView {
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                spacing: 4
+                                clip: true
+                                boundsBehavior: Flickable.StopAtBounds
+                                visible: { if (!api) return false; api.refreshCounter; return api.kickEnabled() }
+                                model: kickAnalytics ? kickAnalytics.feedModel : null
+
+                                delegate: EventFeedRow {
+                                    width: ListView.view ? ListView.view.width : implicitWidth
+                                    timeText: model.timeText || ""
+                                    iconGlyph: (model.eventKind === "subscription") ? "⭐" : ((model.eventKind === "kick_gift") ? "💰" : ((model.eventKind === "gift") ? "🎁" : "＋"))
+                                    iconColor: ConnTheme.kkHi
+                                    bodyText: {
+                                        var u = model.userName || ""
+                                        var kind = model.eventKind || ""
+                                        var verb = analyticsSlot._kkEvVerb(kind)
+                                        var c = model.countValue || 0
+                                        var d = model.detailText || ""
+                                        if (kind === "kick_gift") return u + " · " + verb + " × " + String(c)
+                                        if (kind === "gift") return u + " · " + verb + (d.length ? (" · " + d) : "")
+                                        if (kind === "subscription") return u + " · " + verb + (d.length ? (" · " + d) : "")
                                         return u + " · " + verb
                                     }
                                 }

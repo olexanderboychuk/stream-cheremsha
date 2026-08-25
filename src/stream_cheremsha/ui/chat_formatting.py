@@ -61,11 +61,14 @@ def svg_file_to_png_data_uri(svg_path: Path, out_px: int = CHAT_ICON_PX) -> str 
     return f"data:image/png;base64,{b64}"
 
 
-def load_platform_icon_data_uris(assets_dir: Path) -> tuple[str | None, str | None, str | None]:
+def load_platform_icon_data_uris(
+    assets_dir: Path,
+) -> tuple[str | None, str | None, str | None, str | None]:
     return (
         svg_file_to_png_data_uri(assets_dir / "twitch.svg"),
         svg_file_to_png_data_uri(assets_dir / "youtube.svg"),
         svg_file_to_png_data_uri(assets_dir / "tiktok.svg"),
+        svg_file_to_png_data_uri(assets_dir / "kick.svg"),
     )
 
 
@@ -77,11 +80,16 @@ def format_chat_message_html(
     twitch_icon_uri: str | None,
     youtube_icon_uri: str | None,
     tiktok_icon_uri: str | None = None,
+    kick_icon_uri: str | None = None,
 ) -> str:
     if message.platform is ChatPlatform.TWITCH:
         uri = twitch_icon_uri
     elif message.platform is ChatPlatform.YOUTUBE:
         uri = youtube_icon_uri
+    elif message.platform is ChatPlatform.TIKTOK:
+        uri = tiktok_icon_uri
+    elif message.platform is ChatPlatform.KICK:
+        uri = kick_icon_uri
     else:
         uri = tiktok_icon_uri
     if uri:

@@ -508,6 +508,123 @@ class StreamCheremshaQmlApi(QObject):
         if w is not None:
             w.open_actions()  # noqa: SLF001
 
+    # -------- Kick --------
+    @Slot()
+    def kickBrowserLogin(self) -> None:
+        w = self._win()
+        if w is not None:
+            w._schedule_kick_browser_login()  # noqa: SLF001
+
+    @Slot()
+    def kickLogout(self) -> None:
+        w = self._win()
+        if w is not None:
+            w._logout_kick()  # noqa: SLF001
+
+    @Slot()
+    def kickTransport(self) -> None:
+        w = self._win()
+        if w is not None:
+            w._on_kick_transport_clicked()  # noqa: SLF001
+
+    @Slot(bool)
+    def kickSetEnabled(self, enabled: bool) -> None:
+        w = self._win()
+        if w is not None:
+            w._request_kick_enabled(bool(enabled))  # noqa: SLF001
+
+    @Slot(result=bool)
+    def kickKeyringSession(self) -> bool:
+        from stream_cheremsha.chat import kick_credentials
+
+        return bool(kick_credentials.has_session())
+
+    @Slot(result=bool)
+    def kickClientConfigured(self) -> bool:
+        from stream_cheremsha.chat.kick_api import KickOAuthConfig
+
+        return KickOAuthConfig.from_env() is not None
+
+    @Slot(result=str)
+    def kickClientIdEnvName(self) -> str:
+        from stream_cheremsha.chat.kick_api import ENV_KICK_CLIENT_ID
+
+        return ENV_KICK_CLIENT_ID
+
+    @Slot(result=str)
+    def kickRedirectUri(self) -> str:
+        from stream_cheremsha.chat.kick_api import KickOAuthConfig
+
+        cfg = KickOAuthConfig.from_env()
+        return cfg.redirect_uri if cfg is not None else ""
+
+    @Slot(result=bool)
+    def kickRunning(self) -> bool:
+        w = self._win()
+        return w._kick.running if w is not None else False  # noqa: SLF001
+
+    @Slot(result=bool)
+    def kickEnabled(self) -> bool:
+        w = self._win()
+        return bool(getattr(w, "_kick_enabled", False)) if w is not None else False  # noqa: SLF001
+
+    @Slot(result=bool)
+    def kickChatTtsEnabled(self) -> bool:
+        w = self._win()
+        return bool(w._chat_tts_enabled(ChatPlatform.KICK)) if w is not None else True  # noqa: SLF001
+
+    @Slot(bool)
+    def kickSetChatTtsEnabled(self, enabled: bool) -> None:
+        w = self._win()
+        if w is not None:
+            w._set_chat_tts_enabled(ChatPlatform.KICK, bool(enabled))  # noqa: SLF001
+        self.refresh()
+
+    @Slot(result=str)
+    def kickChannelGet(self) -> str:
+        w = self._win()
+        if w is None:
+            return ""
+        return w._kick_channel.text()  # noqa: SLF001
+
+    @Slot(str)
+    def setKickChannelText(self, v: str) -> None:
+        w = self._win()
+        if w is not None:
+            w._kick_channel.setText(v)  # noqa: SLF001
+
+    @Slot(str)
+    def kickChannelCommit(self, v: str) -> None:
+        w = self._win()
+        if w is None:
+            return
+        from stream_cheremsha.chat import kick_credentials
+
+        vv = (v or "").strip().lstrip("@").strip()
+        w._kick_channel.setText(vv)  # noqa: SLF001
+        kick_credentials.set_authorized_channel(vv)
+
+    @Slot(result=str)
+    def kickConnectedTextGet(self) -> str:
+        w = self._win()
+        if w is None:
+            return ""
+        return w._status_kick  # noqa: SLF001
+
+    @Slot(result=str)
+    def kickTransportLabelGet(self) -> str:
+        w = self._win()
+        if w is None:
+            return ""
+        btn = "kick.transport_stop" if w._kick.running else "kick.transport_start"  # noqa: SLF001
+        return w._tr(btn)  # noqa: SLF001
+
+    @Slot()
+    def openKickActions(self) -> None:
+        w = self._win()
+        if w is not None:
+            w.open_actions()  # noqa: SLF001
+
     @Slot()
     def openWidgets(self) -> None:
         w = self._win()

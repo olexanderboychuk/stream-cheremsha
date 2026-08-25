@@ -10,6 +10,7 @@ ColumnLayout {
     property bool twCollapsed: compact
     property bool ytCollapsed: compact
     property bool tkCollapsed: compact
+    property bool kkCollapsed: compact
 
     spacing: compact ? 8 : 12
 
@@ -18,6 +19,7 @@ ColumnLayout {
             twCollapsed = true
             ytCollapsed = true
             tkCollapsed = true
+            kkCollapsed = true
         }
     }
 
@@ -576,6 +578,225 @@ ColumnLayout {
                         Layout.rightMargin: 6
                         checked: { if (!api) return false; api.refreshCounter; return api.tiktokEnabled() }
                         onClicked: { if (api) api.tiktokSetEnabled(!api.tiktokEnabled()) }
+                    }
+                }
+            }
+        }
+    }
+
+    // -------- Kick card --------
+    Item {
+        id: kkCard
+        Layout.fillWidth: true
+        implicitHeight: kkCol.implicitHeight + 28
+        Layout.preferredHeight: root.kkCollapsed && !root.compact
+            ? (kkHeader.implicitHeight + 28)
+            : (kkCol.implicitHeight + 28)
+        Behavior on Layout.preferredHeight { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+        clip: true
+
+        CollapseHandle {
+            anchors { top: parent.top; right: parent.right; topMargin: 10; rightMargin: 10 }
+            z: 5
+            collapsed: root.kkCollapsed
+            accent: ConnTheme.kkBar
+            onToggled: root.kkCollapsed = !root.kkCollapsed
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            z: 0
+            color: ConnTheme.cardBase
+            radius: 16
+            border.width: 1
+            border.color: ConnTheme.cardEdge
+            Rectangle { anchors { left: parent.left; right: parent.right; top: parent.top; margins: 1 } height: 1; color: "#1c3a20"; opacity: 0.4 }
+        }
+
+        ColumnLayout {
+            id: kkCol
+            x: 14
+            y: 14
+            width: parent.width - 28
+            spacing: 10
+
+            RowLayout {
+                id: kkHeader
+                Layout.fillWidth: true
+                spacing: 10
+                Rectangle { width: 3; height: 26; radius: 1; color: ConnTheme.kkBar; Layout.alignment: Qt.AlignVCenter }
+                Image {
+                    source: Qt.resolvedUrl("../../assets/kick.svg")
+                    sourceSize: Qt.size(64, 64)
+                    width: root.compact ? 22 : 28
+                    height: root.compact ? 22 : 28
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                    asynchronous: true
+                    Layout.alignment: Qt.AlignVCenter
+                }
+                Text {
+                    text: { if (!api) return ""; api.refreshCounter; return api.loc("ui.kick_head") }
+                    color: ConnTheme.kkHi
+                    font.pixelSize: root.compact ? 15 : 18
+                    font.bold: true
+                    Layout.alignment: Qt.AlignVCenter
+                    Layout.fillWidth: true
+                }
+            }
+
+            RowLayout {
+                visible: root.compact && root.kkCollapsed
+                Layout.fillWidth: true
+                spacing: 8
+                Text {
+                    text: { if (!api) return ""; api.refreshCounter; return api.kickConnectedTextGet() }
+                    color: ConnTheme.ink
+                    font.pixelSize: 12
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
+                ConnPrefSwitch {
+                    checked: { if (!api) return true; api.refreshCounter; return api.kickChatTtsEnabled() }
+                    onClicked: { if (api) api.kickSetChatTtsEnabled(!api.kickChatTtsEnabled()) }
+                }
+                ConnMainSwitch {
+                    checked: { if (!api) return false; api.refreshCounter; return api.kickEnabled() }
+                    onClicked: { if (api) api.kickSetEnabled(!api.kickEnabled()) }
+                }
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                visible: !root.kkCollapsed || !root.compact
+                opacity: root.kkCollapsed ? 0.0 : 1.0
+                Behavior on opacity { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+
+                RowLayout {
+                    visible: { if (!api) return false; api.refreshCounter; return !api.kickKeyringSession() }
+                    Layout.fillWidth: true
+                    spacing: 8
+                    Text { text: { if (!api) return ""; api.refreshCounter; return api.loc("kick.account") } color: ConnTheme.muted; width: 96 }
+                    ConnPillButton {
+                        text: { if (!api) return ""; api.refreshCounter; return api.loc("kick.btn_browser") }
+                        onClicked: api.kickBrowserLogin()
+                    }
+                    Item { Layout.fillWidth: true }
+                }
+                Text {
+                    visible: {
+                        if (!api) return false
+                        api.refreshCounter
+                        return !api.kickKeyringSession() && !api.kickClientConfigured()
+                    }
+                    text: {
+                        if (!api) return ""
+                        api.refreshCounter
+                        return api.loc("kick.client_id_env_required")
+                            .replace("{env}", api.kickClientIdEnvName())
+                            .replace("{secret_env}", "STREAM_CHEREMSHA_KICK_CLIENT_SECRET")
+                    }
+                    textFormat: Text.RichText
+                    color: ConnTheme.muted
+                    font.pixelSize: 11
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+                Text {
+                    visible: { if (!api) return false; api.refreshCounter; return api.kickKeyringSession() || api.kickClientConfigured() }
+                    text: {
+                        if (!api) return ""
+                        api.refreshCounter
+                        return api.loc("kick.oauth_redirect").replace("{uri}", api.kickRedirectUri())
+                    }
+                    textFormat: Text.RichText
+                    color: ConnTheme.muted
+                    font.pixelSize: 11
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+
+                RowLayout {
+                    visible: { if (!api) return false; api.refreshCounter; return api.kickKeyringSession() }
+                    Layout.fillWidth: true
+                    spacing: 10
+                    Text {
+                        text: { if (!api) return ""; api.refreshCounter; return api.kickConnectedTextGet() }
+                        color: ConnTheme.ink
+                        font.pixelSize: 14
+                        font.weight: Font.DemiBold
+                        wrapMode: Text.Wrap
+                        Layout.fillWidth: true
+                        Layout.maximumWidth: kkCol.width - 120
+                    }
+                    ConnLinkButton {
+                        text: { if (!api) return ""; api.refreshCounter; return api.loc("kick.logout") }
+                        onClicked: api.kickLogout()
+                        Layout.alignment: Qt.AlignTop
+                    }
+                }
+
+                Column {
+                    Layout.fillWidth: true
+                    spacing: 4
+                    Text { text: { if (!api) return ""; api.refreshCounter; return api.loc("kick.channel") } color: ConnTheme.muted; font.pixelSize: 12; font.weight: Font.Medium; font.letterSpacing: 0.2 }
+                    TextField {
+                        id: kkCh
+                        width: parent.width
+                        color: ConnTheme.ink
+                        leftPadding: 10
+                        rightPadding: 10
+                        topPadding: 8
+                        bottomPadding: 8
+                        font.pixelSize: 13
+                        placeholderTextColor: ConnTheme.muted
+                        placeholderText: { if (!api) return ""; api.refreshCounter; return api.loc("kick.channel_ph") }
+                        onTextChanged: if (activeFocus) api.setKickChannelText(text)
+                        onEditingFinished: if (api) api.kickChannelCommit(text)
+                        background: Rectangle { radius: 8; color: ConnTheme.fieldBg; border.width: 1; border.color: ConnTheme.cardEdge }
+                        Component.onCompleted: { if (api) kkCh.text = api.kickChannelGet() }
+                        Connections { target: api; function onRefreshCounterChanged() { if (!kkCh.activeFocus) kkCh.text = api.kickChannelGet() } }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.topMargin: 4
+                    spacing: 12
+                    Text {
+                        text: { if (!api) return ""; api.refreshCounter; return api.loc("connections.tts_chat") }
+                        color: ConnTheme.muted
+                        font.pixelSize: 12
+                        Layout.alignment: Qt.AlignVCenter
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                    }
+                    ConnPrefSwitch {
+                        Layout.alignment: Qt.AlignVCenter
+                        Layout.rightMargin: 6
+                        checked: { if (!api) return true; api.refreshCounter; return api.kickChatTtsEnabled() }
+                        onClicked: { if (api) api.kickSetChatTtsEnabled(!api.kickChatTtsEnabled()) }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.topMargin: 4
+                    spacing: 12
+                    Text {
+                        text: { if (!api) return ""; api.refreshCounter; return api.loc("connections.platform_enabled") }
+                        color: ConnTheme.muted
+                        font.pixelSize: 12
+                        Layout.alignment: Qt.AlignVCenter
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                    }
+                    ConnMainSwitch {
+                        Layout.alignment: Qt.AlignVCenter
+                        Layout.rightMargin: 6
+                        checked: { if (!api) return false; api.refreshCounter; return api.kickEnabled() }
+                        onClicked: { if (api) api.kickSetEnabled(!api.kickEnabled()) }
                     }
                 }
             }

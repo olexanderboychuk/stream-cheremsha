@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Kick platform** support:
+  - Realtime chat via Kick's Pusher WebSocket (outbound — no public URL or tunnel required)
+  - Official REST + OAuth 2.1 (PKCE) sign-in with a local callback server; tokens stored in the OS keyring
+  - Kick Connections card, analytics panel, footer/status routing, per-platform TTS, and auto-start
+  - Viewer counts and message sending via the official Kick API
+  - Action triggers for Kick chat, follows, subscriptions, gift subscriptions, and KICKS gifts
+  - Kick presence in chat/activity/online docks and the Online overlay
+
 ## [0.12.0] — 2026-08-25
 
 ### Added

@@ -118,6 +118,7 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "ui.twitch_head": {"uk": "Twitch", "en": "Twitch"},
     "ui.youtube_head": {"uk": "YouTube", "en": "YouTube"},
     "ui.tiktok_head": {"uk": "TikTok", "en": "TikTok"},
+    "ui.kick_head": {"uk": "Kick", "en": "Kick"},
     "connections.tts_chat": {"uk": "Озвучувати чат (TTS)", "en": "Speak chat (TTS)"},
     "connections.platform_enabled": {"uk": "Платформа увімкнена", "en": "Platform enabled"},
     "connections.analytics_soon_title": {
@@ -175,6 +176,23 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "connections.youtube_analytics_superchat": {"uk": "суперчат", "en": "super chat"},
     "connections.youtube_analytics_supersticker": {"uk": "стікер", "en": "sticker"},
     "connections.youtube_analytics_member": {"uk": "учасник", "en": "member"},
+    "connections.kick_analytics_title": {"uk": "Kick — аналітика", "en": "Kick analytics"},
+    "connections.kick_analytics_offline": {
+        "uk": "Підключіть Kick на вкладці «Зв'язки», щоб бачити статистику.",
+        "en": "Connect Kick on the Connections tab to see stats.",
+    },
+    "connections.kick_analytics_viewers": {"uk": "Онлайн", "en": "Live viewers"},
+    "connections.kick_analytics_peak": {"uk": "Пік", "en": "Peak"},
+    "connections.kick_analytics_messages": {"uk": "Повідомлення", "en": "Messages"},
+    "connections.kick_analytics_follows": {"uk": "Фолови", "en": "Follows"},
+    "connections.kick_analytics_subs": {"uk": "Саби", "en": "Subscriptions"},
+    "connections.kick_analytics_gift_subs": {"uk": "Подарункові саби", "en": "Gift subs"},
+    "connections.kick_analytics_kicks": {"uk": "KICKS", "en": "KICKS"},
+    "connections.kick_analytics_activity": {"uk": "Події", "en": "Events"},
+    "connections.kick_analytics_follow": {"uk": "зафоловив", "en": "followed"},
+    "connections.kick_analytics_sub": {"uk": "саб", "en": "sub"},
+    "connections.kick_analytics_gift_sub": {"uk": "подарунковий саб", "en": "gift sub"},
+    "connections.kick_analytics_kick_gift": {"uk": "KICKS", "en": "KICKS"},
     "obs.test_ok": {
         "uk": "OBS: з’єднано, версія {version}",
         "en": "OBS: connected, version {version}",
@@ -469,6 +487,7 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "actions.trigger_platform_tiktok": {"uk": "TikTok", "en": "TikTok"},
     "actions.trigger_platform_twitch": {"uk": "Twitch", "en": "Twitch"},
     "actions.trigger_platform_youtube": {"uk": "YouTube", "en": "YouTube"},
+    "actions.trigger_platform_kick": {"uk": "Kick", "en": "Kick"},
     "actions.event.chat_keyword": {"uk": "Певне слово в чаті", "en": "Chat keyword"},
     "actions.event.gift_received": {"uk": "Певний подарунок", "en": "Gift received"},
     "actions.event.tiktok_any_gift_received": {
@@ -511,6 +530,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Новий учасник (YouTube)",
         "en": "New member (YouTube)",
     },
+    "actions.event.kick_follow": {"uk": "Фоллов (Kick)", "en": "Follow (Kick)"},
+    "actions.event.kick_subscription": {"uk": "Підписка (Kick)", "en": "Subscription (Kick)"},
+    "actions.event.kick_gift_sub": {"uk": "Подарунковий саб (Kick)", "en": "Gift sub (Kick)"},
+    "actions.event.kick_gift": {"uk": "KICKS (Kick)", "en": "KICKS gifted (Kick)"},
     "actions.twitch_min_bits": {"uk": "Мін. бітів", "en": "Min bits"},
     "actions.twitch_min_viewers": {"uk": "Мін. глядачів у рейді", "en": "Min raid viewers"},
     "actions.twitch_raider_filter": {
@@ -908,6 +931,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Автозапуск TikTok при старті додатку (потрібен юзернейм на вкладці «Зв'язки»)",
         "en": "Auto-start TikTok on launch (requires username on Connections)",
     },
+    "settings.autostart_kick": {
+        "uk": "Автозапуск Kick при старті додатку (потрібен канал на вкладці «Зв'язки»)",
+        "en": "Auto-start Kick on launch (requires channel on Connections)",
+    },
     "settings.obs_group": {"uk": "OBS WebSocket", "en": "OBS WebSocket"},
     "settings.obs_enabled": {
         "uk": "Увімкнути з’єднання з OBS (WebSocket)",
@@ -1020,6 +1047,24 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "tw.logout": {"uk": "Вийти з Twitch", "en": "Sign out of Twitch"},
     "tw.channel": {"uk": "Канал чату", "en": "Chat channel"},
     "tw.channel_ph": {"uk": "логін каналу без #", "en": "channel login without #"},
+    # Kick Connections card
+    "kick.btn_browser": {"uk": "Увійти через браузер", "en": "Sign in with browser"},
+    "kick.account": {"uk": "Обліковий запис", "en": "Account"},
+    "kick.logout": {"uk": "Вийти з Kick", "en": "Sign out of Kick"},
+    "kick.channel": {"uk": "Канал (слаг)", "en": "Channel (slug)"},
+    "kick.channel_ph": {"uk": "слаг каналу, напр. xqc", "en": "channel slug, e.g. xqc"},
+    "kick.client_id_env_required": {
+        "uk": "Ця збірка очікує дані Kick через змінні середовища: <code>{env}</code> та <code>{secret_env}</code>",
+        "en": "This build expects Kick credentials via env vars: <code>{env}</code> and <code>{secret_env}</code>",
+    },
+    "kick.oauth_redirect": {
+        "uk": "Redirect URI: <code>{uri}</code> — вкажіть його в застосунку Kick.",
+        "en": "Redirect URI: <code>{uri}</code> — register it in your Kick app.",
+    },
+    "kick.connected_as": {
+        "uk": "Підключено до Kick як @{login}",
+        "en": "Connected to Kick as @{login}",
+    },
     "tw.connected_as": {
         "uk": "Підключено до Twitch як @{login}",
         "en": "Connected to Twitch as @{login}",
@@ -1185,6 +1230,7 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "footer.twitch": {"uk": "Twitch", "en": "Twitch"},
     "footer.youtube": {"uk": "YouTube", "en": "YouTube"},
     "footer.tiktok": {"uk": "TikTok", "en": "TikTok"},
+    "footer.kick": {"uk": "Kick", "en": "Kick"},
     "footer.queues": {"uk": "Черги", "en": "Queues"},
     "footer.on": {"uk": "увімк", "en": "on"},
     "footer.off": {"uk": "вимк", "en": "off"},
@@ -1208,6 +1254,19 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "status.youtube_signed_in": {
         "uk": "YouTube: увійшли через Google.",
         "en": "YouTube: signed in with Google.",
+    },
+    "status.logout_kick": {"uk": "Вийшли з Kick.", "en": "Signed out of Kick."},
+    "status.kick_browser_ok": {
+        "uk": "Kick: увійшли через браузер.",
+        "en": "Kick: signed in via browser.",
+    },
+    "status.kick_oauth_prompt": {
+        "uk": "Kick: авторизація відкрита у браузері…",
+        "en": "Kick: authorization opened in your browser…",
+    },
+    "status.kick_oauth_denied": {
+        "uk": "Kick: авторизацію скасовано.",
+        "en": "Kick: authorization denied.",
     },
     "startup.workers": {"uk": "Запуск обробників пайплайну…", "en": "Starting pipeline workers…"},
     "startup.ready": {
@@ -1247,6 +1306,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "Twitch: connection closed — reconnecting in {sec:.0f}s…",
     },
     "twitch.stopped": {"uk": "Twitch: зупинено", "en": "Twitch: stopped"},
+    # Kick (Pusher compatibility transport + OAuth)
+    "kick.stopped": {"uk": "Kick: зупинено", "en": "Kick: stopped"},
+    "kick.transport_start": {"uk": "Підключити", "en": "Connect"},
+    "kick.transport_stop": {"uk": "Відключити", "en": "Disconnect"},
     # Twitch device OAuth (twitch_oauth_device)
     "twitch.oauth_prompt": {
         "uk": "Twitch: підтвердіть доступ у браузері — за потреби код: {code} (закінчується за {sec}s)",
@@ -1344,6 +1407,16 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "yt.error": {"uk": "YouTube error: {err}", "en": "YouTube error: {err}"},
     # Dialogs — titles and text
     "dlg.keyring": {"uk": "Сховище паролів", "en": "Keyring"},
+    "dlg.kick": {"uk": "Kick", "en": "Kick"},
+    "dlg.kick_oauth": {"uk": "Kick OAuth", "en": "Kick OAuth"},
+    "dlg.kick_need_client_config": {
+        "uk": "Встановіть змінні оточення STREAM_CHEREMSHA_KICK_CLIENT_ID і STREAM_CHEREMSHA_KICK_CLIENT_SECRET, або налаштуйте їх у середовищі перед запуском.",
+        "en": "Set STREAM_CHEREMSHA_KICK_CLIENT_ID and STREAM_CHEREMSHA_KICK_CLIENT_SECRET env vars (or configure them) before signing in.",
+    },
+    "dlg.kick_need_channel": {
+        "uk": "Введіть канал Kick (слаг) або спочатку увійдіть.",
+        "en": "Enter a Kick channel (slug) or sign in first.",
+    },
     "dlg.twitch": {"uk": "Twitch", "en": "Twitch"},
     "dlg.twitch_oauth": {"uk": "Twitch OAuth", "en": "Twitch OAuth"},
     "dlg.twitch_need_client_id": {

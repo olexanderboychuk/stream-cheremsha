@@ -20,6 +20,10 @@ from stream_cheremsha.actions.actions_write_file import write_text_to_file
 from stream_cheremsha.actions.events import (
     ChatMessageEvent,
     GiftReceivedEvent,
+    KickFollowEvent,
+    KickGiftEvent,
+    KickGiftSubscriptionEvent,
+    KickSubscriptionEvent,
     TikTokFirstActivityEvent,
     TikTokFollowedEvent,
     TikTokJoinedEvent,
@@ -42,6 +46,7 @@ from stream_cheremsha.actions.tiktok_gifts import TIKTOK_GIFTS, tiktok_catalog_g
 from stream_cheremsha.actions.trigger_meta import (
     trigger_platform_applies_to_chat,
     trigger_platform_applies_to_gift,
+    trigger_platform_applies_to_kick_channel_events,
     trigger_platform_applies_to_tiktok_likes,
     trigger_platform_applies_to_twitch_channel_events,
     trigger_platform_applies_to_youtube_channel_events,
@@ -1108,6 +1113,164 @@ class PlatformActionsEngine:
                 user=u,
                 months=mo,
                 level=(level or "").strip(),
+                received_at=received_at,
+                profile_picture_url=(profile_picture_url or "").strip(),
+            )
+            await self._dispatch_actions(rule, ev)
+
+    async def on_kick_follow(
+        self,
+        user: str,
+        received_at: datetime,
+        *,
+        profile_picture_url: str = "",
+    ) -> None:
+        u = (user or "").strip()
+        plat = ChatPlatform.KICK
+        for rule in self._rules:
+            if not rule.enabled:
+                continue
+            matched = False
+            for ev_blob in rule.events:
+                if not trigger_platform_applies_to_kick_channel_events(ev_blob):
+                    continue
+                if _tiktok_simple_user_trigger_matches(
+                    ev_blob,
+                    expected_type="kick_follow",
+                    rule_id=rule.id,
+                    status=self._status_callback,
+                    actual_user=u,
+                ):
+                    matched = True
+                    break
+            if not matched:
+                continue
+            ev = KickFollowEvent(
+                platform=plat,
+                user=u,
+                received_at=received_at,
+                profile_picture_url=(profile_picture_url or "").strip(),
+            )
+            await self._dispatch_actions(rule, ev)
+
+    async def on_kick_subscription(
+        self,
+        user: str,
+        months: int,
+        received_at: datetime,
+        *,
+        profile_picture_url: str = "",
+    ) -> None:
+        u = (user or "").strip()
+        try:
+            m = max(0, int(months))
+        except (TypeError, ValueError):
+            m = 0
+        plat = ChatPlatform.KICK
+        for rule in self._rules:
+            if not rule.enabled:
+                continue
+            matched = False
+            for ev_blob in rule.events:
+                if not trigger_platform_applies_to_kick_channel_events(ev_blob):
+                    continue
+                if _tiktok_simple_user_trigger_matches(
+                    ev_blob,
+                    expected_type="kick_subscription",
+                    rule_id=rule.id,
+                    status=self._status_callback,
+                    actual_user=u,
+                ):
+                    matched = True
+                    break
+            if not matched:
+                continue
+            ev = KickSubscriptionEvent(
+                platform=plat,
+                user=u,
+                months=m,
+                received_at=received_at,
+                profile_picture_url=(profile_picture_url or "").strip(),
+            )
+            await self._dispatch_actions(rule, ev)
+
+    async def on_kick_gift_subscription(
+        self,
+        user: str,
+        count: int,
+        received_at: datetime,
+        *,
+        profile_picture_url: str = "",
+    ) -> None:
+        u = (user or "").strip()
+        try:
+            c = max(1, int(count))
+        except (TypeError, ValueError):
+            c = 1
+        plat = ChatPlatform.KICK
+        for rule in self._rules:
+            if not rule.enabled:
+                continue
+            matched = False
+            for ev_blob in rule.events:
+                if not trigger_platform_applies_to_kick_channel_events(ev_blob):
+                    continue
+                if _tiktok_simple_user_trigger_matches(
+                    ev_blob,
+                    expected_type="kick_gift_sub",
+                    rule_id=rule.id,
+                    status=self._status_callback,
+                    actual_user=u,
+                ):
+                    matched = True
+                    break
+            if not matched:
+                continue
+            ev = KickGiftSubscriptionEvent(
+                platform=plat,
+                user=u,
+                count=c,
+                received_at=received_at,
+                profile_picture_url=(profile_picture_url or "").strip(),
+            )
+            await self._dispatch_actions(rule, ev)
+
+    async def on_kick_gift(
+        self,
+        user: str,
+        amount: int,
+        received_at: datetime,
+        *,
+        profile_picture_url: str = "",
+    ) -> None:
+        u = (user or "").strip()
+        try:
+            amt = max(1, int(amount))
+        except (TypeError, ValueError):
+            amt = 1
+        plat = ChatPlatform.KICK
+        for rule in self._rules:
+            if not rule.enabled:
+                continue
+            matched = False
+            for ev_blob in rule.events:
+                if not trigger_platform_applies_to_kick_channel_events(ev_blob):
+                    continue
+                if _tiktok_simple_user_trigger_matches(
+                    ev_blob,
+                    expected_type="kick_gift",
+                    rule_id=rule.id,
+                    status=self._status_callback,
+                    actual_user=u,
+                ):
+                    matched = True
+                    break
+            if not matched:
+                continue
+            ev = KickGiftEvent(
+                platform=plat,
+                user=u,
+                amount=amt,
                 received_at=received_at,
                 profile_picture_url=(profile_picture_url or "").strip(),
             )

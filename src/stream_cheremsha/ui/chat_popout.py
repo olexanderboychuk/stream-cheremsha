@@ -522,6 +522,7 @@ class ChatPopoutWindow(QDialog):
             twitch_icon_uri=m._chat_ic_tw,  # noqa: SLF001
             youtube_icon_uri=m._chat_ic_yt,  # noqa: SLF001
             tiktok_icon_uri=m._chat_ic_tk,  # noqa: SLF001
+            kick_icon_uri=m._chat_ic_kk,  # noqa: SLF001
         )
 
     def _rebuild_from_history(self) -> None:

@@ -9,6 +9,7 @@ class ChatPlatform(StrEnum):
     TWITCH = "twitch"
     YOUTUBE = "youtube"
     TIKTOK = "tiktok"
+    KICK = "kick"
 
 
 @dataclass(slots=True)

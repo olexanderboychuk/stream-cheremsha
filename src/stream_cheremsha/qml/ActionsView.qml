@@ -2056,7 +2056,8 @@ Item {
             { text: api ? api.loc("actions.trigger_platform_all") : "All platforms", value: "all" },
             { text: api ? api.loc("actions.trigger_platform_tiktok") : "TikTok", value: "tiktok" },
             { text: api ? api.loc("actions.trigger_platform_twitch") : "Twitch", value: "twitch" },
-            { text: api ? api.loc("actions.trigger_platform_youtube") : "YouTube", value: "youtube" }
+            { text: api ? api.loc("actions.trigger_platform_youtube") : "YouTube", value: "youtube" },
+            { text: api ? api.loc("actions.trigger_platform_kick") : "Kick", value: "kick" }
         ];
     }
 
@@ -2148,6 +2149,27 @@ Item {
                 {
                     text: api ? api.loc("actions.event.youtube_member") : "New member (YouTube)",
                     value: "youtube_member"
+                }
+            ];
+        }
+        if (p === "kick") {
+            return [
+                chat,
+                {
+                    text: api ? api.loc("actions.event.kick_follow") : "Follow (Kick)",
+                    value: "kick_follow"
+                },
+                {
+                    text: api ? api.loc("actions.event.kick_subscription") : "Subscription (Kick)",
+                    value: "kick_subscription"
+                },
+                {
+                    text: api ? api.loc("actions.event.kick_gift_sub") : "Gift sub (Kick)",
+                    value: "kick_gift_sub"
+                },
+                {
+                    text: api ? api.loc("actions.event.kick_gift") : "KICKS gifted (Kick)",
+                    value: "kick_gift"
                 }
             ];
         }

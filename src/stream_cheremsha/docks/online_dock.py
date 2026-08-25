@@ -236,6 +236,43 @@ def render_online_dock_html() -> str:
               </div>
             </div>
           </div>
+          <div class="card" id="kickCard">
+            <div class="cardTop">
+              <img class="picon" src="/assets/kick.svg" alt="Kick" />
+              <div class="pname" id="kickTitle">Kick</div>
+              <div class="spacer"></div>
+            </div>
+            <div class="rows">
+              <div class="row">
+                <div class="k" id="kkCurrentK">Current</div>
+                <div class="v" id="kkCurrentV">0</div>
+              </div>
+              <div class="row">
+                <div class="k" id="kkPeakK">Peak</div>
+                <div class="v" id="kkPeakV">0</div>
+              </div>
+              <div class="row">
+                <div class="k" id="kkMsgK">Messages</div>
+                <div class="v" id="kkMsgV">0</div>
+              </div>
+              <div class="row">
+                <div class="k" id="kkFollowsK">Follows</div>
+                <div class="v" id="kkFollowsV">0</div>
+              </div>
+              <div class="row">
+                <div class="k" id="kkSubsK">Subs</div>
+                <div class="v" id="kkSubsV">0</div>
+              </div>
+              <div class="row">
+                <div class="k" id="kkGiftSubsK">Gift subs</div>
+                <div class="v" id="kkGiftSubsV">0</div>
+              </div>
+              <div class="row">
+                <div class="k" id="kkKicksK">Kicks</div>
+                <div class="v" id="kkKicksV">0</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -253,6 +290,7 @@ def render_online_dock_html() -> str:
           twitch: 'Twitch',
           youtube: 'YouTube',
           tiktok: 'TikTok',
+          kick: 'Kick',
           current: 'Зараз',
           peak: 'Пік',
           total: 'Всього',
@@ -262,6 +300,10 @@ def render_online_dock_html() -> str:
           unique: 'Унікальні',
           super: 'Суперчати',
           members: 'Підписки',
+          follows: 'Фолови',
+          subs: 'Саби',
+          giftSubs: 'Подарункові саби',
+          kicks: 'KICKS',
           updatedAt: (s) => 'оновлено: ' + s,
         }} : {{
           title: 'Online',
@@ -273,6 +315,7 @@ def render_online_dock_html() -> str:
           twitch: 'Twitch',
           youtube: 'YouTube',
           tiktok: 'TikTok',
+          kick: 'Kick',
           current: 'Current',
           peak: 'Peak',
           total: 'Total',
@@ -282,6 +325,10 @@ def render_online_dock_html() -> str:
           unique: 'Unique',
           super: 'Super Chats',
           members: 'Memberships',
+          follows: 'Follows',
+          subs: 'Subs',
+          giftSubs: 'Gift subs',
+          kicks: 'KICKS',
           updatedAt: (s) => 'updated: ' + s,
         }};
 
@@ -302,14 +349,23 @@ def render_online_dock_html() -> str:
         const ttTotalV = document.getElementById('ttTotalV');
         const ttGiftsV = document.getElementById('ttGiftsV');
         const ttDiamondsV = document.getElementById('ttDiamondsV');
+        const kkCurrentV = document.getElementById('kkCurrentV');
+        const kkPeakV = document.getElementById('kkPeakV');
+        const kkMsgV = document.getElementById('kkMsgV');
+        const kkFollowsV = document.getElementById('kkFollowsV');
+        const kkSubsV = document.getElementById('kkSubsV');
+        const kkGiftSubsV = document.getElementById('kkGiftSubsV');
+        const kkKicksV = document.getElementById('kkKicksV');
 
         if (titleEl) titleEl.textContent = T.title;
         const twitchTitle = document.getElementById('twitchTitle');
         const youtubeTitle = document.getElementById('youtubeTitle');
         const tiktokTitle = document.getElementById('tiktokTitle');
+        const kickTitle = document.getElementById('kickTitle');
         if (twitchTitle) twitchTitle.textContent = T.twitch;
         if (youtubeTitle) youtubeTitle.textContent = T.youtube;
         if (tiktokTitle) tiktokTitle.textContent = T.tiktok;
+        if (kickTitle) kickTitle.textContent = T.kick;
         const twCurrentK = document.getElementById('twCurrentK');
         const twPeakK = document.getElementById('twPeakK');
         const ytCurrentK = document.getElementById('ytCurrentK');
@@ -322,6 +378,13 @@ def render_online_dock_html() -> str:
         const ttTotalK = document.getElementById('ttTotalK');
         const ttGiftsK = document.getElementById('ttGiftsK');
         const ttDiamondsK = document.getElementById('ttDiamondsK');
+        const kkCurrentK = document.getElementById('kkCurrentK');
+        const kkPeakK = document.getElementById('kkPeakK');
+        const kkMsgK = document.getElementById('kkMsgK');
+        const kkFollowsK = document.getElementById('kkFollowsK');
+        const kkSubsK = document.getElementById('kkSubsK');
+        const kkGiftSubsK = document.getElementById('kkGiftSubsK');
+        const kkKicksK = document.getElementById('kkKicksK');
         if (twCurrentK) twCurrentK.textContent = T.current;
         if (twPeakK) twPeakK.textContent = T.peak;
         if (ytCurrentK) ytCurrentK.textContent = T.current;
@@ -334,6 +397,13 @@ def render_online_dock_html() -> str:
         if (ttTotalK) ttTotalK.textContent = T.total;
         if (ttGiftsK) ttGiftsK.textContent = T.gifts;
         if (ttDiamondsK) ttDiamondsK.textContent = T.diamonds;
+        if (kkCurrentK) kkCurrentK.textContent = T.current;
+        if (kkPeakK) kkPeakK.textContent = T.peak;
+        if (kkMsgK) kkMsgK.textContent = T.messages;
+        if (kkFollowsK) kkFollowsK.textContent = T.follows;
+        if (kkSubsK) kkSubsK.textContent = T.subs;
+        if (kkGiftSubsK) kkGiftSubsK.textContent = T.giftSubs;
+        if (kkKicksK) kkKicksK.textContent = T.kicks;
 
         function setStatus(text) {{
           if (statusEl) statusEl.textContent = text;
@@ -360,6 +430,7 @@ def render_online_dock_html() -> str:
           const twitch = o.twitch || {{}};
           const youtube = o.youtube || {{}};
           const tiktok = o.tiktok || {{}};
+          const kick = o.kick || {{}};
 
           if (twCurrentV) twCurrentV.textContent = String(toInt(twitch.current));
           if (twPeakV) twPeakV.textContent = String(toInt(twitch.peak));
@@ -373,6 +444,13 @@ def render_online_dock_html() -> str:
           if (ttTotalV) ttTotalV.textContent = String(toInt(tiktok.total));
           if (ttGiftsV) ttGiftsV.textContent = String(toInt(tiktok.gifts));
           if (ttDiamondsV) ttDiamondsV.textContent = String(toInt(tiktok.diamonds));
+          if (kkCurrentV) kkCurrentV.textContent = String(toInt(kick.current));
+          if (kkPeakV) kkPeakV.textContent = String(toInt(kick.peak));
+          if (kkMsgV) kkMsgV.textContent = String(toInt(kick.messages));
+          if (kkFollowsV) kkFollowsV.textContent = String(toInt(kick.follows));
+          if (kkSubsV) kkSubsV.textContent = String(toInt(kick.subscriptions));
+          if (kkGiftSubsV) kkGiftSubsV.textContent = String(toInt(kick.gift_subs));
+          if (kkKicksV) kkKicksV.textContent = String(toInt(kick.kicks));
 
           const updatedAt = String(o.updated_at || '').trim();
           if (updatedAtEl) updatedAtEl.textContent = updatedAt ? T.updatedAt(updatedAt) : '—';

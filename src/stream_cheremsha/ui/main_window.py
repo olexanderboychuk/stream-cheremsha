@@ -103,7 +103,13 @@ from stream_cheremsha.activity.models import (
 from stream_cheremsha.audio.qt_sink import QtAudioSink
 from stream_cheremsha.battle_royale.controller import BattleRoyaleController
 from stream_cheremsha.battle_royale.models import BattleFighter, BattlePhase
-from stream_cheremsha.chat import twitch_credentials, twitch_oauth_device
+from stream_cheremsha.chat import kick_credentials, twitch_credentials, twitch_oauth_device
+from stream_cheremsha.chat.kick_api import (
+    KickApiClient,
+    KickOAuthConfig,
+    exchange_code,
+)
+from stream_cheremsha.chat.kick_source import KickSource
 from stream_cheremsha.chat.tiktok_source import TikTokChatSource
 from stream_cheremsha.chat.twitch_eventsub import (
     TwitchEventSubCallbacks,
@@ -219,6 +225,7 @@ from stream_cheremsha.ui.chat_formatting import (
 from stream_cheremsha.ui.chat_popout import ChatPopoutWindow
 from stream_cheremsha.ui.docks_qml_api import DocksQmlApi
 from stream_cheremsha.ui.donations_qml_api import DonationsQmlApi
+from stream_cheremsha.ui.kick_analytics_api import KickAnalyticsApi
 from stream_cheremsha.ui.overlay_tunnel_qml_api import OverlayTunnelQmlApi
 from stream_cheremsha.ui.points_settings_dialog import (
     SETTINGS_POINTS_ENABLED,
@@ -284,6 +291,7 @@ _FORM_LABEL_MIN_WIDTH = 260
 _SETTINGS_AUTOSTART_TWITCH = "startup/auto_start_twitch"
 _SETTINGS_AUTOSTART_YOUTUBE = "startup/auto_start_youtube"
 _SETTINGS_AUTOSTART_TIKTOK = "startup/auto_start_tiktok"
+_SETTINGS_AUTOSTART_KICK = "startup/auto_start_kick"
 _SETTINGS_TTS_GAIN_DB = "audio/tts_gain_db"
 _TTS_ENGINE_GOOGLE = "google"
 _TTS_ENGINE_EDGE = "edge"
@@ -296,6 +304,7 @@ TTS_LANG_OPTIONS: tuple[str, ...] = ("uk-UA", "en-US", "en-GB", "de-DE", "pl-PL"
 _SETTINGS_TTS_CHAT_TWITCH = "tts_chat/twitch_enabled"
 _SETTINGS_TTS_CHAT_YOUTUBE = "tts_chat/youtube_enabled"
 _SETTINGS_TTS_CHAT_TIKTOK = "tts_chat/tiktok_enabled"
+_SETTINGS_TTS_CHAT_KICK = "tts_chat/kick_enabled"
 _SETTINGS_TTS_OPENAI_MODERATE = "tts/openai_moderate_enabled"
 _SETTINGS_TTS_SPEAK_AUTHOR = "tts/speak_chat_author_name"
 _SETTINGS_TTS_STRIP_NON_ALPHA = "tts/strip_non_alphabetic"
@@ -702,6 +711,8 @@ class MainWindow(FramelessWindow):
         self._closing = False
         self._tiktok_toggle_busy = False
         self._tiktok_enabled = False
+        self._kick_enabled = False
+        self._kick_toggle_busy = False
         self._overlay_registry = OverlayRegistry()
         self._overlay_server = OverlayServer(
             registry=self._overlay_registry,
@@ -720,12 +731,14 @@ class MainWindow(FramelessWindow):
         self._status_twitch = "—"
         self._status_youtube = "—"
         self._status_tiktok = "—"
+        self._status_kick = "—"
         self._tts_chat_platform_enabled: dict[ChatPlatform, bool] = {
             ChatPlatform.TWITCH: bool(self._settings.value(_SETTINGS_TTS_CHAT_TWITCH, True, bool)),
             ChatPlatform.YOUTUBE: bool(
                 self._settings.value(_SETTINGS_TTS_CHAT_YOUTUBE, True, bool),
             ),
             ChatPlatform.TIKTOK: bool(self._settings.value(_SETTINGS_TTS_CHAT_TIKTOK, True, bool)),
+            ChatPlatform.KICK: bool(self._settings.value(_SETTINGS_TTS_CHAT_KICK, True, bool)),
         }
 
         self._bridge = UiBridge(self)
@@ -778,6 +791,16 @@ class MainWindow(FramelessWindow):
             on_share=self._on_tiktok_share_any,
             on_stream_start=self._on_tiktok_stream_start,
         )
+        self._kick_analytics = KickAnalyticsApi(self)
+        self._kick = KickSource(
+            self._coordinator,
+            on_status=self._on_user_status,
+            get_locale=self._get_locale,
+            on_follow=self._on_kick_follow_any,
+            on_sub=self._on_kick_sub_any,
+            on_gift_sub=self._on_kick_gift_sub_any,
+            on_kick_gift=self._on_kick_gift_any,
+        )
         self._like_share_agg = LikeShareAggregator(window_sec=7.0)
         self._tiktok_top_likers = TikTokSessionTopLikers()
         self._top_likers_publish_handle: asyncio.TimerHandle | None = None
@@ -821,6 +844,7 @@ class MainWindow(FramelessWindow):
         self._qml_pages_loaded: set[int] = set()
         self._active_qml_stack_index: int | None = None
         self._tiktok_username = QLineEdit()
+        self._kick_channel = QLineEdit()
         self._obs_ws_host = QLineEdit()
         self._obs_ws_port = QLineEdit()
         self._obs_ws_password = QLineEdit()
@@ -862,6 +886,7 @@ class MainWindow(FramelessWindow):
         self._chat_ic_tw: str | None = None
         self._chat_ic_yt: str | None = None
         self._chat_ic_tk: str | None = None
+        self._chat_ic_kk: str | None = None
         # Hard cap: no unbounded growth; eviction matches QTextDocument line trim below.
         self._chat_message_history: deque[ChatMessage] = deque(
             maxlen=_MAX_CHAT_DOCUMENT_BLOCKS,
@@ -942,6 +967,7 @@ class MainWindow(FramelessWindow):
             ChatPlatform.TWITCH: _SETTINGS_TTS_CHAT_TWITCH,
             ChatPlatform.YOUTUBE: _SETTINGS_TTS_CHAT_YOUTUBE,
             ChatPlatform.TIKTOK: _SETTINGS_TTS_CHAT_TIKTOK,
+            ChatPlatform.KICK: _SETTINGS_TTS_CHAT_KICK,
         }.get(platform)
         if key is not None:
             self._settings.setValue(key, bool(enabled))
@@ -1294,6 +1320,7 @@ class MainWindow(FramelessWindow):
         ctx.setContextProperty("tiktokAnalytics", self._tiktok_analytics)
         ctx.setContextProperty("twitchAnalytics", self._twitch_analytics)
         ctx.setContextProperty("youtubeAnalytics", self._youtube_analytics)
+        ctx.setContextProperty("kickAnalytics", self._kick_analytics)
 
     def _create_bp_qml_widget(self, qml_name: str) -> QQuickWidget:
         widget = QQuickWidget(self)
@@ -1505,6 +1532,7 @@ class MainWindow(FramelessWindow):
             ctx.setContextProperty("tiktokAnalytics", self._tiktok_analytics)
             ctx.setContextProperty("twitchAnalytics", self._twitch_analytics)
             ctx.setContextProperty("youtubeAnalytics", self._youtube_analytics)
+            ctx.setContextProperty("kickAnalytics", self._kick_analytics)
         elif index == self._IX_DONATIONS:
             ctx.setContextProperty("donApi", self._donations_qml_api)
         elif index == self._IX_WIDGETS:
@@ -1850,6 +1878,10 @@ class MainWindow(FramelessWindow):
         self._cb_autostart_tiktok = QCheckBox()
         self._cb_autostart_tiktok.stateChanged.connect(self._persist_autostart_tiktok)
         gen_outer.addWidget(self._cb_autostart_tiktok)
+
+        self._cb_autostart_kick = QCheckBox()
+        self._cb_autostart_kick.stateChanged.connect(self._persist_autostart_kick)
+        gen_outer.addWidget(self._cb_autostart_kick)
 
         lay.addWidget(self._gb_settings_general)
 
@@ -2742,6 +2774,7 @@ class MainWindow(FramelessWindow):
         self._cb_autostart_twitch.setText(self._tr("settings.autostart_twitch"))
         self._cb_autostart_youtube.setText(self._tr("settings.autostart_youtube"))
         self._cb_autostart_tiktok.setText(self._tr("settings.autostart_tiktok"))
+        self._cb_autostart_kick.setText(self._tr("settings.autostart_kick"))
         self._gb_obs.setTitle(self._tr("settings.obs_group"))
         self._lbl_obs_help.setText(self._tr("settings.obs_help_html"))
         self._obs_ws_enabled.setText(self._tr("settings.obs_enabled"))
@@ -3069,10 +3102,11 @@ class MainWindow(FramelessWindow):
         self._btn_chat_test.setToolTip(self._tr("chat.test_hint"))
 
     def _warm_chat_icons(self) -> None:
-        tw, yt, tk = load_platform_icon_data_uris(_STREAM_ROOT / "assets")
+        tw, yt, tk, kk = load_platform_icon_data_uris(_STREAM_ROOT / "assets")
         self._chat_ic_tw = tw
         self._chat_ic_yt = yt
         self._chat_ic_tk = tk
+        self._chat_ic_kk = kk
 
     def _load_chat_font_from_settings(self) -> None:
         if not hasattr(self, "_spin_chat_font_pt"):
@@ -3133,6 +3167,7 @@ class MainWindow(FramelessWindow):
             twitch_icon_uri=self._chat_ic_tw,
             youtube_icon_uri=self._chat_ic_yt,
             tiktok_icon_uri=self._chat_ic_tk,
+            kick_icon_uri=self._chat_ic_kk,
         )
 
     def _rebuild_chat_from_history(self) -> None:
@@ -3663,6 +3698,12 @@ class MainWindow(FramelessWindow):
         )
         self._cb_autostart_tiktok.blockSignals(False)
 
+        self._cb_autostart_kick.blockSignals(True)
+        self._cb_autostart_kick.setChecked(
+            bool(self._settings.value(_SETTINGS_AUTOSTART_KICK, False, bool)),
+        )
+        self._cb_autostart_kick.blockSignals(False)
+
         self._combo_locale.blockSignals(True)
         idx = 0 if self._locale == "uk" else 1
         self._combo_locale.setCurrentIndex(idx)
@@ -3849,6 +3890,13 @@ class MainWindow(FramelessWindow):
             self._cb_autostart_tiktok.isChecked(),
         )
 
+    @Slot(int)
+    def _persist_autostart_kick(self, _state: int) -> None:
+        self._settings.setValue(
+            _SETTINGS_AUTOSTART_KICK,
+            self._cb_autostart_kick.isChecked(),
+        )
+
     @Slot()
     def _schedule_twitch_browser_login(self) -> None:
         asyncio.ensure_future(self._twitch_browser_login())
@@ -3903,11 +3951,21 @@ class MainWindow(FramelessWindow):
             )
             self._status_tiktok = rest if rest else msg
             return
+        if msg.startswith(("Kick:", "Kick error", "Kick HTTP", "Kick API")):
+            for prefix in ("Kick API", "Kick HTTP", "Kick error", "Kick:"):
+                if msg.startswith(prefix):
+                    self._status_kick = msg[len(prefix) :].strip(" :") or msg
+                    return
+            self._status_kick = msg.removeprefix("Kick:").strip() or msg
+            return
         if msg in l10n.all_locale_strings_many("status.logout_twitch", "status.twitch_keys_saved"):
             self._status_twitch = msg
             return
         if msg in l10n.all_locale_strings_many("status.logout_youtube"):
             self._status_youtube = msg
+            return
+        if msg in l10n.all_locale_strings_many("status.logout_kick"):
+            self._status_kick = msg
             return
         self._status_app = msg
 
@@ -3930,13 +3988,16 @@ class MainWindow(FramelessWindow):
         tw_on = self._tr("footer.on") if self._twitch.running else self._tr("footer.off")
         yt_on = self._tr("footer.on") if self._youtube.running else self._tr("footer.off")
         tk_on = self._tr("footer.on") if self._tiktok.running else self._tr("footer.off")
+        kk_on = self._tr("footer.on") if self._kick.running else self._tr("footer.off")
         tw_c = "#34d399" if self._twitch.running else "#fb923c"
         yt_c = "#34d399" if self._youtube.running else "#fb923c"
         tk_c = "#34d399" if self._tiktok.running else "#fb923c"
+        kk_c = "#34d399" if self._kick.running else "#fb923c"
         pl = e(self._tr("footer.pipeline"))
         ftw = e(self._tr("footer.twitch"))
         fyt = e(self._tr("footer.youtube"))
         ftk = e(self._tr("footer.tiktok"))
+        fkk = e(self._tr("footer.kick"))
         fq = e(self._tr("footer.queues"))
         fchat = e(self._tr("footer.chat"))
         ftts = e(self._tr("footer.tts"))
@@ -3947,6 +4008,7 @@ class MainWindow(FramelessWindow):
         tw_ico = _footer_richtext_img("twitch.svg", 15)
         yt_ico = _footer_richtext_img("youtube.svg", 15)
         tk_ico = _footer_richtext_img("tiktok.svg", 15)
+        kk_ico = _footer_richtext_img("kick.svg", 15)
         h2 = (
             f'{tw_ico}<span style="color:{tw_c}">●</span> <span style="color:#cbd5e1;">{ftw}'
             f'</span> <span style="color:#94a3b8;">({e(tw_on)}):</span> '
@@ -3962,8 +4024,13 @@ class MainWindow(FramelessWindow):
             f'</span> <span style="color:#94a3b8;">({e(tk_on)}):</span> '
             f'<span style="color:#e2e8f0;">{e(self._status_tiktok)}</span>'
         )
-        h5 = f'<span style="color:#94a3b8;">{fq}: {fchat}={cq} &nbsp; {ftts}={tq}</span>'
-        self._status_label.setText(f"{h1}<br/>{h2}<br/>{h3}<br/>{h4}<br/>{h5}")
+        h5 = (
+            f'{kk_ico}<span style="color:{kk_c}">●</span> <span style="color:#cbd5e1;">{fkk}'
+            f'</span> <span style="color:#94a3b8;">({e(kk_on)}):</span> '
+            f'<span style="color:#e2e8f0;">{e(self._status_kick)}</span>'
+        )
+        h6 = f'<span style="color:#94a3b8;">{fq}: {fchat}={cq} &nbsp; {ftts}={tq}</span>'
+        self._status_label.setText(f"{h1}<br/>{h2}<br/>{h3}<br/>{h4}<br/>{h5}<br/>{h6}")
         tw_btn = "tw.transport_stop" if self._twitch.running else "tw.transport_start"
         yt_btn = "yt.transport_stop" if self._youtube.running else "yt.transport_start"
         self._btn_twitch_transport.setText(self._tr(tw_btn))
@@ -3973,6 +4040,33 @@ class MainWindow(FramelessWindow):
     def _on_tiktok_transport_clicked(self) -> None:
         self._qml_refresh_if_visible()
         asyncio.ensure_future(self._async_set_tiktok_enabled(not self._tiktok_enabled))
+
+    @Slot()
+    def _on_kick_transport_clicked(self) -> None:
+        self._qml_refresh_if_visible()
+        asyncio.ensure_future(self._async_set_kick_enabled(not self._kick_enabled))
+
+    def _request_kick_enabled(self, enabled: bool) -> None:
+        self._qml_refresh_if_visible()
+        asyncio.ensure_future(self._async_set_kick_enabled(bool(enabled)))
+
+    async def _async_set_kick_enabled(self, enabled: bool) -> None:
+        if self._kick_toggle_busy:
+            return
+        if bool(enabled) == bool(self._kick_enabled):
+            return
+        self._kick_toggle_busy = True
+        try:
+            self._kick_enabled = bool(enabled)
+            if self._kick_enabled:
+                await self._start_kick()
+            else:
+                await self._kick.stop()
+                self._kick_analytics.resetSession()
+        finally:
+            self._kick_toggle_busy = False
+            self._refresh_footer()
+            self._qml_refresh_if_visible()
 
     def _request_tiktok_enabled(self, enabled: bool) -> None:
         self._qml_refresh_if_visible()
@@ -4049,6 +4143,8 @@ class MainWindow(FramelessWindow):
             # Deque popleft happens in _on_chat_message on append; matches this doc trim.
 
     def _on_chat_message(self, message: ChatMessage) -> None:
+        if message.platform == ChatPlatform.KICK:
+            self._kick_analytics.enqueue_messages(1)
         self._chat_message_history.append(message)
         fragment = self._format_chat_message_fragment(message)
         self._bridge.append_chat.emit(fragment)
@@ -5755,6 +5851,183 @@ class MainWindow(FramelessWindow):
             return
         await self._tiktok.start(user)
 
+    # -------- Kick --------
+    def _schedule_kick_browser_login(self) -> None:
+        asyncio.ensure_future(self._kick_browser_login())
+
+    async def _kick_browser_login(self) -> None:
+        cfg = KickOAuthConfig.from_env()
+        if cfg is None:
+            QMessageBox.warning(
+                self,
+                self._tr("dlg.kick"),
+                self._tr("dlg.kick_need_client_config"),
+            )
+            return
+        try:
+            from PySide6.QtCore import QUrl
+            from PySide6.QtGui import QDesktopServices
+
+            def _open(url: str) -> None:
+                QDesktopServices.openUrl(QUrl(url))
+
+            from stream_cheremsha.chat.kick_oauth import run_kick_oauth
+
+            self._on_user_status(self._tr("status.kick_oauth_prompt"))
+            code, _state, pkce = await run_kick_oauth(cfg, _open)
+        except (OSError, RuntimeError, TimeoutError, ValueError) as e:
+            QMessageBox.warning(self, self._tr("dlg.kick_oauth"), str(e))
+            return
+        try:
+            payload = await exchange_code(cfg, pkce, code)
+        except (ValueError, httpx.HTTPError, OSError, RuntimeError) as e:
+            QMessageBox.warning(self, self._tr("dlg.kick_oauth"), str(e))
+            return
+        kick_credentials.save_oauth_bundle(payload)
+        token = str(payload.get("access_token") or "")
+        api = None
+        if token:
+            try:
+                api = KickApiClient(token)
+                me = await api.get_me()
+                name = str(me.get("name") or "").strip()
+                if name:
+                    kick_credentials.set_authorized_channel(name)
+                    self._kick_channel.setText(name)
+            except (ValueError, httpx.HTTPError, OSError, RuntimeError) as e:
+                logger.debug("Kick channel resolve failed: %s", e)
+            finally:
+                if api is not None:
+                    await api.aclose()
+        self._on_user_status(self._tr("status.kick_browser_ok"))
+        self._refresh_connection_panels()
+
+    async def _start_kick(self) -> None:
+        channel = (self._kick_channel.text() or "").strip().lstrip("@").strip()
+        if not channel:
+            channel = kick_credentials.authorized_channel()
+        if not channel:
+            QMessageBox.warning(self, self._tr("dlg.kick"), self._tr("dlg.kick_need_channel"))
+            self._kick_enabled = False
+            return
+        self._kick_analytics.resetSession()
+        cid = kick_credentials.chatroom_id()
+        await self._kick.start(channel, chatroom_id=cid or None)
+        self._schedule_kick_viewer_poll(channel)
+        self._refresh_footer()
+        self._qml_refresh_if_visible()
+
+    def _schedule_kick_viewer_poll(self, channel: str) -> None:
+        asyncio.ensure_future(self._kick_poll_viewers(channel))
+
+    async def _kick_poll_viewers(self, channel: str) -> None:
+        backoff = 5.0
+        while self._kick_enabled and not self._closing:
+            try:
+                cfg = KickOAuthConfig.from_env()
+                token = kick_credentials.access_token()
+                if cfg is not None and token:
+                    api = KickApiClient(token)
+                    try:
+                        info = await api.fetch_live_channel(channel)
+                        self._kick_analytics.enqueue_viewers(info.viewer_count)
+                    finally:
+                        await api.aclose()
+                backoff = 30.0
+            except (ValueError, httpx.HTTPError, OSError, RuntimeError) as exc:
+                logger.debug("Kick viewers poll error: %s", exc)
+                backoff = min(backoff * 1.5, 60.0)
+            try:
+                await asyncio.sleep(backoff)
+            except asyncio.CancelledError:
+                raise
+
+    def _logout_kick(self) -> None:
+        asyncio.ensure_future(self._kick_logout())
+
+    async def _kick_logout(self) -> None:
+        await self._kick.stop()
+        kick_credentials.clear_oauth_bundle()
+        kick_credentials.clear_channel()
+        kick_credentials.set_chatroom_id(0)
+        self._kick_analytics.resetSession()
+        self._on_user_status(self._tr("status.logout_kick"))
+        self._refresh_connection_panels()
+
+    def _on_kick_follow_any(self, user: str, _stable_key: str = "") -> None:
+        if self._closing:
+            return
+        eng = self._get_app_actions_engine()
+        asyncio.ensure_future(eng.on_kick_follow((user or "").strip(), datetime.now(UTC)))
+        self._kick_analytics.enqueue_follow(user)
+        it = ActivityItem(
+            platform="kick",
+            kind="follow",
+            user=(user or "").strip() or "?",
+            detail="",
+            count=1,
+            icon_url="",
+            time_hms=now_hms(),
+        )
+        self._publish_activity_item(it)
+
+    def _on_kick_sub_any(self, user: str, months: int) -> None:
+        if self._closing:
+            return
+        eng = self._get_app_actions_engine()
+        asyncio.ensure_future(
+            eng.on_kick_subscription((user or "").strip(), int(months), datetime.now(UTC))
+        )
+        self._kick_analytics.enqueue_sub(user, months)
+        it = ActivityItem(
+            platform="kick",
+            kind="subscription",
+            user=(user or "").strip() or "?",
+            detail=f"{int(months)}m" if months else "",
+            count=1,
+            icon_url="",
+            time_hms=now_hms(),
+        )
+        self._publish_activity_item(it)
+
+    def _on_kick_gift_sub_any(self, user: str, count: int) -> None:
+        if self._closing:
+            return
+        eng = self._get_app_actions_engine()
+        asyncio.ensure_future(
+            eng.on_kick_gift_subscription((user or "").strip(), int(count), datetime.now(UTC))
+        )
+        self._kick_analytics.enqueue_gift_sub(user, count)
+        it = ActivityItem(
+            platform="kick",
+            kind="gift",
+            user=(user or "").strip() or "?",
+            detail="gift sub",
+            count=max(1, int(count)),
+            icon_url="",
+            time_hms=now_hms(),
+        )
+        self._publish_activity_item(it)
+
+    def _on_kick_gift_any(self, user: str, amount: int) -> None:
+        if self._closing:
+            return
+        eng = self._get_app_actions_engine()
+        asyncio.ensure_future(
+            eng.on_kick_gift((user or "").strip(), int(amount), datetime.now(UTC))
+        )
+        self._kick_analytics.enqueue_kick_gift(user, amount)
+        it = ActivityItem(
+            platform="kick",
+            kind="kick_gift",
+            user=(user or "").strip() or "?",
+            detail="",
+            count=max(1, int(amount)),
+            icon_url="",
+            time_hms=now_hms(),
+        )
+        self._publish_activity_item(it)
+
     @Slot()
     def _refresh_audio_devices(self) -> None:
         from PySide6.QtMultimedia import QMediaDevices
@@ -6421,6 +6694,15 @@ class MainWindow(FramelessWindow):
                             "superchats": int(self._youtube_analytics.superChatsSession),
                             "memberships": int(self._youtube_analytics.membershipsSession),
                         },
+                        "kick": {
+                            "current": int(self._kick_analytics.viewersCurrent),
+                            "peak": int(self._kick_analytics.viewersPeak),
+                            "messages": int(self._kick_analytics.messagesSession),
+                            "follows": int(self._kick_analytics.followsSession),
+                            "subscriptions": int(self._kick_analytics.subscriptionsSession),
+                            "gift_subs": int(self._kick_analytics.giftSubsSession),
+                            "kicks": int(self._kick_analytics.kicksSession),
+                        },
                         "updated_at": online_now_hms(),
                     }
                     await ps.publish("overlay:online:main", online_state_patch(state))  # type: ignore[arg-type]
@@ -6452,6 +6734,14 @@ class MainWindow(FramelessWindow):
             if user:
                 self._tiktok_enabled = True
                 await self._start_tiktok()
+        if (
+            bool(self._settings.value(_SETTINGS_AUTOSTART_KICK, False, bool))
+            and not self._kick.running
+        ):
+            channel = (self._kick_channel.text() or "").strip().lstrip("@").strip()
+            if channel:
+                self._kick_enabled = True
+                await self._start_kick()
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if self._closing:

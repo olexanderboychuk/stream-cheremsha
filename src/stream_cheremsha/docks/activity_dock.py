@@ -286,6 +286,7 @@ def render_activity_dock_html() -> str:
           if (p === 'twitch') return '/assets/twitch.svg';
           if (p === 'youtube') return '/assets/youtube.svg';
           if (p === 'tiktok') return '/assets/tiktok.svg';
+          if (p === 'kick') return '/assets/kick.svg';
           return '';
         }}
 

@@ -25,10 +25,21 @@ class YouTubeOnline(TypedDict):
     memberships: int
 
 
+class KickOnline(TypedDict):
+    current: int
+    peak: int
+    messages: int
+    follows: int
+    subscriptions: int
+    gift_subs: int
+    kicks: int
+
+
 class OnlineState(TypedDict):
     twitch: TwitchOnline
     tiktok: TikTokOnline
     youtube: YouTubeOnline
+    kick: KickOnline
     updated_at: str
 
 

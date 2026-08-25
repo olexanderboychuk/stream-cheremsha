@@ -1,8 +1,8 @@
-# Cheremsha — Ukrainian Streamer Assistant for Twitch, YouTube & TikTok
+# Cheremsha — Ukrainian Streamer Assistant for Twitch, YouTube, TikTok & Kick
 
-**Cheremsha** is a free, open-source desktop application for Ukrainian-speaking streamers. It aggregates live chat from **Twitch**, **YouTube**, and **TikTok** in real time, reads messages aloud using **Ukrainian Text-to-Speech (TTS)**, manages a music queue via a **Telegram bot**, displays beautiful **OBS browser source overlays**, integrates with **OBS WebSocket**, and handles **donations** from Donatik and Donatello — all in one app.
+**Cheremsha** is a free, open-source desktop application for Ukrainian-speaking streamers. It aggregates live chat from **Twitch**, **YouTube**, **TikTok**, and **Kick** in real time, reads messages aloud using **Ukrainian Text-to-Speech (TTS)**, manages a music queue via a **Telegram bot**, displays beautiful **OBS browser source overlays**, integrates with **OBS WebSocket**, and handles **donations** from Donatik and Donatello — all in one app.
 
-> **Keywords:** Ukrainian TTS streamer tool · Twitch Ukrainian TTS · YouTube chat reader · TikTok live chat · OBS overlay Ukrainian · donation alert Ukraine · music queue Telegram bot · multi-platform streamer assistant · stream helper Ukrainian · Черемша стрімер
+> **Keywords:** Ukrainian TTS streamer tool · Twitch Ukrainian TTS · YouTube chat reader · TikTok live chat · Kick chat · OBS overlay Ukrainian · donation alert Ukraine · music queue Telegram bot · multi-platform streamer assistant · stream helper Ukrainian · Черемша стрімер
 
 ---
 
@@ -10,7 +10,7 @@
 
 Most streamer tools are English-only and spread across many separate apps. Cheremsha solves that for **Ukrainian streamers** by combining everything in a single Qt-based desktop app:
 
-- Unified chat from Twitch + YouTube + TikTok
+- Unified chat from Twitch + YouTube + TikTok + Kick
 - High-quality **Ukrainian TTS** that reads chat messages and donation alerts aloud
 - Music request system via a **Telegram bot** with an audio queue
 - Live **OBS overlays** (Browser Source) for chat, music, activity, and viewer count
@@ -27,6 +27,7 @@ Most streamer tools are English-only and spread across many separate apps. Chere
 - **Twitch** — connects via twitchio IRC WebSocket with device-code OAuth; auto-reconnects on drops
 - **YouTube Live** — uses YouTube Data API v3 with OAuth2; auto-discovers active broadcasts
 - **TikTok Live** — connects via TikTokLive library; just enter a username
+- **Kick** — connects via Kick's Pusher WebSocket (outbound, no tunnel/public URL required); official REST + OAuth (PKCE) for login, viewer counts, and sending messages
 
 ### Ukrainian Text-to-Speech (TTS)
 - Multiple TTS engines: **Edge TTS** (Microsoft, high quality) and Google Translate TTS
@@ -193,6 +194,17 @@ python -m stream_cheremsha
 ### TikTok Live
 Enter a username (with or without `@`) — the app connects via `TikTokLive` and forwards comments and events into the pipeline.
 
+### Kick
+1. Register a [Kick app](https://dev.kick.com/apps) and set the redirect URI to `http://localhost/callback`
+2. Set the env vars before launching:
+   - `STREAM_CHEREMSHA_KICK_CLIENT_ID`
+   - `STREAM_CHEREMSHA_KICK_CLIENT_SECRET`
+   - `STREAM_CHEREMSHA_KICK_REDIRECT_URI` (optional, defaults to `http://localhost/callback`)
+3. In the app: **Sign in with Kick** — the browser opens, and a local callback server captures the code (no public URL/tunnel needed)
+4. **Start Kick**: enter the channel slug (e.g. `xqc`) or it is inferred after sign-in
+
+> **Note:** Kick does not expose an official realtime chat API for desktop apps. Cheremsha connects **outbound** to Kick's Pusher WebSocket (the same transport Kick's web client uses) and reads public `chatrooms.{id}.v2` channels. This is a compatibility transport and may change if Kick updates it. Follows, subscriptions, and gifts are best-effort from the chatroom channel; viewer counts and message sending use the official REST API.
+
 ### Telegram Bot (Music Requests)
 1. Create a bot via [@BotFather](https://t.me/BotFather) and copy the token
 2. Paste the token in the app (saved to keyring)
@@ -296,7 +308,7 @@ Yes. You can select any system audio output device — perfect for routing TTS a
 Yes, Cheremsha is free and open-source.
 
 **Q: What platforms does the chat aggregation support?**  
-Twitch, YouTube Live, and TikTok Live simultaneously.
+Twitch, YouTube Live, TikTok Live, and Kick simultaneously.
 
 **Q: How are my API tokens stored?**  
 All credentials are stored in your OS keyring (Windows Credential Manager on Windows, Secret Service on Linux). Nothing is stored in plain text.

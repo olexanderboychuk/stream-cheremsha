@@ -290,6 +290,14 @@ def pick_preview_trigger_for_rule(
             elif hints.engagement_no_count and not hints.likes and not hints.gift:
                 score += 15
 
+        elif t in ("kick_follow", "kick_subscription", "kick_gift_sub", "kick_gift"):
+            if p != "kick" or tp not in ("all", "kick"):
+                continue
+            if hints.engagement_no_count and not hints.likes and not hints.gift:
+                score += 25
+            if t == "kick_gift" and ("amount" in tokens or "count" in tokens):
+                score += 30
+
         else:
             score = 0
 
@@ -880,6 +888,26 @@ class ActionsQmlApi(QObject):
             if isinstance(params, dict):
                 raider = str(params.get("user") or "preview").strip() or "preview"
             _schedule_preview_task(eng.on_twitch_raid(raider, min_v, now))
+            msg = ""
+            if wants_overlay and ps is None:
+                msg = "Overlay preview unavailable (overlay server missing)."
+            return msg
+
+        if ev_type in ("kick_follow", "kick_subscription", "kick_gift_sub", "kick_gift"):
+            if p != "kick":
+                return "Preview skipped (Kick-only trigger)."
+            params = ev0.get("params") or {}
+            u = "preview"
+            if isinstance(params, dict):
+                u = str(params.get("user") or "preview").strip() or "preview"
+            if ev_type == "kick_follow":
+                _schedule_preview_task(eng.on_kick_follow(u, now))
+            elif ev_type == "kick_subscription":
+                _schedule_preview_task(eng.on_kick_subscription(u, 1, now))
+            elif ev_type == "kick_gift_sub":
+                _schedule_preview_task(eng.on_kick_gift_subscription(u, 1, now))
+            else:
+                _schedule_preview_task(eng.on_kick_gift(u, 100, now))
             msg = ""
             if wants_overlay and ps is None:
                 msg = "Overlay preview unavailable (overlay server missing)."
