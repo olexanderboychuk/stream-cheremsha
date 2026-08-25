@@ -28,6 +28,12 @@ from stream_cheremsha.overlays.chat_config import (
     load_chat_config,
     save_chat_config,
 )
+from stream_cheremsha.overlays.community_world_config import (
+    community_world_overlay_config_from_json_text,
+    community_world_overlay_config_to_json_text,
+    load_community_world_overlay_config,
+    save_community_world_overlay_config,
+)
 from stream_cheremsha.overlays.king_of_live_overlay_config import (
     king_of_live_overlay_config_from_json_text,
     king_of_live_overlay_config_to_json_text,
@@ -62,6 +68,7 @@ from stream_cheremsha.overlays.top_likers_overlay_config import (
     top_likers_overlay_config_from_json_text,
     top_likers_overlay_config_to_json_text,
 )
+from stream_cheremsha.overlays.ui_locale import load_ui_locale as _ui_locale
 
 
 def _sorted_system_font_families() -> list[str]:
@@ -165,6 +172,7 @@ class WidgetsQmlApi(QObject):
         self._king_of_live_instance = str(online_instance or "main").strip() or "main"
         self._battle_royale_instance = str(online_instance or "main").strip() or "main"
         self._stream_pet_instance = str(online_instance or "main").strip() or "main"
+        self._community_world_instance = str(online_instance or "main").strip() or "main"
         self._battle_host: Any | None = None
         self._system_font_families: list[str] | None = None
 
@@ -210,6 +218,7 @@ class WidgetsQmlApi(QObject):
         self.kingOfLiveOverlayUrlChanged.emit()
         self.battleRoyaleOverlayUrlChanged.emit()
         self.streamPetOverlayUrlChanged.emit()
+        self.communityWorldOverlayUrlChanged.emit()
 
     @Property(str, notify=chatOverlayUrlChanged)
     def chatOverlayUrlValue(self) -> str:  # noqa: ANN201 - PySide pattern
@@ -388,6 +397,94 @@ class WidgetsQmlApi(QObject):
                 "ttl_ms": 5000,
                 "anim": "dance",
             },
+        }
+        self._publish_patch(topic=topic, patch=patch)
+
+    communityWorldOverlayUrlChanged = Signal()
+
+    @Property(str, notify=communityWorldOverlayUrlChanged)
+    def communityWorldOverlayUrlValue(self) -> str:  # noqa: ANN201 - PySide pattern
+        return self.communityWorldOverlayUrl()
+
+    @Slot(result=str)
+    def communityWorldOverlayUrl(self) -> str:
+        if not self._base:
+            return ""
+        return f"{self._base}/overlay/community_world?instance={self._community_world_instance}"
+
+    @Slot()
+    def copyCommunityWorldOverlayUrl(self) -> None:
+        url = self.communityWorldOverlayUrl()
+        if not url:
+            return
+        clip = QGuiApplication.clipboard()
+        if clip is None:
+            return
+        clip.setText(url)
+
+    @Slot()
+    def previewCommunityWorldOverlay(self) -> None:
+        topic = f"overlay:community_world:{self._community_world_instance}"
+        cfg = load_community_world_overlay_config()
+        buildings = [
+            {"id": "house", "unlocked": True, "new": True},
+            {"id": "tree", "unlocked": True, "new": True},
+            {"id": "house2", "unlocked": True, "new": False},
+            {"id": "well", "unlocked": True, "new": False},
+            {"id": "bridge", "unlocked": True, "new": False},
+            {"id": "church", "unlocked": False, "new": False},
+        ]
+        quests = [
+            {"type": "likes", "current": 5200, "target": 5000, "completed": True},
+            {"type": "shares", "current": 32, "target": 50, "completed": False},
+            {"type": "gifts", "current": 780, "target": 1000, "completed": False},
+        ]
+        recent = [
+            {"kind": "follow", "user": "Preview Fan", "detail": "", "icon": "", "seq": 1},
+            {"kind": "gift", "user": "Preview Donor", "detail": "Rose", "icon": "", "seq": 2},
+            {"kind": "share", "user": "Preview Follower", "detail": "3", "icon": "", "seq": 3},
+        ]
+        passports = [
+            {
+                "key": "a",
+                "user": "Preview Fan",
+                "avatar_url": "",
+                "points": 420,
+                "badges": ["founder", "regular"],
+            },
+            {
+                "key": "b",
+                "user": "Preview Donor",
+                "avatar_url": "",
+                "points": 310,
+                "badges": ["gifter", "supporter"],
+            },
+        ]
+        patch: dict[str, Any] = {
+            "config": json.loads(community_world_overlay_config_to_json_text(cfg)),
+            "level": 3,
+            "xp": 420,
+            "xp_to_next": 210,
+            "progress": 0.68,
+            "follows": 47,
+            "likes": 5200,
+            "shares": 32,
+            "gift_coins": 780,
+            "joins": 120,
+            "chat_messages": 640,
+            "unique_viewers": 210,
+            "buildings": buildings,
+            "quests": quests,
+            "recent": recent,
+            "passports": passports,
+            "founder": "Preview Fan",
+            "elders": [
+                {"user": "Elder Alpha", "badge_count": 12},
+                {"user": "Elder Beta", "badge_count": 9},
+            ],
+            "anim_seq": 1,
+            "quest_complete_seq": 1,
+            "locale": _ui_locale(),
         }
         self._publish_patch(topic=topic, patch=patch)
 
@@ -937,6 +1034,53 @@ class WidgetsQmlApi(QObject):
             return
         _LOG.info("widgets ConfigMap save: stream_pet ok json_len=%d", len(txt))
         self.saveStreamPetOverlayConfigJson(txt)
+
+    @Slot(result="QVariantMap")
+    def loadCommunityWorldOverlayConfigMap(self) -> dict[str, Any]:
+        cfg = load_community_world_overlay_config()
+        return json.loads(community_world_overlay_config_to_json_text(cfg))
+
+    @Slot(result=str)
+    def loadCommunityWorldOverlayConfigJson(self) -> str:
+        cfg = load_community_world_overlay_config()
+        return community_world_overlay_config_to_json_text(cfg)
+
+    @Slot(str)
+    def saveCommunityWorldOverlayConfigJson(self, cfg_json: str) -> None:
+        txt = (cfg_json or "").strip()
+        if not txt:
+            return
+        try:
+            cfg = community_world_overlay_config_from_json_text(txt)
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            _LOG.warning(
+                "saveCommunityWorldOverlayConfigJson: rejected payload (%s): %s",
+                exc.__class__.__name__,
+                exc,
+            )
+            return
+        save_community_world_overlay_config(cfg)
+        _LOG.info("widgets overlay persisted: community_world")
+        if self._pubsub is not None:
+            topic = f"overlay:community_world:{self._community_world_instance}"
+            patch = {"config": json.loads(community_world_overlay_config_to_json_text(cfg))}
+            self._publish_patch(topic=topic, patch=patch)
+
+    @Slot(QJSValue)
+    def saveCommunityWorldOverlayConfigMap(self, cfg_js: QJSValue) -> None:
+        plain = _qml_js_to_plain_cfg(cfg_js)
+        _LOG.info("widgets ConfigMap save: community_world (plain_type=%s)", type(plain).__name__)
+        if plain is None:
+            _LOG.warning("widgets ConfigMap save: community_world rejected (null/undefined)")
+            return
+        txt = _qml_cfg_map_to_json_text(plain)
+        if not txt or txt == "{}":
+            _LOG.warning(
+                "widgets ConfigMap save: community_world rejected empty_or_non_serializable"
+            )
+            return
+        _LOG.info("widgets ConfigMap save: community_world ok json_len=%d", len(txt))
+        self.saveCommunityWorldOverlayConfigJson(txt)
 
 
 class WidgetsWindowQmlApi(QObject):

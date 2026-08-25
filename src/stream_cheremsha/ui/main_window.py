@@ -145,6 +145,7 @@ from stream_cheremsha.overlays.battle_royale_overlay_config import (
     load_battle_royale_overlay_config,
 )
 from stream_cheremsha.overlays.chat_overlay import chat_message_to_patch
+from stream_cheremsha.overlays.community_world_controller import CommunityWorldController
 from stream_cheremsha.overlays.king_of_live_overlay_config import (
     king_of_live_overlay_config_to_json_text,
     load_king_of_live_overlay_config,
@@ -806,6 +807,12 @@ class MainWindow(FramelessWindow):
         self._battle_tick_timer.setInterval(1000)
         self._battle_tick_timer.timeout.connect(self._on_battle_tick)
         self._stream_pet = StreamPetController(
+            pubsub=self._overlay_server.pubsub(),
+            get_locale=lambda: self._locale,
+            instance="main",
+            parent=self,
+        )
+        self._community_world = CommunityWorldController(
             pubsub=self._overlay_server.pubsub(),
             get_locale=lambda: self._locale,
             instance="main",
@@ -4070,6 +4077,7 @@ class MainWindow(FramelessWindow):
         self._maybe_bump_king_chat_highlight(message)
         self._try_tiktok_link_from_comment(message)
         self._stream_pet.on_chat(author=message.author, text=message.text)
+        self._community_world.on_chat(user=message.author, text=message.text)
 
     def _try_tiktok_link_from_comment(self, message: ChatMessage) -> None:
         if self._closing or not self._points_enabled():
@@ -4241,6 +4249,7 @@ class MainWindow(FramelessWindow):
         )
         self._publish_activity_item(it)
         self._stream_pet.on_follow(user=user)
+        self._community_world.on_follow(user=user, user_key=stable_key)
 
     def _on_tiktok_join_any(self, user: str, stable_key: str = "") -> None:
         if self._closing:
@@ -4272,6 +4281,7 @@ class MainWindow(FramelessWindow):
         )
         self._publish_activity_join_ticker(it)
         self._stream_pet.on_join(user=user)
+        self._community_world.on_join(user=user, user_key=stable_key)
 
     def _on_tiktok_gift_analytics_any(
         self,
@@ -4362,6 +4372,12 @@ class MainWindow(FramelessWindow):
                 delta=delta,
                 reason="like",
             )
+        self._community_world.on_like(
+            user=user,
+            n=n_i,
+            user_key=user_key,
+            avatar_url=profile_picture_url,
+        )
 
     def _schedule_top_likers_overlay_publish(self) -> None:
         if self._closing:
@@ -4656,6 +4672,11 @@ class MainWindow(FramelessWindow):
                 self._tr("battle.winner_music_toast", user=winner.display_name),
             )
             self._schedule_king_overlay_publish()
+            self._community_world.on_battle_win(
+                user=winner.display_name,
+                user_key=winner.user_key,
+                avatar_url=winner.avatar_url,
+            )
         self._schedule_battle_overlay_publish()
         phase = self._battle_controller.state().phase
         if phase in (BattlePhase.COUNTDOWN, BattlePhase.ACTIVE, BattlePhase.VICTORY):
@@ -4895,6 +4916,7 @@ class MainWindow(FramelessWindow):
             hb.cancel()
             self._battle_overlay_publish_handle = None
         self._stream_pet.reset_for_new_stream()
+        self._community_world.reset_session()
         loop = self._asyncio_loop
         if loop is not None:
             loop.create_task(
@@ -4953,6 +4975,7 @@ class MainWindow(FramelessWindow):
                         delta=delta,
                         reason="share",
                     )
+        self._community_world.on_share(user=user, n=int(n), user_key=stable_key)
 
     def _on_tiktok_paid_sub_any(self, user: str) -> None:
         if self._closing:
@@ -5297,6 +5320,14 @@ class MainWindow(FramelessWindow):
                 user=sender,
                 gift_name=gift_name,
                 tiktok_coins=total_coins,
+            )
+            self._community_world.on_gift(
+                user=sender,
+                user_key=sender_user_key,
+                gift_name=gift_name,
+                coins=total_coins,
+                icon_url=str(icon_url or ""),
+                avatar_url=str(sender_avatar_url or ""),
             )
 
     def _ensure_widgets_window(self) -> QQuickView:
@@ -5974,6 +6005,9 @@ class MainWindow(FramelessWindow):
             self._stream_pet.set_pubsub(self._overlay_server.pubsub())
             self._stream_pet.set_event_loop(self._asyncio_loop)
             self._stream_pet.start()
+            self._community_world.set_pubsub(self._overlay_server.pubsub())
+            self._community_world.set_event_loop(self._asyncio_loop)
+            self._community_world.start()
             await self.apply_overlay_tunnel()
             self._schedule_king_overlay_publish()
             self._publish_battle_overlay_patch_sync()
@@ -6467,6 +6501,11 @@ class MainWindow(FramelessWindow):
             if t is not None:
                 t.cancel()
                 await asyncio.gather(t, return_exceptions=True)
+
+            try:
+                self._community_world.stop()
+            except (OSError, RuntimeError, ValueError, TypeError) as e:
+                logger.exception("Shutdown step failed (community_world.stop): %s", e)
 
             try:
                 self._queue_timer.stop()

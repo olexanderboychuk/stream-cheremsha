@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Community World** overlay (`/overlay/community_world`): a live Ukrainian-village that grows with chat — follows build houses, likes fill the well, shares build bridges, gifts unlock monuments and towers, and level-ups unlock the castle. Includes live quest board (4 quest slots), XP/levels, recognition feed, viewer passports with badges, all-time village elders (SQLite), and animated celebrations (confetti, new-building pop-ins). Configurable themes (pixel / fantasy / cyber / ukrainian), **compact vertical layout** for narrow widgets under the chat on vertical streams (the village stays as a live background scene), quiet mode, XP weights, quest targets, and display toggles in the Widgets editor.
+
 ## [0.11.2] — 2026-07-23
 
 ### Changed

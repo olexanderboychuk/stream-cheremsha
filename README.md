@@ -53,6 +53,7 @@ Local overlay server on `http://127.0.0.1:17171` — add these as OBS Browser So
 | Top GIFters (TikTok) | `http://127.0.0.1:17171/overlay/top_gifters?instance=main` |
 | King of the Live (TikTok) | `http://127.0.0.1:17171/overlay/king_of_live?instance=main` |
 | Battle Royale (TikTok) | `http://127.0.0.1:17171/overlay/battle_royale?instance=main` |
+| Community World (TikTok) | `http://127.0.0.1:17171/overlay/community_world?instance=main` |
 
 OBS Docks (custom browser panels inside OBS):
 

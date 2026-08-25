@@ -8,6 +8,7 @@ from stream_cheremsha.overlays.actions_overlay import ActionsOverlayType
 from stream_cheremsha.overlays.activity_overlay import ActivityOverlayType
 from stream_cheremsha.overlays.battle_royale_overlay import BattleRoyaleOverlayType
 from stream_cheremsha.overlays.chat_overlay import ChatOverlayType
+from stream_cheremsha.overlays.community_world_overlay import CommunityWorldOverlayType
 from stream_cheremsha.overlays.king_of_live_overlay import KingOfLiveOverlayType
 from stream_cheremsha.overlays.models import normalize_instance_id
 from stream_cheremsha.overlays.music_overlay import MusicOverlayType
@@ -134,6 +135,7 @@ class OverlayRegistry:
         self.register(KingOfLiveOverlayType())
         self.register(BattleRoyaleOverlayType())
         self.register(StreamPetOverlayType())
+        self.register(CommunityWorldOverlayType())
         self.register(ActionsOverlayType())
 
     def register(self, t: OverlayType) -> None:

@@ -37,6 +37,8 @@ Item {
             root._loadingTopGiftersCfg = false;
             root._loadingKingCfg = false;
             root._loadingBattleCfg = false;
+            root._loadingStreamPetCfg = false;
+            root._loadingCommunityWorldCfg = false;
         }
     }
 
@@ -344,6 +346,8 @@ Item {
                 return root._loadingKingCfg;
             if (vsb.syncGroup === "battle")
                 return root._loadingBattleCfg;
+            if (vsb.syncGroup === "community_world")
+                return root._loadingCommunityWorldCfg;
             return true;
         }
 
@@ -360,6 +364,8 @@ Item {
                 root._saveKing();
             else if (vsb.syncGroup === "battle")
                 root._saveBattle();
+            else if (vsb.syncGroup === "community_world")
+                root._saveCommunityWorld();
         }
 
         function _pull() {
@@ -435,6 +441,14 @@ Item {
                 if (vsb.syncGroup === "battle")
                     vsb._pull();
             }
+            function onCommunityWorldCfgChanged() {
+                if (vsb.syncGroup === "community_world")
+                    vsb._pull();
+            }
+            function onCommunityWorldCfgEpochChanged() {
+                if (vsb.syncGroup === "community_world")
+                    vsb._pull();
+            }
         }
 
         onValueChanged: {
@@ -485,6 +499,9 @@ Item {
     property var streamPetCfg: null
     property bool _loadingStreamPetCfg: false
     property int streamPetCfgEpoch: 0
+    property var communityWorldCfg: null
+    property bool _loadingCommunityWorldCfg: false
+    property int communityWorldCfgEpoch: 0
     property color _spBodyColor: "#fbbf24"
     property color _spEarColor: "#f59e0b"
     property color _spCollarColor: "#ef4444"
@@ -724,7 +741,8 @@ Item {
             ((root.widgetMode === "top_likers" || root.widgetMode === "top_gifters") && root.tierOverlayCfg !== null) ||
             (root.widgetMode === "king_of_live" && root.kingCfg !== null) ||
             (root.widgetMode === "battle_royale" && root.battleCfg !== null) ||
-            (root.widgetMode === "stream_pet" && root.streamPetCfg !== null)
+            (root.widgetMode === "stream_pet" && root.streamPetCfg !== null) ||
+            (root.widgetMode === "community_world" && root.communityWorldCfg !== null)
         )
 
     function _flushTierOverlayEditorsIntoCfg() {
@@ -782,6 +800,8 @@ Item {
             root._saveBattle();
         } else if (root.widgetMode === "stream_pet") {
             root._saveStreamPet();
+        } else if (root.widgetMode === "community_world") {
+            root._saveCommunityWorld();
         }
     }
 
@@ -802,6 +822,15 @@ Item {
             api.saveStreamPetOverlayConfigMap(root.streamPetCfg);
         else
             api.saveStreamPetOverlayConfigJson(JSON.stringify(root.streamPetCfg));
+    }
+
+    function _saveCommunityWorld() {
+        if (!api || root.communityWorldCfg === null) return;
+        root.communityWorldCfgEpoch += 1;
+        if (typeof api.saveCommunityWorldOverlayConfigMap === "function")
+            api.saveCommunityWorldOverlayConfigMap(root.communityWorldCfg);
+        else
+            api.saveCommunityWorldOverlayConfigJson(JSON.stringify(root.communityWorldCfg));
     }
 
     function _applyStreamPetPreset(presetId) {
@@ -1372,6 +1401,14 @@ Item {
                         }
 
                         WidgetCard {
+                            title: "Community World (Село)"
+                            urlText: api ? api.communityWorldOverlayUrlValue : ""
+                            onCopy: function() { if (api) api.copyCommunityWorldOverlayUrl(); }
+                            onPlay: function() { if (api) api.previewCommunityWorldOverlay(); }
+                            onEdit: function() { root.widgetMode = "community_world"; }
+                        }
+
+                        WidgetCard {
                             title: "Battle Royale (TikTok)"
                             urlText: api ? api.battleRoyaleOverlayUrlValue : ""
                             onCopy: function() { if (api) api.copyBattleRoyaleOverlayUrl(); }
@@ -1759,6 +1796,70 @@ Item {
                             text: "▶"
                             pillFontSize: 12
                             onClicked: if (api) api.previewStreamPetOverlay()
+                        }
+
+                        PillButton {
+                            text: "Зберегти"
+                            enabled: root._canSaveCurrentWidget
+                            onClicked: root._saveAndApplyCurrentWidget()
+                        }
+
+                        PillButton {
+                            text: "Назад"
+                            onClicked: root.widgetMode = "grid"
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                radius: 14
+                color: cardBase
+                border.width: 1
+                border.color: cardEdge
+                visible: root.widgetMode === "community_world"
+                implicitHeight: editCommunityWorldHeader.implicitHeight + 20
+
+                ColumnLayout {
+                    id: editCommunityWorldHeader
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 12
+                    spacing: 8
+
+                    Text {
+                        text: "Community World (Село)"
+                        color: ink
+                        font.pixelSize: 18
+                        font.bold: true
+                        Layout.fillWidth: true
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+
+                        TextField {
+                            Layout.fillWidth: true
+                            readOnly: true
+                            selectByMouse: true
+                            color: ink
+                            font.pixelSize: 12
+                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                            text: api ? api.communityWorldOverlayUrlValue : ""
+                        }
+
+                        PillButton {
+                            text: "Скопіювати URL"
+                            onClicked: if (api) api.copyCommunityWorldOverlayUrl()
+                        }
+
+                        PillButton {
+                            text: "▶"
+                            pillFontSize: 12
+                            onClicked: if (api) api.previewCommunityWorldOverlay()
                         }
 
                         PillButton {
@@ -4210,6 +4311,469 @@ Item {
                         } // streamPetSettings
 
                         ColumnLayout {
+                            id: communityWorldSettings
+                            visible: root.widgetMode === "community_world"
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                        Rectangle { Layout.fillWidth: true; height: 1; color: cardEdge; opacity: 0.6 }
+
+                        Text {
+                            text: "Community World — спільне село"
+                            color: ink
+                            font.pixelSize: 16
+                            font.bold: true
+                            Layout.fillWidth: true
+                        }
+
+                        Text {
+                            text: "Село росте разом із ком’юніті: фолови будують хати, лайки наповнюють криницю, шери — міст, а подарунки відкривають вежі та замок. Квести оновлюються наживо."
+                            color: muted
+                            font.pixelSize: 11
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+
+                        StyledCheckBox {
+                            text: "Увімкнено"
+                            checked: !root.communityWorldCfg || root.communityWorldCfg.enabled !== false
+                            onCheckedChanged: {
+                                if (root._loadingCommunityWorldCfg || !root.communityWorldCfg) return;
+                                root.communityWorldCfg.enabled = checked;
+                                root._saveCommunityWorld();
+                            }
+                        }
+
+                        StyledCheckBox {
+                            text: "Тихий режим (без анімацій святкувань)"
+                            checked: !!root.communityWorldCfg && root.communityWorldCfg.quiet_mode
+                            onCheckedChanged: {
+                                if (root._loadingCommunityWorldCfg || !root.communityWorldCfg) return;
+                                root.communityWorldCfg.quiet_mode = checked;
+                                root._saveCommunityWorld();
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Тема світу"; color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: cwTheme
+                                Layout.fillWidth: true
+                                textRole: "text"
+                                valueRole: "value"
+                                model: ListModel {
+                                    ListElement { value: "pixel"; text: "Pixel" }
+                                    ListElement { value: "fantasy"; text: "Fantasy" }
+                                    ListElement { value: "cyber"; text: "Cyber" }
+                                    ListElement { value: "ukrainian"; text: "Українське село" }
+                                }
+                                onCurrentIndexChanged: {
+                                    if (root._loadingCommunityWorldCfg || !root.communityWorldCfg) return;
+                                    var v = cwTheme.currentIndex >= 0 ? cwTheme.model.get(cwTheme.currentIndex).value : "ukrainian";
+                                    root.communityWorldCfg.theme = v;
+                                    root._saveCommunityWorld();
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Розкладка"; color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: cwLayout
+                                Layout.fillWidth: true
+                                textRole: "text"
+                                valueRole: "value"
+                                model: ListModel {
+                                    ListElement { value: "full"; text: "Повна (широкий екран)" }
+                                    ListElement { value: "compact"; text: "Компактна (вертикальний стрим)" }
+                                }
+                                onCurrentIndexChanged: {
+                                    if (root._loadingCommunityWorldCfg || !root.communityWorldCfg) return;
+                                    var v = cwLayout.currentIndex >= 0 ? cwLayout.model.get(cwLayout.currentIndex).value : "full";
+                                    root.communityWorldCfg.layout_mode = v;
+                                    root._saveCommunityWorld();
+                                }
+                            }
+                        }
+
+                        Rectangle { Layout.fillWidth: true; height: 1; color: cardEdge; opacity: 0.6 }
+
+                        Text {
+                            text: "Активні квести (4 слоти)"
+                            color: ink
+                            font.pixelSize: 14
+                            font.bold: true
+                            Layout.fillWidth: true
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Квест 1"; color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: cwQ1
+                                Layout.fillWidth: true
+                                textRole: "text"
+                                valueRole: "value"
+                                model: ListModel {
+                                    ListElement { value: "likes"; text: "Лайки" }
+                                    ListElement { value: "shares"; text: "Шери" }
+                                    ListElement { value: "gifts"; text: "Койни" }
+                                    ListElement { value: "follows"; text: "Фолови" }
+                                    ListElement { value: "none"; text: "Вимкнено" }
+                                }
+                                onCurrentIndexChanged: {
+                                    if (root._loadingCommunityWorldCfg || !root.communityWorldCfg) return;
+                                    root.communityWorldCfg.quest1_type = cwQ1.currentIndex >= 0 ? cwQ1.model.get(cwQ1.currentIndex).value : "likes";
+                                    root._saveCommunityWorld();
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Квест 2"; color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: cwQ2
+                                Layout.fillWidth: true
+                                model: cwQ1.model
+                                textRole: "text"
+                                valueRole: "value"
+                                onCurrentIndexChanged: {
+                                    if (root._loadingCommunityWorldCfg || !root.communityWorldCfg) return;
+                                    root.communityWorldCfg.quest2_type = cwQ2.currentIndex >= 0 ? cwQ2.model.get(cwQ2.currentIndex).value : "shares";
+                                    root._saveCommunityWorld();
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Квест 3"; color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: cwQ3
+                                Layout.fillWidth: true
+                                model: cwQ1.model
+                                textRole: "text"
+                                valueRole: "value"
+                                onCurrentIndexChanged: {
+                                    if (root._loadingCommunityWorldCfg || !root.communityWorldCfg) return;
+                                    root.communityWorldCfg.quest3_type = cwQ3.currentIndex >= 0 ? cwQ3.model.get(cwQ3.currentIndex).value : "gifts";
+                                    root._saveCommunityWorld();
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Квест 4"; color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: cwQ4
+                                Layout.fillWidth: true
+                                model: cwQ1.model
+                                textRole: "text"
+                                valueRole: "value"
+                                onCurrentIndexChanged: {
+                                    if (root._loadingCommunityWorldCfg || !root.communityWorldCfg) return;
+                                    root.communityWorldCfg.quest4_type = cwQ4.currentIndex >= 0 ? cwQ4.model.get(cwQ4.currentIndex).value : "follows";
+                                    root._saveCommunityWorld();
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Ціль: лайки"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "community_world"
+                                hostMap: root.communityWorldCfg
+                                hostKey: "quest_likes_target"
+                                hostDefault: 5000
+                                from: 100; to: 100000000; stepSize: 500
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Ціль: шери"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "community_world"
+                                hostMap: root.communityWorldCfg
+                                hostKey: "quest_shares_target"
+                                hostDefault: 50
+                                from: 5; to: 100000; stepSize: 5
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Ціль: койни"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "community_world"
+                                hostMap: root.communityWorldCfg
+                                hostKey: "quest_gifts_target"
+                                hostDefault: 1000
+                                from: 50; to: 100000000; stepSize: 50
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Ціль: фолови"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "community_world"
+                                hostMap: root.communityWorldCfg
+                                hostKey: "quest_follows_target"
+                                hostDefault: 100
+                                from: 5; to: 100000; stepSize: 5
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        Rectangle { Layout.fillWidth: true; height: 1; color: cardEdge; opacity: 0.6 }
+
+                        Text {
+                            text: "Досвід (XP) за активність"
+                            color: ink
+                            font.pixelSize: 14
+                            font.bold: true
+                            Layout.fillWidth: true
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "XP: фол"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "community_world"
+                                hostMap: root.communityWorldCfg
+                                hostKey: "xp_follow"
+                                hostDefault: 40
+                                from: 0; to: 1000; stepSize: 5
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "XP: приєднання"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "community_world"
+                                hostMap: root.communityWorldCfg
+                                hostKey: "xp_join"
+                                hostDefault: 5
+                                from: 0; to: 1000; stepSize: 1
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "XP: повідомлення"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "community_world"
+                                hostMap: root.communityWorldCfg
+                                hostKey: "xp_chat"
+                                hostDefault: 2
+                                from: 0; to: 1000; stepSize: 1
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "XP: лайки (за 10)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "community_world"
+                                hostMap: root.communityWorldCfg
+                                hostKey: "xp_like_per_10"
+                                hostDefault: 2
+                                from: 0; to: 1000; stepSize: 1
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "XP: шер"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "community_world"
+                                hostMap: root.communityWorldCfg
+                                hostKey: "xp_share"
+                                hostDefault: 25
+                                from: 0; to: 1000; stepSize: 1
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "XP: койни (за 10)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "community_world"
+                                hostMap: root.communityWorldCfg
+                                hostKey: "xp_gift_coin_per_10"
+                                hostDefault: 1
+                                from: 0; to: 1000; stepSize: 1
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "XP: перемога в батлі"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "community_world"
+                                hostMap: root.communityWorldCfg
+                                hostKey: "xp_battle_win"
+                                hostDefault: 150
+                                from: 0; to: 10000; stepSize: 10
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        Rectangle { Layout.fillWidth: true; height: 1; color: cardEdge; opacity: 0.6 }
+
+                        Text {
+                            text: "Показ на екрані"
+                            color: ink
+                            font.pixelSize: 14
+                            font.bold: true
+                            Layout.fillWidth: true
+                        }
+
+                        StyledCheckBox {
+                            text: "Рівень і смужка досвіду"
+                            checked: !root.communityWorldCfg || root.communityWorldCfg.show_level !== false
+                            onCheckedChanged: {
+                                if (root._loadingCommunityWorldCfg || !root.communityWorldCfg) return;
+                                root.communityWorldCfg.show_level = checked;
+                                root._saveCommunityWorld();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: "Дошка квестів"
+                            checked: !root.communityWorldCfg || root.communityWorldCfg.show_quests !== false
+                            onCheckedChanged: {
+                                if (root._loadingCommunityWorldCfg || !root.communityWorldCfg) return;
+                                root.communityWorldCfg.show_quests = checked;
+                                root._saveCommunityWorld();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: "Стрічка подій"
+                            checked: !root.communityWorldCfg || root.communityWorldCfg.show_recognition !== false
+                            onCheckedChanged: {
+                                if (root._loadingCommunityWorldCfg || !root.communityWorldCfg) return;
+                                root.communityWorldCfg.show_recognition = checked;
+                                root._saveCommunityWorld();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: "Паспорти глядачів"
+                            checked: !root.communityWorldCfg || root.communityWorldCfg.show_passports !== false
+                            onCheckedChanged: {
+                                if (root._loadingCommunityWorldCfg || !root.communityWorldCfg) return;
+                                root.communityWorldCfg.show_passports = checked;
+                                root._saveCommunityWorld();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: "Будівлі села"
+                            checked: !root.communityWorldCfg || root.communityWorldCfg.show_buildings !== false
+                            onCheckedChanged: {
+                                if (root._loadingCommunityWorldCfg || !root.communityWorldCfg) return;
+                                root.communityWorldCfg.show_buildings = checked;
+                                root._saveCommunityWorld();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: "Старійшини (усі стріми)"
+                            checked: !root.communityWorldCfg || root.communityWorldCfg.show_elders !== false
+                            onCheckedChanged: {
+                                if (root._loadingCommunityWorldCfg || !root.communityWorldCfg) return;
+                                root.communityWorldCfg.show_elders = checked;
+                                root._saveCommunityWorld();
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Масштаб (%)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "community_world"
+                                hostMap: root.communityWorldCfg
+                                hostKey: "scale_pct"
+                                hostDefault: 100
+                                from: 40; to: 200; stepSize: 5
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Розмір шрифту (px)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "community_world"
+                                hostMap: root.communityWorldCfg
+                                hostKey: "font_size_px"
+                                hostDefault: 16
+                                from: 8; to: 120; stepSize: 1
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Шрифт"; color: muted; Layout.preferredWidth: 160 }
+                            TextField {
+                                Layout.fillWidth: true
+                                color: ink
+                                font.pixelSize: 13
+                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                text: root.communityWorldCfg ? (root.communityWorldCfg.font_family || "Segoe UI") : "Segoe UI"
+                                onEditingFinished: {
+                                    if (root._loadingCommunityWorldCfg || !root.communityWorldCfg) return;
+                                    root.communityWorldCfg.font_family = text;
+                                    root._saveCommunityWorld();
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: "Будівлі відкриваються автоматично: криниця після 500 лайків, міст після 25 шерів, монумент після 500 койнів, замок — рівень 6."
+                            color: muted
+                            font.pixelSize: 11
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+
+                        } // communityWorldSettings
+
+                        ColumnLayout {
                             id: actionsSettings
                             visible: root.widgetMode === "actions"
                             Layout.fillWidth: true
@@ -4814,6 +5378,7 @@ Item {
                     root._loadingKingCfg = false;
                     root._loadingBattleCfg = false;
                     root._loadingStreamPetCfg = false;
+                    root._loadingCommunityWorldCfg = false;
                 }
                 try {
                 // This handler lives on the Loader's inner ColumnLayout, not on root Item:
@@ -4826,6 +5391,7 @@ Item {
                 root._loadingKingCfg = true;
                 root._loadingBattleCfg = true;
                 root._loadingStreamPetCfg = true;
+                root._loadingCommunityWorldCfg = true;
 
                 var obj = api.loadChatConfigMap();
                 if (!obj || typeof obj !== "object")
@@ -4939,6 +5505,31 @@ Item {
                     spobj = {};
                 root.streamPetCfg = JSON.parse(JSON.stringify(spobj));
                 root.streamPetCfgEpoch += 1;
+                var cwobj = api.loadCommunityWorldOverlayConfigMap();
+                if (!cwobj || typeof cwobj !== "object")
+                    cwobj = {};
+                root.communityWorldCfg = JSON.parse(JSON.stringify(cwobj));
+                root.communityWorldCfgEpoch += 1;
+                if (root.communityWorldCfg) {
+                    var cwIndexFor = function(mdl, val) {
+                        for (var ci = 0; ci < mdl.count; ++ci) {
+                            if (mdl.get(ci).value === val) return ci;
+                        }
+                        return 0;
+                    };
+                    if (typeof cwTheme !== "undefined")
+                        cwTheme.currentIndex = cwIndexFor(cwTheme.model, root.communityWorldCfg.theme || "ukrainian");
+                    if (typeof cwLayout !== "undefined")
+                        cwLayout.currentIndex = cwIndexFor(cwLayout.model, root.communityWorldCfg.layout_mode || "full");
+                    if (typeof cwQ1 !== "undefined")
+                        cwQ1.currentIndex = cwIndexFor(cwQ1.model, root.communityWorldCfg.quest1_type || "likes");
+                    if (typeof cwQ2 !== "undefined")
+                        cwQ2.currentIndex = cwIndexFor(cwQ2.model, root.communityWorldCfg.quest2_type || "shares");
+                    if (typeof cwQ3 !== "undefined")
+                        cwQ3.currentIndex = cwIndexFor(cwQ3.model, root.communityWorldCfg.quest3_type || "gifts");
+                    if (typeof cwQ4 !== "undefined")
+                        cwQ4.currentIndex = cwIndexFor(cwQ4.model, root.communityWorldCfg.quest4_type || "follows");
+                }
                 root._spBodyColor = root.streamPetCfg.pet_body_color || "#fbbf24";
                 root._spEarColor = root.streamPetCfg.pet_ear_color || "#f59e0b";
                 root._spCollarColor = root.streamPetCfg.collar_color || "#ef4444";
