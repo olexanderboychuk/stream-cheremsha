@@ -1,6 +1,6 @@
 """Kick OAuth 2.1 (PKCE) flow with a local callback server.
 
-Kick requires an exact-match ``redirect_uri`` (``http://localhost/callback``).
+Kick requires an exact-match ``redirect_uri`` (``http://localhost:8080/callback``).
 We spin up a short-lived aiohttp server on localhost that captures the OAuth
 ``code`` + ``state`` returned by the browser redirect, then tear it down.
 

@@ -195,11 +195,11 @@ python -m stream_cheremsha
 Enter a username (with or without `@`) — the app connects via `TikTokLive` and forwards comments and events into the pipeline.
 
 ### Kick
-1. Register a [Kick app](https://dev.kick.com/apps) and set the redirect URI to `http://localhost/callback`
+1. Register a [Kick app](https://dev.kick.com/apps) and set the redirect URI to `http://localhost:8080/callback`
 2. Set the env vars before launching:
    - `STREAM_CHEREMSHA_KICK_CLIENT_ID`
    - `STREAM_CHEREMSHA_KICK_CLIENT_SECRET`
-   - `STREAM_CHEREMSHA_KICK_REDIRECT_URI` (optional, defaults to `http://localhost/callback`)
+   - `STREAM_CHEREMSHA_KICK_REDIRECT_URI` (optional, defaults to `http://localhost:8080/callback`)
 3. In the app: **Sign in with Kick** — the browser opens, and a local callback server captures the code (no public URL/tunnel needed)
 4. **Start Kick**: enter the channel slug (e.g. `xqc`) or it is inferred after sign-in
 

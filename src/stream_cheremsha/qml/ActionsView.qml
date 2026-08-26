@@ -1771,6 +1771,7 @@ Item {
         }
         delegate: ItemDelegate {
             required property int index
+            required property var modelData
             width: ListView.view ? ListView.view.width : implicitWidth
             implicitHeight: 34
             contentItem: Text {

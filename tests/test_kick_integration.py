@@ -51,7 +51,7 @@ def test_oauth_config_from_env(monkeypatch) -> None:
     assert cfg is not None
     assert cfg.client_id == "c"
     assert cfg.client_secret == "s"
-    assert cfg.redirect_uri == "http://localhost/callback"
+    assert cfg.redirect_uri == "http://localhost:8080/callback"
 
 
 def test_oauth_config_from_env_missing_returns_none(monkeypatch) -> None:
