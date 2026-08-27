@@ -45,6 +45,10 @@ def test_build_authorize_url_contains_required_params() -> None:
 
 
 def test_oauth_config_from_env(monkeypatch) -> None:
+    from stream_cheremsha.config import embedded
+
+    monkeypatch.setattr(embedded, "KICK_CLIENT_ID", "embedded-cid")
+    monkeypatch.setattr(embedded, "KICK_CLIENT_SECRET", "embedded-sec")
     monkeypatch.setenv("STREAM_CHEREMSHA_KICK_CLIENT_ID", "c")
     monkeypatch.setenv("STREAM_CHEREMSHA_KICK_CLIENT_SECRET", "s")
     cfg = KickOAuthConfig.from_env()
@@ -54,10 +58,159 @@ def test_oauth_config_from_env(monkeypatch) -> None:
     assert cfg.redirect_uri == "http://localhost:8080/callback"
 
 
-def test_oauth_config_from_env_missing_returns_none(monkeypatch) -> None:
+def test_oauth_config_from_env_falls_back_to_embedded(monkeypatch) -> None:
+    from stream_cheremsha.config import embedded
+
     monkeypatch.delenv("STREAM_CHEREMSHA_KICK_CLIENT_ID", raising=False)
     monkeypatch.delenv("STREAM_CHEREMSHA_KICK_CLIENT_SECRET", raising=False)
+    monkeypatch.setattr(embedded, "KICK_CLIENT_ID", "embedded-cid")
+    monkeypatch.setattr(embedded, "KICK_CLIENT_SECRET", "embedded-sec")
+    cfg = KickOAuthConfig.from_env()
+    assert cfg is not None
+    assert cfg.client_id == "embedded-cid"
+    assert cfg.client_secret == "embedded-sec"
+
+
+def test_oauth_config_from_env_pkce_only_no_secret(monkeypatch) -> None:
+    from stream_cheremsha.config import embedded
+
+    monkeypatch.delenv("STREAM_CHEREMSHA_KICK_CLIENT_ID", raising=False)
+    monkeypatch.delenv("STREAM_CHEREMSHA_KICK_CLIENT_SECRET", raising=False)
+    monkeypatch.setattr(embedded, "KICK_CLIENT_ID", "embedded-cid")
+    monkeypatch.setattr(embedded, "KICK_CLIENT_SECRET", "")
+    cfg = KickOAuthConfig.from_env()
+    assert cfg is not None
+    assert cfg.client_id == "embedded-cid"
+    assert cfg.client_secret == ""
+
+
+def test_oauth_config_from_env_missing_returns_none(monkeypatch) -> None:
+    from stream_cheremsha.config import embedded
+
+    monkeypatch.delenv("STREAM_CHEREMSHA_KICK_CLIENT_ID", raising=False)
+    monkeypatch.delenv("STREAM_CHEREMSHA_KICK_CLIENT_SECRET", raising=False)
+    monkeypatch.setattr(embedded, "KICK_CLIENT_ID", "")
+    monkeypatch.setattr(embedded, "KICK_CLIENT_SECRET", "")
     assert KickOAuthConfig.from_env() is None
+
+
+def test_save_oauth_bundle_adds_issued_at(monkeypatch) -> None:
+    import json
+
+    from stream_cheremsha.chat import kick_credentials
+
+    stored: dict[str, str] = {}
+    monkeypatch.setattr(
+        kick_credentials.keyring_store,
+        "set_password",
+        lambda key, value: stored.update({key: value}),
+    )
+    kick_credentials.save_oauth_bundle({"access_token": "a"})
+    payload = json.loads(stored[kick_credentials.constants.KEY_KICK_OAUTH])
+    assert payload["access_token"] == "a"
+    assert isinstance(payload["issued_at"], float)
+
+
+def test_ensure_valid_access_token_no_session(monkeypatch) -> None:
+    from stream_cheremsha.chat import kick_credentials
+
+    monkeypatch.setattr(kick_credentials, "load_oauth_bundle", lambda: {})
+    assert asyncio.run(kick_credentials.ensure_valid_access_token()) == ""
+
+
+def test_ensure_valid_access_token_skips_refresh_while_valid(monkeypatch) -> None:
+    import time as _time
+
+    from stream_cheremsha.chat import kick_credentials
+    from stream_cheremsha.chat.kick_api import KickOAuthConfig
+
+    bundle = {
+        "access_token": "acc",
+        "refresh_token": "ref",
+        "expires_in": 3600,
+        "issued_at": _time.time(),
+    }
+    monkeypatch.setattr(kick_credentials, "load_oauth_bundle", lambda: bundle)
+    monkeypatch.setattr(
+        KickOAuthConfig,
+        "from_env",
+        classmethod(
+            lambda cls: KickOAuthConfig(client_id="cid", redirect_uri="http://x")
+        ),
+    )
+    called: list[str] = []
+
+    async def _fake_refresh(cfg, refresh_token):
+        called.append(str(refresh_token))
+        return {}
+
+    monkeypatch.setattr(kick_credentials, "refresh_access_token", _fake_refresh)
+    assert asyncio.run(kick_credentials.ensure_valid_access_token()) == "acc"
+    assert called == []
+
+
+def test_ensure_valid_access_token_refreshes_when_expired(monkeypatch) -> None:
+    import time as _time
+
+    from stream_cheremsha.chat import kick_credentials
+    from stream_cheremsha.chat.kick_api import KickOAuthConfig
+
+    bundle = {
+        "access_token": "acc",
+        "refresh_token": "ref",
+        "expires_in": 3600,
+        "issued_at": _time.time() - 4000,
+    }
+    monkeypatch.setattr(kick_credentials, "load_oauth_bundle", lambda: bundle)
+    monkeypatch.setattr(
+        KickOAuthConfig,
+        "from_env",
+        classmethod(
+            lambda cls: KickOAuthConfig(client_id="cid", redirect_uri="http://x")
+        ),
+    )
+    merged: list[dict] = []
+
+    async def _fake_refresh(cfg, refresh_token):
+        assert str(refresh_token) == "ref"
+        return {"access_token": "new-acc", "refresh_token": "new-ref", "expires_in": 3600}
+
+    monkeypatch.setattr(kick_credentials, "refresh_access_token", _fake_refresh)
+    monkeypatch.setattr(
+        kick_credentials,
+        "merge_token_payload",
+        lambda payload: merged.append(payload),
+    )
+    assert asyncio.run(kick_credentials.ensure_valid_access_token()) == "new-acc"
+    assert merged and merged[0]["access_token"] == "new-acc"
+
+
+def test_ensure_valid_access_token_keeps_old_on_refresh_error(monkeypatch) -> None:
+    import time as _time
+
+    from stream_cheremsha.chat import kick_credentials
+    from stream_cheremsha.chat.kick_api import KickOAuthConfig
+
+    bundle = {
+        "access_token": "acc",
+        "refresh_token": "ref",
+        "expires_in": 3600,
+        "issued_at": _time.time() - 4000,
+    }
+    monkeypatch.setattr(kick_credentials, "load_oauth_bundle", lambda: bundle)
+    monkeypatch.setattr(
+        KickOAuthConfig,
+        "from_env",
+        classmethod(
+            lambda cls: KickOAuthConfig(client_id="cid", redirect_uri="http://x")
+        ),
+    )
+
+    async def _fake_refresh(cfg, refresh_token):
+        raise ValueError("refresh failed")
+
+    monkeypatch.setattr(kick_credentials, "refresh_access_token", _fake_refresh)
+    assert asyncio.run(kick_credentials.ensure_valid_access_token()) == "acc"
 
 
 def test_parse_pusher_envelope_double_encoded() -> None:

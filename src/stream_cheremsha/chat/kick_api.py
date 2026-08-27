@@ -18,6 +18,8 @@ from urllib.parse import urlencode
 
 import httpx
 
+from stream_cheremsha.config import embedded
+
 AUTH_HOST = "https://id.kick.com"
 API_HOST = "https://api.kick.com"
 
@@ -52,16 +54,20 @@ def generate_pkce() -> KickPkce:
 @dataclass(frozen=True, slots=True)
 class KickOAuthConfig:
     client_id: str
-    client_secret: str
     redirect_uri: str
     scopes: str = KICK_SCOPES
+    client_secret: str = ""
 
     @classmethod
     def from_env(cls) -> KickOAuthConfig | None:
-        cid = os.environ.get(ENV_KICK_CLIENT_ID, "").strip()
-        sec = os.environ.get(ENV_KICK_CLIENT_SECRET, "").strip()
-        if not cid or not sec:
+        cid = (os.environ.get(ENV_KICK_CLIENT_ID) or "").strip()
+        if not cid:
+            cid = (embedded.KICK_CLIENT_ID or "").strip()
+        if not cid:
             return None
+        sec = (os.environ.get(ENV_KICK_CLIENT_SECRET) or "").strip()
+        if not sec:
+            sec = (embedded.KICK_CLIENT_SECRET or "").strip()
         redir = os.environ.get(ENV_KICK_REDIRECT_URI, "").strip() or DEFAULT_REDIRECT_URI
         return cls(client_id=cid, client_secret=sec, redirect_uri=redir)
 
@@ -91,17 +97,16 @@ async def exchange_code(
     owns = client is None
     c = client or httpx.AsyncClient(timeout=timeout)
     try:
-        resp = await c.post(
-            OAUTH_TOKEN_URL,
-            data={
-                "grant_type": "authorization_code",
-                "code": code,
-                "client_id": cfg.client_id,
-                "client_secret": cfg.client_secret,
-                "redirect_uri": cfg.redirect_uri,
-                "code_verifier": pkce.verifier,
-            },
-        )
+        data: dict[str, str] = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "client_id": cfg.client_id,
+            "redirect_uri": cfg.redirect_uri,
+            "code_verifier": pkce.verifier,
+        }
+        if cfg.client_secret:
+            data["client_secret"] = cfg.client_secret
+        resp = await c.post(OAUTH_TOKEN_URL, data=data)
     finally:
         if owns:
             await c.aclose()
@@ -125,15 +130,14 @@ async def refresh_access_token(
     owns = client is None
     c = client or httpx.AsyncClient(timeout=timeout)
     try:
-        resp = await c.post(
-            OAUTH_TOKEN_URL,
-            data={
-                "grant_type": "refresh_token",
-                "refresh_token": refresh_token,
-                "client_id": cfg.client_id,
-                "client_secret": cfg.client_secret,
-            },
-        )
+        data: dict[str, str] = {
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "client_id": cfg.client_id,
+        }
+        if cfg.client_secret:
+            data["client_secret"] = cfg.client_secret
+        resp = await c.post(OAUTH_TOKEN_URL, data=data)
     finally:
         if owns:
             await c.aclose()

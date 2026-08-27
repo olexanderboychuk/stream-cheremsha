@@ -2045,6 +2045,8 @@ Item {
             return "twitch";
         if (t.indexOf("youtube_") === 0)
             return "youtube";
+        if (t.indexOf("kick_") === 0)
+            return "kick";
         return "tiktok";
     }
 

@@ -5858,10 +5858,13 @@ class MainWindow(FramelessWindow):
     async def _kick_browser_login(self) -> None:
         cfg = KickOAuthConfig.from_env()
         if cfg is None:
-            QMessageBox.warning(
-                self,
-                self._tr("dlg.kick"),
-                self._tr("dlg.kick_need_client_config"),
+            QTimer.singleShot(
+                0,
+                lambda: QMessageBox.warning(
+                    self,
+                    self._tr("dlg.kick"),
+                    self._tr("dlg.kick_need_client_config"),
+                ),
             )
             return
         try:
@@ -5876,12 +5879,18 @@ class MainWindow(FramelessWindow):
             self._on_user_status(self._tr("status.kick_oauth_prompt"))
             code, _state, pkce = await run_kick_oauth(cfg, _open)
         except (OSError, RuntimeError, TimeoutError, ValueError) as e:
-            QMessageBox.warning(self, self._tr("dlg.kick_oauth"), str(e))
+            QTimer.singleShot(
+                0,
+                lambda e=e: QMessageBox.warning(self, self._tr("dlg.kick_oauth"), str(e)),
+            )
             return
         try:
             payload = await exchange_code(cfg, pkce, code)
         except (ValueError, httpx.HTTPError, OSError, RuntimeError) as e:
-            QMessageBox.warning(self, self._tr("dlg.kick_oauth"), str(e))
+            QTimer.singleShot(
+                0,
+                lambda e=e: QMessageBox.warning(self, self._tr("dlg.kick_oauth"), str(e)),
+            )
             return
         kick_credentials.save_oauth_bundle(payload)
         token = str(payload.get("access_token") or "")
@@ -5925,7 +5934,7 @@ class MainWindow(FramelessWindow):
         while self._kick_enabled and not self._closing:
             try:
                 cfg = KickOAuthConfig.from_env()
-                token = kick_credentials.access_token()
+                token = await kick_credentials.ensure_valid_access_token()
                 if cfg is not None and token:
                     api = KickApiClient(token)
                     try:

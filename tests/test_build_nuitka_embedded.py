@@ -10,6 +10,8 @@ def test_write_embedded_local_from_env(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(build_nuitka, "_EMBEDDED_LOCAL", embedded_path)
     monkeypatch.setenv("STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_TOKEN", "tok")
     monkeypatch.setenv("STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_HOSTNAME", "widgets.example.com")
+    monkeypatch.setenv("STREAM_CHEREMSHA_KICK_CLIENT_ID", "kick-cid")
+    monkeypatch.setenv("STREAM_CHEREMSHA_KICK_CLIENT_SECRET", "kick-sec")
 
     written = build_nuitka._write_embedded_local()
 
@@ -17,6 +19,8 @@ def test_write_embedded_local_from_env(monkeypatch, tmp_path: Path) -> None:
     text = embedded_path.read_text(encoding="utf-8")
     assert "CLOUDFLARE_TUNNEL_TOKEN = 'tok'" in text
     assert "CLOUDFLARE_TUNNEL_HOSTNAME = 'widgets.example.com'" in text
+    assert "KICK_CLIENT_ID = 'kick-cid'" in text
+    assert "KICK_CLIENT_SECRET = 'kick-sec'" in text
     build_nuitka._remove_embedded_local(True)
     assert not embedded_path.is_file()
 
@@ -27,6 +31,8 @@ def test_write_embedded_local_clears_when_env_missing(monkeypatch, tmp_path: Pat
     monkeypatch.setattr(build_nuitka, "_EMBEDDED_LOCAL", embedded_path)
     monkeypatch.delenv("STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_TOKEN", raising=False)
     monkeypatch.delenv("STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_HOSTNAME", raising=False)
+    monkeypatch.delenv("STREAM_CHEREMSHA_KICK_CLIENT_ID", raising=False)
+    monkeypatch.delenv("STREAM_CHEREMSHA_KICK_CLIENT_SECRET", raising=False)
 
     written = build_nuitka._write_embedded_local()
 

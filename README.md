@@ -203,6 +203,8 @@ Enter a username (with or without `@`) — the app connects via `TikTokLive` and
 3. In the app: **Sign in with Kick** — the browser opens, and a local callback server captures the code (no public URL/tunnel needed)
 4. **Start Kick**: enter the channel slug (e.g. `xqc`) or it is inferred after sign-in
 
+**Build-time embedding (Nuitka):** set `STREAM_CHEREMSHA_KICK_CLIENT_ID` (required) and optionally `STREAM_CHEREMSHA_KICK_CLIENT_SECRET` before `cheremsha-build` to compile them into the binary (GitHub Release CI reads the same names from repository secrets). At runtime the app resolves them in order: **process env** → **build embed**. The OAuth flow uses PKCE, so a public client may omit the secret; if Kick rejects PKCE-only exchanges for your app, keep the secret set.
+
 > **Note:** Kick does not expose an official realtime chat API for desktop apps. Cheremsha connects **outbound** to Kick's Pusher WebSocket (the same transport Kick's web client uses) and reads public `chatrooms.{id}.v2` channels. This is a compatibility transport and may change if Kick updates it. Follows, subscriptions, and gifts are best-effort from the chatroom channel; viewer counts and message sending use the official REST API.
 
 ### Telegram Bot (Music Requests)

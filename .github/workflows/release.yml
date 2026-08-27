@@ -41,6 +41,8 @@ jobs:
         env:
           STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_TOKEN }}
           STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_HOSTNAME: ${{ secrets.STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_HOSTNAME }}
+          STREAM_CHEREMSHA_KICK_CLIENT_ID: ${{ secrets.STREAM_CHEREMSHA_KICK_CLIENT_ID }}
+          STREAM_CHEREMSHA_KICK_CLIENT_SECRET: ${{ secrets.STREAM_CHEREMSHA_KICK_CLIENT_SECRET }}
         run: uv run --frozen cheremsha-build --out dist/nuitka --low-memory --jobs 1
 
       - name: Print Nuitka version
@@ -175,6 +177,8 @@ jobs:
         env:
           STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_TOKEN }}
           STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_HOSTNAME: ${{ secrets.STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_HOSTNAME }}
+          STREAM_CHEREMSHA_KICK_CLIENT_ID: ${{ secrets.STREAM_CHEREMSHA_KICK_CLIENT_ID }}
+          STREAM_CHEREMSHA_KICK_CLIENT_SECRET: ${{ secrets.STREAM_CHEREMSHA_KICK_CLIENT_SECRET }}
         run: uv run --frozen cheremsha-build --out dist/nuitka --low-memory --jobs 1
 
       - name: Print Nuitka version
