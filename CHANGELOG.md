@@ -4,6 +4,22 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.14.0] — 2026-08-27
+
+### Added
+
+- Kick sign-in: build-time embedding of `STREAM_CHEREMSHA_KICK_CLIENT_ID` / `STREAM_CHEREMSHA_KICK_CLIENT_SECRET` via `cheremsha-build`; GitHub Release CI reads them from repository secrets (values are compiled into the binary, so users no longer need to set env vars to sign in to Kick).
+- Kick token auto-refresh: the app now refreshes the OAuth access token via the refresh-token grant (Kick rotates refresh tokens; the new pair is persisted to the OS keyring), so long sessions keep working without re-signing in.
+
+### Changed
+
+- Kick OAuth client secret is optional: the flow only sends it when configured (PKCE is always used). Note: Kick currently requires the secret even with PKCE, so keep it set.
+
+### Fixed
+
+- Kick sign-in error dialogs no longer run a nested Qt event loop from inside the asyncio task, which previously produced `RuntimeError: Cannot enter into task ... while another task is being executed` and noisy crash logs.
+- Actions view now recognizes `kick_*` action trigger keys so Kick actions show the correct platform icon.
+
 ## [0.13.1] — 2026-08-26
 
 ### Fixed
