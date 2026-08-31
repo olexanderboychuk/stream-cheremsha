@@ -92,13 +92,8 @@ class OverlayTunnelQmlApi(QObject):
         uk = self._locale() != "en"
         if not self._tunnel_enabled:
             text = "Локальний URL (localhost)" if uk else "Local URL (localhost)"
-        elif st.status == "starting":
-            if self._tunnel_provider == TunnelProvider.CLOUDFLARE.value:
-                text = "Запуск cloudflared…" if uk else "Starting cloudflared…"
-            else:
-                text = "Запуск ngrok…" if uk else "Starting ngrok…"
-        elif st.status == "active" and st.public_url:
-            text = st.public_url
+        elif self._tunnel_enabled:
+            text = f"https://{embedded.OVERLAY_PUBLIC_HOSTNAME}:17171"
         elif st.status == "error":
             text = st.message or ("Помилка тунелю" if uk else "Tunnel error")
         else:
@@ -182,8 +177,8 @@ class OverlayTunnelQmlApi(QObject):
     def tunnelHelpText(self) -> str:  # noqa: ANN201 - PySide pattern
         uk = self._locale() != "en"
         if uk:
-            return f"Віджети будуть доступні через https://{embedded.OVERLAY_PUBLIC_HOSTNAME}/…"
-        return f"Widgets will be available at https://{embedded.OVERLAY_PUBLIC_HOSTNAME}/…"
+            return f"Віджети будуть доступні через https://{embedded.OVERLAY_PUBLIC_HOSTNAME}:17171/…"
+        return f"Widgets will be available at https://{embedded.OVERLAY_PUBLIC_HOSTNAME}:17171/…"
 
     @Property(str, constant=True)
     def ngrokDomainPlaceholder(self) -> str:  # noqa: ANN201 - PySide pattern

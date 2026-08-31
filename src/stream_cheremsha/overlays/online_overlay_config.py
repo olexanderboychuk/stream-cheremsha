@@ -19,6 +19,7 @@ class OnlineOverlayConfig:
     platform_twitch_enabled: bool
     platform_tiktok_enabled: bool
     platform_youtube_enabled: bool
+    platform_kick_enabled: bool
 
     font_family: str
     font_size_px: int
@@ -52,6 +53,7 @@ def online_overlay_config_defaults() -> OnlineOverlayConfig:
         platform_twitch_enabled=True,
         platform_tiktok_enabled=True,
         platform_youtube_enabled=True,
+        platform_kick_enabled=True,
         font_family="Segoe UI",
         font_size_px=36,
         font_line_spacing_px=0,
@@ -99,6 +101,7 @@ def online_overlay_config_to_json_text(cfg: OnlineOverlayConfig) -> str:
         "platform_twitch_enabled": bool(cfg.platform_twitch_enabled),
         "platform_tiktok_enabled": bool(cfg.platform_tiktok_enabled),
         "platform_youtube_enabled": bool(cfg.platform_youtube_enabled),
+        "platform_kick_enabled": bool(cfg.platform_kick_enabled),
         "font_family": str(cfg.font_family),
         "font_size_px": int(cfg.font_size_px),
         "font_line_spacing_px": int(cfg.font_line_spacing_px),
@@ -137,6 +140,9 @@ def online_overlay_config_from_json_text(text: str) -> OnlineOverlayConfig:
     )
     platform_youtube_enabled = _ensure_bool(
         raw.get("platform_youtube_enabled"), default=d.platform_youtube_enabled
+    )
+    platform_kick_enabled = _ensure_bool(
+        raw.get("platform_kick_enabled"), default=d.platform_kick_enabled
     )
 
     font_family = str(raw.get("font_family") or d.font_family)
@@ -191,6 +197,7 @@ def online_overlay_config_from_json_text(text: str) -> OnlineOverlayConfig:
         platform_twitch_enabled=platform_twitch_enabled,
         platform_tiktok_enabled=platform_tiktok_enabled,
         platform_youtube_enabled=platform_youtube_enabled,
+        platform_kick_enabled=platform_kick_enabled,
         font_family=font_family,
         font_size_px=font_size_px,
         font_line_spacing_px=font_line_spacing_px,

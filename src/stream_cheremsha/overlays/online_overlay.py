@@ -232,14 +232,16 @@ class OnlineOverlayType:
           const out = [];
           if (c.platform_twitch_enabled) out.push('twitch');
           if (c.platform_tiktok_enabled) out.push('tiktok');
-          if (c.platform_youtube_enabled) out.push('youtube');
+           if (c.platform_youtube_enabled) out.push('youtube');
+           if (c.platform_kick_enabled) out.push('kick');
           return out;
         }}
 
         function countFor(slug, o) {{
           if (slug === 'twitch') return twitchCount(o);
           if (slug === 'tiktok') return tiktokCount(o);
-          if (slug === 'youtube') return youtubeCount(o);
+           if (slug === 'youtube') return youtubeCount(o);
+           if (slug === 'kick') return toInt((o && o.kick) ? o.kick.current : 0);
           return 0;
         }}
 

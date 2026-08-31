@@ -120,10 +120,10 @@ class CommunityWorldOverlayType:
         flex-wrap: wrap; gap: 4px; padding: 6px;
       }}
       .layout-compact .village-scene .building .glyph {{
-        font-size: calc(26px * var(--cw-scale, 1));
+         font-size: var(--cw-size-26, 26px);
       }}
       .layout-compact .village-scene .building .bname {{
-        font-size: calc(8px * var(--cw-scale, 1));
+         font-size: var(--cw-size-8, 8px);
       }}
       .layout-compact .panel {{
         padding: 8px 10px;
@@ -131,11 +131,11 @@ class CommunityWorldOverlayType:
         box-shadow: 0 4px 14px rgba(0,0,0,0.3);
       }}
       .layout-compact .hud {{ gap: 8px; }}
-      .layout-compact .level-badge {{ min-width: 48px; padding: 5px 8px; font-size: 13px; }}
-      .layout-compact .counts {{ font-size: 10px; }}
+      .layout-compact .level-badge {{ min-width: 48px; padding: 5px 8px; font-size: var(--cw-size-13, 13px); }}
+      .layout-compact .counts {{ font-size: var(--cw-size-10, 10px); }}
       .layout-compact .count-chip {{ padding: 1px 7px; }}
       .layout-compact .feed-mini {{ max-height: 26%; overflow: hidden; }}
-      .layout-compact .feed-item {{ font-size: 11px; padding: 3px 6px; }}
+      .layout-compact .feed-item {{ font-size: var(--cw-size-11, 11px); padding: 3px 6px; }}
 
       .content {{
         position: relative; z-index: 2;
@@ -152,7 +152,7 @@ class CommunityWorldOverlayType:
         font-size: var(--cw-font-size, 16px);
       }}
       .title {{ color: var(--cw-title, #fde047); font-weight: 800; letter-spacing: 0.04em; }}
-      .sub {{ color: rgba(241,245,249,0.78); font-size: 12px; }}
+      .sub {{ color: rgba(241,245,249,0.78); font-size: var(--cw-size-12, 12px); }}
 
       .hud {{
         display: flex; flex-direction: row; align-items: center; gap: 10px;
@@ -162,20 +162,20 @@ class CommunityWorldOverlayType:
         min-width: 56px; text-align: center;
         padding: 6px 10px;
         background: var(--accent, #fde047);
-        color: #1c1917; font-weight: 900; font-size: 15px;
+        color: #1c1917; font-weight: 900; font-size: var(--cw-size-15, 15px);
         border-radius: 10px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.35);
       }}
       .xp-wrap {{ flex: 1 1 auto; min-width: 0; }}
       .xp-row {{ display: flex; flex-direction: row; justify-content: space-between;
-        font-size: 11px; color: rgba(241,245,249,0.85); font-weight: 700; }}
+         font-size: var(--cw-size-11, 11px); color: rgba(241,245,249,0.85); font-weight: 700; }}
       .xp-track {{ height: 10px; margin-top: 3px; border-radius: 999px; overflow: hidden;
         background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.14); }}
       .xp-fill {{ height: 100%; width: 0%; border-radius: 999px;
         background: linear-gradient(90deg, var(--progress, #4ade80), var(--accent, #fde047));
         transition: width 0.6s ease; }}
       .counts {{ display: flex; flex-direction: row; gap: 8px; flex-wrap: wrap;
-        font-size: 11px; font-weight: 700; color: rgba(241,245,249,0.9); }}
+         font-size: var(--cw-size-11, 11px); font-weight: 700; color: rgba(241,245,249,0.9); }}
       .count-chip {{ background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.12);
         border-radius: 999px; padding: 2px 8px; }}
 
@@ -186,24 +186,24 @@ class CommunityWorldOverlayType:
       .building {{ display: flex; flex-direction: column; align-items: center; gap: 2px;
         transform-origin: bottom center; animation: popIn 0.5s cubic-bezier(0.34,1.56,0.64,1); }}
       @keyframes popIn {{ 0% {{ transform: scale(0); opacity: 0; }} 100% {{ transform: scale(1); opacity: 1; }} }}
-      .building .glyph {{ font-size: calc(34px * var(--cw-scale, 1)); line-height: 1;
+      .building .glyph {{ font-size: var(--cw-size-34, 34px); line-height: 1;
         filter: drop-shadow(0 4px 6px rgba(0,0,0,0.45)); }}
-      .building .bname {{ font-size: calc(9px * var(--cw-scale, 1)); font-weight: 800;
+      .building .bname {{ font-size: var(--cw-size-9, 9px); font-weight: 800;
         color: rgba(255,255,255,0.92); text-shadow: 0 1px 3px rgba(0,0,0,0.8);
         white-space: nowrap; }}
       .building.founder .glyph {{ animation: founderBob 2.2s ease-in-out infinite; }}
       @keyframes founderBob {{ 0%,100% {{ transform: translateY(0); }} 50% {{ transform: translateY(-5px); }} }}
       .founder-tag {{ position: absolute; top: 0; left: 50%; transform: translateX(-50%);
-        font-size: 10px; font-weight: 800; color: var(--accent, #fde047);
+        font-size: var(--cw-size-10, 10px); font-weight: 800; color: var(--accent, #fde047);
         background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.2);
         padding: 2px 8px; border-radius: 999px; white-space: nowrap; }}
 
       .quests {{ display: flex; flex-direction: column; gap: 6px; }}
       .quest {{ display: flex; flex-direction: column; gap: 3px; }}
       .quest-head {{ display: flex; flex-direction: row; justify-content: space-between;
-        align-items: center; font-size: 12px; font-weight: 700; gap: 6px; }}
+        align-items: center; font-size: var(--cw-size-12, 12px); font-weight: 700; gap: 6px; }}
       .quest-name {{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
-      .quest-target {{ flex: 0 0 auto; white-space: nowrap; font-size: 11px; color: rgba(241,245,249,0.8); }}
+      .quest-target {{ flex: 0 0 auto; white-space: nowrap; font-size: var(--cw-size-11, 11px); color: rgba(241,245,249,0.8); }}
       .quest.done .quest-head {{ color: #86efac; }}
       .quest-track {{ height: 8px; border-radius: 999px; overflow: hidden;
         background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.12); }}
@@ -220,14 +220,14 @@ class CommunityWorldOverlayType:
       .feed {{ flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
         gap: 4px; overflow: hidden; }}
       .feed-item {{ display: flex; flex-direction: row; align-items: center; gap: 6px;
-        font-size: 12px; background: var(--panel, rgba(10,12,18,0.5));
+         font-size: var(--cw-size-12, 12px); background: var(--panel, rgba(10,12,18,0.5));
         border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; padding: 4px 8px;
         animation: slideIn 0.35s ease; }}
       @keyframes slideIn {{ from {{ transform: translateX(14px); opacity: 0; }} }}
       .feed-item .fi {{
         flex: 0 0 auto; width: 18px; height: 18px; border-radius: 999px;
         display: flex; align-items: center; justify-content: center;
-        font-size: 12px; overflow: hidden; background: rgba(255,255,255,0.12);
+         font-size: var(--cw-size-12, 12px); overflow: hidden; background: rgba(255,255,255,0.12);
       }}
       .feed-item .fi img {{ width: 100%; height: 100%; object-fit: cover; }}
       .feed-item .ft {{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
@@ -236,7 +236,7 @@ class CommunityWorldOverlayType:
       .passports {{ position: absolute; z-index: 3; left: 10px; bottom: 10px;
         width: 210px; display: flex; flex-direction: column; gap: 5px; }}
       .passport {{ display: flex; flex-direction: row; align-items: center; gap: 7px;
-        font-size: 12px; }}
+         font-size: var(--cw-size-12, 12px); }}
       .passport .av {{ flex: 0 0 auto; width: 24px; height: 24px; border-radius: 999px;
         background: rgba(255,255,255,0.14); overflow: hidden;
         display: flex; align-items: center; justify-content: center; font-weight: 800; }}
@@ -244,14 +244,14 @@ class CommunityWorldOverlayType:
       .passport .pn {{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
         font-weight: 700; }}
       .passport .badges {{ margin-left: auto; display: flex; flex-direction: row; gap: 1px;
-        font-size: 12px; }}
-      .passport .pt {{ color: rgba(241,245,249,0.6); font-size: 10px; margin-left: 4px; }}
+         font-size: var(--cw-size-12, 12px); }}
+       .passport .pt {{ color: rgba(241,245,249,0.6); font-size: var(--cw-size-10, 10px); margin-left: 4px; }}
 
       .elders {{ position: absolute; z-index: 3; left: 50%; bottom: 8px; transform: translateX(-50%);
         display: flex; flex-direction: row; gap: 6px; flex-wrap: wrap; justify-content: center;
         max-width: 92%; }}
       .elder {{ display: flex; flex-direction: row; align-items: center; gap: 4px;
-        font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.9);
+         font-size: var(--cw-size-10, 10px); font-weight: 700; color: rgba(255,255,255,0.9);
         background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.14);
         border-radius: 999px; padding: 2px 8px; }}
 
@@ -260,7 +260,7 @@ class CommunityWorldOverlayType:
         display: flex; align-items: center; justify-content: center;
       }}
       .celebrate .banner {{
-        font-size: calc(22px * var(--cw-scale, 1)); font-weight: 900;
+        font-size: var(--cw-size-22, 22px); font-weight: 900;
         color: var(--accent, #fde047); text-shadow: 0 3px 10px rgba(0,0,0,0.85);
         background: rgba(0,0,0,0.5); border: 2px solid rgba(255,255,255,0.25);
         border-radius: 16px; padding: 10px 22px;
@@ -370,7 +370,6 @@ class CommunityWorldOverlayType:
           const font = (cfg.font_family || 'Segoe UI').trim();
           root.style.setProperty('--cw-font', "'" + font.replace(/'/g, '') + "', sans-serif");
           const scale = Math.max(0.4, Math.min(2, parseInt(cfg.scale_pct, 10) || 100) / 100);
-          root.style.setProperty('--cw-scale', String(scale));
           root.style.setProperty('--cw-title', cfg.color_title || '#fde047');
           root.style.setProperty('--cw-text', cfg.color_text || '#f1f5f9');
           root.style.setProperty('--cw-accent', cfg.color_accent || '#a78bfa');
@@ -382,7 +381,13 @@ class CommunityWorldOverlayType:
             root.style.removeProperty('--panel');
           }}
           const fs = Math.max(8, Math.min(120, parseInt(cfg.font_size_px, 10) || 16));
-          root.style.setProperty('--cw-font-size', fs + 'px');
+          // Keep the root at viewport size; scale only text and UI elements.
+          root.style.setProperty('--cw-scale', String(scale));
+          root.style.setProperty('--cw-font-size', (fs * scale) + 'px');
+          [8, 9, 10, 11, 12, 13, 15, 22, 26, 34].forEach(function (base) {{
+            root.style.setProperty('--cw-size-' + base, (base * scale) + 'px');
+          }});
+          root.style.fontFamily = "'" + font.replace(/'/g, '') + "', sans-serif";
         }}
 
         function buildHtml() {{
@@ -428,7 +433,7 @@ class CommunityWorldOverlayType:
 
             if (show('show_recognition', true)) {{
               parts.push('<div class="side"><div class="panel" style="display:flex;flex-direction:column;min-height:0;">' +
-                '<div class="title" style="font-size:11px;margin-bottom:4px;">' + esc(T.quest) + '</div>' +
+                '<div class="title" style="font-size:var(--cw-size-11, 11px);margin-bottom:4px;">' + esc(T.quest) + '</div>' +
                 '<div class="feed" id="feed"></div></div></div>');
             }}
             if (show('show_passports', true)) {{
@@ -556,7 +561,7 @@ class CommunityWorldOverlayType:
           const list = (st.passports || []).slice(0, 6);
           if (!list.length) {{ el.innerHTML = ''; return; }}
           el.innerHTML = '<div class="panel" style="display:flex;flex-direction:column;gap:5px;">' +
-            '<div class="title" style="font-size:11px;">' + esc(T.village) + '</div>' +
+            '<div class="title" style="font-size:var(--cw-size-11, 11px);">' + esc(T.village) + '</div>' +
             list.map(function (p) {{
               const av = p.avatar_url
                 ? '<img src="' + esc(p.avatar_url) + '" alt="" />'

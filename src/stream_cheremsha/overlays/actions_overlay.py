@@ -22,7 +22,7 @@ def _platform_icons_data_uris() -> dict[str, str]:
     """Inline SVG as data URIs so OBS/Chromium always paints icons (no separate /assets fetch)."""
     base = Path(__file__).resolve().parents[1] / "assets"
     out: dict[str, str] = {}
-    for slug in ("tiktok", "twitch", "youtube"):
+    for slug in ("tiktok", "twitch", "youtube", "kick"):
         p = base / f"{slug}.svg"
         if not p.is_file():
             continue

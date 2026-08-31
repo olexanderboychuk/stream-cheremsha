@@ -1774,6 +1774,10 @@ Item {
             required property var modelData
             width: ListView.view ? ListView.view.width : implicitWidth
             implicitHeight: 34
+            onClicked: {
+                cb.currentIndex = index;
+                cb.popup.close();
+            }
             contentItem: Text {
                 text: cb.textRole ? (modelData[cb.textRole] || "") : (modelData || "")
                 color: root.ink
@@ -3821,9 +3825,11 @@ Item {
                                         onActivated: function (idx) {
                                             var apiRef = actionsList.rootApi;
                                             if (apiRef.selectedRule === null) return;
+                                            var typeModel = actionsList.actionTypes;
+                                            if (idx < 0 || idx >= typeModel.length) return;
                                             var r = apiRef._copyRule(apiRef.selectedRule);
                                             if (r == null) return;
-                                            var t = model[idx].value;
+                                            var t = typeModel[idx].value;
                                             var aa = apiRef.actionsModel.slice();
                                             var ac = apiRef._copyRule(aa[aIdx]);
                                             if (ac) aa[aIdx] = ac;
@@ -5210,4 +5216,3 @@ Item {
         }
     }
 }
-

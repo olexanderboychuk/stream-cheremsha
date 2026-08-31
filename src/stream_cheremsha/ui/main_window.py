@@ -126,9 +126,6 @@ from stream_cheremsha.chat.youtube_source import (
     parse_google_desktop_client_json,
 )
 from stream_cheremsha.config import constants, embedded, keyring_store
-from stream_cheremsha.config.tunnel_secrets import (
-    resolve_cloudflare_tunnel_token,
-)
 from stream_cheremsha.domain.models import ChatMessage, ChatPlatform
 from stream_cheremsha.domain.points import (
     PointsConfig,
@@ -164,7 +161,6 @@ from stream_cheremsha.overlays.top_likers_overlay_config import load_top_likers_
 from stream_cheremsha.overlays.top_likers_session import TikTokSessionTopLikers
 from stream_cheremsha.overlays.tunnel import OverlayTunnel
 from stream_cheremsha.overlays.tunnel_install import (
-    find_tunnel_executable,
     install_prompt_labels,
     install_status_message,
     install_tunnel_tool_via_winget,
@@ -174,7 +170,6 @@ from stream_cheremsha.overlays.tunnel_install import (
     provider_needs_cli,
     tunnel_cli_title,
 )
-from stream_cheremsha.overlays.tunnel_types import TunnelProvider
 from stream_cheremsha.paths import stream_cheremsha_root
 from stream_cheremsha.persistence.battle_royale_wins_sqlite import (
     fetch_hall_of_fame,
@@ -6131,10 +6126,7 @@ class MainWindow(FramelessWindow):
         local_url = self._overlay_server.base_url()
         if not bool(self._settings.value(constants.SETTINGS_OVERLAY_TUNNEL_ENABLED, False, bool)):
             return local_url
-        st = self._overlay_tunnel.state()
-        if st.status == "active" and st.public_url:
-            return st.public_url.rstrip("/")
-        return local_url
+        return f"https://{embedded.OVERLAY_PUBLIC_HOSTNAME}:17171"
 
     def _apply_overlay_urls_to_qml(self, *, local_url: str) -> None:
         base = self._overlay_public_base_url() if local_url else ""
@@ -6210,18 +6202,11 @@ class MainWindow(FramelessWindow):
 
         enabled = bool(self._settings.value(constants.SETTINGS_OVERLAY_TUNNEL_ENABLED, False, bool))
         if enabled:
-            cloudflare_token = resolve_cloudflare_tunnel_token()
-            cloudflared_executable = find_tunnel_executable(TunnelProvider.CLOUDFLARE) or ""
-            try:
-                await self._overlay_tunnel.start(
-                    provider=TunnelProvider.CLOUDFLARE,
-                    local_url=local_url,
-                    cloudflare_hostname=embedded.OVERLAY_PUBLIC_HOSTNAME,
-                    cloudflare_tunnel_token=cloudflare_token,
-                    cloudflared_executable=cloudflared_executable,
+            await self._overlay_tunnel.stop()
+            if self._overlay_tunnel_qml_api is not None:
+                self._overlay_tunnel_qml_api.set_tunnel_status_message(
+                    f"https://{embedded.OVERLAY_PUBLIC_HOSTNAME}:17171"
                 )
-            except (OSError, ValueError, RuntimeError) as e:
-                logger.exception("Overlay tunnel failed: %s", e)
         else:
             await self._overlay_tunnel.stop()
 

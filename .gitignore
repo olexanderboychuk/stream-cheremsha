@@ -33,6 +33,7 @@ build/
 *.xml
 src/stream_cheremsha/config/embedded_local.py
 certs/
+bin/
 *.pem
 *.key
 

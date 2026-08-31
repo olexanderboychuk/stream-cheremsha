@@ -209,10 +209,7 @@ class OverlayTunnel:
         )
         exe = str(cloudflared_executable or "").strip()
         if not exe:
-            raise RuntimeError(
-                "cloudflared is required. Install it via winget (Cloudflare.cloudflared) "
-                "or from https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/"
-            )
+            raise RuntimeError("Cloudflare tunnel support is disabled")
 
         token = str(tunnel_token or "").strip()
         if not token:
