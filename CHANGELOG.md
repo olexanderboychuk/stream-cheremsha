@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.14.1] — 2026-08-31
+
+### Added
+
+- Kick platform support, including chat, OAuth sign-in, analytics, viewer counts, messages, and action triggers.
+- Automatic Kick OAuth token refresh with rotated credentials persisted to the OS keyring.
+
+### Changed
+
+- Kick OAuth client secrets are optional in the PKCE flow and can be embedded into release builds.
+- Overlay tunnel configuration and SSL certificate renewal are handled more reliably at runtime.
+
+### Fixed
+
+- Kick sign-in errors no longer run a nested Qt event loop inside an asyncio task.
+- Kick actions display the correct platform icon.
+
 ## [0.14.0] — 2026-08-27
 
 ### Added
