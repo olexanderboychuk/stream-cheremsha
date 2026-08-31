@@ -1,0 +1,42 @@
+name: Renew & Upload SSL Certificates to Workers KV
+
+on:
+  schedule:
+    - cron: "0 0 1 * *"
+  workflow_dispatch:
+
+jobs:
+  renew-and-upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install acme.sh
+        run: |
+          curl https://get.acme.sh | sh
+          ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
+
+      - name: Issue Certificate
+        env:
+          CF_Token: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          ~/.acme.sh/acme.sh --issue --dns dns_cf \
+            -d "cheremsha.click" \
+            -d "*.cheremsha.click"
+
+      - name: Upload to Workers KV
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
+        run: |
+          set -euo pipefail
+          kv_url="https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${CF_KV_NAMESPACE_ID}/values"
+          auth_header="Authorization: Bearer ${CF_API_TOKEN}"
+
+          curl --fail-with-body -X PUT "${kv_url}/cert.pem" \
+            -H "${auth_header}" \
+            -H "Content-Type: text/plain" \
+            --data-binary "@${HOME}/.acme.sh/cheremsha.click_ecc/fullchain.cer"
+          curl --fail-with-body -X PUT "${kv_url}/key.pem" \
+            -H "${auth_header}" \
+            -H "Content-Type: text/plain" \
+            --data-binary "@${HOME}/.acme.sh/cheremsha.click_ecc/cheremsha.click.key"

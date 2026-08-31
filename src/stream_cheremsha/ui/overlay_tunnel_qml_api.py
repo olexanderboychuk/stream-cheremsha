@@ -11,7 +11,7 @@ from PySide6.QtCore import Property, QObject, Signal, Slot
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QMessageBox
 
-from stream_cheremsha.config import constants, keyring_store
+from stream_cheremsha.config import constants, embedded, keyring_store
 from stream_cheremsha.config.tunnel_secrets import (
     cloudflare_tunnel_token_configured,
 )
@@ -65,13 +65,7 @@ class OverlayTunnelQmlApi(QObject):
             return
         s = w._settings  # noqa: SLF001
         self._tunnel_enabled = bool(s.value(constants.SETTINGS_OVERLAY_TUNNEL_ENABLED, False, bool))
-        provider = str(
-            s.value(constants.SETTINGS_OVERLAY_TUNNEL_PROVIDER, TunnelProvider.NGROK.value, str)
-            or ""
-        )
-        if provider not in {p.value for p in TunnelProvider if p not in (TunnelProvider.NONE,)}:
-            provider = TunnelProvider.NGROK.value
-        self._tunnel_provider = provider
+        self._tunnel_provider = TunnelProvider.CLOUDFLARE.value
         self._tunnel_custom_url = str(
             s.value(constants.SETTINGS_OVERLAY_TUNNEL_CUSTOM_URL, "", str) or ""
         )
@@ -182,44 +176,14 @@ class OverlayTunnelQmlApi(QObject):
     @Property(str, constant=True)
     def tunnelEnabledLabel(self) -> str:  # noqa: ANN201 - PySide pattern
         uk = self._locale() != "en"
-        return "Публічний URL (TikTok Live Studio)" if uk else "Public URL (TikTok Live Studio)"
+        return "Публічний URL" if uk else "Public URL"
 
     @Property(str, notify=tunnelProviderChanged)
     def tunnelHelpText(self) -> str:  # noqa: ANN201 - PySide pattern
         uk = self._locale() != "en"
-        if self._tunnel_provider == TunnelProvider.CLOUDFLARE.value:
-            if uk:
-                return (
-                    "Один раз налаштуйте tunnel у Cloudflare Zero Trust: Public hostname → "
-                    "http://127.0.0.1:17171. Нижче вкажіть tunnel token і hostname — "
-                    "той самий token можна використовувати на різних комп’ютерах."
-                )
-            return (
-                "Set up the tunnel once in Cloudflare Zero Trust: public hostname → "
-                "http://127.0.0.1:17171. Enter the tunnel token and hostname below — "
-                "the same token works on every PC."
-            )
-        if self._tunnel_provider == TunnelProvider.CUSTOM.value:
-            if uk:
-                return (
-                    "Вкажіть готовий публічний https:// URL (наприклад, власний reverse proxy). "
-                    "Cheremsha не запускає тунель — лише підставляє URL у віджети."
-                )
-            return (
-                "Enter a ready public https:// URL (for example your own reverse proxy). "
-                "Cheremsha does not start a tunnel — it only uses the URL in widget links."
-            )
         if uk:
-            return (
-                "TikTok Live Studio не приймає localhost. Увімкніть ngrok — "
-                "URL віджетів буде стабільним https://ваш-домен.ngrok-free.dev/… "
-                "(на безкоштовному плані ngrok показує попередження у браузері)."
-            )
-        return (
-            "TikTok Live Studio rejects localhost. Enable ngrok for a stable "
-            "https://your-name.ngrok-free.dev/… widget URL "
-            "(free ngrok shows a browser warning interstitial)."
-        )
+            return f"Віджети будуть доступні через https://{embedded.OVERLAY_PUBLIC_HOSTNAME}/…"
+        return f"Widgets will be available at https://{embedded.OVERLAY_PUBLIC_HOSTNAME}/…"
 
     @Property(str, constant=True)
     def ngrokDomainPlaceholder(self) -> str:  # noqa: ANN201 - PySide pattern

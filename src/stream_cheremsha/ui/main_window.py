@@ -125,9 +125,8 @@ from stream_cheremsha.chat.youtube_source import (
     is_google_account_linked,
     parse_google_desktop_client_json,
 )
-from stream_cheremsha.config import constants, keyring_store
+from stream_cheremsha.config import constants, embedded, keyring_store
 from stream_cheremsha.config.tunnel_secrets import (
-    resolve_cloudflare_tunnel_hostname,
     resolve_cloudflare_tunnel_token,
 )
 from stream_cheremsha.domain.models import ChatMessage, ChatPlatform
@@ -171,7 +170,6 @@ from stream_cheremsha.overlays.tunnel_install import (
     install_tunnel_tool_via_winget,
     is_tunnel_cli_installed,
     is_winget_available,
-    missing_cli_status_message,
     provider_auto_installs_cli,
     provider_needs_cli,
     tunnel_cli_title,
@@ -202,6 +200,7 @@ from stream_cheremsha.persistence.tiktok_gifts_sqlite import (
 )
 from stream_cheremsha.pipeline.coordinator import StreamCoordinator
 from stream_cheremsha.pipeline.tts_sanitize import strip_non_alphabetic_for_tts
+from stream_cheremsha.ssl_manager import ensure_valid_ssl
 from stream_cheremsha.telegram.bot_service import RiskyDecisionResult, TelegramBotService
 from stream_cheremsha.telegram.tiktok_song_filter import (
     TikTokLyricsCheckError,
@@ -718,6 +717,8 @@ class MainWindow(FramelessWindow):
             registry=self._overlay_registry,
             host="127.0.0.1",
             port=17171,
+            certificate_pem=embedded.OVERLAY_CERTIFICATE,
+            private_key_pem=embedded.OVERLAY_PRIVATE_KEY,
         )
         self._overlay_tunnel = OverlayTunnel()
         self._asyncio_loop: asyncio.AbstractEventLoop | None = None
@@ -6209,69 +6210,18 @@ class MainWindow(FramelessWindow):
 
         enabled = bool(self._settings.value(constants.SETTINGS_OVERLAY_TUNNEL_ENABLED, False, bool))
         if enabled:
-            if self._overlay_tunnel_qml_api is not None:
-                provider_str = self._overlay_tunnel_qml_api.resolved_tunnel_provider()
-            else:
-                provider_str = str(
-                    self._settings.value(
-                        constants.SETTINGS_OVERLAY_TUNNEL_PROVIDER,
-                        TunnelProvider.NGROK.value,
-                        str,
-                    )
-                    or TunnelProvider.NGROK.value,
-                ).strip()
-            custom_url = str(
-                self._settings.value(constants.SETTINGS_OVERLAY_TUNNEL_CUSTOM_URL, "", str) or "",
-            ).strip()
-            ngrok_domain = str(
-                self._settings.value(constants.SETTINGS_OVERLAY_NGROK_DOMAIN, "", str) or "",
-            ).strip()
-            cloudflare_hostname = resolve_cloudflare_tunnel_hostname(
-                settings_value=str(
-                    self._settings.value(
-                        constants.SETTINGS_OVERLAY_CLOUDFLARE_HOSTNAME,
-                        "",
-                        str,
-                    )
-                    or "",
-                ),
-            )
-            ready = True
-            if provider_needs_cli(provider_str):
-                ready = await self._ensure_tunnel_cli_installed(
-                    provider_str,
-                    prompt_install=prompt_install,
-                )
-            if not ready:
-                await self._overlay_tunnel.stop()
-                self._apply_overlay_urls_to_qml(local_url=local_url)
-                if self._overlay_tunnel_qml_api is not None:
-                    self._overlay_tunnel_qml_api.set_tunnel_status_message(
-                        missing_cli_status_message(provider_str, locale=self._locale),
-                    )
-                return
-            token = (keyring_store.get_password(constants.KEY_NGROK_AUTHTOKEN) or "").strip()
             cloudflare_token = resolve_cloudflare_tunnel_token()
-            cloudflared_executable = find_tunnel_executable(provider_str) or ""
+            cloudflared_executable = find_tunnel_executable(TunnelProvider.CLOUDFLARE) or ""
             try:
                 await self._overlay_tunnel.start(
-                    provider=provider_str,
+                    provider=TunnelProvider.CLOUDFLARE,
                     local_url=local_url,
-                    ngrok_authtoken=token,
-                    ngrok_domain=ngrok_domain,
-                    custom_url=custom_url,
-                    cloudflare_hostname=cloudflare_hostname,
+                    cloudflare_hostname=embedded.OVERLAY_PUBLIC_HOSTNAME,
                     cloudflare_tunnel_token=cloudflare_token,
                     cloudflared_executable=cloudflared_executable,
                 )
             except (OSError, ValueError, RuntimeError) as e:
                 logger.exception("Overlay tunnel failed: %s", e)
-            else:
-                domain_used = self._overlay_tunnel.ngrok_domain_used()
-                if domain_used and domain_used != ngrok_domain:
-                    self._settings.setValue(constants.SETTINGS_OVERLAY_NGROK_DOMAIN, domain_used)
-                    if self._overlay_tunnel_qml_api is not None:
-                        self._overlay_tunnel_qml_api.sync_ngrok_domain(domain_used)
         else:
             await self._overlay_tunnel.stop()
 
@@ -6282,6 +6232,9 @@ class MainWindow(FramelessWindow):
             self._on_user_status(self._tr("startup.workers"))
             self._asyncio_loop = asyncio.get_running_loop()
             self._music_queue.set_loop(self._asyncio_loop)
+            cert_paths = ensure_valid_ssl()
+            if cert_paths is not None:
+                self._overlay_server.set_tls_files(*cert_paths)
             await self._overlay_server.start()
             logger.info("Overlay server: %s", self._overlay_server.base_url())
             self._stream_pet.set_pubsub(self._overlay_server.pubsub())

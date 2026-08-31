@@ -100,6 +100,10 @@ Item {
             required property int index
             width: ListView.view ? ListView.view.width : implicitWidth
             implicitHeight: 34
+            onClicked: {
+                cb.currentIndex = index;
+                cb.popup.close();
+            }
             contentItem: Text {
                 text: cb.textAt(index)
                 color: root.ink
@@ -675,6 +679,7 @@ Item {
         if (obj.platform_twitch_enabled === undefined) obj.platform_twitch_enabled = true;
         if (obj.platform_tiktok_enabled === undefined) obj.platform_tiktok_enabled = true;
         if (obj.platform_youtube_enabled === undefined) obj.platform_youtube_enabled = true;
+        if (obj.platform_kick_enabled === undefined) obj.platform_kick_enabled = true;
 
         if (!obj.font_family) obj.font_family = "Segoe UI";
         if (obj.font_size_px === undefined) obj.font_size_px = 36;
@@ -827,10 +832,10 @@ Item {
     function _saveCommunityWorld() {
         if (!api || root.communityWorldCfg === null) return;
         root.communityWorldCfgEpoch += 1;
-        if (typeof api.saveCommunityWorldOverlayConfigMap === "function")
-            api.saveCommunityWorldOverlayConfigMap(root.communityWorldCfg);
-        else
-            api.saveCommunityWorldOverlayConfigJson(JSON.stringify(root.communityWorldCfg));
+        // This config is a plain JS object (loaded through JSON.parse). Passing it
+        // through QJSValue can be converted to an empty QVariantMap by some Qt builds.
+        // JSON keeps the edited value intact and also publishes the live overlay patch.
+        api.saveCommunityWorldOverlayConfigJson(JSON.stringify(root.communityWorldCfg));
     }
 
     function _applyStreamPetPreset(presetId) {
@@ -1167,103 +1172,6 @@ Item {
                                 color: muted
                                 font.pixelSize: 12
                                 wrapMode: Text.Wrap
-                            }
-
-                            StyledComboBox {
-                                Layout.fillWidth: true
-                                visible: tunnelApi && tunnelApi.tunnelEnabled
-                                model: [
-                                    { label: "Cloudflare Tunnel", value: "cloudflare" },
-                                    { label: "ngrok", value: "ngrok" },
-                                    { label: "Свій URL", value: "custom" }
-                                ]
-                                textRole: "label"
-                                currentIndex: {
-                                    if (!tunnelApi) return 1
-                                    if (tunnelApi.tunnelProvider === "cloudflare") return 0
-                                    if (tunnelApi.tunnelProvider === "custom") return 2
-                                    return 1
-                                }
-                                onActivated: function(index) {
-                                    if (!tunnelApi) return
-                                    tunnelApi.setTunnelProvider(model[index].value)
-                                }
-                            }
-
-                            TextField {
-                                Layout.fillWidth: true
-                                visible: tunnelApi && tunnelApi.tunnelEnabled && tunnelApi.tunnelProvider === "ngrok"
-                                placeholderText: tunnelApi ? tunnelApi.ngrokDomainPlaceholder : "abc123.ngrok-free.dev"
-                                color: ink
-                                font.pixelSize: 12
-                                selectByMouse: true
-                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                                text: tunnelApi ? tunnelApi.ngrokDomain : ""
-                                onEditingFinished: if (tunnelApi) tunnelApi.setNgrokDomain(text)
-                            }
-
-                            TextField {
-                                id: ngrokTokenField
-                                Layout.fillWidth: true
-                                visible: tunnelApi && tunnelApi.tunnelEnabled && tunnelApi.tunnelProvider === "ngrok"
-                                placeholderText: tunnelApi ? tunnelApi.ngrokTokenPlaceholder : "ngrok authtoken"
-                                echoMode: TextInput.Password
-                                color: ink
-                                font.pixelSize: 12
-                                selectByMouse: true
-                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                                onTextChanged: if (tunnelApi) tunnelApi.setNgrokToken(text)
-                                onEditingFinished: if (tunnelApi) tunnelApi.saveNgrokToken()
-                            }
-
-                            PillButton {
-                                visible: tunnelApi && tunnelApi.tunnelEnabled && tunnelApi.tunnelProvider === "ngrok"
-                                text: "ngrok domains"
-                                onClicked: if (tunnelApi) tunnelApi.openNgrokDomainsPage()
-                            }
-
-                            TextField {
-                                id: cloudflareTokenField
-                                Layout.fillWidth: true
-                                visible: tunnelApi && tunnelApi.tunnelEnabled && tunnelApi.tunnelProvider === "cloudflare"
-                                placeholderText: tunnelApi ? tunnelApi.cloudflareTokenPlaceholder : "Cloudflare tunnel token"
-                                echoMode: TextInput.Password
-                                color: ink
-                                font.pixelSize: 12
-                                selectByMouse: true
-                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                                onTextChanged: if (tunnelApi) tunnelApi.setCloudflareToken(text)
-                                onEditingFinished: if (tunnelApi) tunnelApi.saveCloudflareToken()
-                            }
-
-                            TextField {
-                                Layout.fillWidth: true
-                                visible: tunnelApi && tunnelApi.tunnelEnabled && tunnelApi.tunnelProvider === "cloudflare"
-                                placeholderText: tunnelApi ? tunnelApi.cloudflareHostnamePlaceholder : "widgets.example.com"
-                                color: ink
-                                font.pixelSize: 12
-                                selectByMouse: true
-                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                                text: tunnelApi ? tunnelApi.cloudflareHostname : ""
-                                onEditingFinished: if (tunnelApi) tunnelApi.setCloudflareHostname(text)
-                            }
-
-                            PillButton {
-                                visible: tunnelApi && tunnelApi.tunnelEnabled && tunnelApi.tunnelProvider === "cloudflare"
-                                text: "Cloudflare tunnels"
-                                onClicked: if (tunnelApi) tunnelApi.openCloudflareTunnelsPage()
-                            }
-
-                            TextField {
-                                Layout.fillWidth: true
-                                visible: tunnelApi && tunnelApi.tunnelEnabled && tunnelApi.tunnelProvider === "custom"
-                                placeholderText: "https://widgets.example.com"
-                                color: ink
-                                font.pixelSize: 12
-                                selectByMouse: true
-                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                                text: tunnelApi ? tunnelApi.tunnelCustomUrl : ""
-                                onEditingFinished: if (tunnelApi) tunnelApi.setTunnelCustomUrl(text)
                             }
 
                             Text {
@@ -2484,6 +2392,21 @@ Item {
                                 onClicked: {
                                     if (root.onlineCfg === null) return;
                                     root.onlineCfg.platform_youtube_enabled = checked;
+                                    root._saveOnline();
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Kick"; color: muted; Layout.preferredWidth: 160 }
+                            Switch {
+                                checked: root.onlineCfg ? !!root.onlineCfg.platform_kick_enabled : true
+                                onClicked: {
+                                    if (root.onlineCfg === null) return;
+                                    root.onlineCfg.platform_kick_enabled = checked;
                                     root._saveOnline();
                                 }
                             }
@@ -5844,4 +5767,3 @@ Item {
         }
     }
 }
-

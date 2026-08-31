@@ -14,15 +14,37 @@ _ENV_CLOUDFLARE_TUNNEL_TOKEN = "STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_TOKEN"
 _ENV_CLOUDFLARE_TUNNEL_HOSTNAME = "STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_HOSTNAME"
 _ENV_KICK_CLIENT_ID = "STREAM_CHEREMSHA_KICK_CLIENT_ID"
 _ENV_KICK_CLIENT_SECRET = "STREAM_CHEREMSHA_KICK_CLIENT_SECRET"
+_ENV_OVERLAY_CERTIFICATE = "STREAM_CHEREMSHA_OVERLAY_CERTIFICATE"
+_ENV_OVERLAY_PRIVATE_KEY = "STREAM_CHEREMSHA_OVERLAY_PRIVATE_KEY"
+_ENV_OVERLAY_PUBLIC_HOSTNAME = "STREAM_CHEREMSHA_OVERLAY_PUBLIC_HOSTNAME"
 
 
-def _write_embedded_local() -> bool:
+def _write_embedded_local(
+    *, overlay_cert_path: str = "", overlay_key_path: str = ""
+) -> bool:
     """Materialize build-time secrets for Nuitka to compile into the binary."""
     token = (os.environ.get(_ENV_CLOUDFLARE_TUNNEL_TOKEN) or "").strip()
     hostname = (os.environ.get(_ENV_CLOUDFLARE_TUNNEL_HOSTNAME) or "").strip()
     kick_cid = (os.environ.get(_ENV_KICK_CLIENT_ID) or "").strip()
     kick_sec = (os.environ.get(_ENV_KICK_CLIENT_SECRET) or "").strip()
-    if not any((token, hostname, kick_cid, kick_sec)):
+    certificate = (os.environ.get(_ENV_OVERLAY_CERTIFICATE) or "").strip()
+    private_key = (os.environ.get(_ENV_OVERLAY_PRIVATE_KEY) or "").strip()
+    public_hostname = (
+        os.environ.get(_ENV_OVERLAY_PUBLIC_HOSTNAME) or "app.cheremsha.click"
+    ).strip()
+    if overlay_cert_path or overlay_key_path:
+        if not overlay_cert_path or not overlay_key_path:
+            raise SystemExit("Both --overlay-cert and --overlay-key are required")
+        try:
+            certificate = Path(overlay_cert_path).read_text(encoding="utf-8").strip()
+            private_key = Path(overlay_key_path).read_text(encoding="utf-8").strip()
+        except OSError as e:
+            raise SystemExit(f"Unable to read overlay TLS files: {e}") from e
+    if bool(certificate) != bool(private_key):
+        raise SystemExit(
+            f"Both {_ENV_OVERLAY_CERTIFICATE} and {_ENV_OVERLAY_PRIVATE_KEY} are required"
+        )
+    if not any((token, hostname, kick_cid, kick_sec, certificate, private_key)):
         if _EMBEDDED_LOCAL.is_file():
             _EMBEDDED_LOCAL.unlink()
         return False
@@ -31,7 +53,10 @@ def _write_embedded_local() -> bool:
         f"CLOUDFLARE_TUNNEL_TOKEN = {token!r}\n"
         f"CLOUDFLARE_TUNNEL_HOSTNAME = {hostname!r}\n"
         f"KICK_CLIENT_ID = {kick_cid!r}\n"
-        f"KICK_CLIENT_SECRET = {kick_sec!r}\n",
+        f"KICK_CLIENT_SECRET = {kick_sec!r}\n"
+        f"OVERLAY_CERTIFICATE = {certificate!r}\n"
+        f"OVERLAY_PRIVATE_KEY = {private_key!r}\n"
+        f"OVERLAY_PUBLIC_HOSTNAME = {public_hostname!r}\n",
         encoding="utf-8",
     )
     return True
@@ -295,6 +320,16 @@ def main(argv: list[str] | None = None) -> None:
             "AssertionError: ... module.*.c already exists."
         ),
     )
+    p.add_argument(
+        "--overlay-cert",
+        default="",
+        help="PEM certificate/full chain to embed for the widgets HTTPS server.",
+    )
+    p.add_argument(
+        "--overlay-key",
+        default="",
+        help="PEM private key to embed for the widgets HTTPS server.",
+    )
     ns = p.parse_args(argv)
 
     if ns.fast:
@@ -305,7 +340,9 @@ def main(argv: list[str] | None = None) -> None:
     out.mkdir(parents=True, exist_ok=True)
     if ns.clean:
         _remove_stale_nuitka_build_workdirs(out)
-    embedded_written = _write_embedded_local()
+    embedded_written = _write_embedded_local(
+        overlay_cert_path=str(ns.overlay_cert), overlay_key_path=str(ns.overlay_key)
+    )
     cmd = _nuitka_cmd(
         out_dir=out,
         onefile=ns.onefile,

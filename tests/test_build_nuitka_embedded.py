@@ -38,3 +38,24 @@ def test_write_embedded_local_clears_when_env_missing(monkeypatch, tmp_path: Pat
 
     assert written is False
     assert not embedded_path.is_file()
+
+
+def test_write_embedded_local_reads_overlay_tls_files(
+    monkeypatch, tmp_path: Path
+) -> None:
+    embedded_path = tmp_path / "embedded_local.py"
+    cert_path = tmp_path / "fullchain.pem"
+    key_path = tmp_path / "key.pem"
+    cert_path.write_text("CERTIFICATE PEM", encoding="utf-8")
+    key_path.write_text("PRIVATE KEY PEM", encoding="utf-8")
+    monkeypatch.setattr(build_nuitka, "_EMBEDDED_LOCAL", embedded_path)
+
+    written = build_nuitka._write_embedded_local(
+        overlay_cert_path=str(cert_path), overlay_key_path=str(key_path)
+    )
+
+    assert written is True
+    text = embedded_path.read_text(encoding="utf-8")
+    assert "OVERLAY_CERTIFICATE = 'CERTIFICATE PEM'" in text
+    assert "OVERLAY_PRIVATE_KEY = 'PRIVATE KEY PEM'" in text
+    build_nuitka._remove_embedded_local(True)

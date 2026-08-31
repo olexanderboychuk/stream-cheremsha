@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import mimetypes
+import ssl
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -38,21 +40,32 @@ class OverlayServer:
         events: OverlayEventBus | None = None,
         host: str = "127.0.0.1",
         port: int = 17171,
+        certificate_pem: str = "",
+        private_key_pem: str = "",
     ) -> None:
         self._registry = registry
         self._pubsub = pubsub or OverlayPubSub()
         self._events = events or OverlayEventBus()
         self._host = str(host)
         self._port = int(port)
+        self._certificate_pem = str(certificate_pem).strip()
+        self._private_key_pem = str(private_key_pem).strip()
+        self._tls_dir: tempfile.TemporaryDirectory[str] | None = None
         self._running: _Running | None = None
 
     def base_url(self) -> str:
         if self._running is None:
             raise RuntimeError("OverlayServer is not running")
-        return f"http://{self._host}:{self._running.port}"
+        scheme = "https" if self._certificate_pem else "http"
+        return f"{scheme}://{self._host}:{self._running.port}"
 
     def pubsub(self) -> OverlayPubSub:
         return self._pubsub
+
+    def set_tls_files(self, certificate_path: Path, private_key_path: Path) -> None:
+        """Load certificate material before the server is started."""
+        self._certificate_pem = certificate_path.read_text(encoding="utf-8").strip()
+        self._private_key_pem = private_key_path.read_text(encoding="utf-8").strip()
 
     def events(self) -> OverlayEventBus:
         return self._events
@@ -80,10 +93,29 @@ class OverlayServer:
         app.router.add_get("/dock/online", self._dock_online)
         app.router.add_get("/ws", self._ws)
 
+        if bool(self._certificate_pem) != bool(self._private_key_pem):
+            raise RuntimeError("Overlay HTTPS requires both a certificate and a private key")
+
+        ssl_context: ssl.SSLContext | None = None
+        if self._certificate_pem:
+            self._tls_dir = tempfile.TemporaryDirectory(prefix="cheremsha-tls-")
+            cert_path = Path(self._tls_dir.name) / "cert.pem"
+            key_path = Path(self._tls_dir.name) / "key.pem"
+            cert_path.write_text(self._certificate_pem + "\n", encoding="utf-8")
+            key_path.write_text(self._private_key_pem + "\n", encoding="utf-8")
+            key_path.chmod(0o600)
+            ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ssl_context.load_cert_chain(certfile=cert_path, keyfile=key_path)
+
         runner = web.AppRunner(app)
         await runner.setup()
-        site = web.TCPSite(runner, host=self._host, port=self._port)
-        await site.start()
+        site = web.TCPSite(runner, host=self._host, port=self._port, ssl_context=ssl_context)
+        try:
+            await site.start()
+        except BaseException:
+            await runner.cleanup()
+            self._cleanup_tls()
+            raise
 
         bound_port = self._port
         server = getattr(site, "_server", None)
@@ -99,6 +131,12 @@ class OverlayServer:
             return
         self._running = None
         await r.runner.cleanup()
+        self._cleanup_tls()
+
+    def _cleanup_tls(self) -> None:
+        if self._tls_dir is not None:
+            self._tls_dir.cleanup()
+            self._tls_dir = None
 
     async def _health(self, _req: web.Request) -> web.Response:
         return web.Response(text="ok", content_type="text/plain")
