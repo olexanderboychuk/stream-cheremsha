@@ -60,14 +60,11 @@ Item {
     readonly property var editingTrigger: {
         if (selectedRule === null)
             return null;
-        var evs = selectedRule.events;
-        if (!evs || !evs.length) {
-            if (selectedRule.event)
-                return selectedRule.event;
+        var norm = root._normalizeRuleEvents(root._copyRule(selectedRule));
+        if (!norm || !norm.events || !norm.events.length)
             return null;
-        }
-        var ix = Math.max(0, Math.min(selectedTriggerIdx, evs.length - 1));
-        return evs[ix];
+        var ix = Math.max(0, Math.min(selectedTriggerIdx, norm.events.length - 1));
+        return norm.events[ix];
     }
 
     // Same resolution as editingTrigger but as a function: safe to call in the same
@@ -75,18 +72,17 @@ Item {
     function _activeEventForCombos() {
         if (root.selectedRule === null)
             return null;
-        var evs = root.selectedRule.events;
-        if (!evs || !evs.length) {
-            if (root.selectedRule.event)
-                return root.selectedRule.event;
+        var norm = root._normalizeRuleEvents(root._copyRule(root.selectedRule));
+        if (!norm || !norm.events || !norm.events.length)
             return null;
-        }
-        var ix = Math.max(0, Math.min(root.selectedTriggerIdx, evs.length - 1));
-        return evs[ix];
+        var ix = Math.max(0, Math.min(root.selectedTriggerIdx, norm.events.length - 1));
+        return norm.events[ix];
     }
 
     property bool isActionTextEditing: false
-    // true while we set event/gift comboboxes from the rule; blocks onActivated/onAccepted
+    property int _lastSyncedRuleIdx: -2
+    property bool _suppressActionsAutosave: false
+    // true while we set event/gift comboboxes from the rule; blocks onPicked/onAccepted
     // (Qt can emit them when currentIndex is set, which re-saved the same state to all rows).
     property bool _suppressRuleCombos: false
     // Block disk writes while rules are loading (avoids empty model autosave wiping QSettings).
@@ -109,7 +105,7 @@ Item {
                 actionsAutosaveTimer.restart();
                 return;
             }
-            root._commitSelectedRuleActions(false);
+            root._save(false);
         }
     }
 
@@ -528,9 +524,58 @@ Item {
         }
     }
 
+    function _mergeActionsIntoRulesModel() {
+        if (root.selectedRule === null || root.selectedIdx < 0)
+            return;
+        var idx = root.selectedIdx;
+        var full;
+        try { full = JSON.parse(JSON.stringify(rulesModel)); } catch (e) { return; }
+        if (idx < 0 || idx >= full.length)
+            return;
+        var r = root._normalizeRuleEvents(root._copyRule(full[idx]));
+        if (!r)
+            return;
+        try {
+            r.actions = JSON.parse(JSON.stringify(root.actionsModel));
+        } catch (e2) {
+            r.actions = [];
+        }
+        if (r.event)
+            delete r.event;
+        try {
+            if (JSON.stringify(full[idx]) === JSON.stringify(r))
+                return;
+        } catch (e3) {
+        }
+        full[idx] = r;
+        rulesModel = full;
+    }
+
+    function _updateActionsModel(aa, scheduleSave) {
+        if (root._suppressActionsAutosave)
+            return;
+        var next;
+        try {
+            next = JSON.parse(JSON.stringify(aa));
+        } catch (e) {
+            return;
+        }
+        try {
+            if (JSON.stringify(root.actionsModel) === JSON.stringify(next))
+                return;
+        } catch (e2) {
+        }
+        root.actionsModel = next;
+        if (scheduleSave !== false)
+            root._scheduleCommitSelectedRuleActions();
+    }
+
     function _saveRulesPayload(showToast) {
         if (!actApi || root._rulesPersistBlocked)
             return;
+        root._suppressActionsAutosave = true;
+        root._flushTriggerEditsFromCombos();
+        root._mergeActionsIntoRulesModel();
         var outRules = [];
         for (var i = 0; i < rulesModel.length; i++) {
             var pr = root._ruleToPersistObj(rulesModel[i]);
@@ -543,6 +588,7 @@ Item {
         } catch (e1) {
         }
         actApi.saveRulesJson(platform, accountKey, JSON.stringify(payload));
+        root._suppressActionsAutosave = false;
         if (showToast)
             _notifySaved();
     }
@@ -906,20 +952,22 @@ Item {
     }
 
     function _commitSelectedRuleActions(showToast) {
-        if (selectedRule === null) return;
-        var r;
-        var a;
-        try { r = JSON.parse(JSON.stringify(selectedRule)); } catch (e) { return; }
-        try { a = JSON.parse(JSON.stringify(actionsModel)); } catch (e2) { a = []; }
-        r.actions = a;
-        root._preserveScroll(function() {
-            _setRule(selectedIdx, r);
-            _save(!!showToast);
-        });
+        actionsAutosaveTimer.stop();
+        root._save(!!showToast);
     }
 
     function _scheduleCommitSelectedRuleActions() {
+        if (root._suppressActionsAutosave)
+            return;
         actionsAutosaveTimer.restart();
+    }
+
+    function _selectRule(idx, rid) {
+        actionsAutosaveTimer.stop();
+        if (root.selectedIdx >= 0 && idx !== root.selectedIdx)
+            root._save(false);
+        root.selectedRuleId = rid ? ("" + rid) : "";
+        root.selectedIdx = idx;
     }
 
     readonly property var actionTypeModel: [
@@ -1075,8 +1123,7 @@ Item {
             onClicked: {
                 if (!rid.length)
                     return;
-                root.selectedRuleId = rid;
-                root.selectedIdx = idxInRules;
+                root._selectRule(idxInRules, rid);
             }
         }
 
@@ -1751,15 +1798,18 @@ Item {
     }
 
     component ConnComboBox: ComboBox {
-        id: cb
+        id: comboBox
+        // Default delegate; selection via currentIndexChanged (C++ activated never fires on custom delegate).
+        signal picked(int index)
+        property var beforePopupOpen: null
         hoverEnabled: true
         focusPolicy: Qt.NoFocus
         font.pixelSize: 13
         padding: 10
         contentItem: Text {
-            text: cb.editable ? (cb.editText || "") : cb.displayText
+            text: comboBox.editable ? (comboBox.editText || "") : comboBox.displayText
             color: root.ink
-            font.pixelSize: cb.font.pixelSize
+            font.pixelSize: comboBox.font.pixelSize
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
         }
@@ -1767,38 +1817,25 @@ Item {
             radius: 8
             color: root.fieldBg
             border.width: 1
-            border.color: cb.hovered ? "#3b4458" : root.cardEdge
+            border.color: comboBox.hovered ? "#3b4458" : root.cardEdge
         }
-        delegate: ItemDelegate {
-            required property int index
-            required property var modelData
-            width: ListView.view ? ListView.view.width : implicitWidth
-            implicitHeight: 34
-            onClicked: {
-                cb.currentIndex = index;
-                cb.popup.close();
-            }
-            contentItem: Text {
-                text: cb.textRole ? (modelData[cb.textRole] || "") : (modelData || "")
-                color: root.ink
-                font.pixelSize: 13
-                elide: Text.ElideRight
-            }
-            background: Rectangle {
-                radius: 6
-                color: highlighted ? "#1a2232" : "#111827"
-            }
+        onActivated: function (index) {
+            comboBox.picked(index);
         }
         popup: Popup {
-            y: cb.height
-            width: cb.width
+            y: comboBox.height
+            width: comboBox.width
             implicitHeight: contentItem.implicitHeight
             padding: 4
+            onAboutToShow: {
+                if (comboBox.beforePopupOpen)
+                    comboBox.beforePopupOpen();
+            }
             contentItem: ListView {
                 clip: true
                 implicitHeight: contentHeight
-                model: cb.popup.visible ? cb.delegateModel : null
-                currentIndex: cb.highlightedIndex
+                model: comboBox.popup.visible ? comboBox.delegateModel : null
+                currentIndex: comboBox.highlightedIndex
                 ScrollIndicator.vertical: ScrollIndicator { }
             }
             background: Rectangle {
@@ -2298,6 +2335,133 @@ Item {
         return out;
     }
 
+    function _buildTriggerEventLocal(eventType, platform, ep) {
+        var val = (eventType || "chat_keyword").trim();
+        var plat = (platform || "all").trim().toLowerCase();
+        var p = ep || {};
+        if (val === "gift_received")
+            return root._giftEvent({
+                platform: plat,
+                gift_id: p.gift_id || "",
+                gift_name: p.gift_name || "",
+                min_count: p.min_count || 1
+            });
+        if (val === "tiktok_any_gift_received")
+            return root._tiktokAnyGiftEvent({
+                platform: plat,
+                min_price: p.min_price || 1,
+                user: p.user || "",
+                exclude_gifts: p.exclude_gifts || []
+            });
+        if (val === "tiktok_likes_received")
+            return root._likesEvent({
+                platform: plat,
+                min_count: p.min_count || 1,
+                scope: p.scope || "all_users",
+                user: p.user || ""
+            });
+        if (val === "tiktok_shared")
+            return root._tiktokSharedEvent({
+                platform: plat,
+                min_count: p.min_count || 1,
+                user: p.user || ""
+            });
+        if (val === "twitch_cheer")
+            return root._twitchCheerEvent({
+                platform: plat,
+                min_bits: p.min_bits || 1,
+                user: p.user || ""
+            });
+        if (val === "twitch_raid")
+            return root._twitchRaidEvent({
+                platform: plat,
+                min_viewers: p.min_viewers || 1,
+                user: p.user || ""
+            });
+        if (val === "youtube_superchat" || val === "youtube_supersticker")
+            return root._youtubeAmountEvent(val, {
+                platform: plat,
+                min_amount: p.min_amount || 0,
+                user: p.user || ""
+            });
+        if (val === "twitch_follow" || val === "twitch_subscribe" || val === "twitch_resub"
+            || val === "twitch_sub_gift" || val === "tiktok_joined" || val === "tiktok_followed"
+            || val === "tiktok_paid_subscribed" || val === "tiktok_first_activity"
+            || val === "youtube_member" || val === "kick_follow" || val === "kick_subscription"
+            || val === "kick_gift_sub" || val === "kick_gift")
+            return root._simpleUserEvent(val, { platform: plat, user: p.user || "" });
+        return root._chatEvent({
+            platform: plat,
+            text: p.text || "",
+            match: p.match || "contains",
+            case_sensitive: !!p.case_sensitive
+        });
+    }
+
+    function _buildTriggerEventViaApi(eventType, platform, existingEv) {
+        var ep = (existingEv && existingEv.params) ? existingEv.params : {};
+        if (actApi) {
+            try {
+                return JSON.parse(actApi.buildTriggerEventJson(eventType, platform, JSON.stringify(ep)));
+            } catch (e) {
+            }
+        }
+        return root._buildTriggerEventLocal(eventType, platform, ep);
+    }
+
+    function _mergePlatformViaApi(existingEv, newPlatform) {
+        if (actApi) {
+            try {
+                var raw = existingEv ? JSON.stringify(existingEv) : "{}";
+                return JSON.parse(actApi.mergeTriggerPlatformJson(raw, newPlatform));
+            } catch (e) {
+            }
+        }
+        var cur = existingEv || root._chatEvent({
+            platform: "all",
+            text: "",
+            match: "contains",
+            case_sensitive: false
+        });
+        var typ = (cur.type || "chat_keyword").trim();
+        var plat = (newPlatform || "all").trim().toLowerCase();
+        var allowed = false;
+        var kinds = root._kindEntriesForPlatform(plat);
+        for (var i = 0; i < kinds.length; i++) {
+            if (kinds[i].value === typ) {
+                allowed = true;
+                break;
+            }
+        }
+        if (!allowed)
+            typ = "chat_keyword";
+        return root._buildTriggerEventLocal(typ, plat, cur.params || {});
+    }
+
+    function _flushTriggerEditsFromCombos() {
+        if (root.selectedRule === null || root._suppressRuleCombos)
+            return;
+        if (!triggerPlatformCombo || !triggerKindCombo)
+            return;
+        var tpm = root._triggerPlatformModel();
+        var pix = Math.max(0, Math.min(triggerPlatformCombo.currentIndex, tpm.length - 1));
+        var plat = tpm[pix].value;
+        root._rebuildTriggerKindModelForPlatform(plat);
+        var km = root.triggerKindModel;
+        if (!km || !km.length)
+            return;
+        var kix = Math.max(0, Math.min(triggerKindCombo.currentIndex, km.length - 1));
+        var val = km[kix].value;
+        var cur = root._activeEventForCombos();
+        var neu = root._buildTriggerEventViaApi(val, plat, cur);
+        if (!neu)
+            return;
+        var r = root._patchSelectedTrigger(neu);
+        if (r == null)
+            return;
+        root._setRule(root.selectedIdx, r);
+    }
+
     function _patchSelectedTrigger(newEvt) {
         if (root.selectedRule === null) return null;
         var r = root._normalizeRuleEvents(root._copyRule(root.selectedRule));
@@ -2398,6 +2562,14 @@ Item {
         }
         if (ev.type === "youtube_member")
             return (api ? api.loc("actions.event.youtube_member") : "New member");
+        if (ev.type === "kick_follow")
+            return (api ? api.loc("actions.event.kick_follow") : "Follow");
+        if (ev.type === "kick_subscription")
+            return (api ? api.loc("actions.event.kick_subscription") : "Subscription");
+        if (ev.type === "kick_gift_sub")
+            return (api ? api.loc("actions.event.kick_gift_sub") : "Gift sub");
+        if (ev.type === "kick_gift")
+            return (api ? api.loc("actions.event.kick_gift") : "KICKS");
         return ev.type || "—";
     }
 
@@ -2410,29 +2582,35 @@ Item {
             selectedRuleId = "";
             actionsModel = [];
             selectedActionIdx = -1;
+            root._lastSyncedRuleIdx = -1;
             root._scheduleObsBrowseAutoRefresh();
             return;
         }
         selectedIdx = idx;
-        // Force a change notification even if the rule reference is unchanged.
-        selectedRule = null;
-        selectedRule = rulesModel[idx];
-        if (selectedRule && selectedRule.id)
-            selectedRuleId = "" + selectedRule.id;
+        var nextRule = rulesModel[idx];
+        if (nextRule && nextRule.id)
+            selectedRuleId = "" + nextRule.id;
         var evLen = 0;
-        if (selectedRule) {
-            if (selectedRule.events && selectedRule.events.length) evLen = selectedRule.events.length;
-            else if (selectedRule.event) evLen = 1;
+        if (nextRule) {
+            if (nextRule.events && nextRule.events.length) evLen = nextRule.events.length;
+            else if (nextRule.event) evLen = 1;
         }
         if (evLen > 0)
             root.selectedTriggerIdx = Math.max(0, Math.min(root.selectedTriggerIdx, evLen - 1));
-        try {
-            actionsModel = (selectedRule && selectedRule.actions)
-                ? JSON.parse(JSON.stringify(selectedRule.actions)) : [];
-        } catch (e) {
-            actionsModel = [];
+        if (idx !== root._lastSyncedRuleIdx) {
+            selectedRule = null;
+            selectedRule = nextRule;
+            try {
+                actionsModel = (nextRule && nextRule.actions)
+                    ? JSON.parse(JSON.stringify(nextRule.actions)) : [];
+            } catch (e) {
+                actionsModel = [];
+            }
+            selectedActionIdx = actionsModel.length ? 0 : -1;
+            root._lastSyncedRuleIdx = idx;
+        } else {
+            selectedRule = nextRule;
         }
-        selectedActionIdx = actionsModel.length ? 0 : -1;
         root._scheduleObsBrowseAutoRefresh();
     }
 
@@ -2532,6 +2710,7 @@ Item {
 
     function _duplicateRuleAt(i) {
         if (i < 0 || i >= rulesModel.length) return;
+        root._save(false);
         var srcId = rulesModel[i] && rulesModel[i].id ? ("" + rulesModel[i].id) : "";
         var r = _cloneOrEmptyRule(rulesModel[i]);
         r.id = _generateRuleId();
@@ -2627,6 +2806,7 @@ Item {
     }
 
     function _save(showToast) {
+        actionsAutosaveTimer.stop();
         root._saveRulesPayload(!!showToast);
     }
 
@@ -2707,6 +2887,7 @@ Item {
                     ConnPillButton {
                         text: api ? api.loc("actions.add_rule") : "Add rule"
                         onClicked: {
+                            root._save(false);
                             var nr = _defaultRule();
                             var copy = rulesModel.slice();
                             copy.push(nr);
@@ -2731,11 +2912,6 @@ Item {
                     }
 
                     Item { Layout.fillWidth: true }
-
-                    ConnPillButton {
-                        text: api ? api.loc("actions.save") : "Save"
-                        onClicked: root._commitSelectedRuleActions(true)
-                    }
                 }
 
                 ScrollView {
@@ -2936,26 +3112,19 @@ Item {
                         model: root._triggerPlatformModel()
                         textRole: "text"
                         valueRole: "value"
-                        onActivated: function (idx) {
+                        onPicked: function (idx) {
                             if (root._suppressRuleCombos) return;
                             if (root.selectedRule === null) return;
                             var m = root._triggerPlatformModel();
                             if (idx < 0 || idx >= m.length) return;
                             var newPlat = m[idx].value;
+                            root._rebuildTriggerKindModelForPlatform(newPlat);
                             var ev = root._activeEventForCombos();
                             if (!ev) return;
-                            var curKind = (ev.type || "").trim();
-                            var neu;
-                            if (root._kindAllowedOnPlatform(curKind, newPlat)) {
-                                neu = JSON.parse(JSON.stringify(ev));
-                                neu.platform = newPlat;
-                            } else {
-                                neu = root._chatEvent({
-                                    platform: newPlat,
-                                    text: "",
-                                    match: "contains",
-                                    case_sensitive: false
-                                });
+                            var neu = root._mergePlatformViaApi(ev, newPlat);
+                            if (!neu) {
+                                root._syncTriggerCombos();
+                                return;
                             }
                             var r = root._patchSelectedTrigger(neu);
                             if (r == null) return;
@@ -2975,7 +3144,14 @@ Item {
                         model: root.triggerKindModel
                         textRole: "text"
                         valueRole: "value"
-                        onActivated: function (idx) {
+                        beforePopupOpen: function () {
+                            if (!triggerPlatformCombo)
+                                return;
+                            var tpm = root._triggerPlatformModel();
+                            var pix = Math.max(0, Math.min(triggerPlatformCombo.currentIndex, tpm.length - 1));
+                            root._rebuildTriggerKindModelForPlatform(tpm[pix].value);
+                        }
+                        onPicked: function (idx) {
                             if (root._suppressRuleCombos) return;
                             if (root.selectedRule === null) return;
                             var km = root.triggerKindModel;
@@ -2984,64 +3160,11 @@ Item {
                             var tpm = root._triggerPlatformModel();
                             var pix = triggerPlatformCombo ? Math.max(0, Math.min(triggerPlatformCombo.currentIndex, tpm.length - 1)) : 0;
                             var plat = tpm[pix].value;
-                            var neu = val === "gift_received"
-                                ? root._giftEvent({
-                                    platform: plat,
-                                    gift_id: "",
-                                    gift_name: "",
-                                    min_count: 1
-                                })
-                                : val === "tiktok_any_gift_received"
-                                ? root._tiktokAnyGiftEvent({
-                                    platform: plat,
-                                    min_price: 1,
-                                    user: ""
-                                })
-                                : val === "tiktok_likes_received"
-                                ? root._likesEvent({
-                                    platform: plat,
-                                    min_count: 1,
-                                    scope: "all_users",
-                                    user: ""
-                                })
-                                : val === "tiktok_shared"
-                                ? root._tiktokSharedEvent({
-                                    platform: plat,
-                                    min_count: 1,
-                                    user: ""
-                                })
-                                : (val === "twitch_follow" || val === "twitch_subscribe"
-                                    || val === "twitch_resub" || val === "twitch_sub_gift")
-                                ? root._simpleUserEvent(val, { platform: plat, user: "" })
-                                : val === "twitch_cheer"
-                                ? root._twitchCheerEvent({
-                                    platform: plat,
-                                    min_bits: 1,
-                                    user: ""
-                                })
-                                : val === "twitch_raid"
-                                ? root._twitchRaidEvent({
-                                    platform: plat,
-                                    min_viewers: 1,
-                                    user: ""
-                                })
-                                : val === "tiktok_joined" || val === "tiktok_followed"
-                                    || val === "tiktok_paid_subscribed" || val === "tiktok_first_activity"
-                                ? root._simpleUserEvent(val, { platform: plat, user: "" })
-                                : (val === "youtube_superchat" || val === "youtube_supersticker")
-                                ? root._youtubeAmountEvent(val, {
-                                    platform: plat,
-                                    min_amount: 0,
-                                    user: ""
-                                })
-                                : val === "youtube_member"
-                                ? root._simpleUserEvent(val, { platform: plat, user: "" })
-                                : root._chatEvent({
-                                    platform: plat,
-                                    text: "",
-                                    match: "contains",
-                                    case_sensitive: false
-                                });
+                            var neu = root._buildTriggerEventViaApi(val, plat, root._activeEventForCombos());
+                            if (!neu) {
+                                root._syncTriggerCombos();
+                                return;
+                            }
                             var r = root._patchSelectedTrigger(neu);
                             if (r == null) return;
                             root._setRule(root.selectedIdx, r);
@@ -3065,7 +3188,9 @@ Item {
                             background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
                             onEditingFinished: {
                                 if (root.selectedRule === null) return;
-                                var ep = (root.editingTrigger && root.editingTrigger.params) || {};
+                                var cur = root._activeEventForCombos();
+                                if (!cur || cur.type !== "chat_keyword") return;
+                                var ep = cur.params || {};
                                 var r = root._patchSelectedTrigger(root._chatEvent({
                                     platform: root._platformForEdits(),
                                     text: text,
@@ -3119,7 +3244,7 @@ Item {
                                     }
                                 }
                             }
-                            onActivated: function (idx) {
+                            onPicked: function (idx) {
                                 if (root._suppressRuleCombos) return;
                                 if (root.selectedRule === null) return;
                                 if (idx < 0) return;
@@ -3464,7 +3589,11 @@ Item {
                                 || root.editingTrigger.type === "twitch_subscribe"
                                 || root.editingTrigger.type === "twitch_resub"
                                 || root.editingTrigger.type === "twitch_sub_gift"
-                                || root.editingTrigger.type === "youtube_member")
+                                || root.editingTrigger.type === "youtube_member"
+                                || root.editingTrigger.type === "kick_follow"
+                                || root.editingTrigger.type === "kick_subscription"
+                                || root.editingTrigger.type === "kick_gift_sub"
+                                || root.editingTrigger.type === "kick_gift")
                         Layout.fillWidth: true
                         spacing: 6
                         Text { text: api ? api.loc("actions.user_filter") : "User (optional)"; color: muted; font.pixelSize: 12 }
@@ -3693,7 +3822,7 @@ Item {
                             model: root._likesScopeModel()
                             textRole: "text"
                             valueRole: "value"
-                            onActivated: function (idx) {
+                            onPicked: function (idx) {
                                 if (root._suppressRuleCombos) return;
                                 if (root.selectedRule === null) return;
                                 if (idx < 0) return;
@@ -3757,7 +3886,9 @@ Item {
                         interactive: true
                         spacing: 10
                         model: root.actionsModel
-                        implicitHeight: contentHeight
+                        property int _contentHeightCache: 0
+                        implicitHeight: _contentHeightCache
+                        onContentHeightChanged: _contentHeightCache = contentHeight
                         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AlwaysOn }
 
                         // Expose root API & action types to delegate via ListView.view.*
@@ -3781,8 +3912,7 @@ Item {
                                 fld.text = t0.substring(0, pos) + tag + t0.substring(pos);
                                 fld.cursorPosition = pos + tag.length;
                                 aa[aIdx].params.sequence = fld.text;
-                                page.actionsModel = aa;
-                                page._scheduleCommitSelectedRuleActions();
+                                page._updateActionsModel(aa);
                             }
 
                             Layout.fillWidth: true
@@ -3822,7 +3952,7 @@ Item {
                                         textRole: "text"
                                         valueRole: "value"
                                         currentIndex: actionsList.rootApi._actionTypeIndex(aType)
-                                        onActivated: function (idx) {
+                                        onPicked: function (idx) {
                                             var apiRef = actionsList.rootApi;
                                             if (apiRef.selectedRule === null) return;
                                             var typeModel = actionsList.actionTypes;
@@ -3977,8 +4107,7 @@ Item {
                                                 if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                                 if (!aa[aIdx].params) aa[aIdx].params = {};
                                                 aa[aIdx].params.volume_percent = Math.round(value);
-                                                page.actionsModel = aa;
-                                                page._scheduleCommitSelectedRuleActions();
+                                                page._updateActionsModel(aa);
                                             }
                                         }
                                     }
@@ -3993,8 +4122,7 @@ Item {
                                             if (!aa[aIdx].params) aa[aIdx].params = {};
                                             if (aa[aIdx].params.skip_if_same_playing === playSoundSkipDupCb.checked) return;
                                             aa[aIdx].params.skip_if_same_playing = playSoundSkipDupCb.checked;
-                                            page.actionsModel = aa;
-                                            page._scheduleCommitSelectedRuleActions();
+                                            page._updateActionsModel(aa);
                                         }
                                     }
 
@@ -4008,8 +4136,7 @@ Item {
                                             if (!aa[aIdx].params) aa[aIdx].params = {};
                                             if (aa[aIdx].params.play_immediately === playSoundPlayNowCb.checked) return;
                                             aa[aIdx].params.play_immediately = playSoundPlayNowCb.checked;
-                                            page.actionsModel = aa;
-                                            page._scheduleCommitSelectedRuleActions();
+                                            page._updateActionsModel(aa);
                                         }
                                     }
 
@@ -4023,8 +4150,7 @@ Item {
                                             if (!aa[aIdx].params) aa[aIdx].params = {};
                                             if (aa[aIdx].params.respect_gift_combo === playSoundGiftComboCb.checked) return;
                                             aa[aIdx].params.respect_gift_combo = playSoundGiftComboCb.checked;
-                                            page.actionsModel = aa;
-                                            page._scheduleCommitSelectedRuleActions();
+                                            page._updateActionsModel(aa);
                                         }
                                     }
                                 }
@@ -4055,8 +4181,7 @@ Item {
                                                 if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                                 if (!aa[aIdx].params) aa[aIdx].params = {};
                                                 aa[aIdx].params.volume_percent = Math.round(value);
-                                                page.actionsModel = aa;
-                                                page._scheduleCommitSelectedRuleActions();
+                                                page._updateActionsModel(aa);
                                             }
                                         }
                                     }
@@ -4071,8 +4196,7 @@ Item {
                                             if (!aa[aIdx].params) aa[aIdx].params = {};
                                             if (aa[aIdx].params.skip_if_same_playing === playRandomMyinstantsUaSkipDupCb.checked) return;
                                             aa[aIdx].params.skip_if_same_playing = playRandomMyinstantsUaSkipDupCb.checked;
-                                            page.actionsModel = aa;
-                                            page._scheduleCommitSelectedRuleActions();
+                                            page._updateActionsModel(aa);
                                         }
                                     }
 
@@ -4086,8 +4210,7 @@ Item {
                                             if (!aa[aIdx].params) aa[aIdx].params = {};
                                             if (aa[aIdx].params.play_immediately === playRandomMyinstantsUaPlayNowCb.checked) return;
                                             aa[aIdx].params.play_immediately = playRandomMyinstantsUaPlayNowCb.checked;
-                                            page.actionsModel = aa;
-                                            page._scheduleCommitSelectedRuleActions();
+                                            page._updateActionsModel(aa);
                                         }
                                     }
 
@@ -4101,8 +4224,7 @@ Item {
                                             if (!aa[aIdx].params) aa[aIdx].params = {};
                                             if (aa[aIdx].params.respect_gift_combo === playRandomMyinstantsUaGiftComboCb.checked) return;
                                             aa[aIdx].params.respect_gift_combo = playRandomMyinstantsUaGiftComboCb.checked;
-                                            page.actionsModel = aa;
-                                            page._scheduleCommitSelectedRuleActions();
+                                            page._updateActionsModel(aa);
                                         }
                                     }
 
@@ -4131,8 +4253,7 @@ Item {
                                                 if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                                 if (!aa[aIdx].params) aa[aIdx].params = {};
                                                 aa[aIdx].params.skip_words = text;
-                                                page.actionsModel = aa;
-                                                page._scheduleCommitSelectedRuleActions();
+                                                page._updateActionsModel(aa);
                                             }
                                         }
                                     }
@@ -4161,8 +4282,7 @@ Item {
                                                 var v = parseFloat(text);
                                                 if (isNaN(v) || v < 0) v = 0;
                                                 aa[aIdx].params.max_duration_seconds = v;
-                                                page.actionsModel = aa;
-                                                page._scheduleCommitSelectedRuleActions();
+                                                page._updateActionsModel(aa);
                                             }
                                         }
                                     }
@@ -4191,8 +4311,7 @@ Item {
                                                 var v = parseInt(text);
                                                 if (isNaN(v) || v < 1) v = 1;
                                                 aa[aIdx].params.max_page = v;
-                                                page.actionsModel = aa;
-                                                page._scheduleCommitSelectedRuleActions();
+                                                page._updateActionsModel(aa);
                                             }
                                         }
                                     }
@@ -4222,13 +4341,12 @@ Item {
                                                 var m = (modelData && modelData.params && modelData.params.mode) ? modelData.params.mode : "overwrite";
                                                 return (m === "append") ? 1 : 0;
                                             }
-                                            onActivated: function(index) {
+                                            onPicked: function(index) {
                                                 var aa = page.actionsModel;
                                                 if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                                 if (!aa[aIdx].params) aa[aIdx].params = {};
                                                 aa[aIdx].params.mode = (index === 1) ? "append" : "overwrite";
-                                                page.actionsModel = aa;
-                                                page._scheduleCommitSelectedRuleActions();
+                                                page._updateActionsModel(aa);
                                             }
                                         }
                                     }
@@ -4250,8 +4368,7 @@ Item {
                                                 if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                                 if (!aa[aIdx].params) aa[aIdx].params = {};
                                                 aa[aIdx].params.file_path = text;
-                                                page.actionsModel = aa;
-                                                page._scheduleCommitSelectedRuleActions();
+                                                page._updateActionsModel(aa);
                                             }
                                             onActiveFocusChanged: {
                                                 if (!activeFocus) page._commitSelectedRuleActions(false);
@@ -4310,8 +4427,7 @@ Item {
                                             if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                             if (!aa[aIdx].params) aa[aIdx].params = {};
                                             aa[aIdx].params.text = text;
-                                            page.actionsModel = aa; // keep binding updated without cloning everything
-                                            page._scheduleCommitSelectedRuleActions();
+                                            page._updateActionsModel(aa);
                                         }
                                         onActiveFocusChanged: {
                                             page.isActionTextEditing = activeFocus;
@@ -4433,8 +4549,7 @@ Item {
                                             if (!aa[aIdx].params)
                                                 aa[aIdx].params = {};
                                             aa[aIdx].params.sequence = text;
-                                            page.actionsModel = aa;
-                                            page._scheduleCommitSelectedRuleActions();
+                                            page._updateActionsModel(aa);
                                         }
                                         onActiveFocusChanged: {
                                             page.isActionTextEditing = activeFocus;
@@ -4464,8 +4579,7 @@ Item {
                                                 if (aa[aIdx].params.modifier_ctrl === ksModCtrl.checked)
                                                     return;
                                                 aa[aIdx].params.modifier_ctrl = ksModCtrl.checked;
-                                                page.actionsModel = aa;
-                                                page._scheduleCommitSelectedRuleActions();
+                                                page._updateActionsModel(aa);
                                             }
                                         }
                                         ConnCheckBox {
@@ -4481,8 +4595,7 @@ Item {
                                                 if (aa[aIdx].params.modifier_alt === ksModAlt.checked)
                                                     return;
                                                 aa[aIdx].params.modifier_alt = ksModAlt.checked;
-                                                page.actionsModel = aa;
-                                                page._scheduleCommitSelectedRuleActions();
+                                                page._updateActionsModel(aa);
                                             }
                                         }
                                         ConnCheckBox {
@@ -4498,8 +4611,7 @@ Item {
                                                 if (aa[aIdx].params.modifier_shift === ksModShift.checked)
                                                     return;
                                                 aa[aIdx].params.modifier_shift = ksModShift.checked;
-                                                page.actionsModel = aa;
-                                                page._scheduleCommitSelectedRuleActions();
+                                                page._updateActionsModel(aa);
                                             }
                                         }
                                     }
@@ -4604,8 +4716,7 @@ Item {
                                             if (aa[aIdx].params.use_interception === ksInterception.checked)
                                                 return;
                                             aa[aIdx].params.use_interception = ksInterception.checked;
-                                            page.actionsModel = aa;
-                                            page._scheduleCommitSelectedRuleActions();
+                                            page._updateActionsModel(aa);
                                         }
                                     }
                                     Text {
@@ -4630,8 +4741,7 @@ Item {
                                             if (aa[aIdx].params.game_compatibility === ksGameCompat.checked)
                                                 return;
                                             aa[aIdx].params.game_compatibility = ksGameCompat.checked;
-                                            page.actionsModel = aa;
-                                            page._scheduleCommitSelectedRuleActions();
+                                            page._updateActionsModel(aa);
                                         }
                                     }
                                     RowLayout {
@@ -4659,8 +4769,7 @@ Item {
                                                 if (!aa[aIdx].params)
                                                     aa[aIdx].params = {};
                                                 aa[aIdx].params.hold_ms = v;
-                                                page.actionsModel = aa;
-                                                page._scheduleCommitSelectedRuleActions();
+                                                page._updateActionsModel(aa);
                                             }
                                         }
                                     }
@@ -4701,8 +4810,7 @@ Item {
                                             if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                             if (!aa[aIdx].params) aa[aIdx].params = {};
                                             aa[aIdx].params.text = text;
-                                            page.actionsModel = aa;
-                                            page._scheduleCommitSelectedRuleActions();
+                                            page._updateActionsModel(aa);
                                         }
                                         onActiveFocusChanged: {
                                             page.isActionTextEditing = activeFocus;
@@ -4738,8 +4846,7 @@ Item {
                                             if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                             if (!aa[aIdx].params) aa[aIdx].params = {};
                                             aa[aIdx].params.text = text;
-                                            page.actionsModel = aa;
-                                            page._scheduleCommitSelectedRuleActions();
+                                            page._updateActionsModel(aa);
                                         }
                                         onActiveFocusChanged: {
                                             page.isActionTextEditing = activeFocus;
@@ -4766,8 +4873,7 @@ Item {
                                                 if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                                 if (!aa[aIdx].params) aa[aIdx].params = {};
                                                 aa[aIdx].params.seconds = v;
-                                                page.actionsModel = aa;
-                                                page._scheduleCommitSelectedRuleActions();
+                                                page._updateActionsModel(aa);
                                             }
                                         }
                                     }
@@ -4809,14 +4915,13 @@ Item {
                                             var m = (modelData && modelData.params && modelData.params.mode) ? modelData.params.mode : "program_scene";
                                             return (m === "source_visible") ? 1 : 0;
                                         }
-                                        onActivated: function (idx) {
+                                        onPicked: function (idx) {
                                             page.selectedActionIdx = aIdx;
                                             var aa = page.actionsModel;
                                             if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                             if (!aa[aIdx].params) aa[aIdx].params = {};
                                             aa[aIdx].params.mode = model[idx].value;
-                                            page.actionsModel = aa;
-                                            page._scheduleCommitSelectedRuleActions();
+                                            page._updateActionsModel(aa);
                                             if (model[idx].value === "source_visible" && obsBrowseUi)
                                                 page._obsReloadSourcesPickList();
                                         }
@@ -4855,7 +4960,7 @@ Item {
                                             var ix = page._obsFindComboIndex(m, cur);
                                             return ix >= 0 ? ix : 0;
                                         }
-                                        onActivated: function (idx) {
+                                        onPicked: function (idx) {
                                             page.selectedActionIdx = aIdx;
                                             if (page._suppressObsBrowseCombos) return;
                                             if (idx < 0) return;
@@ -4863,8 +4968,7 @@ Item {
                                             if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                             if (!aa[aIdx].params) aa[aIdx].params = {};
                                             aa[aIdx].params.canvas_uuid = model[idx].value;
-                                            page.actionsModel = aa;
-                                            page._scheduleCommitSelectedRuleActions();
+                                            page._updateActionsModel(aa);
                                             page._obsReloadScenesPickList();
                                             var pr = aa[aIdx].params || {};
                                             if ((pr.mode || "") === "source_visible")
@@ -4891,7 +4995,7 @@ Item {
                                             var ix = page._obsFindComboIndex(m, cur);
                                             return ix >= 0 ? ix : 0;
                                         }
-                                        onActivated: function (idx) {
+                                        onPicked: function (idx) {
                                             page.selectedActionIdx = aIdx;
                                             if (page._suppressObsBrowseCombos) return;
                                             if (idx < 0) return;
@@ -4899,8 +5003,7 @@ Item {
                                             if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                             if (!aa[aIdx].params) aa[aIdx].params = {};
                                             aa[aIdx].params.scene_name = model[idx].value;
-                                            page.actionsModel = aa;
-                                            page._scheduleCommitSelectedRuleActions();
+                                            page._updateActionsModel(aa);
                                             var pr = aa[aIdx].params || {};
                                             if ((pr.mode || "") === "source_visible")
                                                 page._obsReloadSourcesPickList();
@@ -4927,7 +5030,7 @@ Item {
                                             var ix = page._obsFindComboIndex(m, cur);
                                             return ix >= 0 ? ix : 0;
                                         }
-                                        onActivated: function (idx) {
+                                        onPicked: function (idx) {
                                             page.selectedActionIdx = aIdx;
                                             if (page._suppressObsBrowseCombos) return;
                                             if (idx < 0) return;
@@ -4935,8 +5038,7 @@ Item {
                                             if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                             if (!aa[aIdx].params) aa[aIdx].params = {};
                                             aa[aIdx].params.source_name = model[idx].value;
-                                            page.actionsModel = aa;
-                                            page._scheduleCommitSelectedRuleActions();
+                                            page._updateActionsModel(aa);
                                         }
                                     }
 
@@ -4962,8 +5064,7 @@ Item {
                                             if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                             if (!aa[aIdx].params) aa[aIdx].params = {};
                                             aa[aIdx].params.scene_name = text;
-                                            page.actionsModel = aa;
-                                            page._scheduleCommitSelectedRuleActions();
+                                            page._updateActionsModel(aa);
                                         }
                                         onActiveFocusChanged: {
                                             if (!activeFocus) page._commitSelectedRuleActions(false);
@@ -4996,8 +5097,7 @@ Item {
                                             if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                             if (!aa[aIdx].params) aa[aIdx].params = {};
                                             aa[aIdx].params.source_name = text;
-                                            page.actionsModel = aa;
-                                            page._scheduleCommitSelectedRuleActions();
+                                            page._updateActionsModel(aa);
                                         }
                                         onActiveFocusChanged: {
                                             if (!activeFocus) page._commitSelectedRuleActions(false);
@@ -5024,8 +5124,7 @@ Item {
                                                 if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                                 if (!aa[aIdx].params) aa[aIdx].params = {};
                                                 aa[aIdx].params.visible = checked;
-                                                page.actionsModel = aa;
-                                                page._scheduleCommitSelectedRuleActions();
+                                                page._updateActionsModel(aa);
                                             }
                                         }
                                     }
@@ -5047,8 +5146,7 @@ Item {
                                                 if (!aa[aIdx].params) aa[aIdx].params = {};
                                                 if (aa[aIdx].params.revert_previous_state === obsRevertCb.checked) return;
                                                 aa[aIdx].params.revert_previous_state = obsRevertCb.checked;
-                                                page.actionsModel = aa;
-                                                page._scheduleCommitSelectedRuleActions();
+                                                page._updateActionsModel(aa);
                                             }
                                         }
                                         RowLayout {
@@ -5079,8 +5177,7 @@ Item {
                                                     if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                                     if (!aa[aIdx].params) aa[aIdx].params = {};
                                                     aa[aIdx].params.revert_delay_seconds = v;
-                                                    page.actionsModel = aa;
-                                                    page._scheduleCommitSelectedRuleActions();
+                                                    page._updateActionsModel(aa);
                                                 }
                                             }
                                             Text {
@@ -5159,7 +5256,7 @@ Item {
         }
     }
 
-    // Simple toast "Saved" notification (only for explicit Save button).
+    // Autosave toast (optional; most saves are silent).
     Rectangle {
         anchors.right: parent.right
         anchors.bottom: parent.bottom

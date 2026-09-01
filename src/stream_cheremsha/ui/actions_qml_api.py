@@ -34,6 +34,11 @@ from stream_cheremsha.actions.store import (
     save_rules_bundle,
 )
 from stream_cheremsha.actions.tiktok_gifts import TIKTOK_GIFTS
+from stream_cheremsha.actions.trigger_events import (
+    build_trigger_event,
+    kind_values_for_platform,
+    merge_platform_change,
+)
 from stream_cheremsha.actions.trigger_meta import (
     chat_platform_for_preview,
     trigger_platform_effective,
@@ -408,6 +413,35 @@ class ActionsQmlApi(QObject):
         rules, layout = load_rules_bundle(p, ak)
         layout2 = normalize_ui_rules_layout_v1(layout, rules)
         return ruleset_to_json_text(rules, ui_layout=layout2)
+
+    @Slot(str, str, str, result=str)
+    def buildTriggerEventJson(self, eventType: str, platform: str, existingParamsJson: str) -> str:
+        """Build a trigger event blob JSON for the Actions editor (single source of truth)."""
+        params: dict[str, typing.Any] = {}
+        raw = (existingParamsJson or "").strip()
+        if raw:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                params = parsed
+        ev = build_trigger_event(eventType, platform, params)
+        return json.dumps(ev, ensure_ascii=False, separators=(",", ":"))
+
+    @Slot(str, str, result=str)
+    def mergeTriggerPlatformJson(self, currentEventJson: str, newPlatform: str) -> str:
+        """Apply platform combo change to an existing trigger event blob."""
+        raw = (currentEventJson or "").strip()
+        current: dict[str, typing.Any] = {"type": "chat_keyword", "params": {}}
+        if raw:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                current = parsed
+        ev = merge_platform_change(current, newPlatform)
+        return json.dumps(ev, ensure_ascii=False, separators=(",", ":"))
+
+    @Slot(str, result=str)
+    def kindValuesForPlatformJson(self, platform: str) -> str:
+        """JSON array of event type ids allowed for a trigger platform."""
+        return json.dumps(list(kind_values_for_platform(platform)))
 
     @Slot(str, str, str)
     def saveRulesJson(self, platform: str, accountKey: str, rulesJson: str) -> None:
