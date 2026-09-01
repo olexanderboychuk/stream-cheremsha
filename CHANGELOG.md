@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.14.2] — 2026-09-01
+
+### Added
+
+- Trigger event handling for Kick, Twitch, YouTube, and TikTok in the Actions view, with platform-aware event types and merge logic when switching platforms.
+
 ## [0.14.1] — 2026-08-31
 
 ### Added
