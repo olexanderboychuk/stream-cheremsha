@@ -194,6 +194,7 @@ from stream_cheremsha.persistence.tiktok_gifts_sqlite import (
     unique_id_from_user_bundle,
 )
 from stream_cheremsha.pipeline.coordinator import StreamCoordinator
+from stream_cheremsha.pipeline.filters import message_allowed_by_tts_whitelist
 from stream_cheremsha.pipeline.tts_sanitize import strip_non_alphabetic_for_tts
 from stream_cheremsha.ssl_manager import ensure_valid_ssl
 from stream_cheremsha.telegram.bot_service import RiskyDecisionResult, TelegramBotService
@@ -302,6 +303,7 @@ _SETTINGS_TTS_CHAT_KICK = "tts_chat/kick_enabled"
 _SETTINGS_TTS_OPENAI_MODERATE = "tts/openai_moderate_enabled"
 _SETTINGS_TTS_SPEAK_AUTHOR = "tts/speak_chat_author_name"
 _SETTINGS_TTS_STRIP_NON_ALPHA = "tts/strip_non_alphabetic"
+_SETTINGS_TTS_WHITELIST = "tts/whitelist"
 # TTS playback speed as a percentage (100 = normal); 50..200 maps to 0.5x..2.0x.
 _SETTINGS_TTS_RATE_PERCENT = "tts/rate_percent"
 _TTS_RATE_MIN = 50
@@ -951,8 +953,16 @@ class MainWindow(FramelessWindow):
     def _tr(self, key: str, **kwargs: object) -> str:
         return l10n.tr(self._locale, key, **kwargs)
 
+    def _tts_whitelist_text(self) -> str:
+        edit = getattr(self, "_edit_tts_whitelist", None)
+        if edit is not None:
+            return edit.toPlainText().strip()
+        return str(self._settings.value(_SETTINGS_TTS_WHITELIST, "", str) or "").strip()
+
     def _should_tts_for_message(self, msg: ChatMessage) -> bool:
-        return self._chat_tts_enabled(msg.platform)
+        if not self._chat_tts_enabled(msg.platform):
+            return False
+        return message_allowed_by_tts_whitelist(msg, self._tts_whitelist_text())
 
     def _chat_tts_enabled(self, platform: ChatPlatform) -> bool:
         return bool(self._tts_chat_platform_enabled.get(platform, True))
@@ -2268,6 +2278,18 @@ class MainWindow(FramelessWindow):
             self._cb_tts_strip_non_alpha.isChecked(),
         )
 
+    def _schedule_persist_tts_whitelist(self) -> None:
+        if not hasattr(self, "_whitelist_save_timer"):
+            self._whitelist_save_timer = QTimer(self)
+            self._whitelist_save_timer.setSingleShot(True)
+            self._whitelist_save_timer.setInterval(500)
+            self._whitelist_save_timer.timeout.connect(self._persist_tts_whitelist)
+        self._whitelist_save_timer.start()
+
+    def _persist_tts_whitelist(self) -> None:
+        vv = self._edit_tts_whitelist.toPlainText().strip()
+        self._settings.setValue(_SETTINGS_TTS_WHITELIST, vv)
+
     def _persist_openai_api_key(self) -> None:
         vv = self._openai_api_key.text() or ""
         if vv.strip():
@@ -3334,6 +3356,18 @@ class MainWindow(FramelessWindow):
         self._cb_tts_strip_non_alpha.stateChanged.connect(self._persist_tts_strip_non_alpha)
         tts_body.addWidget(self._cb_tts_strip_non_alpha)
 
+        self._lbl_tts_whitelist = QLabel()
+        self._edit_tts_whitelist = QTextEdit()
+        self._edit_tts_whitelist.setPlaceholderText(self._tr("audio.tts_whitelist_ph"))
+        self._edit_tts_whitelist.setMaximumHeight(80)
+        self._edit_tts_whitelist.textChanged.connect(self._schedule_persist_tts_whitelist)
+        whitelist_form = QFormLayout()
+        whitelist_form.setContentsMargins(0, 0, 0, 0)
+        whitelist_form.setHorizontalSpacing(10)
+        whitelist_form.setVerticalSpacing(8)
+        whitelist_form.addRow(self._lbl_tts_whitelist, self._edit_tts_whitelist)
+        tts_body.addLayout(whitelist_form)
+
         self._lbl_tts_rate = QLabel()
         self._tts_rate_spin = QSpinBox()
         self._tts_rate_spin.setRange(_TTS_RATE_MIN, _TTS_RATE_MAX)
@@ -3439,6 +3473,10 @@ class MainWindow(FramelessWindow):
         self._cb_tts_speak_author.setToolTip(self._tr("audio.speak_author_name_hint"))
         self._cb_tts_strip_non_alpha.setText(self._tr("audio.strip_non_alpha"))
         self._cb_tts_strip_non_alpha.setToolTip(self._tr("audio.strip_non_alpha_hint"))
+        self._lbl_tts_whitelist.setText(self._tr("audio.tts_whitelist"))
+        self._lbl_tts_whitelist.setToolTip(self._tr("audio.tts_whitelist_hint"))
+        self._edit_tts_whitelist.setToolTip(self._tr("audio.tts_whitelist_hint"))
+        self._edit_tts_whitelist.setPlaceholderText(self._tr("audio.tts_whitelist_ph"))
         self._lbl_tts_rate.setText(self._tr("audio.tts_rate"))
         _rate_tip = self._tr("audio.tts_rate_tip")
         self._tts_rate_spin.setToolTip(_rate_tip)
@@ -3807,6 +3845,12 @@ class MainWindow(FramelessWindow):
                 bool(self._settings.value(_SETTINGS_TTS_STRIP_NON_ALPHA, False, bool)),
             )
             self._cb_tts_strip_non_alpha.blockSignals(False)
+
+        if hasattr(self, "_edit_tts_whitelist"):
+            whitelist = str(self._settings.value(_SETTINGS_TTS_WHITELIST, "", str) or "").strip()
+            self._edit_tts_whitelist.blockSignals(True)
+            self._edit_tts_whitelist.setPlainText(whitelist)
+            self._edit_tts_whitelist.blockSignals(False)
 
         backend = str(self._settings.value(_SETTINGS_MUSIC_BACKEND, "app", str) or "").strip()
         use_mpv = backend == "mpv"

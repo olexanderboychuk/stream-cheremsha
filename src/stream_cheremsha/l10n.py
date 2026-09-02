@@ -1202,6 +1202,20 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "Only letters and digits are kept; punctuation, emoji, bracketed emote names "
         "([heart]), and other symbols are removed. OpenAI moderation replacement lines are left unchanged.",
     },
+    "audio.tts_whitelist": {
+        "uk": "Білий список TTS (нікнейми)",
+        "en": "TTS whitelist (usernames)",
+    },
+    "audio.tts_whitelist_hint": {
+        "uk": "Ніки / @хендли через кому або з нового рядка. Якщо список не порожній — озвучуються лише ці користувачі "
+        "(для TikTok підходить і nickname, і unique_id).",
+        "en": "Nicks / @handles, comma- or newline-separated. If not empty — only these users are spoken "
+        "(for TikTok both nickname and unique_id match).",
+    },
+    "audio.tts_whitelist_ph": {
+        "uk": "user1, @user2, kodi_the_cat",
+        "en": "user1, @user2, kodi_the_cat",
+    },
     "audio.card_levels_title": {"uk": "Вихід і рівні", "en": "Output & levels"},
     "settings.ai_shield_group": {"uk": "AI Shield", "en": "AI Shield"},
     "settings.ai_shield_section_tts": {
