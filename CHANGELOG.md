@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.14.3] — 2026-09-02
+
+### Added
+
+- TTS username whitelist in Audio settings: when non-empty, only listed chat users are spoken.
+
+### Fixed
+
+- TTS whitelist now also matches TikTok `unique_id` / `@handle`, not only the display nickname shown in chat.
+
 ## [0.14.2] — 2026-09-01
 
 ### Added
