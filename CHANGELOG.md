@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.16.0] — 2026-09-04
+
+### Added
+
+- **Live Leaderboard** overlay (`/overlay/live_leaderboard`): rotating cyberpunk broadcast ranking show for this TikTok stream (likes, gifts, shares, comments, weighted contributors).
+- Presentation scenes: Hall of Fame, Arena, and Energy Network; Python-owned rotation timeline with browser transitions; widgets editor for sources, scenes, sequence, scale, and animation options.
+- Ukrainian / English overlay strings driven by the app UI locale.
+
 ## [0.15.0] — 2026-09-03
 
 ### Added
