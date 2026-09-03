@@ -53,6 +53,12 @@ from stream_cheremsha.overlays.online_overlay_config import (
     save_online_overlay_config,
 )
 from stream_cheremsha.overlays.pubsub import OverlayPubSub
+from stream_cheremsha.overlays.social_rotator_overlay_config import (
+    load_social_rotator_overlay_config,
+    save_social_rotator_overlay_config,
+    social_rotator_overlay_config_from_json_text,
+    social_rotator_overlay_config_to_json_text,
+)
 from stream_cheremsha.overlays.stream_goal_overlay_config import (
     load_stream_goal_overlay_config,
     save_stream_goal_overlay_config,
@@ -186,10 +192,12 @@ class WidgetsQmlApi(QObject):
         self._stream_pet_instance = str(online_instance or "main").strip() or "main"
         self._stream_goal_instance = str(online_instance or "main").strip() or "main"
         self._live_leaderboard_instance = str(online_instance or "main").strip() or "main"
+        self._social_rotator_instance = str(online_instance or "main").strip() or "main"
         self._community_world_instance = str(online_instance or "main").strip() or "main"
         self._battle_host: Any | None = None
         self._stream_goal_controller: Any | None = None
         self._live_leaderboard_controller: Any | None = None
+        self._social_rotator_controller: Any | None = None
         self._system_font_families: list[str] | None = None
 
     def set_battle_host(self, host: Any) -> None:
@@ -200,6 +208,9 @@ class WidgetsQmlApi(QObject):
 
     def set_live_leaderboard_controller(self, controller: Any) -> None:
         self._live_leaderboard_controller = controller
+
+    def set_social_rotator_controller(self, controller: Any) -> None:
+        self._social_rotator_controller = controller
 
     def _current_tiktok_anchor_username(self) -> str:
         host = self._battle_host
@@ -241,6 +252,9 @@ class WidgetsQmlApi(QObject):
         self.battleRoyaleOverlayUrlChanged.emit()
         self.streamPetOverlayUrlChanged.emit()
         self.communityWorldOverlayUrlChanged.emit()
+        self.liveLeaderboardOverlayUrlChanged.emit()
+        self.socialRotatorOverlayUrlChanged.emit()
+        self.streamGoalOverlayUrlChanged.emit()
 
     @Property(str, notify=chatOverlayUrlChanged)
     def chatOverlayUrlValue(self) -> str:  # noqa: ANN201 - PySide pattern
@@ -581,6 +595,53 @@ class WidgetsQmlApi(QObject):
                 "scene_duration_ms": 8000,
                 "transition_token": 1,
                 "server_now_ms": 0,
+            },
+        }
+        self._publish_patch(topic=topic, patch=patch)
+
+    socialRotatorOverlayUrlChanged = Signal()
+
+    @Property(str, notify=socialRotatorOverlayUrlChanged)
+    def socialRotatorOverlayUrlValue(self) -> str:  # noqa: ANN201 - PySide pattern
+        return self.socialRotatorOverlayUrl()
+
+    @Slot(result=str)
+    def socialRotatorOverlayUrl(self) -> str:
+        if not self._base:
+            return ""
+        return f"{self._base}/overlay/social_rotator?instance={self._social_rotator_instance}"
+
+    @Slot()
+    def copySocialRotatorOverlayUrl(self) -> None:
+        url = self.socialRotatorOverlayUrl()
+        if not url:
+            return
+        clip = QGuiApplication.clipboard()
+        if clip is None:
+            return
+        clip.setText(url)
+
+    @Slot()
+    def previewSocialRotatorOverlay(self) -> None:
+        topic = f"overlay:social_rotator:{self._social_rotator_instance}"
+        if self._social_rotator_controller is not None:
+            try:
+                patch = self._social_rotator_controller.initial_state()
+                self._publish_patch(topic=topic, patch=patch)
+                return
+            except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+                _LOG.warning("previewSocialRotatorOverlay controller state failed: %s", exc)
+        cfg = load_social_rotator_overlay_config()
+        patch = {
+            "config": json.loads(social_rotator_overlay_config_to_json_text(cfg)),
+            "locale": _ui_locale(),
+            "stats": {
+                "latest_follower": {"name": "kittencat_42"},
+                "latest_donation": {"name": "Dimon4ik", "value": 250, "source": "donatik"},
+                "top_donator": {"name": "Diamond_ua", "value": 1500},
+                "stream_started_at_ms": 0,
+                "viewers_by_platform": {"tiktok": 100, "twitch": 40, "kick": 12},
+                "viewers_total": 152,
             },
         }
         self._publish_patch(topic=topic, patch=patch)
@@ -1396,6 +1457,64 @@ class WidgetsQmlApi(QObject):
             return
         _LOG.info("widgets ConfigMap save: live_leaderboard ok json_len=%d", len(txt))
         self.saveLiveLeaderboardOverlayConfigJson(txt)
+
+    @Slot(result="QVariant")
+    def loadSocialRotatorOverlayConfigMap(self) -> dict[str, Any]:
+        cfg = load_social_rotator_overlay_config()
+        return json.loads(social_rotator_overlay_config_to_json_text(cfg))
+
+    @Slot(result=str)
+    def loadSocialRotatorOverlayConfigJson(self) -> str:
+        cfg = load_social_rotator_overlay_config()
+        return social_rotator_overlay_config_to_json_text(cfg)
+
+    @Slot(str)
+    def saveSocialRotatorOverlayConfigJson(self, cfg_json: str) -> None:
+        txt = (cfg_json or "").strip()
+        if not txt:
+            return
+        try:
+            cfg = social_rotator_overlay_config_from_json_text(txt)
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            _LOG.warning(
+                "saveSocialRotatorOverlayConfigJson: rejected payload (%s): %s",
+                exc.__class__.__name__,
+                exc,
+            )
+            return
+        save_social_rotator_overlay_config(cfg)
+        _LOG.info("widgets overlay persisted: social_rotator")
+        if self._social_rotator_controller is not None:
+            try:
+                self._social_rotator_controller.reload_config()
+            except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+                _LOG.warning("Failed to reload social_rotator_controller config: %s", exc)
+        if self._pubsub is not None:
+            topic = f"overlay:social_rotator:{self._social_rotator_instance}"
+            if self._social_rotator_controller is not None:
+                try:
+                    patch = self._social_rotator_controller.initial_state()
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    patch = {"config": json.loads(social_rotator_overlay_config_to_json_text(cfg))}
+            else:
+                patch = {"config": json.loads(social_rotator_overlay_config_to_json_text(cfg))}
+            self._publish_patch(topic=topic, patch=patch)
+
+    @Slot(QJSValue)
+    def saveSocialRotatorOverlayConfigMap(self, cfg_js: QJSValue) -> None:
+        plain = _qml_js_to_plain_cfg(cfg_js)
+        _LOG.info("widgets ConfigMap save: social_rotator (plain_type=%s)", type(plain).__name__)
+        if plain is None:
+            _LOG.warning("widgets ConfigMap save: social_rotator rejected (null/undefined)")
+            return
+        txt = _qml_cfg_map_to_json_text(plain)
+        if not txt or txt == "{}":
+            _LOG.warning(
+                "widgets ConfigMap save: social_rotator rejected empty_or_non_serializable"
+            )
+            return
+        _LOG.info("widgets ConfigMap save: social_rotator ok json_len=%d", len(txt))
+        self.saveSocialRotatorOverlayConfigJson(txt)
 
 
 class WidgetsWindowQmlApi(QObject):
