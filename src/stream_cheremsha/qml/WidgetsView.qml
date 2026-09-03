@@ -39,11 +39,12 @@ Item {
             root._loadingBattleCfg = false;
             root._loadingStreamPetCfg = false;
             root._loadingCommunityWorldCfg = false;
+            root._loadingStreamGoalCfg = false;
         }
     }
 
     readonly property int titleBarH: 44
-    property string widgetMode: "grid" // grid | chat | actions | online | top_likers | top_gifters | king_of_live | battle_royale | stream_pet
+    property string widgetMode: "grid" // grid | chat | actions | online | top_likers | top_gifters | king_of_live | battle_royale | stream_pet | community_world | stream_goal
 
     component PillButton: Button {
         id: pillCtl
@@ -352,6 +353,8 @@ Item {
                 return root._loadingBattleCfg;
             if (vsb.syncGroup === "community_world")
                 return root._loadingCommunityWorldCfg;
+            if (vsb.syncGroup === "stream_goal")
+                return root._loadingStreamGoalCfg;
             return true;
         }
 
@@ -370,6 +373,8 @@ Item {
                 root._saveBattle();
             else if (vsb.syncGroup === "community_world")
                 root._saveCommunityWorld();
+            else if (vsb.syncGroup === "stream_goal")
+                root._saveStreamGoal();
         }
 
         function _pull() {
@@ -453,6 +458,14 @@ Item {
                 if (vsb.syncGroup === "community_world")
                     vsb._pull();
             }
+            function onStreamGoalCfgChanged() {
+                if (vsb.syncGroup === "stream_goal")
+                    vsb._pull();
+            }
+            function onStreamGoalCfgEpochChanged() {
+                if (vsb.syncGroup === "stream_goal")
+                    vsb._pull();
+            }
         }
 
         onValueChanged: {
@@ -506,6 +519,9 @@ Item {
     property var communityWorldCfg: null
     property bool _loadingCommunityWorldCfg: false
     property int communityWorldCfgEpoch: 0
+    property var streamGoalCfg: null
+    property bool _loadingStreamGoalCfg: false
+    property int streamGoalCfgEpoch: 0
     property color _spBodyColor: "#fbbf24"
     property color _spEarColor: "#f59e0b"
     property color _spCollarColor: "#ef4444"
@@ -747,7 +763,8 @@ Item {
             (root.widgetMode === "king_of_live" && root.kingCfg !== null) ||
             (root.widgetMode === "battle_royale" && root.battleCfg !== null) ||
             (root.widgetMode === "stream_pet" && root.streamPetCfg !== null) ||
-            (root.widgetMode === "community_world" && root.communityWorldCfg !== null)
+            (root.widgetMode === "community_world" && root.communityWorldCfg !== null) ||
+            (root.widgetMode === "stream_goal" && root.streamGoalCfg !== null)
         )
 
     function _flushTierOverlayEditorsIntoCfg() {
@@ -807,7 +824,15 @@ Item {
             root._saveStreamPet();
         } else if (root.widgetMode === "community_world") {
             root._saveCommunityWorld();
+        } else if (root.widgetMode === "stream_goal") {
+            root._saveStreamGoal();
         }
+    }
+
+    function _saveStreamGoal() {
+        if (!api || root.streamGoalCfg === null) return;
+        root.streamGoalCfgEpoch += 1;
+        api.saveStreamGoalOverlayConfigJson(JSON.stringify(root.streamGoalCfg));
     }
 
     function _saveBattle() {
@@ -1314,6 +1339,14 @@ Item {
                             onCopy: function() { if (api) api.copyCommunityWorldOverlayUrl(); }
                             onPlay: function() { if (api) api.previewCommunityWorldOverlay(); }
                             onEdit: function() { root.widgetMode = "community_world"; }
+                        }
+
+                        WidgetCard {
+                            title: "Stream Goal (Cyberpunk Digital Core)"
+                            urlText: api ? api.streamGoalOverlayUrlValue : ""
+                            onCopy: function() { if (api) api.copyStreamGoalOverlayUrl(); }
+                            onPlay: function() { if (api) api.previewStreamGoalOverlay(); }
+                            onEdit: function() { root.widgetMode = "stream_goal"; }
                         }
 
                         WidgetCard {
@@ -1832,6 +1865,70 @@ Item {
                             text: "▶"
                             pillFontSize: 12
                             onClicked: if (api) api.previewBattleRoyaleOverlay()
+                        }
+
+                        PillButton {
+                            text: "Зберегти"
+                            enabled: root._canSaveCurrentWidget
+                            onClicked: root._saveAndApplyCurrentWidget()
+                        }
+
+                        PillButton {
+                            text: "Назад"
+                            onClicked: root.widgetMode = "grid"
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                radius: 14
+                color: cardBase
+                border.width: 1
+                border.color: cardEdge
+                visible: root.widgetMode === "stream_goal"
+                implicitHeight: editStreamGoalHeader.implicitHeight + 20
+
+                ColumnLayout {
+                    id: editStreamGoalHeader
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 12
+                    spacing: 8
+
+                    Text {
+                        text: "Stream Goal (Cyberpunk Digital Core)"
+                        color: ink
+                        font.pixelSize: 18
+                        font.bold: true
+                        Layout.fillWidth: true
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+
+                        TextField {
+                            Layout.fillWidth: true
+                            readOnly: true
+                            selectByMouse: true
+                            color: ink
+                            font.pixelSize: 12
+                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                            text: api ? api.streamGoalOverlayUrlValue : ""
+                        }
+
+                        PillButton {
+                            text: "Скопіювати URL"
+                            onClicked: if (api) api.copyStreamGoalOverlayUrl()
+                        }
+
+                        PillButton {
+                            text: "▶"
+                            pillFontSize: 12
+                            onClicked: if (api) api.previewStreamGoalOverlay()
                         }
 
                         PillButton {
@@ -4697,6 +4794,312 @@ Item {
                         } // communityWorldSettings
 
                         ColumnLayout {
+                            id: streamGoalSettings
+                            visible: root.widgetMode === "stream_goal"
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                        Rectangle { Layout.fillWidth: true; height: 1; color: cardEdge; opacity: 0.6 }
+
+                        Text {
+                            text: "Stream Goal — Мета стріму"
+                            color: ink
+                            font.pixelSize: 16
+                            font.bold: true
+                            Layout.fillWidth: true
+                        }
+
+                        Text {
+                            text: "Cyberpunk Digital Core відстежує прогрес каналу наживо (фолови, лайки, гіфти, шери, коментарі). Підтримує серії подій (combo), еволюцію енергетичного ядра та візуальні ефекти."
+                            color: muted
+                            font.pixelSize: 11
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+
+                        StyledCheckBox {
+                            text: "Увімкнено"
+                            checked: !root.streamGoalCfg || root.streamGoalCfg.enabled !== false
+                            onCheckedChanged: {
+                                if (root._loadingStreamGoalCfg || !root.streamGoalCfg) return;
+                                root.streamGoalCfg.enabled = checked;
+                                root._saveStreamGoal();
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Тип цілі"; color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: sgGoalType
+                                Layout.fillWidth: true
+                                textRole: "text"
+                                valueRole: "value"
+                                model: ListModel {
+                                    ListElement { value: "followers"; text: "Фолови (Followers)" }
+                                    ListElement { value: "likes"; text: "Лайки (Likes)" }
+                                    ListElement { value: "gifts"; text: "Подарунки (Gifts)" }
+                                    ListElement { value: "shares"; text: "Шери (Shares)" }
+                                    ListElement { value: "comments"; text: "Коментарі (Comments)" }
+                                }
+                                onCurrentIndexChanged: {
+                                    if (root._loadingStreamGoalCfg || !root.streamGoalCfg) return;
+                                    var v = sgGoalType.currentIndex >= 0 ? sgGoalType.model.get(sgGoalType.currentIndex).value : "followers";
+                                    root.streamGoalCfg.goal_type = v;
+                                    root._saveStreamGoal();
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Заголовок"; color: muted; Layout.preferredWidth: 160 }
+                            TextField {
+                                Layout.fillWidth: true
+                                color: ink
+                                font.pixelSize: 13
+                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                text: root.streamGoalCfg ? (root.streamGoalCfg.title || "") : "GOAL"
+                                onEditingFinished: {
+                                    if (root._loadingStreamGoalCfg || !root.streamGoalCfg) return;
+                                    root.streamGoalCfg.title = text;
+                                    root._saveStreamGoal();
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Підзаголовок"; color: muted; Layout.preferredWidth: 160 }
+                            TextField {
+                                Layout.fillWidth: true
+                                color: ink
+                                font.pixelSize: 13
+                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                text: root.streamGoalCfg ? (root.streamGoalCfg.subtitle || "") : ""
+                                onEditingFinished: {
+                                    if (root._loadingStreamGoalCfg || !root.streamGoalCfg) return;
+                                    root.streamGoalCfg.subtitle = text;
+                                    root._saveStreamGoal();
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Поточне значення"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "stream_goal"
+                                hostMap: root.streamGoalCfg
+                                hostKey: "current_value"
+                                hostDefault: 0
+                                from: 0; to: 10000000; stepSize: 1
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Цільове значення"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "stream_goal"
+                                hostMap: root.streamGoalCfg
+                                hostKey: "target_value"
+                                hostDefault: 10000
+                                from: 1; to: 10000000; stepSize: 1
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Скин / Тема"; color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: sgSkin
+                                Layout.fillWidth: true
+                                textRole: "text"
+                                valueRole: "value"
+                                model: ListModel {
+                                    ListElement { value: "digital_core"; text: "Digital Core (Cyberpunk)" }
+                                    ListElement { value: "boss"; text: "Boss HP (Healthbar)" }
+                                    ListElement { value: "reactor"; text: "Nuclear Reactor" }
+                                    ListElement { value: "rocket"; text: "Space Rocket" }
+                                    ListElement { value: "vault"; text: "Cyber Vault" }
+                                    ListElement { value: "tower"; text: "Neontower" }
+                                    ListElement { value: "creature"; text: "Bio Core" }
+                                }
+                                onCurrentIndexChanged: {
+                                    if (root._loadingStreamGoalCfg || !root.streamGoalCfg) return;
+                                    var v = sgSkin.currentIndex >= 0 ? sgSkin.model.get(sgSkin.currentIndex).value : "digital_core";
+                                    root.streamGoalCfg.skin = v;
+                                    var skinAccents = {
+                                        "digital_core": "#00ffff",
+                                        "boss": "#ff3355",
+                                        "reactor": "#39ff88",
+                                        "rocket": "#ff6600",
+                                        "vault": "#88ff00",
+                                        "tower": "#ff00aa",
+                                        "creature": "#ff66cc"
+                                    };
+                                    var stock = {
+                                        "#00ffff": true, "#ff3355": true, "#39ff88": true,
+                                        "#ff6600": true, "#88ff00": true, "#ff00aa": true, "#ff66cc": true
+                                    };
+                                    var cur = String(root.streamGoalCfg.accent_color || "").toLowerCase();
+                                    if (!cur || stock[cur])
+                                        root.streamGoalCfg.accent_color = skinAccents[v] || "#00ffff";
+                                    root._saveStreamGoal();
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Акцентний колір"; color: muted; Layout.preferredWidth: 160 }
+                            TextField {
+                                Layout.fillWidth: true
+                                color: ink
+                                font.pixelSize: 13
+                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                text: root.streamGoalCfg ? (root.streamGoalCfg.accent_color || "#00ffff") : "#00ffff"
+                                onEditingFinished: {
+                                    if (root._loadingStreamGoalCfg || !root.streamGoalCfg) return;
+                                    root.streamGoalCfg.accent_color = text;
+                                    root._saveStreamGoal();
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Масштаб (%)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "stream_goal"
+                                hostMap: root.streamGoalCfg
+                                hostKey: "scale_percent"
+                                hostDefault: 100
+                                from: 40; to: 250; stepSize: 5
+                            }
+                            Text {
+                                text: "Масштаб елементів у межах віджета (не zoom за край)"
+                                color: muted
+                                font.pixelSize: 11
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Інтенсивність анімацій"; color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: sgAnimIntensity
+                                Layout.fillWidth: true
+                                textRole: "text"
+                                valueRole: "value"
+                                model: ListModel {
+                                    ListElement { value: "low"; text: "Низька (Low)" }
+                                    ListElement { value: "medium"; text: "Середня (Medium)" }
+                                    ListElement { value: "high"; text: "Висока (High)" }
+                                }
+                                onCurrentIndexChanged: {
+                                    if (root._loadingStreamGoalCfg || !root.streamGoalCfg) return;
+                                    var v = sgAnimIntensity.currentIndex >= 0 ? sgAnimIntensity.model.get(sgAnimIntensity.currentIndex).value : "medium";
+                                    root.streamGoalCfg.animation_intensity = v;
+                                    root._saveStreamGoal();
+                                }
+                            }
+                        }
+
+                        StyledCheckBox {
+                            text: "Показувати комбо лічильник"
+                            checked: !root.streamGoalCfg || root.streamGoalCfg.enable_combo !== false
+                            onCheckedChanged: {
+                                if (root._loadingStreamGoalCfg || !root.streamGoalCfg) return;
+                                root.streamGoalCfg.enable_combo = checked;
+                                root._saveStreamGoal();
+                            }
+                        }
+
+                        StyledCheckBox {
+                            text: "Показувати контрольні точки (Milestones)"
+                            checked: !root.streamGoalCfg || root.streamGoalCfg.enable_milestones !== false
+                            onCheckedChanged: {
+                                if (root._loadingStreamGoalCfg || !root.streamGoalCfg) return;
+                                root.streamGoalCfg.enable_milestones = checked;
+                                root._saveStreamGoal();
+                            }
+                        }
+
+                        StyledCheckBox {
+                            text: "Частинки (Particles)"
+                            checked: !root.streamGoalCfg || root.streamGoalCfg.enable_particles !== false
+                            onCheckedChanged: {
+                                if (root._loadingStreamGoalCfg || !root.streamGoalCfg) return;
+                                root.streamGoalCfg.enable_particles = checked;
+                                root._saveStreamGoal();
+                            }
+                        }
+
+                        StyledCheckBox {
+                            text: "Глітч ефекти (Glitch)"
+                            checked: !root.streamGoalCfg || root.streamGoalCfg.enable_glitch !== false
+                            onCheckedChanged: {
+                                if (root._loadingStreamGoalCfg || !root.streamGoalCfg) return;
+                                root.streamGoalCfg.enable_glitch = checked;
+                                root._saveStreamGoal();
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Поведінка скидання"; color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: sgResetBehavior
+                                Layout.fillWidth: true
+                                textRole: "text"
+                                valueRole: "value"
+                                model: ListModel {
+                                    ListElement { value: "after_completion"; text: "Авто-скидання та нова мета" }
+                                    ListElement { value: "manual"; text: "Ручне скидання" }
+                                    ListElement { value: "new_stream"; text: "Скидати з новим стрімом" }
+                                }
+                                onCurrentIndexChanged: {
+                                    if (root._loadingStreamGoalCfg || !root.streamGoalCfg) return;
+                                    var v = sgResetBehavior.currentIndex >= 0 ? sgResetBehavior.model.get(sgResetBehavior.currentIndex).value : "after_completion";
+                                    root.streamGoalCfg.reset_behavior = v;
+                                    root._saveStreamGoal();
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Наступна мета"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "stream_goal"
+                                hostMap: root.streamGoalCfg
+                                hostKey: "next_target_value"
+                                hostDefault: 25000
+                                from: 1; to: 50000000; stepSize: 1
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        } // streamGoalSettings
+
+                        ColumnLayout {
                             id: actionsSettings
                             visible: root.widgetMode === "actions"
                             Layout.fillWidth: true
@@ -5302,6 +5705,7 @@ Item {
                     root._loadingBattleCfg = false;
                     root._loadingStreamPetCfg = false;
                     root._loadingCommunityWorldCfg = false;
+                    root._loadingStreamGoalCfg = false;
                 }
                 try {
                 // This handler lives on the Loader's inner ColumnLayout, not on root Item:
@@ -5433,6 +5837,27 @@ Item {
                     cwobj = {};
                 root.communityWorldCfg = JSON.parse(JSON.stringify(cwobj));
                 root.communityWorldCfgEpoch += 1;
+                var sgobj = api.loadStreamGoalOverlayConfigMap();
+                if (!sgobj || typeof sgobj !== "object")
+                    sgobj = {};
+                root.streamGoalCfg = JSON.parse(JSON.stringify(sgobj));
+                root.streamGoalCfgEpoch += 1;
+                if (root.streamGoalCfg) {
+                    var sgIndexFor = function(mdl, val) {
+                        for (var sgi = 0; sgi < mdl.count; ++sgi) {
+                            if (mdl.get(sgi).value === val) return sgi;
+                        }
+                        return 0;
+                    };
+                    if (typeof sgGoalType !== "undefined")
+                        sgGoalType.currentIndex = sgIndexFor(sgGoalType.model, root.streamGoalCfg.goal_type || "followers");
+                    if (typeof sgSkin !== "undefined")
+                        sgSkin.currentIndex = sgIndexFor(sgSkin.model, root.streamGoalCfg.skin || "digital_core");
+                    if (typeof sgAnimIntensity !== "undefined")
+                        sgAnimIntensity.currentIndex = sgIndexFor(sgAnimIntensity.model, root.streamGoalCfg.animation_intensity || "medium");
+                    if (typeof sgResetBehavior !== "undefined")
+                        sgResetBehavior.currentIndex = sgIndexFor(sgResetBehavior.model, root.streamGoalCfg.reset_behavior || "after_completion");
+                }
                 if (root.communityWorldCfg) {
                     var cwIndexFor = function(mdl, val) {
                         for (var ci = 0; ci < mdl.count; ++ci) {

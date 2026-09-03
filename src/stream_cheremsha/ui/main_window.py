@@ -154,6 +154,7 @@ from stream_cheremsha.overlays.king_of_live_overlay_config import (
 )
 from stream_cheremsha.overlays.registry import OverlayRegistry
 from stream_cheremsha.overlays.server import OverlayServer
+from stream_cheremsha.overlays.stream_goal_controller import StreamGoalController
 from stream_cheremsha.overlays.stream_pet_controller import StreamPetController
 from stream_cheremsha.overlays.top_gifters_overlay_config import load_top_gifters_overlay_config
 from stream_cheremsha.overlays.top_gifters_session import TikTokSessionTopGifters
@@ -833,6 +834,12 @@ class MainWindow(FramelessWindow):
             instance="main",
             parent=self,
         )
+        self._stream_goal = StreamGoalController(
+            pubsub=self._overlay_server.pubsub(),
+            get_locale=lambda: self._locale,
+            instance="main",
+            parent=self,
+        )
         self._community_world = CommunityWorldController(
             pubsub=self._overlay_server.pubsub(),
             get_locale=lambda: self._locale,
@@ -1094,6 +1101,7 @@ class MainWindow(FramelessWindow):
         self._qml_donations.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._qml_donations.setClearColor(QColor(10, 11, 14))
         self._widgets_qml_api = WidgetsQmlApi(pubsub=self._overlay_server.pubsub())
+        self._widgets_qml_api.set_stream_goal_controller(self._stream_goal)
         self._overlay_tunnel_qml_api = OverlayTunnelQmlApi(self)
         self._qml_widgets = QQuickWidget(self)
         self._qml_widgets.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
@@ -4213,6 +4221,7 @@ class MainWindow(FramelessWindow):
         self._maybe_bump_king_chat_highlight(message)
         self._try_tiktok_link_from_comment(message)
         self._stream_pet.on_chat(author=message.author, text=message.text)
+        self._stream_goal.on_comment(user=message.author, text=message.text)
         self._community_world.on_chat(user=message.author, text=message.text)
 
     def _try_tiktok_link_from_comment(self, message: ChatMessage) -> None:
@@ -4385,6 +4394,7 @@ class MainWindow(FramelessWindow):
         )
         self._publish_activity_item(it)
         self._stream_pet.on_follow(user=user)
+        self._stream_goal.on_follow(user=user, stable_key=stable_key)
         self._community_world.on_follow(user=user, user_key=stable_key)
 
     def _on_tiktok_join_any(self, user: str, stable_key: str = "") -> None:
@@ -4508,6 +4518,13 @@ class MainWindow(FramelessWindow):
                 delta=delta,
                 reason="like",
             )
+        self._stream_goal.on_like(
+            user=user,
+            count=n_i,
+            profile_picture_url=profile_picture_url,
+            user_key=user_key,
+            unique_id=unique_id,
+        )
         self._community_world.on_like(
             user=user,
             n=n_i,
@@ -5052,6 +5069,7 @@ class MainWindow(FramelessWindow):
             hb.cancel()
             self._battle_overlay_publish_handle = None
         self._stream_pet.reset_for_new_stream()
+        self._stream_goal.reset_for_new_stream()
         self._community_world.reset_session()
         loop = self._asyncio_loop
         if loop is not None:
@@ -5111,6 +5129,7 @@ class MainWindow(FramelessWindow):
                         delta=delta,
                         reason="share",
                     )
+        self._stream_goal.on_share(user=user, count=int(n), stable_key=stable_key, unique_id=unique_id)
         self._community_world.on_share(user=user, n=int(n), user_key=stable_key)
 
     def _on_tiktok_paid_sub_any(self, user: str) -> None:
@@ -5456,6 +5475,16 @@ class MainWindow(FramelessWindow):
                 user=sender,
                 gift_name=gift_name,
                 tiktok_coins=total_coins,
+            )
+            self._stream_goal.on_gift(
+                sender=sender,
+                gift_id=gift_id,
+                gift_name=gift_name,
+                count=count,
+                icon_url=str(icon_url or ""),
+                sender_avatar_url=str(sender_avatar_url or ""),
+                tiktok_coin_each=tiktok_coin_each,
+                sender_user_key=sender_user_key,
             )
             self._community_world.on_gift(
                 user=sender,
@@ -6269,6 +6298,9 @@ class MainWindow(FramelessWindow):
             self._stream_pet.set_pubsub(self._overlay_server.pubsub())
             self._stream_pet.set_event_loop(self._asyncio_loop)
             self._stream_pet.start()
+            self._stream_goal.set_pubsub(self._overlay_server.pubsub())
+            self._stream_goal.set_event_loop(self._asyncio_loop)
+            self._stream_goal.start()
             self._community_world.set_pubsub(self._overlay_server.pubsub())
             self._community_world.set_event_loop(self._asyncio_loop)
             self._community_world.start()
@@ -6782,6 +6814,11 @@ class MainWindow(FramelessWindow):
             if t is not None:
                 t.cancel()
                 await asyncio.gather(t, return_exceptions=True)
+
+            try:
+                self._stream_goal.stop()
+            except (OSError, RuntimeError, ValueError, TypeError) as e:
+                logger.exception("Shutdown step failed (stream_goal.stop): %s", e)
 
             try:
                 self._community_world.stop()

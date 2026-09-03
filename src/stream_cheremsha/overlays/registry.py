@@ -13,6 +13,7 @@ from stream_cheremsha.overlays.king_of_live_overlay import KingOfLiveOverlayType
 from stream_cheremsha.overlays.models import normalize_instance_id
 from stream_cheremsha.overlays.music_overlay import MusicOverlayType
 from stream_cheremsha.overlays.online_overlay import OnlineOverlayType
+from stream_cheremsha.overlays.stream_goal_overlay import StreamGoalOverlayType
 from stream_cheremsha.overlays.stream_pet_overlay import StreamPetOverlayType
 from stream_cheremsha.overlays.top_gifters_overlay import TopGiftersOverlayType
 from stream_cheremsha.overlays.top_likers_overlay import TopLikersOverlayType
@@ -135,6 +136,7 @@ class OverlayRegistry:
         self.register(KingOfLiveOverlayType())
         self.register(BattleRoyaleOverlayType())
         self.register(StreamPetOverlayType())
+        self.register(StreamGoalOverlayType())
         self.register(CommunityWorldOverlayType())
         self.register(ActionsOverlayType())
 

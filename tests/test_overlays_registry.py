@@ -156,6 +156,19 @@ def test_registry_has_stream_pet_overlay() -> None:
     assert st["mood"] == "chill"
 
 
+def test_registry_has_stream_goal_overlay() -> None:
+    reg = OverlayRegistry()
+    t = reg.get("stream_goal")
+    assert t.type == "stream_goal"
+    html = t.render_html({"instance": "main"})
+    assert "/ws" in html
+    assert "Stream Goal" in html
+    st = t.initial_state({"instance": "main"})
+    assert "config" in st
+    assert "goal_type" in st
+    assert "current_value" in st
+
+
 def test_pubsub_publishes_to_subscribers() -> None:
     async def _run() -> dict[str, int]:
         ps = OverlayPubSub()

@@ -47,6 +47,12 @@ from stream_cheremsha.overlays.online_overlay_config import (
     save_online_overlay_config,
 )
 from stream_cheremsha.overlays.pubsub import OverlayPubSub
+from stream_cheremsha.overlays.stream_goal_overlay_config import (
+    load_stream_goal_overlay_config,
+    save_stream_goal_overlay_config,
+    stream_goal_overlay_config_from_json_text,
+    stream_goal_overlay_config_to_json_text,
+)
 from stream_cheremsha.overlays.stream_pet_overlay_config import (
     apply_stream_pet_preset,
     load_stream_pet_overlay_config,
@@ -172,12 +178,17 @@ class WidgetsQmlApi(QObject):
         self._king_of_live_instance = str(online_instance or "main").strip() or "main"
         self._battle_royale_instance = str(online_instance or "main").strip() or "main"
         self._stream_pet_instance = str(online_instance or "main").strip() or "main"
+        self._stream_goal_instance = str(online_instance or "main").strip() or "main"
         self._community_world_instance = str(online_instance or "main").strip() or "main"
         self._battle_host: Any | None = None
+        self._stream_goal_controller: Any | None = None
         self._system_font_families: list[str] | None = None
 
     def set_battle_host(self, host: Any) -> None:
         self._battle_host = host
+
+    def set_stream_goal_controller(self, controller: Any) -> None:
+        self._stream_goal_controller = controller
 
     def _current_tiktok_anchor_username(self) -> str:
         host = self._battle_host
@@ -397,6 +408,75 @@ class WidgetsQmlApi(QObject):
                 "ttl_ms": 5000,
                 "anim": "dance",
             },
+        }
+        self._publish_patch(topic=topic, patch=patch)
+
+    streamGoalOverlayUrlChanged = Signal()
+
+    @Property(str, notify=streamGoalOverlayUrlChanged)
+    def streamGoalOverlayUrlValue(self) -> str:  # noqa: ANN201 - PySide pattern
+        return self.streamGoalOverlayUrl()
+
+    @Slot(result=str)
+    def streamGoalOverlayUrl(self) -> str:
+        if not self._base:
+            return ""
+        return f"{self._base}/overlay/stream_goal?instance={self._stream_goal_instance}"
+
+    @Slot()
+    def copyStreamGoalOverlayUrl(self) -> None:
+        url = self.streamGoalOverlayUrl()
+        if not url:
+            return
+        clip = QGuiApplication.clipboard()
+        if clip is None:
+            return
+        clip.setText(url)
+
+    @Slot()
+    def previewStreamGoalOverlay(self) -> None:
+        topic = f"overlay:stream_goal:{self._stream_goal_instance}"
+        cfg = load_stream_goal_overlay_config()
+        patch = {
+            "config": json.loads(stream_goal_overlay_config_to_json_text(cfg)),
+            "goal_type": cfg.goal_type,
+            "title": cfg.title,
+            "subtitle": cfg.subtitle,
+            "current_value": min(cfg.target_value, max(0, int(cfg.target_value * 0.65))),
+            "target_value": cfg.target_value,
+            "progress": 0.65,
+            "progress_percent": 65,
+            "remaining": max(0, cfg.target_value - int(cfg.target_value * 0.65)),
+            "skin": cfg.skin,
+            "accent_color": cfg.accent_color,
+            "scale_percent": int(cfg.scale_percent),
+            "animation_intensity": cfg.animation_intensity,
+            "enable_particles": cfg.enable_particles,
+            "enable_glitch": cfg.enable_glitch,
+            "combo_count": 5,
+            "core_level": 2,
+            "completed_goals": 1,
+            "milestones": [
+                {"percent": 25, "label": "CORE ONLINE", "reached": True, "active": False},
+                {"percent": 50, "label": "ENERGY STABLE", "reached": True, "active": True},
+                {"percent": 75, "label": "CRITICAL ENERGY", "reached": False, "active": False},
+                {"percent": 100, "label": "CORE BREACH", "reached": False, "active": False},
+            ],
+            "visual_events": [
+                {
+                    "type": "event_absorbed",
+                    "payload": {
+                        "type": "like",
+                        "amount": 42,
+                        "batched": True,
+                        "progress": 0.65,
+                        "progress_percent": 65,
+                        "combo": 5,
+                        "metadata": {"batched": True, "count": 42},
+                    },
+                    "timestamp": 0,
+                }
+            ],
         }
         self._publish_patch(topic=topic, patch=patch)
 
@@ -1081,6 +1161,78 @@ class WidgetsQmlApi(QObject):
             return
         _LOG.info("widgets ConfigMap save: community_world ok json_len=%d", len(txt))
         self.saveCommunityWorldOverlayConfigJson(txt)
+
+    @Slot(result="QVariant")
+    def loadStreamGoalOverlayConfigMap(self) -> dict[str, Any]:
+        cfg = load_stream_goal_overlay_config()
+        return json.loads(stream_goal_overlay_config_to_json_text(cfg))
+
+    @Slot(result=str)
+    def loadStreamGoalOverlayConfigJson(self) -> str:
+        cfg = load_stream_goal_overlay_config()
+        return stream_goal_overlay_config_to_json_text(cfg)
+
+    @Slot(str)
+    def saveStreamGoalOverlayConfigJson(self, cfg_json: str) -> None:
+        txt = (cfg_json or "").strip()
+        if not txt:
+            return
+        try:
+            cfg = stream_goal_overlay_config_from_json_text(txt)
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            _LOG.warning(
+                "saveStreamGoalOverlayConfigJson: rejected payload (%s): %s",
+                exc.__class__.__name__,
+                exc,
+            )
+            return
+        save_stream_goal_overlay_config(cfg)
+        _LOG.info("widgets overlay persisted: stream_goal")
+        if self._stream_goal_controller is not None:
+            try:
+                self._stream_goal_controller.reload_config()
+            except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+                _LOG.warning("Failed to reload stream_goal_controller config: %s", exc)
+        if self._pubsub is not None:
+            topic = f"overlay:stream_goal:{self._stream_goal_instance}"
+            cfg_dict = json.loads(stream_goal_overlay_config_to_json_text(cfg))
+            cur = int(cfg.current_value)
+            tgt = int(cfg.target_value)
+            prog = float(cur / tgt) if tgt > 0 else 0.0
+            patch = {
+                "config": cfg_dict,
+                "goal_type": str(cfg.goal_type),
+                "title": str(cfg.title),
+                "subtitle": str(cfg.subtitle),
+                "current_value": cur,
+                "target_value": tgt,
+                "progress": prog,
+                "progress_percent": int(prog * 100),
+                "remaining": max(0, tgt - cur),
+                "skin": str(cfg.skin),
+                "accent_color": str(cfg.accent_color),
+                "scale_percent": int(cfg.scale_percent),
+                "animation_intensity": str(cfg.animation_intensity),
+                "enable_particles": bool(cfg.enable_particles),
+                "enable_glitch": bool(cfg.enable_glitch),
+            }
+            self._publish_patch(topic=topic, patch=patch)
+
+    @Slot(QJSValue)
+    def saveStreamGoalOverlayConfigMap(self, cfg_js: QJSValue) -> None:
+        plain = _qml_js_to_plain_cfg(cfg_js)
+        _LOG.info("widgets ConfigMap save: stream_goal (plain_type=%s)", type(plain).__name__)
+        if plain is None:
+            _LOG.warning("widgets ConfigMap save: stream_goal rejected (null/undefined)")
+            return
+        txt = _qml_cfg_map_to_json_text(plain)
+        if not txt or txt == "{}":
+            _LOG.warning(
+                "widgets ConfigMap save: stream_goal rejected empty_or_non_serializable"
+            )
+            return
+        _LOG.info("widgets ConfigMap save: stream_goal ok json_len=%d", len(txt))
+        self.saveStreamGoalOverlayConfigJson(txt)
 
 
 class WidgetsWindowQmlApi(QObject):
