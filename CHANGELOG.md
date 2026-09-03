@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Universal Social Rotator** overlay (`/overlay/social_rotator`): rotating cyberpunk social HUD with platform hero, NEXT countdown, secondary platform cards, and a bottom stats strip (latest follower, donations, stream time, top donator, online).
+- Widgets editor for platforms (add/remove/reorder), rotation interval, transition presets, themes, effect toggles, and per-stat visibility.
+
 ## [0.16.0] — 2026-09-04
 
 ### Added
