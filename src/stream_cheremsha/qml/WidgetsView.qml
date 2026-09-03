@@ -5874,18 +5874,17 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "Rotation (sec)"; color: muted; Layout.preferredWidth: 160 }
-                            ValueSpinBox {
+                            Text { text: "Rotation (ms)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
                                 syncGroup: "social_rotator"
                                 hostMap: root.socialRotatorCfg
                                 hostKey: "rotation_interval_ms"
                                 hostDefault: 8000
                                 from: 1000; to: 120000; stepSize: 1000
-                                // store ms; spin shows raw ms — convert via custom below
                             }
                         }
                         Text {
-                            text: "Значення в мілісекундах (8000 = 8 сек)"
+                            text: "8000 = 8 секунд"
                             color: muted
                             font.pixelSize: 11
                         }
@@ -6066,7 +6065,7 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: "Scale %"; color: muted; Layout.preferredWidth: 160 }
-                            ValueSpinBox {
+                            VarMapSpinBox {
                                 syncGroup: "social_rotator"
                                 hostMap: root.socialRotatorCfg
                                 hostKey: "scale_percent"
