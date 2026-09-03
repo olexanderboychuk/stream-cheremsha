@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.15.0] — 2026-09-03
+
+### Added
+
+- **Stream Goal** overlay (`/overlay/stream_goal`): cyberpunk digital-core goal tracker for follows, likes, gifts, shares, and comments.
+- Progress-driven core animation tiers (idle → critical → CORE BREACH), per-event reactions, skins/themes, accent color, milestones/combo, and in-widget **scale %** (resizes content inside the overlay box without zoom overflow).
+- Widgets editor settings for goal type, target values, skin, accent, scale, animation intensity, and reset behavior.
+
 ## [0.14.3] — 2026-09-02
 
 ### Added

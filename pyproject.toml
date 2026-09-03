@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stream-cheremsha"
-version = "0.14.3"
+version = "0.15.0"
 description = "Twitch/YouTube/TikTok/Kick live chat to Ukrainian TTS for streamers"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
