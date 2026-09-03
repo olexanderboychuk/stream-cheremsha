@@ -169,6 +169,19 @@ def test_registry_has_stream_goal_overlay() -> None:
     assert "current_value" in st
 
 
+def test_registry_has_social_rotator_overlay() -> None:
+    reg = OverlayRegistry()
+    t = reg.get("social_rotator")
+    assert t.type == "social_rotator"
+    html = t.render_html({"instance": "main"})
+    assert "/ws" in html
+    assert "LIVE SOCIAL" in html
+    st = t.initial_state({"instance": "main"})
+    assert "config" in st
+    assert "rotation" in st
+    assert "stats" in st
+
+
 def test_pubsub_publishes_to_subscribers() -> None:
     async def _run() -> dict[str, int]:
         ps = OverlayPubSub()
