@@ -362,28 +362,115 @@ class SocialRotatorOverlayType:
         font-size: calc(24px * var(--sr-u) * var(--sr-read));
         text-shadow: 0 0 10px color-mix(in srgb, var(--sr-accent) 50%, transparent);
       }}
-      .root.glitching .hero-icon,
-      .root.glitching .username,
-      .root.glitching .platform-name {{
-        animation: glitchSlice 0.55s steps(2, end);
+      .fx-layer {{
+        pointer-events: none;
+        position: absolute;
+        inset: 0;
+        z-index: 8;
+        opacity: 0;
       }}
-      @keyframes glitchSlice {{
-        0% {{ transform: translate(0,0); filter: none; }}
-        20% {{ transform: translate(-3px, 1px); filter: hue-rotate(20deg); }}
-        40% {{ transform: translate(3px, -1px); clip-path: inset(20% 0 40% 0); }}
-        60% {{ transform: translate(-2px, 0); filter: saturate(1.4); }}
-        100% {{ transform: translate(0,0); filter: none; }}
+      .root.fx-transition .panel-top {{
+        will-change: transform, filter, opacity;
       }}
-      .root.trans-data_stream .hero {{ box-shadow: inset 40px 0 40px -20px var(--sr-accent); }}
-      .root.trans-energy_burst .hero-icon {{
-        box-shadow: 0 0 40px var(--sr-platform), 0 0 80px var(--sr-accent);
+      .root.fx-glitch_morph .panel-top {{
+        animation: srGlitchMorph 0.72s steps(3, end);
       }}
-      .root.trans-scan .scanlines {{ opacity: 0.8; }}
-      .root.trans-pixel_dissolve .username {{
-        filter: contrast(1.4) blur(0.4px);
-        letter-spacing: 0.2em;
+      .root.fx-glitch_morph .fx-layer {{
+        opacity: 1;
+        background:
+          repeating-linear-gradient(
+            0deg,
+            transparent,
+            transparent 3px,
+            rgba(0, 255, 255, 0.12) 4px
+          );
+        mix-blend-mode: screen;
+        animation: srFxFlash 0.72s ease-out;
       }}
-      .root.trans-fade .hero {{ opacity: 0.35; transition: opacity 0.35s ease; }}
+      @keyframes srGlitchMorph {{
+        0% {{ transform: translate(0,0); filter: none; opacity: 1; }}
+        15% {{ transform: translate(-6px, 1px); filter: hue-rotate(40deg) contrast(1.3); }}
+        30% {{ transform: translate(5px, -2px); clip-path: inset(12% 0 35% 0); filter: saturate(1.6); }}
+        45% {{ transform: translate(-4px, 0); opacity: 0.55; filter: blur(0.6px); }}
+        60% {{ transform: translate(3px, 1px); opacity: 0.9; clip-path: none; }}
+        100% {{ transform: translate(0,0); filter: none; opacity: 1; }}
+      }}
+      .root.fx-data_stream .panel-top {{
+        animation: srDataStream 0.7s ease;
+      }}
+      .root.fx-data_stream .fx-layer {{
+        opacity: 1;
+        background: linear-gradient(
+          90deg,
+          transparent 0%,
+          color-mix(in srgb, var(--sr-accent) 55%, transparent) 45%,
+          transparent 70%
+        );
+        animation: srSweep 0.7s linear;
+      }}
+      @keyframes srDataStream {{
+        0% {{ filter: brightness(1); transform: translateX(0); }}
+        35% {{ filter: brightness(1.35) contrast(1.2); transform: translateX(-8px); opacity: 0.7; }}
+        70% {{ filter: brightness(1.1); transform: translateX(6px); opacity: 0.85; }}
+        100% {{ filter: none; transform: none; opacity: 1; }}
+      }}
+      @keyframes srSweep {{
+        from {{ transform: translateX(-60%); opacity: 0.2; }}
+        to {{ transform: translateX(120%); opacity: 0; }}
+      }}
+      .root.fx-energy_burst .hero-icon {{
+        animation: srBurst 0.7s ease-out;
+      }}
+      .root.fx-energy_burst .fx-layer {{
+        opacity: 1;
+        background: radial-gradient(
+          circle at 18% 50%,
+          color-mix(in srgb, var(--sr-platform) 70%, transparent),
+          transparent 55%
+        );
+        animation: srFxFlash 0.7s ease-out;
+      }}
+      @keyframes srBurst {{
+        0% {{ transform: scale(1); filter: brightness(1); }}
+        40% {{ transform: scale(1.18); filter: brightness(1.6) saturate(1.4); }}
+        100% {{ transform: scale(1); filter: none; }}
+      }}
+      .root.fx-scan .panel-top {{
+        animation: srScan 0.7s linear;
+      }}
+      .root.fx-scan .scanlines {{
+        opacity: 0.95 !important;
+        animation: scanDrift 0.35s linear infinite;
+      }}
+      @keyframes srScan {{
+        0% {{ filter: brightness(1); }}
+        25% {{ filter: brightness(1.4) contrast(1.3); }}
+        50% {{ filter: brightness(0.75); opacity: 0.65; }}
+        100% {{ filter: none; opacity: 1; }}
+      }}
+      .root.fx-pixel_dissolve .username,
+      .root.fx-pixel_dissolve .platform-name,
+      .root.fx-pixel_dissolve .hero-icon {{
+        animation: srPixel 0.7s steps(4, end);
+      }}
+      @keyframes srPixel {{
+        0% {{ opacity: 1; filter: none; letter-spacing: 0; }}
+        30% {{ opacity: 0.35; filter: contrast(2) blur(1px); letter-spacing: 0.25em; }}
+        60% {{ opacity: 0.15; filter: contrast(3); }}
+        100% {{ opacity: 1; filter: none; letter-spacing: 0; }}
+      }}
+      .root.fx-fade .panel-top {{
+        animation: srFade 0.55s ease;
+      }}
+      @keyframes srFade {{
+        0% {{ opacity: 1; }}
+        45% {{ opacity: 0.08; }}
+        100% {{ opacity: 1; }}
+      }}
+      @keyframes srFxFlash {{
+        0% {{ opacity: 0.85; }}
+        100% {{ opacity: 0; }}
+      }}
       .empty {{
         font-family: var(--sr-font-display);
         font-size: calc(9px * var(--sr-u) * var(--sr-read));
@@ -412,6 +499,7 @@ class SocialRotatorOverlayType:
         <div class="hud-corner bl"></div>
         <div class="hud-corner br"></div>
         <div class="scanlines"></div>
+        <div class="fx-layer" id="fxLayer"></div>
         <div class="panel-top" id="panelTop">
           <div class="hero" id="hero">
             <div class="hero-icon-wrap">
@@ -469,7 +557,9 @@ class SocialRotatorOverlayType:
         let platformsEnabled = state.platforms_enabled || [];
         let stats = state.stats || {{}};
         let lastToken = -1;
+        let lastTransitionName = '';
         let transitionTimer = null;
+        let transitionMidTimer = null;
         let particles = [];
         const MAX_PARTICLES = 12;
         let clockSkew = 0;
@@ -487,6 +577,7 @@ class SocialRotatorOverlayType:
         const emptyEl = document.getElementById('empty');
         const panelTop = document.getElementById('panelTop');
         const statsPanel = document.getElementById('stats');
+        const fxLayer = document.getElementById('fxLayer');
 
         function esc(s) {{
           return String(s || '')
@@ -526,9 +617,15 @@ class SocialRotatorOverlayType:
 
         function clearTransitionClasses() {{
           rootEl.classList.remove(
-            'glitching', 'trans-glitch_morph', 'trans-data_stream',
-            'trans-energy_burst', 'trans-scan', 'trans-pixel_dissolve', 'trans-fade'
+            'fx-transition',
+            'fx-glitch_morph',
+            'fx-data_stream',
+            'fx-energy_burst',
+            'fx-scan',
+            'fx-pixel_dissolve',
+            'fx-fade'
           );
+          if (fxLayer) fxLayer.style.opacity = '0';
         }}
 
         function spawnParticles(n) {{
@@ -548,27 +645,35 @@ class SocialRotatorOverlayType:
           }}
         }}
 
-        function playTransition(name) {{
+        function playTransition(name, onMid) {{
           const t = String(name || config.transition || 'glitch_morph');
           if (transitionTimer) {{
             clearTimeout(transitionTimer);
             transitionTimer = null;
           }}
+          if (transitionMidTimer) {{
+            clearTimeout(transitionMidTimer);
+            transitionMidTimer = null;
+          }}
           clearTransitionClasses();
-          if (t === 'fade') {{
-            rootEl.classList.add('trans-fade');
-            transitionTimer = setTimeout(clearTransitionClasses, 500);
-            return;
+          // Force reflow so repeated same-class animations restart.
+          void rootEl.offsetWidth;
+          rootEl.classList.add('fx-transition', 'fx-' + t);
+          if (t === 'glitch_morph' || t === 'energy_burst' || t === 'data_stream') {{
+            spawnParticles(t === 'energy_burst' ? 10 : 6);
           }}
-          if (t === 'glitch_morph') {{
-            rootEl.classList.add('glitching', 'trans-glitch_morph');
-            spawnParticles(5);
-            transitionTimer = setTimeout(clearTransitionClasses, 650);
-            return;
+          const midMs = (t === 'fade') ? 220 : 300;
+          const endMs = (t === 'fade') ? 560 : 760;
+          if (typeof onMid === 'function') {{
+            transitionMidTimer = setTimeout(function() {{
+              transitionMidTimer = null;
+              onMid();
+            }}, midMs);
           }}
-          rootEl.classList.add('trans-' + t);
-          if (t === 'energy_burst') spawnParticles(8);
-          transitionTimer = setTimeout(clearTransitionClasses, 750);
+          transitionTimer = setTimeout(function() {{
+            transitionTimer = null;
+            clearTransitionClasses();
+          }}, endMs);
         }}
 
         function activeEntry() {{
@@ -712,38 +817,69 @@ class SocialRotatorOverlayType:
 
         function applyState(st) {{
           if (!st) return;
-          if (st.config) config = Object.assign(config || {{}}, st.config);
+          let transitionPresetChanged = false;
+          if (st.config) {{
+            const prevTransition = String((config && config.transition) || '');
+            config = Object.assign(config || {{}}, st.config);
+            const nextTransition = String(config.transition || 'glitch_morph');
+            if (lastTransitionName && nextTransition && nextTransition !== lastTransitionName) {{
+              transitionPresetChanged = true;
+            }}
+            lastTransitionName = nextTransition || 'glitch_morph';
+          }}
           if (st.platforms_enabled) platformsEnabled = st.platforms_enabled;
           if (st.stats) stats = st.stats;
-          let transitioned = false;
+
+          let shouldTransition = false;
+          let nextRotation = rotation;
           if (st.rotation) {{
-            rotation = st.rotation;
-            if (typeof rotation.server_now_ms === 'number' && rotation.server_now_ms > 0) {{
-              clockSkew = rotation.server_now_ms - Date.now();
+            nextRotation = st.rotation;
+            if (typeof nextRotation.server_now_ms === 'number' && nextRotation.server_now_ms > 0) {{
+              clockSkew = nextRotation.server_now_ms - Date.now();
             }}
-            const tok = Number(rotation.transition_token || 0);
+            const tok = Number(nextRotation.transition_token || 0);
             if (lastToken >= 0 && tok !== lastToken) {{
-              playTransition(config.transition || 'glitch_morph');
-              transitioned = true;
+              shouldTransition = true;
               secPage = 0;
             }}
             lastToken = tok;
           }}
+
+          function commitVisual() {{
+            if (st.rotation) rotation = nextRotation;
+            applyLook();
+            renderHero();
+            renderSecondary();
+            renderStats();
+            renderCountdown();
+          }}
+
+          if (shouldTransition) {{
+            playTransition(config.transition || 'glitch_morph', commitVisual);
+            return;
+          }}
+          if (st.rotation) rotation = nextRotation;
           applyLook();
           renderHero();
           renderSecondary();
           renderStats();
           renderCountdown();
-          if (!transitioned && config.enable_particles !== false && Math.random() < 0.02) {{
+          if (transitionPresetChanged) {{
+            playTransition(config.transition || 'glitch_morph');
+          }} else if (config.enable_particles !== false && Math.random() < 0.02) {{
             spawnParticles(1);
           }}
         }}
 
-        function handleMsg(msg) {{
-          if (!msg) return;
-          if (msg.op === 'state' || msg.state) applyState(msg.state || msg);
-          else if (msg.patch) applyState(msg.patch);
-          else applyState(msg);
+        function handleMsg(data) {{
+          if (!data || !data.op) return;
+          if (data.op === 'initial_state') {{
+            applyState(data.state || {{}});
+            return;
+          }}
+          if (data.op === 'patch') {{
+            applyState(data.patch || {{}});
+          }}
         }}
 
         function connect() {{
