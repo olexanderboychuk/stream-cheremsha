@@ -40,11 +40,13 @@ Item {
             root._loadingStreamPetCfg = false;
             root._loadingCommunityWorldCfg = false;
             root._loadingStreamGoalCfg = false;
+            root._loadingSocialRotatorCfg = false;
+            root._loadingLiveLeaderboardCfg = false;
         }
     }
 
     readonly property int titleBarH: 44
-    property string widgetMode: "grid" // grid | chat | actions | online | top_likers | top_gifters | king_of_live | battle_royale | stream_pet | community_world | stream_goal | live_leaderboard
+    property string widgetMode: "grid" // grid | chat | actions | online | top_likers | top_gifters | king_of_live | battle_royale | stream_pet | community_world | stream_goal | live_leaderboard | social_rotator
 
     component PillButton: Button {
         id: pillCtl
@@ -357,6 +359,8 @@ Item {
                 return root._loadingStreamGoalCfg;
             if (vsb.syncGroup === "live_leaderboard")
                 return root._loadingLiveLeaderboardCfg;
+            if (vsb.syncGroup === "social_rotator")
+                return root._loadingSocialRotatorCfg;
             return true;
         }
 
@@ -379,6 +383,8 @@ Item {
                 root._saveStreamGoal();
             else if (vsb.syncGroup === "live_leaderboard")
                 root._saveLiveLeaderboard();
+            else if (vsb.syncGroup === "social_rotator")
+                root._saveSocialRotator();
         }
 
         function _pull() {
@@ -478,6 +484,14 @@ Item {
                 if (vsb.syncGroup === "live_leaderboard")
                     vsb._pull();
             }
+            function onSocialRotatorCfgChanged() {
+                if (vsb.syncGroup === "social_rotator")
+                    vsb._pull();
+            }
+            function onSocialRotatorCfgEpochChanged() {
+                if (vsb.syncGroup === "social_rotator")
+                    vsb._pull();
+            }
         }
 
         onValueChanged: {
@@ -537,6 +551,9 @@ Item {
     property var liveLeaderboardCfg: null
     property bool _loadingLiveLeaderboardCfg: false
     property int liveLeaderboardCfgEpoch: 0
+    property var socialRotatorCfg: null
+    property bool _loadingSocialRotatorCfg: false
+    property int socialRotatorCfgEpoch: 0
     property color _spBodyColor: "#fbbf24"
     property color _spEarColor: "#f59e0b"
     property color _spCollarColor: "#ef4444"
@@ -780,7 +797,8 @@ Item {
             (root.widgetMode === "stream_pet" && root.streamPetCfg !== null) ||
             (root.widgetMode === "community_world" && root.communityWorldCfg !== null) ||
             (root.widgetMode === "stream_goal" && root.streamGoalCfg !== null) ||
-            (root.widgetMode === "live_leaderboard" && root.liveLeaderboardCfg !== null)
+            (root.widgetMode === "live_leaderboard" && root.liveLeaderboardCfg !== null) ||
+            (root.widgetMode === "social_rotator" && root.socialRotatorCfg !== null)
         )
 
     function _flushTierOverlayEditorsIntoCfg() {
@@ -844,6 +862,8 @@ Item {
             root._saveStreamGoal();
         } else if (root.widgetMode === "live_leaderboard") {
             root._saveLiveLeaderboard();
+        } else if (root.widgetMode === "social_rotator") {
+            root._saveSocialRotator();
         }
     }
 
@@ -859,6 +879,50 @@ Item {
         if (root.liveLeaderboardCfg.sequence)
             root.liveLeaderboardCfg.sequence_json = JSON.stringify(root.liveLeaderboardCfg.sequence);
         api.saveLiveLeaderboardOverlayConfigJson(JSON.stringify(root.liveLeaderboardCfg));
+    }
+
+    function _saveSocialRotator() {
+        if (!api || root.socialRotatorCfg === null) return;
+        root.socialRotatorCfgEpoch += 1;
+        api.saveSocialRotatorOverlayConfigJson(JSON.stringify(root.socialRotatorCfg));
+    }
+
+    function _srMovePlatform(index, delta) {
+        if (!root.socialRotatorCfg || !root.socialRotatorCfg.platforms) return;
+        var arr = root.socialRotatorCfg.platforms.slice();
+        var j = index + delta;
+        if (j < 0 || j >= arr.length) return;
+        var tmp = arr[index];
+        arr[index] = arr[j];
+        arr[j] = tmp;
+        for (var i = 0; i < arr.length; i++) arr[i].order = i;
+        root.socialRotatorCfg.platforms = arr;
+        root._saveSocialRotator();
+    }
+
+    function _srRemovePlatform(index) {
+        if (!root.socialRotatorCfg || !root.socialRotatorCfg.platforms) return;
+        var arr = root.socialRotatorCfg.platforms.slice();
+        if (index < 0 || index >= arr.length) return;
+        arr.splice(index, 1);
+        for (var i = 0; i < arr.length; i++) arr[i].order = i;
+        root.socialRotatorCfg.platforms = arr;
+        root._saveSocialRotator();
+    }
+
+    function _srAddPlatform(platformId) {
+        if (!root.socialRotatorCfg) return;
+        var arr = (root.socialRotatorCfg.platforms || []).slice();
+        arr.push({
+            id: "p" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36),
+            platform: platformId || "twitch",
+            username: "",
+            url: "",
+            enabled: true,
+            order: arr.length
+        });
+        root.socialRotatorCfg.platforms = arr;
+        root._saveSocialRotator();
     }
 
     function _ensureLiveLeaderboardSourceInSequence(sourceId) {
@@ -1392,6 +1456,14 @@ Item {
                             onCopy: function() { if (api) api.copyLiveLeaderboardOverlayUrl(); }
                             onPlay: function() { if (api) api.previewLiveLeaderboardOverlay(); }
                             onEdit: function() { root.widgetMode = "live_leaderboard"; }
+                        }
+
+                        WidgetCard {
+                            title: "Social Rotator (Universal)"
+                            urlText: api ? api.socialRotatorOverlayUrlValue : ""
+                            onCopy: function() { if (api) api.copySocialRotatorOverlayUrl(); }
+                            onPlay: function() { if (api) api.previewSocialRotatorOverlay(); }
+                            onEdit: function() { root.widgetMode = "social_rotator"; }
                         }
 
                         WidgetCard {
@@ -2038,6 +2110,70 @@ Item {
                             text: "▶"
                             pillFontSize: 12
                             onClicked: if (api) api.previewLiveLeaderboardOverlay()
+                        }
+
+                        PillButton {
+                            text: "Зберегти"
+                            enabled: root._canSaveCurrentWidget
+                            onClicked: root._saveAndApplyCurrentWidget()
+                        }
+
+                        PillButton {
+                            text: "Назад"
+                            onClicked: root.widgetMode = "grid"
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                radius: 14
+                color: cardBase
+                border.width: 1
+                border.color: cardEdge
+                visible: root.widgetMode === "social_rotator"
+                implicitHeight: editSocialRotatorHeader.implicitHeight + 20
+
+                ColumnLayout {
+                    id: editSocialRotatorHeader
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 12
+                    spacing: 8
+
+                    Text {
+                        text: "Social Rotator (Universal)"
+                        color: ink
+                        font.pixelSize: 18
+                        font.bold: true
+                        Layout.fillWidth: true
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+
+                        TextField {
+                            Layout.fillWidth: true
+                            readOnly: true
+                            selectByMouse: true
+                            color: ink
+                            font.pixelSize: 12
+                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                            text: api ? api.socialRotatorOverlayUrlValue : ""
+                        }
+
+                        PillButton {
+                            text: "Скопіювати URL"
+                            onClicked: if (api) api.copySocialRotatorOverlayUrl()
+                        }
+
+                        PillButton {
+                            text: "▶"
+                            pillFontSize: 12
+                            onClicked: if (api) api.previewSocialRotatorOverlay()
                         }
 
                         PillButton {
@@ -5587,6 +5723,361 @@ Item {
                         } // liveLeaderboardSettings
 
                         ColumnLayout {
+                            id: socialRotatorSettings
+                            visible: root.widgetMode === "social_rotator"
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                        Rectangle { Layout.fillWidth: true; height: 1; color: cardEdge; opacity: 0.6 }
+
+                        Text {
+                            text: "Social Rotator — Універсальна ротація соцмереж"
+                            color: ink
+                            font.pixelSize: 16
+                            font.bold: true
+                            Layout.fillWidth: true
+                        }
+
+                        StyledCheckBox {
+                            text: "Увімкнено"
+                            checked: !root.socialRotatorCfg || root.socialRotatorCfg.enabled !== false
+                            onCheckedChanged: {
+                                if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
+                                root.socialRotatorCfg.enabled = checked;
+                                root._saveSocialRotator();
+                            }
+                        }
+
+                        Text {
+                            text: "ПЛАТФОРМИ"
+                            color: ink
+                            font.pixelSize: 13
+                            font.bold: true
+                        }
+
+                        Repeater {
+                            model: root.socialRotatorCfg && root.socialRotatorCfg.platforms ? root.socialRotatorCfg.platforms.length : 0
+                            delegate: ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 4
+                                property int pIndex: index
+                                property var prow: root.socialRotatorCfg.platforms[index]
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+                                    Text {
+                                        text: String(pIndex + 1).padStart(2, "0")
+                                        color: muted
+                                        font.pixelSize: 12
+                                        Layout.preferredWidth: 28
+                                    }
+                                    Text {
+                                        text: (prow && prow.platform) ? String(prow.platform).toUpperCase() : "?"
+                                        color: ink
+                                        font.pixelSize: 13
+                                        font.bold: true
+                                        Layout.preferredWidth: 100
+                                    }
+                                    StyledCheckBox {
+                                        text: "On"
+                                        checked: !prow || prow.enabled !== false
+                                        onCheckedChanged: {
+                                            if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
+                                            root.socialRotatorCfg.platforms[pIndex].enabled = checked;
+                                            root._saveSocialRotator();
+                                        }
+                                    }
+                                    PillButton {
+                                        text: "↑"
+                                        enabled: pIndex > 0
+                                        onClicked: root._srMovePlatform(pIndex, -1)
+                                    }
+                                    PillButton {
+                                        text: "↓"
+                                        enabled: root.socialRotatorCfg && pIndex < root.socialRotatorCfg.platforms.length - 1
+                                        onClicked: root._srMovePlatform(pIndex, 1)
+                                    }
+                                    PillButton {
+                                        text: "Remove"
+                                        onClicked: root._srRemovePlatform(pIndex)
+                                    }
+                                }
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+                                    Text { text: "Username"; color: muted; Layout.preferredWidth: 80 }
+                                    TextField {
+                                        Layout.fillWidth: true
+                                        color: ink
+                                        font.pixelSize: 12
+                                        text: prow ? (prow.username || "") : ""
+                                        background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                        onEditingFinished: {
+                                            if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
+                                            root.socialRotatorCfg.platforms[pIndex].username = text;
+                                            root._saveSocialRotator();
+                                        }
+                                    }
+                                }
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+                                    Text { text: "URL override"; color: muted; Layout.preferredWidth: 80 }
+                                    TextField {
+                                        Layout.fillWidth: true
+                                        color: ink
+                                        font.pixelSize: 12
+                                        text: prow ? (prow.url || "") : ""
+                                        background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                        onEditingFinished: {
+                                            if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
+                                            root.socialRotatorCfg.platforms[pIndex].url = text;
+                                            root._saveSocialRotator();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+                            StyledComboBox {
+                                id: srAddPlatform
+                                Layout.preferredWidth: 160
+                                model: ListModel {
+                                    ListElement { text: "Twitch"; value: "twitch" }
+                                    ListElement { text: "YouTube"; value: "youtube" }
+                                    ListElement { text: "Kick"; value: "kick" }
+                                    ListElement { text: "Telegram"; value: "telegram" }
+                                    ListElement { text: "TikTok"; value: "tiktok" }
+                                    ListElement { text: "Instagram"; value: "instagram" }
+                                    ListElement { text: "Discord"; value: "discord" }
+                                    ListElement { text: "X"; value: "x" }
+                                    ListElement { text: "Facebook"; value: "facebook" }
+                                }
+                                textRole: "text"
+                                Component.onCompleted: currentIndex = 0
+                            }
+                            PillButton {
+                                text: "+ ADD PLATFORM"
+                                onClicked: {
+                                    var v = "twitch";
+                                    if (srAddPlatform.currentIndex >= 0)
+                                        v = srAddPlatform.model.get(srAddPlatform.currentIndex).value;
+                                    root._srAddPlatform(v);
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Rotation (sec)"; color: muted; Layout.preferredWidth: 160 }
+                            ValueSpinBox {
+                                syncGroup: "social_rotator"
+                                hostMap: root.socialRotatorCfg
+                                hostKey: "rotation_interval_ms"
+                                hostDefault: 8000
+                                from: 1000; to: 120000; stepSize: 1000
+                                // store ms; spin shows raw ms — convert via custom below
+                            }
+                        }
+                        Text {
+                            text: "Значення в мілісекундах (8000 = 8 сек)"
+                            color: muted
+                            font.pixelSize: 11
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Transition"; color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: srTransition
+                                Layout.fillWidth: true
+                                model: ListModel {
+                                    ListElement { text: "Glitch Morph"; value: "glitch_morph" }
+                                    ListElement { text: "Data Stream"; value: "data_stream" }
+                                    ListElement { text: "Energy Burst"; value: "energy_burst" }
+                                    ListElement { text: "Scan"; value: "scan" }
+                                    ListElement { text: "Pixel Dissolve"; value: "pixel_dissolve" }
+                                    ListElement { text: "Fade"; value: "fade" }
+                                }
+                                textRole: "text"
+                                onActivated: {
+                                    if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
+                                    root.socialRotatorCfg.transition = model.get(currentIndex).value;
+                                    root._saveSocialRotator();
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Theme"; color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: srTheme
+                                Layout.fillWidth: true
+                                model: ListModel {
+                                    ListElement { text: "Neon Cyber"; value: "neon_cyber" }
+                                    ListElement { text: "Synthwave"; value: "synthwave" }
+                                    ListElement { text: "Toxic"; value: "toxic" }
+                                    ListElement { text: "Ice"; value: "ice" }
+                                    ListElement { text: "Amber"; value: "amber" }
+                                }
+                                textRole: "text"
+                                onActivated: {
+                                    if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
+                                    root.socialRotatorCfg.theme = model.get(currentIndex).value;
+                                    root._saveSocialRotator();
+                                }
+                            }
+                        }
+
+                        Text { text: "ВІДОБРАЖЕННЯ"; color: ink; font.pixelSize: 13; font.bold: true }
+
+                        StyledCheckBox {
+                            text: "Show URL"
+                            checked: !root.socialRotatorCfg || root.socialRotatorCfg.show_url !== false
+                            onCheckedChanged: {
+                                if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
+                                root.socialRotatorCfg.show_url = checked;
+                                root._saveSocialRotator();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: "Show secondary platforms"
+                            checked: !root.socialRotatorCfg || root.socialRotatorCfg.show_secondary_platforms !== false
+                            onCheckedChanged: {
+                                if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
+                                root.socialRotatorCfg.show_secondary_platforms = checked;
+                                root._saveSocialRotator();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: "Show countdown"
+                            checked: !root.socialRotatorCfg || root.socialRotatorCfg.show_countdown !== false
+                            onCheckedChanged: {
+                                if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
+                                root.socialRotatorCfg.show_countdown = checked;
+                                root._saveSocialRotator();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: "Glow"
+                            checked: !root.socialRotatorCfg || root.socialRotatorCfg.enable_glow !== false
+                            onCheckedChanged: {
+                                if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
+                                root.socialRotatorCfg.enable_glow = checked;
+                                root._saveSocialRotator();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: "Particles"
+                            checked: !root.socialRotatorCfg || root.socialRotatorCfg.enable_particles !== false
+                            onCheckedChanged: {
+                                if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
+                                root.socialRotatorCfg.enable_particles = checked;
+                                root._saveSocialRotator();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: "CRT effects"
+                            checked: !root.socialRotatorCfg || root.socialRotatorCfg.enable_crt !== false
+                            onCheckedChanged: {
+                                if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
+                                root.socialRotatorCfg.enable_crt = checked;
+                                root._saveSocialRotator();
+                            }
+                        }
+
+                        Text { text: "STATS STRIP"; color: ink; font.pixelSize: 13; font.bold: true }
+
+                        StyledCheckBox {
+                            text: "Latest Follower"
+                            checked: !root.socialRotatorCfg || root.socialRotatorCfg.show_latest_follower !== false
+                            onCheckedChanged: {
+                                if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
+                                root.socialRotatorCfg.show_latest_follower = checked;
+                                root._saveSocialRotator();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: "Latest Donation"
+                            checked: !root.socialRotatorCfg || root.socialRotatorCfg.show_latest_donation !== false
+                            onCheckedChanged: {
+                                if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
+                                root.socialRotatorCfg.show_latest_donation = checked;
+                                root._saveSocialRotator();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: "Stream Time"
+                            checked: !root.socialRotatorCfg || root.socialRotatorCfg.show_stream_time !== false
+                            onCheckedChanged: {
+                                if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
+                                root.socialRotatorCfg.show_stream_time = checked;
+                                root._saveSocialRotator();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: "Top Donator"
+                            checked: !root.socialRotatorCfg || root.socialRotatorCfg.show_top_donator !== false
+                            onCheckedChanged: {
+                                if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
+                                root.socialRotatorCfg.show_top_donator = checked;
+                                root._saveSocialRotator();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: "Online"
+                            checked: !root.socialRotatorCfg || root.socialRotatorCfg.show_online !== false
+                            onCheckedChanged: {
+                                if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
+                                root.socialRotatorCfg.show_online = checked;
+                                root._saveSocialRotator();
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "TikTok coin → value rate"; color: muted; Layout.preferredWidth: 180 }
+                            TextField {
+                                Layout.preferredWidth: 100
+                                color: ink
+                                font.pixelSize: 12
+                                text: root.socialRotatorCfg ? String(root.socialRotatorCfg.tiktok_coin_to_value_rate) : "1"
+                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                onEditingFinished: {
+                                    if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
+                                    var n = parseFloat(text);
+                                    if (isNaN(n) || n < 0) n = 1.0;
+                                    root.socialRotatorCfg.tiktok_coin_to_value_rate = n;
+                                    root._saveSocialRotator();
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Scale %"; color: muted; Layout.preferredWidth: 160 }
+                            ValueSpinBox {
+                                syncGroup: "social_rotator"
+                                hostMap: root.socialRotatorCfg
+                                hostKey: "scale_percent"
+                                hostDefault: 100
+                                from: 40; to: 250; stepSize: 5
+                            }
+                        }
+
+                        } // socialRotatorSettings
+
+                        ColumnLayout {
                             id: actionsSettings
                             visible: root.widgetMode === "actions"
                             Layout.fillWidth: true
@@ -6193,6 +6684,8 @@ Item {
                     root._loadingStreamPetCfg = false;
                     root._loadingCommunityWorldCfg = false;
                     root._loadingStreamGoalCfg = false;
+                    root._loadingLiveLeaderboardCfg = false;
+                    root._loadingSocialRotatorCfg = false;
                 }
                 try {
                 // This handler lives on the Loader's inner ColumnLayout, not on root Item:
@@ -6206,6 +6699,9 @@ Item {
                 root._loadingBattleCfg = true;
                 root._loadingStreamPetCfg = true;
                 root._loadingCommunityWorldCfg = true;
+                root._loadingStreamGoalCfg = true;
+                root._loadingLiveLeaderboardCfg = true;
+                root._loadingSocialRotatorCfg = true;
 
                 var obj = api.loadChatConfigMap();
                 if (!obj || typeof obj !== "object")
@@ -6363,6 +6859,25 @@ Item {
                         llTransition.currentIndex = llIndexFor(llTransition.model, root.liveLeaderboardCfg.transition || "glitch_morph");
                     if (typeof llAnimIntensity !== "undefined")
                         llAnimIntensity.currentIndex = llIndexFor(llAnimIntensity.model, root.liveLeaderboardCfg.animation_intensity || "medium");
+                }
+                var srobj = api.loadSocialRotatorOverlayConfigMap();
+                if (!srobj || typeof srobj !== "object")
+                    srobj = {};
+                root.socialRotatorCfg = JSON.parse(JSON.stringify(srobj));
+                root.socialRotatorCfgEpoch += 1;
+                if (root.socialRotatorCfg) {
+                    if (!root.socialRotatorCfg.platforms)
+                        root.socialRotatorCfg.platforms = [];
+                    var srIndexFor = function(mdl, val) {
+                        for (var sri = 0; sri < mdl.count; ++sri) {
+                            if (mdl.get(sri).value === val) return sri;
+                        }
+                        return 0;
+                    };
+                    if (typeof srTransition !== "undefined")
+                        srTransition.currentIndex = srIndexFor(srTransition.model, root.socialRotatorCfg.transition || "glitch_morph");
+                    if (typeof srTheme !== "undefined")
+                        srTheme.currentIndex = srIndexFor(srTheme.model, root.socialRotatorCfg.theme || "neon_cyber");
                 }
                 if (root.communityWorldCfg) {
                     var cwIndexFor = function(mdl, val) {
