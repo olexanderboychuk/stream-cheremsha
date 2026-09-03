@@ -32,6 +32,27 @@ _SEEN_CAP = 4000
 _MSG_TTS_MAX = 240
 
 
+def donation_row_amount_name_donatik(row: dict) -> tuple[str, float]:
+    name = str(row.get("name") or "—").strip() or "—"
+    pay = row.get("payment") if isinstance(row.get("payment"), dict) else {}
+    raw = pay.get("amount") if isinstance(pay, dict) else row.get("amount")
+    try:
+        amount = float(raw)
+    except (TypeError, ValueError):
+        amount = 0.0
+    return name, max(0.0, amount)
+
+
+def donation_row_amount_name_donatello(row: dict) -> tuple[str, float]:
+    name = str(row.get("clientName") or "—").strip() or "—"
+    raw = row.get("amount")
+    try:
+        amount = float(raw)
+    except (TypeError, ValueError):
+        amount = 0.0
+    return name, max(0.0, amount)
+
+
 class DonationsQmlApi(QObject):
     """Exposes donation list fetch + token persistence to Qt Quick."""
 
@@ -79,6 +100,7 @@ class DonationsQmlApi(QObject):
         self._donatello_prime_poll = False
         self._last_donatik_from = ""
         self._last_donatik_to = ""
+        self._donation_listener: typing.Callable[[str, float, str], None] | None = None
 
         st = self._settings_store()
         self._donatik_live_poll = bool(st and st.value(_SETTINGS_DONATIK_LIVE, False, bool))
@@ -99,6 +121,18 @@ class DonationsQmlApi(QObject):
         self._poll_timer.setInterval(5000)
         self._poll_timer.timeout.connect(self._on_poll_timer_tick)
         self._refresh_poll_timer()
+
+    def set_donation_listener(self, cb: typing.Callable[[str, float, str], None] | None) -> None:
+        self._donation_listener = cb
+
+    def _notify_donation(self, name: str, amount: float, source: str) -> None:
+        cb = self._donation_listener
+        if cb is None:
+            return
+        try:
+            cb(name, amount, source)
+        except (AttributeError, RuntimeError, TypeError, ValueError) as e:
+            logger.debug("donation listener failed: %s", e)
 
     def _settings_store(self):
         w = self._win()
@@ -244,12 +278,14 @@ class DonationsQmlApi(QObject):
                 self._donatik_prime_poll = False
             else:
                 new_ids = [i for i in ids if i not in self._donatik_seen]
-                if new_ids and self._donatik_tts_new:
-                    by_id = {str(r.get("id", "")): r for r in rows if r.get("id")}
-                    for nid in reversed(new_ids):
-                        row = by_id.get(nid)
-                        if row is None:
-                            continue
+                by_id = {str(r.get("id", "")): r for r in rows if r.get("id")}
+                for nid in reversed(new_ids):
+                    row = by_id.get(nid)
+                    if row is None:
+                        continue
+                    name, amount = donation_row_amount_name_donatik(row)
+                    self._notify_donation(name, amount, "donatik")
+                    if self._donatik_tts_new:
                         donor = str(row.get("name") or "—").strip() or "—"
                         tts_lines.append((_donatik_tts_line(self._win(), row), donor))
                 self._donatik_seen.update(ids)
@@ -291,12 +327,14 @@ class DonationsQmlApi(QObject):
                 self._donatello_prime_poll = False
             else:
                 new_ids = [i for i in ids if i not in self._donatello_seen]
-                if new_ids and self._donatello_tts_new:
-                    by_id = {str(r.get("pubId", "")): r for r in rows if r.get("pubId")}
-                    for nid in reversed(new_ids):
-                        row = by_id.get(nid)
-                        if row is None:
-                            continue
+                by_id = {str(r.get("pubId", "")): r for r in rows if r.get("pubId")}
+                for nid in reversed(new_ids):
+                    row = by_id.get(nid)
+                    if row is None:
+                        continue
+                    name, amount = donation_row_amount_name_donatello(row)
+                    self._notify_donation(name, amount, "donatello")
+                    if self._donatello_tts_new:
                         donor = str(row.get("clientName") or "—").strip() or "—"
                         tts_lines.append((_donatello_tts_line(self._win(), row), donor))
                 self._donatello_seen.update(ids)

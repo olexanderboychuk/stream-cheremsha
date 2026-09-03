@@ -155,6 +155,7 @@ from stream_cheremsha.overlays.king_of_live_overlay_config import (
 from stream_cheremsha.overlays.live_leaderboard_controller import LiveLeaderboardController
 from stream_cheremsha.overlays.registry import OverlayRegistry
 from stream_cheremsha.overlays.server import OverlayServer
+from stream_cheremsha.overlays.social_rotator_controller import SocialRotatorController
 from stream_cheremsha.overlays.stream_goal_controller import StreamGoalController
 from stream_cheremsha.overlays.stream_pet_controller import StreamPetController
 from stream_cheremsha.overlays.top_gifters_overlay_config import load_top_gifters_overlay_config
@@ -772,7 +773,7 @@ class MainWindow(FramelessWindow):
             on_status=self._on_user_status,
             on_analytics_event=self._on_youtube_analytics_event,
             get_locale=self._get_locale,
-            on_viewers_current=self._youtube_analytics.on_viewers,
+            on_viewers_current=self._on_youtube_viewers_current,
             on_action_event=self._on_youtube_action_event,
         )
         self._tiktok_analytics = TikTokAnalyticsApi(self)
@@ -781,7 +782,7 @@ class MainWindow(FramelessWindow):
             on_status=self._on_user_status,
             on_gift=self._on_tiktok_gift,
             get_locale=self._get_locale,
-            on_room_viewers_current=self._tiktok_analytics.on_room_viewers_current,
+            on_room_viewers_current=self._on_tiktok_room_viewers_current,
             on_room_viewers_total=self._tiktok_analytics.on_room_viewers_total,
             on_follow=self._on_tiktok_follow_any,
             on_join=self._on_tiktok_join_any,
@@ -842,6 +843,12 @@ class MainWindow(FramelessWindow):
             parent=self,
         )
         self._live_leaderboard = LiveLeaderboardController(
+            pubsub=self._overlay_server.pubsub(),
+            get_locale=lambda: self._locale,
+            instance="main",
+            parent=self,
+        )
+        self._social_rotator = SocialRotatorController(
             pubsub=self._overlay_server.pubsub(),
             get_locale=lambda: self._locale,
             instance="main",
@@ -1110,6 +1117,8 @@ class MainWindow(FramelessWindow):
         self._widgets_qml_api = WidgetsQmlApi(pubsub=self._overlay_server.pubsub())
         self._widgets_qml_api.set_stream_goal_controller(self._stream_goal)
         self._widgets_qml_api.set_live_leaderboard_controller(self._live_leaderboard)
+        self._widgets_qml_api.set_social_rotator_controller(self._social_rotator)
+        self._donations_qml_api.set_donation_listener(self._on_external_donation)
         self._overlay_tunnel_qml_api = OverlayTunnelQmlApi(self)
         self._qml_widgets = QQuickWidget(self)
         self._qml_widgets.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
@@ -4140,12 +4149,15 @@ class MainWindow(FramelessWindow):
             self._tiktok_enabled = bool(enabled)
             if self._tiktok_enabled:
                 await self._start_tiktok()
+                self._social_rotator.on_stream_live(True)
                 self._schedule_king_overlay_publish()
                 if self._widgets_qml_api is not None:
                     self._widgets_qml_api.kingOfLiveOverlayUrlChanged.emit()
             else:
                 await self._tiktok.stop()
                 self._tiktok_analytics.resetSession()
+                self._social_rotator.on_stream_live(False)
+                self._social_rotator.on_viewers("tiktok", 0)
                 self._schedule_king_overlay_publish()
                 if self._widgets_qml_api is not None:
                     self._widgets_qml_api.kingOfLiveOverlayUrlChanged.emit()
@@ -4410,7 +4422,21 @@ class MainWindow(FramelessWindow):
         self._publish_activity_item(it)
         self._stream_pet.on_follow(user=user)
         self._stream_goal.on_follow(user=user, stable_key=stable_key)
+        self._social_rotator.on_follow(user=user, stable_key=stable_key)
         self._community_world.on_follow(user=user, user_key=stable_key)
+
+    def _on_tiktok_room_viewers_current(self, n: int) -> None:
+        self._tiktok_analytics.enqueue_viewers_current(int(n))
+        self._social_rotator.on_viewers("tiktok", int(n))
+
+    def _on_youtube_viewers_current(self, n: int) -> None:
+        self._youtube_analytics.enqueue_viewers(int(n))
+        self._social_rotator.on_viewers("youtube", int(n))
+
+    def _on_external_donation(self, name: str, amount: float, source: str) -> None:
+        if self._closing:
+            return
+        self._social_rotator.on_donation(name=name, amount=amount, source=source)
 
     def _on_tiktok_join_any(self, user: str, stable_key: str = "") -> None:
         if self._closing:
@@ -5093,6 +5119,7 @@ class MainWindow(FramelessWindow):
         self._stream_pet.reset_for_new_stream()
         self._stream_goal.reset_for_new_stream()
         self._live_leaderboard.reset_for_new_stream()
+        self._social_rotator.reset_for_new_stream()
         self._community_world.reset_session()
         loop = self._asyncio_loop
         if loop is not None:
@@ -5524,6 +5551,13 @@ class MainWindow(FramelessWindow):
                 sender_avatar_url=str(sender_avatar_url or ""),
                 sender_user_key=sender_user_key,
             )
+            self._social_rotator.on_tiktok_gift(
+                sender=sender,
+                count=count,
+                tiktok_coin_each=tiktok_coin_each,
+                sender_avatar_url=str(sender_avatar_url or ""),
+                sender_user_key=sender_user_key,
+            )
             self._community_world.on_gift(
                 user=sender,
                 user_key=sender_user_key,
@@ -5875,6 +5909,7 @@ class MainWindow(FramelessWindow):
                 v = await helix.get_stream_viewers(broadcaster_id)
                 if v is not None:
                     self._twitch_analytics.enqueue_viewers(v)
+                    self._social_rotator.on_viewers("twitch", int(v))
                 backoff = 10.0
             except asyncio.CancelledError:
                 raise
@@ -6047,6 +6082,7 @@ class MainWindow(FramelessWindow):
                     try:
                         info = await api.fetch_live_channel(channel)
                         self._kick_analytics.enqueue_viewers(info.viewer_count)
+                        self._social_rotator.on_viewers("kick", int(info.viewer_count))
                     finally:
                         await api.aclose()
                 backoff = 30.0
@@ -6342,6 +6378,9 @@ class MainWindow(FramelessWindow):
             self._live_leaderboard.set_pubsub(self._overlay_server.pubsub())
             self._live_leaderboard.set_event_loop(self._asyncio_loop)
             self._live_leaderboard.start()
+            self._social_rotator.set_pubsub(self._overlay_server.pubsub())
+            self._social_rotator.set_event_loop(self._asyncio_loop)
+            self._social_rotator.start()
             self._community_world.set_pubsub(self._overlay_server.pubsub())
             self._community_world.set_event_loop(self._asyncio_loop)
             self._community_world.start()
