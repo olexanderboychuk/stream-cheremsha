@@ -2350,6 +2350,59 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "StreamPet (Тамагочі)",
         "en": "StreamPet (Tamagotchi)",
     },
+    # Live Leaderboard overlay + widgets chrome
+    "live_leaderboard.kicker": {
+        "uk": "ЖИВИЙ РЕЙТИНГ",
+        "en": "LIVE LEADERBOARD",
+    },
+    "live_leaderboard.source.likers": {
+        "uk": "ТОП ЛАЙКЕРІВ",
+        "en": "TOP LIKERS",
+    },
+    "live_leaderboard.source.gifters": {
+        "uk": "ТОП ДОНОРІВ",
+        "en": "TOP GIFTERS",
+    },
+    "live_leaderboard.source.sharers": {
+        "uk": "ТОП ШЕРІВ",
+        "en": "TOP SHARERS",
+    },
+    "live_leaderboard.source.commenters": {
+        "uk": "ТОП КОМЕНТАТОРІВ",
+        "en": "TOP COMMENTERS",
+    },
+    "live_leaderboard.source.contributors": {
+        "uk": "ТОП КОНТРИБ'ЮТОРІВ",
+        "en": "TOP CONTRIBUTORS",
+    },
+    "live_leaderboard.scene.hall_of_fame": {
+        "uk": "ЗАЛ СЛАВИ",
+        "en": "HALL OF FAME",
+    },
+    "live_leaderboard.scene.arena": {
+        "uk": "АРЕНА",
+        "en": "ARENA",
+    },
+    "live_leaderboard.scene.energy_network": {
+        "uk": "ЕНЕРГОМЕРЕЖА",
+        "en": "ENERGY NETWORK",
+    },
+    "live_leaderboard.empty.awaiting": {
+        "uk": "ОЧІКУЄМО СИГНАЛ",
+        "en": "AWAITING SIGNAL",
+    },
+    "live_leaderboard.empty.arena": {
+        "uk": "АРЕНА ПОРОЖНЯ",
+        "en": "ARENA EMPTY",
+    },
+    "live_leaderboard.fallback": {
+        "uk": "РЕЙТИНГ",
+        "en": "LEADERBOARD",
+    },
+    "widgets.live_leaderboard.title": {
+        "uk": "Live Leaderboard (Живий рейтинг)",
+        "en": "Live Leaderboard (Live Ranking Show)",
+    },
 }
 
 

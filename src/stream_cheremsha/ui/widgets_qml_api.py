@@ -40,6 +40,12 @@ from stream_cheremsha.overlays.king_of_live_overlay_config import (
     load_king_of_live_overlay_config,
     save_king_of_live_overlay_config,
 )
+from stream_cheremsha.overlays.live_leaderboard_overlay_config import (
+    live_leaderboard_overlay_config_from_json_text,
+    live_leaderboard_overlay_config_to_json_text,
+    load_live_leaderboard_overlay_config,
+    save_live_leaderboard_overlay_config,
+)
 from stream_cheremsha.overlays.online_overlay_config import (
     load_online_overlay_config,
     online_overlay_config_from_json_text,
@@ -179,9 +185,11 @@ class WidgetsQmlApi(QObject):
         self._battle_royale_instance = str(online_instance or "main").strip() or "main"
         self._stream_pet_instance = str(online_instance or "main").strip() or "main"
         self._stream_goal_instance = str(online_instance or "main").strip() or "main"
+        self._live_leaderboard_instance = str(online_instance or "main").strip() or "main"
         self._community_world_instance = str(online_instance or "main").strip() or "main"
         self._battle_host: Any | None = None
         self._stream_goal_controller: Any | None = None
+        self._live_leaderboard_controller: Any | None = None
         self._system_font_families: list[str] | None = None
 
     def set_battle_host(self, host: Any) -> None:
@@ -189,6 +197,9 @@ class WidgetsQmlApi(QObject):
 
     def set_stream_goal_controller(self, controller: Any) -> None:
         self._stream_goal_controller = controller
+
+    def set_live_leaderboard_controller(self, controller: Any) -> None:
+        self._live_leaderboard_controller = controller
 
     def _current_tiktok_anchor_username(self) -> str:
         host = self._battle_host
@@ -477,6 +488,100 @@ class WidgetsQmlApi(QObject):
                     "timestamp": 0,
                 }
             ],
+        }
+        self._publish_patch(topic=topic, patch=patch)
+
+    liveLeaderboardOverlayUrlChanged = Signal()
+
+    @Property(str, notify=liveLeaderboardOverlayUrlChanged)
+    def liveLeaderboardOverlayUrlValue(self) -> str:  # noqa: ANN201 - PySide pattern
+        return self.liveLeaderboardOverlayUrl()
+
+    @Slot(result=str)
+    def liveLeaderboardOverlayUrl(self) -> str:
+        if not self._base:
+            return ""
+        return f"{self._base}/overlay/live_leaderboard?instance={self._live_leaderboard_instance}"
+
+    @Slot()
+    def copyLiveLeaderboardOverlayUrl(self) -> None:
+        url = self.liveLeaderboardOverlayUrl()
+        if not url:
+            return
+        clip = QGuiApplication.clipboard()
+        if clip is None:
+            return
+        clip.setText(url)
+
+    @Slot()
+    def previewLiveLeaderboardOverlay(self) -> None:
+        topic = f"overlay:live_leaderboard:{self._live_leaderboard_instance}"
+        cfg = load_live_leaderboard_overlay_config()
+        demo = [
+            {
+                "key": "1",
+                "rank": 1,
+                "user": "VOIDWALKER",
+                "value": 12480,
+                "avatar_url": "",
+                "unit": "likes",
+            },
+            {
+                "key": "2",
+                "rank": 2,
+                "user": "STELLAR_99",
+                "value": 8240,
+                "avatar_url": "",
+                "unit": "likes",
+            },
+            {
+                "key": "3",
+                "rank": 3,
+                "user": "CYBER_NOVA",
+                "value": 5120,
+                "avatar_url": "",
+                "unit": "likes",
+            },
+            {
+                "key": "4",
+                "rank": 4,
+                "user": "PIXEL_GHOST",
+                "value": 3900,
+                "avatar_url": "",
+                "unit": "likes",
+            },
+            {
+                "key": "5",
+                "rank": 5,
+                "user": "RETROGRADE",
+                "value": 2740,
+                "avatar_url": "",
+                "unit": "likes",
+            },
+        ]
+        patch = {
+            "config": json.loads(live_leaderboard_overlay_config_to_json_text(cfg)),
+            "locale": _ui_locale(),
+            "rankings": {
+                "likers": demo,
+                "gifters": [
+                    {**demo[0], "value": 18420, "unit": "coins"},
+                    {**demo[1], "value": 9100, "unit": "coins"},
+                    {**demo[2], "value": 6400, "unit": "coins"},
+                ],
+                "sharers": [],
+                "commenters": [],
+                "contributors": demo,
+            },
+            "presentation": {
+                "source_id": "likers",
+                "scene_id": "hall_of_fame",
+                "sequence_index": 0,
+                "scene_started_at_ms": 0,
+                "scene_duration_ms": 8000,
+                "transition_token": 1,
+                "server_now_ms": 0,
+            },
         }
         self._publish_patch(topic=topic, patch=patch)
 
@@ -1227,12 +1332,70 @@ class WidgetsQmlApi(QObject):
             return
         txt = _qml_cfg_map_to_json_text(plain)
         if not txt or txt == "{}":
-            _LOG.warning(
-                "widgets ConfigMap save: stream_goal rejected empty_or_non_serializable"
-            )
+            _LOG.warning("widgets ConfigMap save: stream_goal rejected empty_or_non_serializable")
             return
         _LOG.info("widgets ConfigMap save: stream_goal ok json_len=%d", len(txt))
         self.saveStreamGoalOverlayConfigJson(txt)
+
+    @Slot(result="QVariant")
+    def loadLiveLeaderboardOverlayConfigMap(self) -> dict[str, Any]:
+        cfg = load_live_leaderboard_overlay_config()
+        return json.loads(live_leaderboard_overlay_config_to_json_text(cfg))
+
+    @Slot(result=str)
+    def loadLiveLeaderboardOverlayConfigJson(self) -> str:
+        cfg = load_live_leaderboard_overlay_config()
+        return live_leaderboard_overlay_config_to_json_text(cfg)
+
+    @Slot(str)
+    def saveLiveLeaderboardOverlayConfigJson(self, cfg_json: str) -> None:
+        txt = (cfg_json or "").strip()
+        if not txt:
+            return
+        try:
+            cfg = live_leaderboard_overlay_config_from_json_text(txt)
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            _LOG.warning(
+                "saveLiveLeaderboardOverlayConfigJson: rejected payload (%s): %s",
+                exc.__class__.__name__,
+                exc,
+            )
+            return
+        save_live_leaderboard_overlay_config(cfg)
+        _LOG.info("widgets overlay persisted: live_leaderboard")
+        if self._live_leaderboard_controller is not None:
+            try:
+                self._live_leaderboard_controller.reload_config()
+            except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+                _LOG.warning("Failed to reload live_leaderboard_controller config: %s", exc)
+        if self._pubsub is not None:
+            topic = f"overlay:live_leaderboard:{self._live_leaderboard_instance}"
+            if self._live_leaderboard_controller is not None:
+                try:
+                    patch = self._live_leaderboard_controller.initial_state()
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    patch = {
+                        "config": json.loads(live_leaderboard_overlay_config_to_json_text(cfg))
+                    }
+            else:
+                patch = {"config": json.loads(live_leaderboard_overlay_config_to_json_text(cfg))}
+            self._publish_patch(topic=topic, patch=patch)
+
+    @Slot(QJSValue)
+    def saveLiveLeaderboardOverlayConfigMap(self, cfg_js: QJSValue) -> None:
+        plain = _qml_js_to_plain_cfg(cfg_js)
+        _LOG.info("widgets ConfigMap save: live_leaderboard (plain_type=%s)", type(plain).__name__)
+        if plain is None:
+            _LOG.warning("widgets ConfigMap save: live_leaderboard rejected (null/undefined)")
+            return
+        txt = _qml_cfg_map_to_json_text(plain)
+        if not txt or txt == "{}":
+            _LOG.warning(
+                "widgets ConfigMap save: live_leaderboard rejected empty_or_non_serializable"
+            )
+            return
+        _LOG.info("widgets ConfigMap save: live_leaderboard ok json_len=%d", len(txt))
+        self.saveLiveLeaderboardOverlayConfigJson(txt)
 
 
 class WidgetsWindowQmlApi(QObject):

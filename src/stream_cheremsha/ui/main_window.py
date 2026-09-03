@@ -152,6 +152,7 @@ from stream_cheremsha.overlays.king_of_live_overlay_config import (
     king_of_live_overlay_config_to_json_text,
     load_king_of_live_overlay_config,
 )
+from stream_cheremsha.overlays.live_leaderboard_controller import LiveLeaderboardController
 from stream_cheremsha.overlays.registry import OverlayRegistry
 from stream_cheremsha.overlays.server import OverlayServer
 from stream_cheremsha.overlays.stream_goal_controller import StreamGoalController
@@ -840,6 +841,12 @@ class MainWindow(FramelessWindow):
             instance="main",
             parent=self,
         )
+        self._live_leaderboard = LiveLeaderboardController(
+            pubsub=self._overlay_server.pubsub(),
+            get_locale=lambda: self._locale,
+            instance="main",
+            parent=self,
+        )
         self._community_world = CommunityWorldController(
             pubsub=self._overlay_server.pubsub(),
             get_locale=lambda: self._locale,
@@ -1102,6 +1109,7 @@ class MainWindow(FramelessWindow):
         self._qml_donations.setClearColor(QColor(10, 11, 14))
         self._widgets_qml_api = WidgetsQmlApi(pubsub=self._overlay_server.pubsub())
         self._widgets_qml_api.set_stream_goal_controller(self._stream_goal)
+        self._widgets_qml_api.set_live_leaderboard_controller(self._live_leaderboard)
         self._overlay_tunnel_qml_api = OverlayTunnelQmlApi(self)
         self._qml_widgets = QQuickWidget(self)
         self._qml_widgets.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
@@ -2886,6 +2894,8 @@ class MainWindow(FramelessWindow):
         self._refresh_connection_panels()
         self._schedule_king_overlay_publish()
         self._schedule_battle_overlay_publish()
+        if hasattr(self, "_live_leaderboard") and self._live_leaderboard is not None:
+            self._live_leaderboard.schedule_publish()
 
     def _retranslate_ui(self) -> None:
         self.setWindowTitle(self._tr("app.window_title"))
@@ -4222,6 +4232,11 @@ class MainWindow(FramelessWindow):
         self._try_tiktok_link_from_comment(message)
         self._stream_pet.on_chat(author=message.author, text=message.text)
         self._stream_goal.on_comment(user=message.author, text=message.text)
+        self._live_leaderboard.on_comment(
+            user=message.author,
+            stable_key=message.tiktok_stable_key,
+            unique_id=message.tiktok_unique_id,
+        )
         self._community_world.on_chat(user=message.author, text=message.text)
 
     def _try_tiktok_link_from_comment(self, message: ChatMessage) -> None:
@@ -4519,6 +4534,13 @@ class MainWindow(FramelessWindow):
                 reason="like",
             )
         self._stream_goal.on_like(
+            user=user,
+            count=n_i,
+            profile_picture_url=profile_picture_url,
+            user_key=user_key,
+            unique_id=unique_id,
+        )
+        self._live_leaderboard.on_like(
             user=user,
             count=n_i,
             profile_picture_url=profile_picture_url,
@@ -5070,6 +5092,7 @@ class MainWindow(FramelessWindow):
             self._battle_overlay_publish_handle = None
         self._stream_pet.reset_for_new_stream()
         self._stream_goal.reset_for_new_stream()
+        self._live_leaderboard.reset_for_new_stream()
         self._community_world.reset_session()
         loop = self._asyncio_loop
         if loop is not None:
@@ -5129,7 +5152,15 @@ class MainWindow(FramelessWindow):
                         delta=delta,
                         reason="share",
                     )
-        self._stream_goal.on_share(user=user, count=int(n), stable_key=stable_key, unique_id=unique_id)
+        self._stream_goal.on_share(
+            user=user, count=int(n), stable_key=stable_key, unique_id=unique_id
+        )
+        self._live_leaderboard.on_share(
+            user=user,
+            count=int(n),
+            stable_key=stable_key,
+            unique_id=unique_id,
+        )
         self._community_world.on_share(user=user, n=int(n), user_key=stable_key)
 
     def _on_tiktok_paid_sub_any(self, user: str) -> None:
@@ -5484,6 +5515,13 @@ class MainWindow(FramelessWindow):
                 icon_url=str(icon_url or ""),
                 sender_avatar_url=str(sender_avatar_url or ""),
                 tiktok_coin_each=tiktok_coin_each,
+                sender_user_key=sender_user_key,
+            )
+            self._live_leaderboard.on_gift(
+                sender=sender,
+                count=count,
+                tiktok_coin_each=tiktok_coin_each,
+                sender_avatar_url=str(sender_avatar_url or ""),
                 sender_user_key=sender_user_key,
             )
             self._community_world.on_gift(
@@ -6301,6 +6339,9 @@ class MainWindow(FramelessWindow):
             self._stream_goal.set_pubsub(self._overlay_server.pubsub())
             self._stream_goal.set_event_loop(self._asyncio_loop)
             self._stream_goal.start()
+            self._live_leaderboard.set_pubsub(self._overlay_server.pubsub())
+            self._live_leaderboard.set_event_loop(self._asyncio_loop)
+            self._live_leaderboard.start()
             self._community_world.set_pubsub(self._overlay_server.pubsub())
             self._community_world.set_event_loop(self._asyncio_loop)
             self._community_world.start()
@@ -6819,6 +6860,11 @@ class MainWindow(FramelessWindow):
                 self._stream_goal.stop()
             except (OSError, RuntimeError, ValueError, TypeError) as e:
                 logger.exception("Shutdown step failed (stream_goal.stop): %s", e)
+
+            try:
+                self._live_leaderboard.stop()
+            except (OSError, RuntimeError, ValueError, TypeError) as e:
+                logger.exception("Shutdown step failed (live_leaderboard.stop): %s", e)
 
             try:
                 self._community_world.stop()

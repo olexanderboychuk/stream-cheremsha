@@ -44,7 +44,7 @@ Item {
     }
 
     readonly property int titleBarH: 44
-    property string widgetMode: "grid" // grid | chat | actions | online | top_likers | top_gifters | king_of_live | battle_royale | stream_pet | community_world | stream_goal
+    property string widgetMode: "grid" // grid | chat | actions | online | top_likers | top_gifters | king_of_live | battle_royale | stream_pet | community_world | stream_goal | live_leaderboard
 
     component PillButton: Button {
         id: pillCtl
@@ -355,6 +355,8 @@ Item {
                 return root._loadingCommunityWorldCfg;
             if (vsb.syncGroup === "stream_goal")
                 return root._loadingStreamGoalCfg;
+            if (vsb.syncGroup === "live_leaderboard")
+                return root._loadingLiveLeaderboardCfg;
             return true;
         }
 
@@ -375,6 +377,8 @@ Item {
                 root._saveCommunityWorld();
             else if (vsb.syncGroup === "stream_goal")
                 root._saveStreamGoal();
+            else if (vsb.syncGroup === "live_leaderboard")
+                root._saveLiveLeaderboard();
         }
 
         function _pull() {
@@ -466,6 +470,14 @@ Item {
                 if (vsb.syncGroup === "stream_goal")
                     vsb._pull();
             }
+            function onLiveLeaderboardCfgChanged() {
+                if (vsb.syncGroup === "live_leaderboard")
+                    vsb._pull();
+            }
+            function onLiveLeaderboardCfgEpochChanged() {
+                if (vsb.syncGroup === "live_leaderboard")
+                    vsb._pull();
+            }
         }
 
         onValueChanged: {
@@ -522,6 +534,9 @@ Item {
     property var streamGoalCfg: null
     property bool _loadingStreamGoalCfg: false
     property int streamGoalCfgEpoch: 0
+    property var liveLeaderboardCfg: null
+    property bool _loadingLiveLeaderboardCfg: false
+    property int liveLeaderboardCfgEpoch: 0
     property color _spBodyColor: "#fbbf24"
     property color _spEarColor: "#f59e0b"
     property color _spCollarColor: "#ef4444"
@@ -764,7 +779,8 @@ Item {
             (root.widgetMode === "battle_royale" && root.battleCfg !== null) ||
             (root.widgetMode === "stream_pet" && root.streamPetCfg !== null) ||
             (root.widgetMode === "community_world" && root.communityWorldCfg !== null) ||
-            (root.widgetMode === "stream_goal" && root.streamGoalCfg !== null)
+            (root.widgetMode === "stream_goal" && root.streamGoalCfg !== null) ||
+            (root.widgetMode === "live_leaderboard" && root.liveLeaderboardCfg !== null)
         )
 
     function _flushTierOverlayEditorsIntoCfg() {
@@ -826,6 +842,8 @@ Item {
             root._saveCommunityWorld();
         } else if (root.widgetMode === "stream_goal") {
             root._saveStreamGoal();
+        } else if (root.widgetMode === "live_leaderboard") {
+            root._saveLiveLeaderboard();
         }
     }
 
@@ -833,6 +851,25 @@ Item {
         if (!api || root.streamGoalCfg === null) return;
         root.streamGoalCfgEpoch += 1;
         api.saveStreamGoalOverlayConfigJson(JSON.stringify(root.streamGoalCfg));
+    }
+
+    function _saveLiveLeaderboard() {
+        if (!api || root.liveLeaderboardCfg === null) return;
+        root.liveLeaderboardCfgEpoch += 1;
+        if (root.liveLeaderboardCfg.sequence)
+            root.liveLeaderboardCfg.sequence_json = JSON.stringify(root.liveLeaderboardCfg.sequence);
+        api.saveLiveLeaderboardOverlayConfigJson(JSON.stringify(root.liveLeaderboardCfg));
+    }
+
+    function _ensureLiveLeaderboardSourceInSequence(sourceId) {
+        if (!root.liveLeaderboardCfg) return;
+        var arr = (root.liveLeaderboardCfg.sequence || []).slice();
+        for (var i = 0; i < arr.length; i++) {
+            if (arr[i] && String(arr[i].source_id || "") === sourceId)
+                return;
+        }
+        arr.push({ source_id: sourceId, scene_id: "hall_of_fame", duration_sec: 8 });
+        root.liveLeaderboardCfg.sequence = arr;
     }
 
     function _saveBattle() {
@@ -1347,6 +1384,14 @@ Item {
                             onCopy: function() { if (api) api.copyStreamGoalOverlayUrl(); }
                             onPlay: function() { if (api) api.previewStreamGoalOverlay(); }
                             onEdit: function() { root.widgetMode = "stream_goal"; }
+                        }
+
+                        WidgetCard {
+                            title: "Live Leaderboard (Живий рейтинг)"
+                            urlText: api ? api.liveLeaderboardOverlayUrlValue : ""
+                            onCopy: function() { if (api) api.copyLiveLeaderboardOverlayUrl(); }
+                            onPlay: function() { if (api) api.previewLiveLeaderboardOverlay(); }
+                            onEdit: function() { root.widgetMode = "live_leaderboard"; }
                         }
 
                         WidgetCard {
@@ -1929,6 +1974,70 @@ Item {
                             text: "▶"
                             pillFontSize: 12
                             onClicked: if (api) api.previewStreamGoalOverlay()
+                        }
+
+                        PillButton {
+                            text: "Зберегти"
+                            enabled: root._canSaveCurrentWidget
+                            onClicked: root._saveAndApplyCurrentWidget()
+                        }
+
+                        PillButton {
+                            text: "Назад"
+                            onClicked: root.widgetMode = "grid"
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                radius: 14
+                color: cardBase
+                border.width: 1
+                border.color: cardEdge
+                visible: root.widgetMode === "live_leaderboard"
+                implicitHeight: editLiveLeaderboardHeader.implicitHeight + 20
+
+                ColumnLayout {
+                    id: editLiveLeaderboardHeader
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 12
+                    spacing: 8
+
+                    Text {
+                        text: "Live Leaderboard (Живий рейтинг)"
+                        color: ink
+                        font.pixelSize: 18
+                        font.bold: true
+                        Layout.fillWidth: true
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+
+                        TextField {
+                            Layout.fillWidth: true
+                            readOnly: true
+                            selectByMouse: true
+                            color: ink
+                            font.pixelSize: 12
+                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                            text: api ? api.liveLeaderboardOverlayUrlValue : ""
+                        }
+
+                        PillButton {
+                            text: "Скопіювати URL"
+                            onClicked: if (api) api.copyLiveLeaderboardOverlayUrl()
+                        }
+
+                        PillButton {
+                            text: "▶"
+                            pillFontSize: 12
+                            onClicked: if (api) api.previewLiveLeaderboardOverlay()
                         }
 
                         PillButton {
@@ -5100,6 +5209,384 @@ Item {
                         } // streamGoalSettings
 
                         ColumnLayout {
+                            id: liveLeaderboardSettings
+                            visible: root.widgetMode === "live_leaderboard"
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                        Rectangle { Layout.fillWidth: true; height: 1; color: cardEdge; opacity: 0.6 }
+
+                        Text {
+                            text: "Live Leaderboard — Живий рейтинг"
+                            color: ink
+                            font.pixelSize: 16
+                            font.bold: true
+                            Layout.fillWidth: true
+                        }
+
+                        Text {
+                            text: "Один датасет, кілька broadcast-сцен. TikTok події оновлюють рейтинг; ротація сцен керується таймлайном (не подіями)."
+                            color: muted
+                            font.pixelSize: 11
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+
+                        StyledCheckBox {
+                            text: "Увімкнено"
+                            checked: !root.liveLeaderboardCfg || root.liveLeaderboardCfg.enabled !== false
+                            onCheckedChanged: {
+                                if (root._loadingLiveLeaderboardCfg || !root.liveLeaderboardCfg) return;
+                                root.liveLeaderboardCfg.enabled = checked;
+                                root._saveLiveLeaderboard();
+                            }
+                        }
+
+                        Text {
+                            text: "ДЖЕРЕЛА РЕЙТИНГУ"
+                            color: ink
+                            font.pixelSize: 13
+                            font.bold: true
+                        }
+
+                        StyledCheckBox {
+                            text: "Топ лайкерів (Likers)"
+                            checked: !root.liveLeaderboardCfg || root.liveLeaderboardCfg.enable_likers !== false
+                            onCheckedChanged: {
+                                if (root._loadingLiveLeaderboardCfg || !root.liveLeaderboardCfg) return;
+                                root.liveLeaderboardCfg.enable_likers = checked;
+                                root._saveLiveLeaderboard();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: "Топ донорів (Gifters)"
+                            checked: !root.liveLeaderboardCfg || root.liveLeaderboardCfg.enable_gifters !== false
+                            onCheckedChanged: {
+                                if (root._loadingLiveLeaderboardCfg || !root.liveLeaderboardCfg) return;
+                                root.liveLeaderboardCfg.enable_gifters = checked;
+                                root._saveLiveLeaderboard();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: "Топ шерів (Sharers)"
+                            checked: !root.liveLeaderboardCfg || root.liveLeaderboardCfg.enable_sharers !== false
+                            onCheckedChanged: {
+                                if (root._loadingLiveLeaderboardCfg || !root.liveLeaderboardCfg) return;
+                                root.liveLeaderboardCfg.enable_sharers = checked;
+                                if (checked) root._ensureLiveLeaderboardSourceInSequence("sharers");
+                                root._saveLiveLeaderboard();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: "Топ коментаторів (Commenters)"
+                            checked: !root.liveLeaderboardCfg || root.liveLeaderboardCfg.enable_commenters !== false
+                            onCheckedChanged: {
+                                if (root._loadingLiveLeaderboardCfg || !root.liveLeaderboardCfg) return;
+                                root.liveLeaderboardCfg.enable_commenters = checked;
+                                if (checked) root._ensureLiveLeaderboardSourceInSequence("commenters");
+                                root._saveLiveLeaderboard();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: "Топ контриб'юторів (Contributors)"
+                            checked: !root.liveLeaderboardCfg || root.liveLeaderboardCfg.enable_contributors !== false
+                            onCheckedChanged: {
+                                if (root._loadingLiveLeaderboardCfg || !root.liveLeaderboardCfg) return;
+                                root.liveLeaderboardCfg.enable_contributors = checked;
+                                if (checked) root._ensureLiveLeaderboardSourceInSequence("contributors");
+                                root._saveLiveLeaderboard();
+                            }
+                        }
+
+                        Text {
+                            text: "СЦЕНИ"
+                            color: ink
+                            font.pixelSize: 13
+                            font.bold: true
+                        }
+
+                        StyledCheckBox {
+                            text: "Зал слави (Hall of Fame)"
+                            checked: !root.liveLeaderboardCfg || root.liveLeaderboardCfg.enable_hall_of_fame !== false
+                            onCheckedChanged: {
+                                if (root._loadingLiveLeaderboardCfg || !root.liveLeaderboardCfg) return;
+                                root.liveLeaderboardCfg.enable_hall_of_fame = checked;
+                                root._saveLiveLeaderboard();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: "Арена (Arena)"
+                            checked: !root.liveLeaderboardCfg || root.liveLeaderboardCfg.enable_arena !== false
+                            onCheckedChanged: {
+                                if (root._loadingLiveLeaderboardCfg || !root.liveLeaderboardCfg) return;
+                                root.liveLeaderboardCfg.enable_arena = checked;
+                                root._saveLiveLeaderboard();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: "Енергомережа (Energy Network)"
+                            checked: !root.liveLeaderboardCfg || root.liveLeaderboardCfg.enable_energy_network !== false
+                            onCheckedChanged: {
+                                if (root._loadingLiveLeaderboardCfg || !root.liveLeaderboardCfg) return;
+                                root.liveLeaderboardCfg.enable_energy_network = checked;
+                                root._saveLiveLeaderboard();
+                            }
+                        }
+
+                        Text {
+                            text: "ПОСЛІДОВНІСТЬ РОТАЦІЇ"
+                            color: ink
+                            font.pixelSize: 13
+                            font.bold: true
+                        }
+
+                        Repeater {
+                            model: root.liveLeaderboardCfg && root.liveLeaderboardCfg.sequence ? root.liveLeaderboardCfg.sequence.length : 0
+                            delegate: RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+                                property int stepIndex: index
+                                property var step: root.liveLeaderboardCfg.sequence[index]
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    color: ink
+                                    font.pixelSize: 12
+                                    text: (step ? (String(step.source_id || "") + " / " + String(step.scene_id || "")) : "") +
+                                          " — " + (step ? Number(step.duration_sec || 8) : 8) + "s"
+                                    elide: Text.ElideRight
+                                }
+
+                                SpinBox {
+                                    from: 1; to: 120
+                                    value: step ? Math.max(1, Math.min(120, Number(step.duration_sec || 8))) : 8
+                                    editable: true
+                                    onValueModified: {
+                                        if (root._loadingLiveLeaderboardCfg || !root.liveLeaderboardCfg) return;
+                                        root.liveLeaderboardCfg.sequence[stepIndex].duration_sec = value;
+                                        root._saveLiveLeaderboard();
+                                    }
+                                }
+
+                                PillButton {
+                                    text: "↑"
+                                    enabled: stepIndex > 0
+                                    onClicked: {
+                                        if (!root.liveLeaderboardCfg || !root.liveLeaderboardCfg.sequence) return;
+                                        var arr = root.liveLeaderboardCfg.sequence.slice();
+                                        var tmp = arr[stepIndex - 1];
+                                        arr[stepIndex - 1] = arr[stepIndex];
+                                        arr[stepIndex] = tmp;
+                                        root.liveLeaderboardCfg.sequence = arr;
+                                        root._saveLiveLeaderboard();
+                                    }
+                                }
+                                PillButton {
+                                    text: "↓"
+                                    enabled: root.liveLeaderboardCfg && stepIndex < root.liveLeaderboardCfg.sequence.length - 1
+                                    onClicked: {
+                                        if (!root.liveLeaderboardCfg || !root.liveLeaderboardCfg.sequence) return;
+                                        var arr = root.liveLeaderboardCfg.sequence.slice();
+                                        var tmp = arr[stepIndex + 1];
+                                        arr[stepIndex + 1] = arr[stepIndex];
+                                        arr[stepIndex] = tmp;
+                                        root.liveLeaderboardCfg.sequence = arr;
+                                        root._saveLiveLeaderboard();
+                                    }
+                                }
+                                PillButton {
+                                    text: "✕"
+                                    onClicked: {
+                                        if (!root.liveLeaderboardCfg || !root.liveLeaderboardCfg.sequence) return;
+                                        if (root.liveLeaderboardCfg.sequence.length <= 1) return;
+                                        var arr = root.liveLeaderboardCfg.sequence.slice();
+                                        arr.splice(stepIndex, 1);
+                                        root.liveLeaderboardCfg.sequence = arr;
+                                        root._saveLiveLeaderboard();
+                                    }
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+                            StyledComboBox {
+                                id: llAddSource
+                                Layout.fillWidth: true
+                                textRole: "text"
+                                valueRole: "value"
+                                model: ListModel {
+                                    ListElement { value: "likers"; text: "Лайкери" }
+                                    ListElement { value: "gifters"; text: "Донори" }
+                                    ListElement { value: "sharers"; text: "Шери" }
+                                    ListElement { value: "commenters"; text: "Коментатори" }
+                                    ListElement { value: "contributors"; text: "Контриб'ютори" }
+                                }
+                            }
+                            StyledComboBox {
+                                id: llAddScene
+                                Layout.fillWidth: true
+                                textRole: "text"
+                                valueRole: "value"
+                                model: ListModel {
+                                    ListElement { value: "hall_of_fame"; text: "Зал слави" }
+                                    ListElement { value: "arena"; text: "Арена" }
+                                    ListElement { value: "energy_network"; text: "Енергомережа" }
+                                }
+                            }
+                            PillButton {
+                                text: "Додати сцену"
+                                onClicked: {
+                                    if (!root.liveLeaderboardCfg) return;
+                                    var src = llAddSource.currentIndex >= 0 ? llAddSource.model.get(llAddSource.currentIndex).value : "likers";
+                                    var scn = llAddScene.currentIndex >= 0 ? llAddScene.model.get(llAddScene.currentIndex).value : "hall_of_fame";
+                                    var arr = (root.liveLeaderboardCfg.sequence || []).slice();
+                                    arr.push({ source_id: src, scene_id: scn, duration_sec: 8 });
+                                    root.liveLeaderboardCfg.sequence = arr;
+                                    root._saveLiveLeaderboard();
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: "НАЛАШТУВАННЯ РЕЙТИНГУ"
+                            color: ink
+                            font.pixelSize: 13
+                            font.bold: true
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Топ N"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "live_leaderboard"
+                                hostMap: root.liveLeaderboardCfg
+                                hostKey: "top_n"
+                                hostDefault: 10
+                                from: 1; to: 10; stepSize: 1
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Період"; color: muted; Layout.preferredWidth: 160 }
+                            Text {
+                                text: "Цей стрім"
+                                color: ink
+                                font.pixelSize: 13
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        Text {
+                            text: "АНІМАЦІЯ"
+                            color: ink
+                            font.pixelSize: 13
+                            font.bold: true
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Перехід"; color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: llTransition
+                                Layout.fillWidth: true
+                                textRole: "text"
+                                valueRole: "value"
+                                model: ListModel {
+                                    ListElement { value: "glitch_morph"; text: "Glitch Morph" }
+                                    ListElement { value: "digital_dissolve"; text: "Digital Dissolve" }
+                                    ListElement { value: "scan"; text: "Scan" }
+                                    ListElement { value: "fade"; text: "Fade" }
+                                }
+                                onCurrentIndexChanged: {
+                                    if (root._loadingLiveLeaderboardCfg || !root.liveLeaderboardCfg) return;
+                                    var v = llTransition.currentIndex >= 0 ? llTransition.model.get(llTransition.currentIndex).value : "glitch_morph";
+                                    root.liveLeaderboardCfg.transition = v;
+                                    root._saveLiveLeaderboard();
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Інтенсивність"; color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: llAnimIntensity
+                                Layout.fillWidth: true
+                                textRole: "text"
+                                valueRole: "value"
+                                model: ListModel {
+                                    ListElement { value: "low"; text: "Низька" }
+                                    ListElement { value: "medium"; text: "Середня" }
+                                    ListElement { value: "high"; text: "Висока" }
+                                }
+                                onCurrentIndexChanged: {
+                                    if (root._loadingLiveLeaderboardCfg || !root.liveLeaderboardCfg) return;
+                                    var v = llAnimIntensity.currentIndex >= 0 ? llAnimIntensity.model.get(llAnimIntensity.currentIndex).value : "medium";
+                                    root.liveLeaderboardCfg.animation_intensity = v;
+                                    root._saveLiveLeaderboard();
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: "Масштаб (%)"; color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "live_leaderboard"
+                                hostMap: root.liveLeaderboardCfg
+                                hostKey: "scale_percent"
+                                hostDefault: 100
+                                from: 40; to: 250; stepSize: 5
+                            }
+                            Text {
+                                text: "Масштаб елементів у межах віджета (не zoom за край)"
+                                color: muted
+                                font.pixelSize: 11
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                            }
+                        }
+
+                        StyledCheckBox {
+                            text: "Анімація зміни рангу"
+                            checked: !root.liveLeaderboardCfg || root.liveLeaderboardCfg.enable_rank_change_anim !== false
+                            onCheckedChanged: {
+                                if (root._loadingLiveLeaderboardCfg || !root.liveLeaderboardCfg) return;
+                                root.liveLeaderboardCfg.enable_rank_change_anim = checked;
+                                root._saveLiveLeaderboard();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: "Частинки"
+                            checked: !root.liveLeaderboardCfg || root.liveLeaderboardCfg.enable_particles !== false
+                            onCheckedChanged: {
+                                if (root._loadingLiveLeaderboardCfg || !root.liveLeaderboardCfg) return;
+                                root.liveLeaderboardCfg.enable_particles = checked;
+                                root._saveLiveLeaderboard();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: "CRT-ефекти"
+                            checked: !root.liveLeaderboardCfg || root.liveLeaderboardCfg.enable_crt !== false
+                            onCheckedChanged: {
+                                if (root._loadingLiveLeaderboardCfg || !root.liveLeaderboardCfg) return;
+                                root.liveLeaderboardCfg.enable_crt = checked;
+                                root._saveLiveLeaderboard();
+                            }
+                        }
+
+                        } // liveLeaderboardSettings
+
+                        ColumnLayout {
                             id: actionsSettings
                             visible: root.widgetMode === "actions"
                             Layout.fillWidth: true
@@ -5857,6 +6344,25 @@ Item {
                         sgAnimIntensity.currentIndex = sgIndexFor(sgAnimIntensity.model, root.streamGoalCfg.animation_intensity || "medium");
                     if (typeof sgResetBehavior !== "undefined")
                         sgResetBehavior.currentIndex = sgIndexFor(sgResetBehavior.model, root.streamGoalCfg.reset_behavior || "after_completion");
+                }
+                var llobj = api.loadLiveLeaderboardOverlayConfigMap();
+                if (!llobj || typeof llobj !== "object")
+                    llobj = {};
+                root.liveLeaderboardCfg = JSON.parse(JSON.stringify(llobj));
+                root.liveLeaderboardCfgEpoch += 1;
+                if (root.liveLeaderboardCfg) {
+                    if (!root.liveLeaderboardCfg.sequence)
+                        root.liveLeaderboardCfg.sequence = [];
+                    var llIndexFor = function(mdl, val) {
+                        for (var lli = 0; lli < mdl.count; ++lli) {
+                            if (mdl.get(lli).value === val) return lli;
+                        }
+                        return 0;
+                    };
+                    if (typeof llTransition !== "undefined")
+                        llTransition.currentIndex = llIndexFor(llTransition.model, root.liveLeaderboardCfg.transition || "glitch_morph");
+                    if (typeof llAnimIntensity !== "undefined")
+                        llAnimIntensity.currentIndex = llIndexFor(llAnimIntensity.model, root.liveLeaderboardCfg.animation_intensity || "medium");
                 }
                 if (root.communityWorldCfg) {
                     var cwIndexFor = function(mdl, val) {
