@@ -5896,18 +5896,22 @@ Item {
                             StyledComboBox {
                                 id: srTransition
                                 Layout.fillWidth: true
-                                model: ListModel {
-                                    ListElement { text: "Glitch Morph"; value: "glitch_morph" }
-                                    ListElement { text: "Data Stream"; value: "data_stream" }
-                                    ListElement { text: "Energy Burst"; value: "energy_burst" }
-                                    ListElement { text: "Scan"; value: "scan" }
-                                    ListElement { text: "Pixel Dissolve"; value: "pixel_dissolve" }
-                                    ListElement { text: "Fade"; value: "fade" }
-                                }
                                 textRole: "text"
-                                onActivated: {
+                                valueRole: "value"
+                                model: ListModel {
+                                    ListElement { value: "glitch_morph"; text: "Glitch Morph" }
+                                    ListElement { value: "data_stream"; text: "Data Stream" }
+                                    ListElement { value: "energy_burst"; text: "Energy Burst" }
+                                    ListElement { value: "scan"; text: "Scan" }
+                                    ListElement { value: "pixel_dissolve"; text: "Pixel Dissolve" }
+                                    ListElement { value: "fade"; text: "Fade" }
+                                }
+                                onCurrentIndexChanged: {
                                     if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
-                                    root.socialRotatorCfg.transition = model.get(currentIndex).value;
+                                    var v = srTransition.currentIndex >= 0
+                                        ? srTransition.model.get(srTransition.currentIndex).value
+                                        : "glitch_morph";
+                                    root.socialRotatorCfg.transition = v;
                                     root._saveSocialRotator();
                                 }
                             }
@@ -5920,17 +5924,21 @@ Item {
                             StyledComboBox {
                                 id: srTheme
                                 Layout.fillWidth: true
-                                model: ListModel {
-                                    ListElement { text: "Neon Cyber"; value: "neon_cyber" }
-                                    ListElement { text: "Synthwave"; value: "synthwave" }
-                                    ListElement { text: "Toxic"; value: "toxic" }
-                                    ListElement { text: "Ice"; value: "ice" }
-                                    ListElement { text: "Amber"; value: "amber" }
-                                }
                                 textRole: "text"
-                                onActivated: {
+                                valueRole: "value"
+                                model: ListModel {
+                                    ListElement { value: "neon_cyber"; text: "Neon Cyber" }
+                                    ListElement { value: "synthwave"; text: "Synthwave" }
+                                    ListElement { value: "toxic"; text: "Toxic" }
+                                    ListElement { value: "ice"; text: "Ice" }
+                                    ListElement { value: "amber"; text: "Amber" }
+                                }
+                                onCurrentIndexChanged: {
                                     if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
-                                    root.socialRotatorCfg.theme = model.get(currentIndex).value;
+                                    var v = srTheme.currentIndex >= 0
+                                        ? srTheme.model.get(srTheme.currentIndex).value
+                                        : "neon_cyber";
+                                    root.socialRotatorCfg.theme = v;
                                     root._saveSocialRotator();
                                 }
                             }

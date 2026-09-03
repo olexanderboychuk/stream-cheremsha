@@ -682,10 +682,27 @@ class SocialRotatorOverlayType:
         }}
 
         function applyLook() {{
+          const themeAccents = {{
+            neon_cyber: '#00ffff',
+            synthwave: '#ff71ce',
+            toxic: '#b8ff00',
+            ice: '#7ef9ff',
+            amber: '#ffb000'
+          }};
+          const themeMags = {{
+            neon_cyber: '#ff2bd6',
+            synthwave: '#b967ff',
+            toxic: '#39ff88',
+            ice: '#a0c4ff',
+            amber: '#ff6b35'
+          }};
           const theme = String(config.theme || 'neon_cyber');
           rootEl.classList.remove('theme-neon_cyber','theme-synthwave','theme-toxic','theme-ice','theme-amber');
           rootEl.classList.add('theme-' + theme);
-          rootEl.style.setProperty('--sr-accent', String(config.accent_color || '#00ffff'));
+          const accent = themeAccents[theme] || String(config.accent_color || '#00ffff');
+          const magenta = themeMags[theme] || '#ff2bd6';
+          rootEl.style.setProperty('--sr-accent', accent);
+          rootEl.style.setProperty('--sr-magenta', magenta);
           rootEl.classList.toggle('crt', config.enable_crt !== false);
           rootEl.classList.toggle('hide-url', config.show_url === false);
           applyScale(config.scale_percent);
