@@ -51,12 +51,18 @@ Local overlay server on `http://127.0.0.1:17171` — add these as OBS Browser So
 | Activity feed | `http://127.0.0.1:17171/overlay/activity?instance=main` |
 | Online / viewer count | `http://127.0.0.1:17171/overlay/online?instance=main` |
 | Actions / alerts | `http://127.0.0.1:17171/overlay/actions?instance=main` |
+| Composed layout (one URL) | `http://127.0.0.1:17171/overlay/layout?instance=main&layout=default` |
 | Top GIFters (TikTok) | `http://127.0.0.1:17171/overlay/top_gifters?instance=main` |
 | King of the Live (TikTok) | `http://127.0.0.1:17171/overlay/king_of_live?instance=main` |
 | Battle Royale (TikTok) | `http://127.0.0.1:17171/overlay/battle_royale?instance=main` |
 | Community World (TikTok) | `http://127.0.0.1:17171/overlay/community_world?instance=main` |
 
 OBS Docks (custom browser panels inside OBS):
+
+The **Widgets → Компонований layout** editor lets you arrange multiple overlays on a
+single canvas. Add the generated layout URL as one Browser Source instead of adding
+each overlay separately. The first version stores the default layout locally and
+supports drag positioning plus X/Y/width/height editing.
 
 | Dock | URL |
 |------|-----|

@@ -11,6 +11,7 @@ from stream_cheremsha.overlays.chat_overlay import ChatOverlayType
 from stream_cheremsha.overlays.community_world_overlay import CommunityWorldOverlayType
 from stream_cheremsha.overlays.king_of_live_overlay import KingOfLiveOverlayType
 from stream_cheremsha.overlays.live_leaderboard_overlay import LiveLeaderboardOverlayType
+from stream_cheremsha.overlays.layout_overlay import LayoutOverlayType
 from stream_cheremsha.overlays.models import normalize_instance_id
 from stream_cheremsha.overlays.music_overlay import MusicOverlayType
 from stream_cheremsha.overlays.online_overlay import OnlineOverlayType
@@ -145,6 +146,7 @@ class OverlayRegistry:
         self.register(CommunityWorldOverlayType())
         self.register(ActionsOverlayType())
         self.register(WebcamFrameOverlayType())
+        self.register(LayoutOverlayType())
 
     def register(self, t: OverlayType) -> None:
         self._types[str(t.type)] = t

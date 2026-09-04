@@ -6386,6 +6386,8 @@ class MainWindow(FramelessWindow):
 
     async def run_startup(self) -> None:
         try:
+            if self._closing:
+                return
             self._on_user_status(self._tr("startup.workers"))
             self._asyncio_loop = asyncio.get_running_loop()
             self._music_queue.set_loop(self._asyncio_loop)
@@ -6393,6 +6395,9 @@ class MainWindow(FramelessWindow):
             if cert_paths is not None:
                 self._overlay_server.set_tls_files(*cert_paths)
             await self._overlay_server.start()
+            if self._closing:
+                await self._overlay_server.stop()
+                return
             logger.info("Overlay server: %s", self._overlay_server.base_url())
             self._stream_pet.set_pubsub(self._overlay_server.pubsub())
             self._stream_pet.set_event_loop(self._asyncio_loop)
@@ -6918,6 +6923,17 @@ class MainWindow(FramelessWindow):
         watchdog.daemon = True
         watchdog.start()
         try:
+            # Release the listening port before any potentially slow service cleanup.
+            # Otherwise the watchdog can terminate the process while 17171 is still bound.
+            try:
+                await self._overlay_tunnel.stop()
+            except (OSError, RuntimeError, ValueError, TypeError) as e:
+                logger.exception("Shutdown step failed (overlay_tunnel.stop): %s", e)
+            try:
+                await self._overlay_server.stop()
+            except (OSError, RuntimeError, ValueError, TypeError) as e:
+                logger.exception("Shutdown step failed (overlay_server.stop): %s", e)
+
             t, self._online_publish_task = self._online_publish_task, None
             if t is not None:
                 t.cancel()
@@ -6969,8 +6985,6 @@ class MainWindow(FramelessWindow):
                     logger.exception("Shutdown step failed (music_player.stop): %s", e)
 
             for name, coro in (
-                ("overlay_tunnel.stop", self._overlay_tunnel.stop()),
-                ("overlay_server.stop", self._overlay_server.stop()),
                 ("twitch.stop", self._twitch.stop()),
                 ("youtube.stop", self._youtube.stop()),
                 ("tiktok.stop", self._tiktok.stop()),

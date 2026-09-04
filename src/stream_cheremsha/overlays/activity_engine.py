@@ -73,7 +73,11 @@ class ActivityEngine:
         if self._running:
             return
         self._running = True
-        self._task = asyncio.create_task(self._decay_loop())
+        try:
+            loop = asyncio.get_running_loop()
+            self._task = loop.create_task(self._decay_loop())
+        except RuntimeError:
+            self._task = None
 
     def stop(self) -> None:
         """Stop the background decay task."""
@@ -124,7 +128,11 @@ class ActivityEngine:
         if elapsed > 0:
             self._apply_decay(elapsed)
             self._last_update = now
-            asyncio.create_task(self._publish_score())
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self._publish_score())
+            except RuntimeError:
+                pass
         return round(self._score, 1)
 
     def get_state(self) -> str:

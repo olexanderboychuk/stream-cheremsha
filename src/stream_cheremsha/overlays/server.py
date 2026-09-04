@@ -177,6 +177,8 @@ class OverlayServer:
             raise web.HTTPBadRequest(text="invalid instance") from e
 
         params: dict[str, Any] = {"instance": instance}
+        if overlay_type == "layout":
+            params["layout"] = str(req.query.get("layout", "default"))
         anchor = str(req.query.get("anchor", "")).strip().lstrip("@").strip()
         if anchor:
             params["anchor"] = anchor

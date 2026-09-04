@@ -8,20 +8,99 @@ Item {
     implicitWidth: 720
     implicitHeight: 520
 
-    readonly property color base: "#0a0b0e"
-    readonly property color cardBase: "#121620"
-    readonly property color cardEdge: "#2a3142"
+    readonly property color base: "#090a0d"
+    readonly property color cardBase: "#10141a"
+    readonly property color cardEdge: "#242b36"
+    readonly property color cardEdgeStrong: "#2d3748"
     readonly property color ink: "#e8eaed"
+    readonly property color inkSecondary: "#b8c0cc"
+    readonly property color inkMuted: "#8b95a5"
     readonly property color muted: "#8b95a5"
-    readonly property color fieldBg: "#0c0f16"
+    readonly property color fieldBg: "#0a0d12"
+    readonly property color accent: "#14b8a6"
+    readonly property color accentHover: "#0d9488"
+    readonly property color accentPress: "#0f766e"
+    readonly property color accentSoft: "#14b8a620"
+    readonly property color selection: "#14b8a640"
+    readonly property color overlayBg: "#07090c"
+    readonly property color canvasGrid: "#1a2332"
+    readonly property color canvasBorder: "#2d3748"
+
+    readonly property int spacingXS: 4
+    readonly property int spacingSM: 8
+    readonly property int spacingMD: 12
+    readonly property int spacingLG: 16
+    readonly property int spacingXL: 24
+    readonly property int radiusSM: 6
+    readonly property int radiusMD: 8
+    readonly property int radiusLG: 12
+    readonly property int radiusXL: 14
+    property var layoutDoc: ({})
+    property int selectedLayoutWidget: -1
+    property int layoutRevision: 0
+    property int canvasPresetIndex: 0
+
+    property string _editorState: "idle" // "idle" | "moving" | "resizing"
+    property int _dragWidgetIndex: -1
+    property real _dragWidgetStartX: 0
+    property real _dragWidgetStartY: 0
+    property string _dragLibType: ""
+    property string _dragLibLabel: ""
+    property var _undoStack: []
+    property var _redoStack: []
+    property bool _inspectorUpdating: false
+    property var _snapGuides: []
+
+    readonly property var layoutWidgetTypes: [
+        {type: "chat", label: "Чат", icon: "💬"},
+        {type: "actions", label: "Дії та алерти", icon: "⚡"},
+        {type: "activity", label: "Активність", icon: "📊"},
+        {type: "online", label: "Онлайн / глядачі", icon: "👥"},
+        {type: "top_likers", label: "Топ лайкерів", icon: "👍"},
+        {type: "top_gifters", label: "Топ GIFтерів", icon: "🎁"},
+        {type: "king_of_live", label: "King of the Live", icon: "👑"},
+        {type: "battle_royale", label: "Battle Royale", icon: "⚔️"},
+        {type: "stream_pet", label: "Stream Pet", icon: "🐾"},
+        {type: "community_world", label: "Community World", icon: "🏘️"},
+        {type: "stream_goal", label: "Stream Goal", icon: "🎯"},
+        {type: "live_leaderboard", label: "Live Leaderboard", icon: "🏆"},
+        {type: "social_rotator", label: "Social Rotator", icon: "🔄"},
+        {type: "webcam_frame", label: "Webcam Frame", icon: "📷"},
+        {type: "music", label: "Музика", icon: "🎵"}
+    ]
+
+    function defaultWidgetSize(type) {
+        switch (type) {
+            case "chat": return {w: 420, h: 540};
+            case "actions": return {w: 380, h: 240};
+            case "activity": return {w: 320, h: 180};
+            case "online": return {w: 280, h: 120};
+            case "top_likers": return {w: 340, h: 260};
+            case "top_gifters": return {w: 340, h: 260};
+            case "king_of_live": return {w: 360, h: 220};
+            case "battle_royale": return {w: 420, h: 280};
+            case "stream_pet": return {w: 240, h: 240};
+            case "community_world": return {w: 480, h: 320};
+            case "stream_goal": return {w: 400, h: 160};
+            case "live_leaderboard": return {w: 360, h: 280};
+            case "social_rotator": return {w: 360, h: 120};
+            case "webcam_frame": return {w: 480, h: 360};
+            case "music": return {w: 340, h: 140};
+            default: return {w: 360, h: 200};
+        }
+    }
+
+    function widgetTypeInfo(type) {
+        var list = root.layoutWidgetTypes || [];
+        for (var i = 0; i < list.length; ++i) {
+            if (list[i].type === type) return list[i];
+        }
+        return {type: type, label: type, icon: "📦"};
+    }
 
     Rectangle {
         anchors.fill: parent
-        gradient: Gradient {
-            GradientStop { position: 0.0; color: "#0f172a" }
-            GradientStop { position: 0.55; color: "#0b1220" }
-            GradientStop { position: 1.0; color: "#070910" }
-        }
+        color: base
     }
 
     // SpinBox/controls can emit value signals after the first frame; keep autosave blocked longer.
@@ -49,42 +128,259 @@ Item {
     readonly property int titleBarH: 44
     property string widgetMode: "grid" // grid | chat | actions | online | top_likers | top_gifters | king_of_live | battle_royale | stream_pet | community_world | stream_goal | live_leaderboard | social_rotator | webcam_frame
 
+    function _deepCopy(obj) {
+        try {
+            return JSON.parse(JSON.stringify(obj));
+        } catch (e) {
+            return {};
+        }
+    }
+
+    function _pushUndo() {
+        if (!root.layoutDoc) return;
+        var copy = root._deepCopy(root.layoutDoc);
+        var stack = (root._undoStack || []).slice();
+        stack.push(copy);
+        if (stack.length > 50) stack.shift();
+        root._undoStack = stack;
+        root._redoStack = [];
+    }
+
+    function undo() {
+        if (!root._undoStack || !root._undoStack.length) return;
+        var undoStack = root._undoStack.slice();
+        var prevDoc = undoStack.pop();
+        root._undoStack = undoStack;
+
+        var redoStack = (root._redoStack || []).slice();
+        redoStack.push(root._deepCopy(root.layoutDoc));
+        root._redoStack = redoStack;
+
+        root._inspectorUpdating = true;
+        root.layoutDoc = prevDoc;
+        root._inspectorUpdating = false;
+
+        var widgets = root.layoutDoc.widgets || [];
+        if (root.selectedLayoutWidget >= widgets.length) {
+            root.selectedLayoutWidget = widgets.length - 1;
+        }
+        root.saveLayoutEditor();
+    }
+
+    function redo() {
+        if (!root._redoStack || !root._redoStack.length) return;
+        var redoStack = root._redoStack.slice();
+        var nextDoc = redoStack.pop();
+        root._redoStack = redoStack;
+
+        var undoStack = (root._undoStack || []).slice();
+        undoStack.push(root._deepCopy(root.layoutDoc));
+        root._undoStack = undoStack;
+
+        root._inspectorUpdating = true;
+        root.layoutDoc = nextDoc;
+        root._inspectorUpdating = false;
+
+        var widgets = root.layoutDoc.widgets || [];
+        if (root.selectedLayoutWidget >= widgets.length) {
+            root.selectedLayoutWidget = widgets.length - 1;
+        }
+        root.saveLayoutEditor();
+    }
+
+    function loadLayoutEditor() {
+        try {
+            root.layoutDoc = JSON.parse(api.loadLayoutsJson()).layouts[0] || {};
+        } catch (e) {
+            root.layoutDoc = {};
+        }
+        var w = Number(root.layoutDoc.width || 1920), h = Number(root.layoutDoc.height || 1080);
+        if (w === 1080 && h === 1920) root.canvasPresetIndex = 1;
+        else if (w === 1080 && h === 1080) root.canvasPresetIndex = 2;
+        else if (w === 1280 && h === 720) root.canvasPresetIndex = 3;
+        else if (w === 1920 && h === 1080) root.canvasPresetIndex = 0;
+        else root.canvasPresetIndex = 4;
+        root.selectedLayoutWidget = -1;
+        root._undoStack = [];
+        root._redoStack = [];
+        root._snapGuides = [];
+    }
+
+    function selectedLayoutItem() {
+        var items = root.layoutDoc.widgets || [];
+        return (items.length && root.selectedLayoutWidget >= 0 && root.selectedLayoutWidget < items.length)
+            ? items[root.selectedLayoutWidget] : null;
+    }
+
+    function updateLayoutItem(key, value) {
+        if (root._inspectorUpdating) return;
+        var doc = root.layoutDoc;
+        var items = (doc.widgets || []).slice();
+        if (!items.length || root.selectedLayoutWidget < 0 || root.selectedLayoutWidget >= items.length) return;
+        root._pushUndo();
+        var item = Object.assign({}, items[root.selectedLayoutWidget]);
+        item[key] = Number(value);
+        items[root.selectedLayoutWidget] = item;
+        root._inspectorUpdating = true;
+        root.layoutDoc = Object.assign({}, doc, {widgets: items});
+        root._inspectorUpdating = false;
+        root.saveLayoutEditor();
+    }
+
+    function commitWidgetGeometry(widgetIndex, newX, newY, newW, newH) {
+        var doc = root.layoutDoc;
+        var items = (doc.widgets || []).slice();
+        if (widgetIndex < 0 || widgetIndex >= items.length) return;
+        var item = Object.assign({}, items[widgetIndex]);
+        if (newX !== undefined) item.x = newX;
+        if (newY !== undefined) item.y = newY;
+        if (newW !== undefined) item.width = Math.max(32, newW);
+        if (newH !== undefined) item.height = Math.max(24, newH);
+        items[widgetIndex] = item;
+        root._inspectorUpdating = true;
+        root.layoutDoc = Object.assign({}, doc, {widgets: items});
+        root._inspectorUpdating = false;
+        root.saveLayoutEditor();
+    }
+
+    function saveLayoutEditor() {
+        if (api) {
+            api.saveLayoutsJson(JSON.stringify({schema_version: 1, layouts: [root.layoutDoc]}));
+        }
+        root.layoutRevision += 1;
+    }
+
+    function addLayoutWidget(type, label, posX, posY) {
+        root._pushUndo();
+        var doc = root.layoutDoc;
+        var items = (doc.widgets || []).slice();
+        var n = items.length;
+        var sz = root.defaultWidgetSize(type);
+        var defaultW = sz.w;
+        var defaultH = sz.h;
+        var targetX = (posX !== undefined) ? (posX - Math.round(defaultW / 2)) : (80 + (n * 24) % 500);
+        var targetY = (posY !== undefined) ? (posY - Math.round(defaultH / 2)) : (80 + (n * 24) % 300);
+
+        items.push({
+            id: type + "-" + Date.now(),
+            type: type,
+            instance: "main",
+            x: targetX,
+            y: targetY,
+            width: defaultW,
+            height: defaultH,
+            z_index: n + 1,
+            visible: true,
+            locked: false
+        });
+        root._inspectorUpdating = true;
+        root.layoutDoc = Object.assign({}, doc, {widgets: items});
+        root._inspectorUpdating = false;
+        root.selectedLayoutWidget = items.length - 1;
+        root.saveLayoutEditor();
+    }
+
+    function removeSelectedLayoutWidget() {
+        var items = (root.layoutDoc.widgets || []).slice();
+        if (!items.length || root.selectedLayoutWidget < 0 || root.selectedLayoutWidget >= items.length) return;
+        root._pushUndo();
+        var removedIdx = root.selectedLayoutWidget;
+        items.splice(removedIdx, 1);
+        root._inspectorUpdating = true;
+        root.layoutDoc = Object.assign({}, root.layoutDoc, {widgets: items});
+        root._inspectorUpdating = false;
+        root.selectedLayoutWidget = items.length ? Math.min(removedIdx, items.length - 1) : -1;
+        root.saveLayoutEditor();
+    }
+
+    function moveWidgetLayer(fromIdx, toIdx) {
+        var items = (root.layoutDoc.widgets || []).slice();
+        if (fromIdx < 0 || fromIdx >= items.length || toIdx < 0 || toIdx >= items.length || fromIdx === toIdx) return;
+        root._pushUndo();
+        var moved = items.splice(fromIdx, 1)[0];
+        items.splice(toIdx, 0, moved);
+        root._inspectorUpdating = true;
+        root.layoutDoc = Object.assign({}, root.layoutDoc, {widgets: items});
+        root._inspectorUpdating = false;
+        root.selectedLayoutWidget = toIdx;
+        root.saveLayoutEditor();
+    }
+
+    function toggleWidgetLock(index) {
+        var items = (root.layoutDoc.widgets || []).slice();
+        if (index < 0 || index >= items.length) return;
+        root._pushUndo();
+        var item = Object.assign({}, items[index]);
+        item.locked = !item.locked;
+        items[index] = item;
+        root._inspectorUpdating = true;
+        root.layoutDoc = Object.assign({}, root.layoutDoc, {widgets: items});
+        root._inspectorUpdating = false;
+        root.saveLayoutEditor();
+    }
+
+    function applyLayoutPreset(width, height, name) {
+        root._pushUndo();
+        root._inspectorUpdating = true;
+        root.layoutDoc = Object.assign({}, root.layoutDoc, {width: width, height: height, name: name});
+        root._inspectorUpdating = false;
+        root.saveLayoutEditor();
+    }
+
+    function nudgeSelected(dx, dy) {
+        var item = root.selectedLayoutItem();
+        if (!item || item.locked) return;
+        root._pushUndo();
+        var currentX = Number(item.x || 0);
+        var currentY = Number(item.y || 0);
+        root.commitWidgetGeometry(root.selectedLayoutWidget, currentX + dx, currentY + dy, undefined, undefined);
+    }
+
+    function selectCanvasPreset(index) {
+        root.canvasPresetIndex = index;
+        if (index === 1) root.applyLayoutPreset(1080, 1920, "TikTok вертикаль");
+        else if (index === 2) root.applyLayoutPreset(1080, 1080, "Квадрат");
+        else if (index === 3) root.applyLayoutPreset(1280, 720, "HD");
+        else if (index === 0) root.applyLayoutPreset(1920, 1080, "Основна сцена");
+    }
+
     component PillButton: Button {
         id: pillCtl
         property int pillFontSize: 13
-        property color colRest: "#1c2434"
-        property color colHover: "#263246"
-        property color colPress: "#303a50"
-        property color borRest: root.cardEdge
-        property color borHover: "#3b4458"
+        property bool primary: false
         hoverEnabled: true
         focusPolicy: Qt.NoFocus
         font.pixelSize: pillFontSize
         transformOrigin: Item.Center
-        scale: pillCtl.hovered ? 1.02 : 1.0
-        Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+        scale: pillCtl.hovered ? 1.015 : 1.0
+        Behavior on scale { NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
         contentItem: Text {
             text: pillCtl.text
-            color: root.ink
+            color: pillCtl.primary ? "#041615" : root.ink
             font.pixelSize: pillCtl.pillFontSize
+            font.weight: pillCtl.primary ? Font.DemiBold : Font.Normal
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
-            Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
         }
         background: Rectangle {
-            radius: 8
-            color: pillCtl.pressed ? pillCtl.colPress : (pillCtl.hovered ? pillCtl.colHover : pillCtl.colRest)
+            radius: root.radiusMD
+            color: pillCtl.primary
+                ? (pillCtl.pressed ? root.accentPress : (pillCtl.hovered ? root.accentHover : root.accent))
+                : (pillCtl.pressed ? root.cardEdgeStrong : (pillCtl.hovered ? root.cardEdgeStrong : root.cardBase))
             border.width: 1
-            border.color: pillCtl.hovered ? pillCtl.borHover : pillCtl.borRest
-            Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
-            Behavior on border.color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
+            border.color: pillCtl.primary
+                ? root.accentPress
+                : (pillCtl.hovered ? root.cardEdgeStrong : root.cardEdge)
+            Behavior on color { ColorAnimation { duration: 80; easing.type: Easing.OutCubic } }
+            Behavior on border.color { ColorAnimation { duration: 80; easing.type: Easing.OutCubic } }
         }
     }
 
     component StyledComboBox: ComboBox {
         id: cb
+        signal userActivated(int index)
         hoverEnabled: true
-        focusPolicy: Qt.NoFocus
+        focusPolicy: Qt.StrongFocus
         font.pixelSize: 13
         padding: 10
         contentItem: Text {
@@ -95,17 +391,19 @@ Item {
             elide: Text.ElideRight
         }
         background: Rectangle {
-            radius: 8
+            radius: root.radiusMD
             color: root.fieldBg
             border.width: 1
-            border.color: cb.hovered ? "#3b4458" : root.cardEdge
+            border.color: cb.hovered ? root.cardEdgeStrong : root.cardEdge
+            Behavior on border.color { ColorAnimation { duration: 80 } }
         }
         delegate: ItemDelegate {
             required property int index
             width: ListView.view ? ListView.view.width : implicitWidth
-            implicitHeight: 34
+            implicitHeight: 36
             onClicked: {
                 cb.currentIndex = index;
+                cb.userActivated(index);
                 cb.popup.close();
             }
             contentItem: Text {
@@ -115,12 +413,13 @@ Item {
                 elide: Text.ElideRight
             }
             background: Rectangle {
-                radius: 6
-                color: highlighted ? "#1a2232" : "#111827"
+                radius: 4
+                color: highlighted ? root.accentSoft : "transparent"
+                Behavior on color { ColorAnimation { duration: 60 } }
             }
         }
         popup: Popup {
-            y: cb.height
+            y: cb.height + 2
             width: cb.width
             implicitHeight: contentItem.implicitHeight
             padding: 4
@@ -129,15 +428,33 @@ Item {
                 implicitHeight: contentHeight
                 model: cb.popup.visible ? cb.delegateModel : null
                 currentIndex: cb.highlightedIndex
-                ScrollIndicator.vertical: ScrollIndicator { }
+                ScrollIndicator.vertical: ScrollIndicator { width: 6 }
             }
             background: Rectangle {
-                radius: 8
-                color: "#111827"
+                radius: root.radiusMD
+                color: root.cardBase
                 border.width: 1
                 border.color: root.cardEdge
             }
         }
+    }
+
+    component StyledTextField: TextField {
+        hoverEnabled: true
+        focusPolicy: Qt.StrongFocus
+        font.pixelSize: 13
+        padding: 10
+        color: root.ink
+        background: Rectangle {
+            radius: root.radiusMD
+            color: root.fieldBg
+            border.width: 1
+            border.color: hovered ? root.cardEdgeStrong : (activeFocus ? root.accent : root.cardEdge)
+            Behavior on border.color { ColorAnimation { duration: 80 } }
+        }
+        placeholderTextColor: root.inkMuted
+        selectionColor: root.accentSoft
+        selectedTextColor: root.ink
     }
 
     component StyledSpinBox: SpinBox {
@@ -148,8 +465,8 @@ Item {
         stepSize: 1
         wheelEnabled: true
         font.pixelSize: 13
-        implicitHeight: 34
-        implicitWidth: 150
+        implicitHeight: 36
+        implicitWidth: 140
 
         function _stepBy(delta) {
             var step = sb.stepSize > 0 ? sb.stepSize : 1;
@@ -167,7 +484,7 @@ Item {
             id: sbInput
             text: sb.displayText
             color: root.ink
-            selectionColor: "#334155"
+            selectionColor: root.accentSoft
             selectedTextColor: root.ink
             font.pixelSize: sb.font.pixelSize
             horizontalAlignment: Qt.AlignHCenter
@@ -179,8 +496,6 @@ Item {
                 top: sb.to
             }
             onEditingFinished: {
-                // Commit typed value (clamped by SpinBox + validator bounds).
-                // If input is empty/invalid, restore current value text.
                 var t = (text || "").trim();
                 if (!t.length) {
                     text = sb.displayText;
@@ -199,26 +514,27 @@ Item {
         }
 
         background: Rectangle {
-            radius: 8
+            radius: root.radiusMD
             color: root.fieldBg
             border.width: 1
-            border.color: sb.hovered ? "#3b4458" : root.cardEdge
+            border.color: sb.hovered ? root.cardEdgeStrong : (sb.activeFocus ? root.accent : root.cardEdge)
+            Behavior on border.color { ColorAnimation { duration: 80 } }
         }
 
         down.indicator: Item {
-            implicitWidth: 34
-            implicitHeight: 34
+            implicitWidth: 36
+            implicitHeight: 36
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
             anchors.leftMargin: 0
             Rectangle {
                 anchors.fill: parent
-                radius: 8
-                color: downMa.pressed ? "#303a50" : (downMa.containsMouse ? "#263246" : "#1c2434")
+                radius: root.radiusMD
+                color: downMa.pressed ? root.accentPress : (downMa.containsMouse ? root.cardEdgeStrong : root.cardBase)
                 border.width: 1
-                border.color: downMa.containsMouse ? "#3b4458" : root.cardEdge
-                Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
-                Behavior on border.color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                border.color: downMa.containsMouse ? root.cardEdgeStrong : root.cardEdge
+                Behavior on color { ColorAnimation { duration: 80 } }
+                Behavior on border.color { ColorAnimation { duration: 80 } }
                 Text {
                     anchors.centerIn: parent
                     text: "−"
@@ -237,19 +553,19 @@ Item {
         }
 
         up.indicator: Item {
-            implicitWidth: 34
-            implicitHeight: 34
+            implicitWidth: 36
+            implicitHeight: 36
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             anchors.rightMargin: 0
             Rectangle {
                 anchors.fill: parent
-                radius: 8
-                color: upMa.pressed ? "#303a50" : (upMa.containsMouse ? "#263246" : "#1c2434")
+                radius: root.radiusMD
+                color: upMa.pressed ? root.accentPress : (upMa.containsMouse ? root.cardEdgeStrong : root.cardBase)
                 border.width: 1
-                border.color: upMa.containsMouse ? "#3b4458" : root.cardEdge
-                Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
-                Behavior on border.color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                border.color: upMa.containsMouse ? root.cardEdgeStrong : root.cardEdge
+                Behavior on color { ColorAnimation { duration: 80 } }
+                Behavior on border.color { ColorAnimation { duration: 80 } }
                 Text {
                     anchors.centerIn: parent
                     text: "+"
@@ -264,6 +580,67 @@ Item {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: function (mouse) { mouse.accepted = true; sb._stepBy(1); }
                 }
+            }
+        }
+    }
+
+    component ResizeHandle: Item {
+        id: handleRoot
+        property var targetItem: null
+        property int edgeX: 0
+        property int edgeY: 0
+        property int resizeCursor: Qt.ArrowCursor
+
+        width: 20
+        height: 20
+        z: 100
+
+        Rectangle {
+            anchors.centerIn: parent
+            width: 10
+            height: 10
+            radius: 2
+            color: handleMouseArea.pressed ? "#38bdf8" : (handleMouseArea.containsMouse ? "#ffffff" : "#d9fffb")
+            border.width: 1.5
+            border.color: handleMouseArea.pressed ? "#0284c7" : "#0f766e"
+        }
+
+        MouseArea {
+            id: handleMouseArea
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: handleRoot.resizeCursor
+            preventStealing: true
+
+            property real startCanvasX: 0
+            property real startCanvasY: 0
+
+            onPressed: function(mouse) {
+                if (!targetItem) return;
+                var pt = mapToItem(layoutCanvas, mouse.x, mouse.y);
+                startCanvasX = pt.x / layoutCanvas.editorScale;
+                startCanvasY = pt.y / layoutCanvas.editorScale;
+                targetItem.beginResize(edgeX, edgeY);
+                mouse.accepted = true;
+            }
+
+            onPositionChanged: function(mouse) {
+                if (!pressed || !targetItem) return;
+                var pt = mapToItem(layoutCanvas, mouse.x, mouse.y);
+                var currentCanvasX = pt.x / layoutCanvas.editorScale;
+                var currentCanvasY = pt.y / layoutCanvas.editorScale;
+                var transX = currentCanvasX - startCanvasX;
+                var transY = currentCanvasY - startCanvasY;
+                var shiftHeld = (mouse.modifiers & Qt.ShiftModifier) !== 0;
+                var altHeld = (mouse.modifiers & Qt.AltModifier) !== 0;
+                targetItem.resizeWith(edgeX, edgeY, transX, transY, shiftHeld, altHeld);
+                mouse.accepted = true;
+            }
+
+            onReleased: function(mouse) {
+                if (!targetItem) return;
+                targetItem.finishResize();
+                mouse.accepted = true;
             }
         }
     }
@@ -1484,7 +1861,7 @@ Item {
                         }
                     }
 
-                    GridLayout {
+                     GridLayout {
                         Layout.fillWidth: true
                         columns: Math.max(1, Math.floor((width + 12) / 320))
                         columnSpacing: 12
@@ -1553,12 +1930,28 @@ Item {
                             }
                         }
 
-                        WidgetCard {
-                            title: "Chat overlay"
+                         WidgetCard {
+                             title: "Компонований layout"
+                             urlText: api ? api.layoutOverlayUrl("default") : ""
+                             onCopy: function() { if (api) api.copyLayoutOverlayUrl("default"); }
+                             onPlay: function() { if (api) api.previewLayout("default"); }
+                             onEdit: function() { root.loadLayoutEditor(); root.widgetMode = "layout"; }
+                         }
+
+                         WidgetCard {
+                             title: "Chat overlay"
                             urlText: api ? api.chatOverlayUrlValue : ""
                             onCopy: function() { if (api) api.copyChatOverlayUrl(); }
+                            onPlay: function() { if (api) api.previewLayoutWidget("chat"); }
                             onEdit: function() { root.widgetMode = "chat"; }
-                        }
+                     }
+
+                     Rectangle {
+                         Layout.fillWidth: true
+                         visible: root.widgetMode === "layout"
+                         color: "transparent"
+                         implicitHeight: 0
+                     }
 
                         WidgetCard {
                             title: "Actions overlay"
@@ -1572,6 +1965,7 @@ Item {
                             title: "Online overlay"
                             urlText: api ? api.onlineOverlayUrlValue : ""
                             onCopy: function() { if (api) api.copyOnlineOverlayUrl(); }
+                            onPlay: function() { if (api) api.previewLayoutWidget("online"); }
                             onEdit: function() { root.widgetMode = "online"; }
                         }
 
@@ -1666,6 +2060,969 @@ Item {
                                 if (typeof navApi !== "undefined" && navApi) navApi.goHome();
                                 else if (winApi) winApi.close();
                             }
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                id: layoutEditorCard
+                Layout.fillWidth: true
+                radius: 14
+                color: cardBase
+                border.width: 1
+                border.color: cardEdge
+                visible: root.widgetMode === "layout"
+                implicitHeight: layoutEditorColumn.implicitHeight + 24
+
+                ColumnLayout {
+                    id: layoutEditorColumn
+                    anchors.fill: parent
+                    anchors.margins: 12
+                    spacing: 10
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        Text { text: "Конструктор layout"; color: ink; font.pixelSize: 18; font.bold: true }
+
+                        Item { Layout.fillWidth: true }
+
+                        PillButton {
+                            text: "↩ Скасувати"
+                            enabled: (root._undoStack || []).length > 0
+                            opacity: enabled ? 1.0 : 0.4
+                            onClicked: root.undo()
+                        }
+                        PillButton {
+                            text: "↪ Повторити"
+                            enabled: (root._redoStack || []).length > 0
+                            opacity: enabled ? 1.0 : 0.4
+                            onClicked: root.redo()
+                        }
+
+                        Rectangle { width: 1; height: 22; color: cardEdge }
+
+                        PillButton {
+                            text: "Показати preview"
+                            onClicked: {
+                                root.saveLayoutEditor();
+                                if (api) api.previewLayout();
+                            }
+                        }
+                        PillButton { text: "Зберегти"; primary: true; onClicked: root.saveLayoutEditor() }
+                        PillButton { text: "Назад"; onClicked: root.widgetMode = "grid" }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Перетягуйте та масштабуйте віджети на полотні (Shift для фіксації пропорцій, Alt для вимкнення прилипання, стрілки для точного руху)."
+                        color: muted
+                        font.pixelSize: 12
+                        wrapMode: Text.Wrap
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 520
+                        spacing: 12
+
+                        // Left panel: Widget library
+                        Rectangle {
+                            Layout.preferredWidth: 215
+                            Layout.fillHeight: true
+                            radius: 10
+                            color: "#0d1320"
+                            border.width: 1
+                            border.color: cardEdge
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 6
+
+                                Text { text: "Додати віджет"; color: ink; font.pixelSize: 14; font.bold: true }
+                                Text { text: "Перетягніть на полотно або натисніть +"; color: muted; font.pixelSize: 11; wrapMode: Text.Wrap; Layout.fillWidth: true }
+
+                                ScrollView {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    clip: true
+
+                                    ColumnLayout {
+                                        width: parent.width
+                                        spacing: 4
+
+                                        Repeater {
+                                            model: root.layoutWidgetTypes
+                                            delegate: Rectangle {
+                                                required property var modelData
+                                                Layout.fillWidth: true
+                                                implicitHeight: 38
+                                                radius: 7
+                                                color: libMouseArea.pressed ? "#162033" : (libMouseArea.containsMouse ? "#1e293b" : "#111726")
+                                                border.width: 1
+                                                border.color: libMouseArea.containsMouse ? "#38bdf8" : "#1e293b"
+
+                                                RowLayout {
+                                                    anchors.fill: parent
+                                                    anchors.leftMargin: 8
+                                                    anchors.rightMargin: 6
+                                                    spacing: 6
+                                                    z: 2
+
+                                                    Text {
+                                                        text: modelData.icon || "📦"
+                                                        font.pixelSize: 14
+                                                    }
+                                                    Text {
+                                                        text: modelData.label
+                                                        color: libMouseArea.containsMouse ? "#ffffff" : root.ink
+                                                        font.pixelSize: 12
+                                                        font.weight: Font.Medium
+                                                        Layout.fillWidth: true
+                                                        elide: Text.ElideRight
+                                                    }
+                                                    PillButton {
+                                                        text: "+"
+                                                        pillFontSize: 13
+                                                        implicitWidth: 26
+                                                        implicitHeight: 26
+                                                        onClicked: root.addLayoutWidget(modelData.type, modelData.label)
+                                                    }
+                                                }
+
+                                                MouseArea {
+                                                    id: libMouseArea
+                                                    anchors.fill: parent
+                                                    z: 1
+                                                    hoverEnabled: true
+                                                    cursorShape: pressed ? Qt.DragCopyCursor : Qt.PointingHandCursor
+                                                    preventStealing: true
+
+                                                    property bool isDraggingLib: false
+
+                                                    onPressed: function(mouse) {
+                                                        isDraggingLib = false;
+                                                    }
+
+                                                    onPositionChanged: function(mouse) {
+                                                        if (!pressed) return;
+                                                        if (!isDraggingLib) {
+                                                            isDraggingLib = true;
+                                                            root._dragLibType = modelData.type;
+                                                            root._dragLibLabel = modelData.label;
+                                                        }
+                                                    }
+
+                                                    onReleased: function(mouse) {
+                                                        if (isDraggingLib && root._dragLibType) {
+                                                            var pt = mapToItem(layoutCanvas, mouse.x, mouse.y);
+                                                            if (pt.x >= 0 && pt.x <= layoutCanvas.width && pt.y >= 0 && pt.y <= layoutCanvas.height) {
+                                                                var dropCanvasX = Math.round(pt.x / layoutCanvas.editorScale);
+                                                                var dropCanvasY = Math.round(pt.y / layoutCanvas.editorScale);
+                                                                root.addLayoutWidget(root._dragLibType, root._dragLibLabel, dropCanvasX, dropCanvasY);
+                                                            }
+                                                            root._dragLibType = "";
+                                                            root._dragLibLabel = "";
+                                                        }
+                                                        isDraggingLib = false;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Center: Canvas Viewport
+                        Item {
+                            id: layoutCanvasViewport
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            clip: true
+
+                            Rectangle {
+                                id: layoutCanvas
+                                anchors.centerIn: parent
+                                property real documentWidth: Number(root.layoutDoc.width || 1920)
+                                property real documentHeight: Number(root.layoutDoc.height || 1080)
+                                property real aspect: documentWidth / Math.max(1, documentHeight)
+                                property real editorScale: width / Math.max(1, documentWidth)
+                                property int selectedIndex: root.selectedLayoutWidget
+
+                                width: Math.min(parent.width - 20, (parent.height - 20) * aspect)
+                                height: width / aspect
+                                color: "#06080d"
+                                border.width: 1
+                                border.color: "#334155"
+                                clip: false
+                                focus: true
+
+                                // Snapping calculation for moving
+                                function calculateMoveSnapping(widgetIdx, candX, candY, w, h) {
+                                    var tolerance = 8 / layoutCanvas.editorScale;
+                                    var docW = layoutCanvas.documentWidth;
+                                    var docH = layoutCanvas.documentHeight;
+
+                                    var vGuides = [0, docW / 2, docW];
+                                    var hGuides = [0, docH / 2, docH];
+
+                                    var widgets = root.layoutDoc.widgets || [];
+                                    for (var i = 0; i < widgets.length; ++i) {
+                                        if (i === widgetIdx) continue;
+                                        var o = widgets[i];
+                                        var ox = Number(o.x || 0);
+                                        var oy = Number(o.y || 0);
+                                        var ow = Number(o.width || 320);
+                                        var oh = Number(o.height || 180);
+
+                                        vGuides.push(ox);
+                                        vGuides.push(ox + ow / 2);
+                                        vGuides.push(ox + ow);
+
+                                        hGuides.push(oy);
+                                        hGuides.push(oy + oh / 2);
+                                        hGuides.push(oy + oh);
+                                    }
+
+                                    var testX = [
+                                        {val: candX, offset: 0},
+                                        {val: candX + w / 2, offset: w / 2},
+                                        {val: candX + w, offset: w}
+                                    ];
+                                    var testY = [
+                                        {val: candY, offset: 0},
+                                        {val: candY + h / 2, offset: h / 2},
+                                        {val: candY + h, offset: h}
+                                    ];
+
+                                    var snappedX = candX;
+                                    var snappedY = candY;
+                                    var matchedGuides = [];
+                                    var bestDx = tolerance + 1;
+                                    var bestDy = tolerance + 1;
+
+                                    for (var vi = 0; vi < vGuides.length; ++vi) {
+                                        var gv = vGuides[vi];
+                                        for (var ti = 0; ti < testX.length; ++ti) {
+                                            var diffX = Math.abs(testX[ti].val - gv);
+                                            if (diffX < tolerance && diffX < bestDx) {
+                                                bestDx = diffX;
+                                                snappedX = gv - testX[ti].offset;
+                                                matchedGuides = matchedGuides.filter(function(g) { return g.axis !== "v"; });
+                                                matchedGuides.push({axis: "v", pos: gv});
+                                            }
+                                        }
+                                    }
+
+                                    for (var hi = 0; hi < hGuides.length; ++hi) {
+                                        var gh = hGuides[hi];
+                                        for (var tj = 0; tj < testY.length; ++tj) {
+                                            var diffY = Math.abs(testY[tj].val - gh);
+                                            if (diffY < tolerance && diffY < bestDy) {
+                                                bestDy = diffY;
+                                                snappedY = gh - testY[tj].offset;
+                                                matchedGuides = matchedGuides.filter(function(g) { return g.axis !== "h"; });
+                                                matchedGuides.push({axis: "h", pos: gh});
+                                            }
+                                        }
+                                    }
+
+                                    return {x: snappedX, y: snappedY, guides: matchedGuides};
+                                }
+
+                                // Snapping calculation for resizing
+                                function calculateResizeSnapping(widgetIdx, edgeX, edgeY, candX, candY, candW, candH) {
+                                    var tolerance = 8 / layoutCanvas.editorScale;
+                                    var docW = layoutCanvas.documentWidth;
+                                    var docH = layoutCanvas.documentHeight;
+
+                                    var vGuides = [0, docW / 2, docW];
+                                    var hGuides = [0, docH / 2, docH];
+
+                                    var widgets = root.layoutDoc.widgets || [];
+                                    for (var i = 0; i < widgets.length; ++i) {
+                                        if (i === widgetIdx) continue;
+                                        var o = widgets[i];
+                                        var ox = Number(o.x || 0);
+                                        var oy = Number(o.y || 0);
+                                        var ow = Number(o.width || 320);
+                                        var oh = Number(o.height || 180);
+
+                                        vGuides.push(ox);
+                                        vGuides.push(ox + ow / 2);
+                                        vGuides.push(ox + ow);
+
+                                        hGuides.push(oy);
+                                        hGuides.push(oy + oh / 2);
+                                        hGuides.push(oy + oh);
+                                    }
+
+                                    var nextX = candX;
+                                    var nextY = candY;
+                                    var nextW = candW;
+                                    var nextH = candH;
+                                    var matchedGuides = [];
+
+                                    if (edgeX === -1) {
+                                        var bestDx = tolerance + 1;
+                                        for (var vi = 0; vi < vGuides.length; ++vi) {
+                                            var diff = Math.abs(candX - vGuides[vi]);
+                                            if (diff < tolerance && diff < bestDx) {
+                                                bestDx = diff;
+                                                var rightEdge = candX + candW;
+                                                nextX = vGuides[vi];
+                                                nextW = Math.max(32, rightEdge - nextX);
+                                                matchedGuides.push({axis: "v", pos: vGuides[vi]});
+                                            }
+                                        }
+                                    } else if (edgeX === 1) {
+                                        var bestDx = tolerance + 1;
+                                        var curRight = candX + candW;
+                                        for (var vi = 0; vi < vGuides.length; ++vi) {
+                                            var diff = Math.abs(curRight - vGuides[vi]);
+                                            if (diff < tolerance && diff < bestDx) {
+                                                bestDx = diff;
+                                                nextW = Math.max(32, vGuides[vi] - candX);
+                                                matchedGuides.push({axis: "v", pos: vGuides[vi]});
+                                            }
+                                        }
+                                    }
+
+                                    if (edgeY === -1) {
+                                        var bestDy = tolerance + 1;
+                                        for (var hi = 0; hi < hGuides.length; ++hi) {
+                                            var diff = Math.abs(candY - hGuides[hi]);
+                                            if (diff < tolerance && diff < bestDy) {
+                                                bestDy = diff;
+                                                var bottomEdge = candY + candH;
+                                                nextY = hGuides[hi];
+                                                nextH = Math.max(24, bottomEdge - nextY);
+                                                matchedGuides.push({axis: "h", pos: hGuides[hi]});
+                                            }
+                                        }
+                                    } else if (edgeY === 1) {
+                                        var bestDy = tolerance + 1;
+                                        var curBottom = candY + candH;
+                                        for (var hi = 0; hi < hGuides.length; ++hi) {
+                                            var diff = Math.abs(curBottom - hGuides[hi]);
+                                            if (diff < tolerance && diff < bestDy) {
+                                                bestDy = diff;
+                                                nextH = Math.max(24, hGuides[hi] - candY);
+                                                matchedGuides.push({axis: "h", pos: hGuides[hi]});
+                                            }
+                                        }
+                                    }
+
+                                    return {x: nextX, y: nextY, w: nextW, h: nextH, guides: matchedGuides};
+                                }
+
+                                // Canvas background click
+                                MouseArea {
+                                    anchors.fill: parent
+                                    z: -1
+                                    onClicked: {
+                                        layoutCanvas.forceActiveFocus();
+                                        root.selectedLayoutWidget = -1;
+                                    }
+                                }
+
+                                // Keyboard shortcuts
+                                Keys.onPressed: function(event) {
+                                    var isCtrl = (event.modifiers & Qt.ControlModifier) !== 0;
+                                    var isShift = (event.modifiers & Qt.ShiftModifier) !== 0;
+
+                                    if (isCtrl && (event.key === Qt.Key_Z)) {
+                                        if (isShift) root.redo();
+                                        else root.undo();
+                                        event.accepted = true;
+                                        return;
+                                    }
+                                    if (isCtrl && (event.key === Qt.Key_Y)) {
+                                        root.redo();
+                                        event.accepted = true;
+                                        return;
+                                    }
+                                    if (event.key === Qt.Key_Delete || event.key === Qt.Key_Backspace) {
+                                        root.removeSelectedLayoutWidget();
+                                        event.accepted = true;
+                                        return;
+                                    }
+
+                                    var step = isShift ? 10 : 1;
+                                    if (event.key === Qt.Key_Left) { root.nudgeSelected(-step, 0); event.accepted = true; }
+                                    else if (event.key === Qt.Key_Right) { root.nudgeSelected(step, 0); event.accepted = true; }
+                                    else if (event.key === Qt.Key_Up) { root.nudgeSelected(0, -step); event.accepted = true; }
+                                    else if (event.key === Qt.Key_Down) { root.nudgeSelected(0, step); event.accepted = true; }
+                                }
+
+                                // Snapping visual guide lines overlay
+                                Canvas {
+                                    id: snapGuideCanvas
+                                    anchors.fill: parent
+                                    z: 100
+                                    visible: (root._snapGuides || []).length > 0
+                                    onPaint: {
+                                        var ctx = getContext("2d");
+                                        ctx.clearRect(0, 0, width, height);
+                                        var guides = root._snapGuides || [];
+                                        if (!guides.length) return;
+
+                                        ctx.save();
+                                        ctx.strokeStyle = "#14b8a6";
+                                        ctx.lineWidth = 1.5;
+                                        ctx.setLineDash([4, 4]);
+                                        var s = layoutCanvas.editorScale;
+
+                                        for (var i = 0; i < guides.length; ++i) {
+                                            var g = guides[i];
+                                            ctx.beginPath();
+                                            if (g.axis === "v") {
+                                                var sx = Math.round(g.pos * s);
+                                                ctx.moveTo(sx, 0);
+                                                ctx.lineTo(sx, height);
+                                            } else if (g.axis === "h") {
+                                                var sy = Math.round(g.pos * s);
+                                                ctx.moveTo(0, sy);
+                                                ctx.lineTo(width, sy);
+                                            }
+                                            ctx.stroke();
+                                        }
+                                        ctx.restore();
+                                    }
+                                    Connections {
+                                        target: root
+                                        function on_SnapGuidesChanged() {
+                                            snapGuideCanvas.requestPaint();
+                                        }
+                                    }
+                                }
+
+                                // Widget delegates
+                                Repeater {
+                                    model: root.layoutDoc.widgets || []
+                                    delegate: Item {
+                                        required property var modelData
+                                        required property int index
+                                        id: layoutWidget
+
+                                        property bool isSelected: index === root.selectedLayoutWidget
+                                        property real localX: Number(modelData.x || 0)
+                                        property real localY: Number(modelData.y || 0)
+                                        property real localW: Math.max(32, Number(modelData.width || 320))
+                                        property real localH: Math.max(24, Number(modelData.height || 180))
+
+                                        // Store resize starting values
+                                        property real _resStartLocalX: 0
+                                        property real _resStartLocalY: 0
+                                        property real _resStartLocalW: 0
+                                        property real _resStartLocalH: 0
+                                        property real _resStartAspect: 16/9
+
+                                        x: localX * layoutCanvas.editorScale
+                                        y: localY * layoutCanvas.editorScale
+                                        width: localW * layoutCanvas.editorScale
+                                        height: localH * layoutCanvas.editorScale
+                                        z: isSelected ? 50 : index
+
+                                        // Keep local interactive geometry in sync when model updates and not dragging
+                                        Connections {
+                                            target: root
+                                            function onLayoutDocChanged() {
+                                                if (root._editorState === "idle" && modelData) {
+                                                    layoutWidget.localX = Number(modelData.x || 0);
+                                                    layoutWidget.localY = Number(modelData.y || 0);
+                                                    layoutWidget.localW = Math.max(32, Number(modelData.width || 320));
+                                                    layoutWidget.localH = Math.max(24, Number(modelData.height || 180));
+                                                }
+                                            }
+                                        }
+
+                                        function beginResize(edgeX, edgeY) {
+                                            root.selectedLayoutWidget = index;
+                                            layoutCanvas.forceActiveFocus();
+                                            root._pushUndo();
+                                            root._editorState = "resizing";
+
+                                            _resStartLocalX = localX;
+                                            _resStartLocalY = localY;
+                                            _resStartLocalW = localW;
+                                            _resStartLocalH = localH;
+                                            _resStartAspect = _resStartLocalW / Math.max(1, _resStartLocalH);
+                                        }
+
+                                        function resizeWith(edgeX, edgeY, dx, dy, shiftHeld, altHeld) {
+                                            var rawX = _resStartLocalX;
+                                            var rawY = _resStartLocalY;
+                                            var rawW = _resStartLocalW;
+                                            var rawH = _resStartLocalH;
+
+                                            if (edgeX === -1) {
+                                                rawX = _resStartLocalX + dx;
+                                                rawW = _resStartLocalW - dx;
+                                            } else if (edgeX === 1) {
+                                                rawW = _resStartLocalW + dx;
+                                            }
+
+                                            if (edgeY === -1) {
+                                                rawY = _resStartLocalY + dy;
+                                                rawH = _resStartLocalH - dy;
+                                            } else if (edgeY === 1) {
+                                                rawH = _resStartLocalH + dy;
+                                            }
+
+                                            var minW = 32;
+                                            var minH = 24;
+
+                                            // Aspect ratio lock (Shift on corner handles)
+                                            var isCorner = (edgeX !== 0 && edgeY !== 0);
+                                            if (isCorner && shiftHeld) {
+                                                var scaleW = rawW / _resStartLocalW;
+                                                var scaleH = rawH / _resStartLocalH;
+                                                var scale = Math.max(scaleW, scaleH);
+
+                                                rawW = Math.max(minW, _resStartLocalW * scale);
+                                                rawH = rawW / _resStartAspect;
+
+                                                if (edgeX === -1) {
+                                                    rawX = _resStartLocalX + _resStartLocalW - rawW;
+                                                }
+                                                if (edgeY === -1) {
+                                                    rawY = _resStartLocalY + _resStartLocalH - rawH;
+                                                }
+                                            } else {
+                                                // Free resize min constraints
+                                                if (rawW < minW) {
+                                                    if (edgeX === -1) rawX = _resStartLocalX + _resStartLocalW - minW;
+                                                    rawW = minW;
+                                                }
+                                                if (rawH < minH) {
+                                                    if (edgeY === -1) rawY = _resStartLocalY + _resStartLocalH - minH;
+                                                    rawH = minH;
+                                                }
+
+                                                // Snapping for resize
+                                                if (!altHeld) {
+                                                    var snapRes = layoutCanvas.calculateResizeSnapping(index, edgeX, edgeY, rawX, rawY, rawW, rawH);
+                                                    rawX = snapRes.x;
+                                                    rawY = snapRes.y;
+                                                    rawW = snapRes.w;
+                                                    rawH = snapRes.h;
+                                                    root._snapGuides = snapRes.guides;
+                                                } else {
+                                                    root._snapGuides = [];
+                                                }
+                                            }
+
+                                            layoutWidget.localX = rawX;
+                                            layoutWidget.localY = rawY;
+                                            layoutWidget.localW = rawW;
+                                            layoutWidget.localH = rawH;
+                                        }
+
+                                        function finishResize() {
+                                            root._editorState = "idle";
+                                            root._snapGuides = [];
+                                            root.commitWidgetGeometry(index, Math.round(layoutWidget.localX), Math.round(layoutWidget.localY), Math.round(layoutWidget.localW), Math.round(layoutWidget.localH));
+                                        }
+
+                                        // Widget background box
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: 4
+                                            color: layoutWidget.isSelected ? "#1e3a5f" : (widgetBodyArea.containsMouse ? "#1b283d" : "#141c2c")
+                                            border.width: layoutWidget.isSelected ? 2 : 1
+                                            border.color: layoutWidget.isSelected ? "#5eead4" : (widgetBodyArea.containsMouse ? "#4a5d7c" : "#2d3b52")
+
+                                            // Content preview inside widget
+                                            ColumnLayout {
+                                                anchors.fill: parent
+                                                anchors.margins: 6
+                                                spacing: 2
+
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 5
+                                                    Text {
+                                                        text: {
+                                                            var info = root.widgetTypeInfo(modelData.type);
+                                                            return (info.icon || "📦") + " " + (info.label || modelData.type || "Віджет");
+                                                        }
+                                                        color: layoutWidget.isSelected ? "#5eead4" : root.ink
+                                                        font.pixelSize: Math.max(10, Math.min(13, layoutWidget.height * 0.2))
+                                                        font.bold: true
+                                                        elide: Text.ElideRight
+                                                        Layout.fillWidth: true
+                                                    }
+                                                    Text {
+                                                        text: modelData.locked ? "🔒" : ""
+                                                        color: "#94a3b8"
+                                                        font.pixelSize: 11
+                                                        visible: modelData.locked
+                                                    }
+                                                }
+
+                                                Text {
+                                                    text: Math.round(layoutWidget.localW) + " × " + Math.round(layoutWidget.localH)
+                                                    color: "#64748b"
+                                                    font.pixelSize: Math.max(9, Math.min(11, layoutWidget.height * 0.15))
+                                                    visible: layoutWidget.height > 35
+                                                }
+
+                                                Item { Layout.fillHeight: true }
+                                            }
+                                        }
+
+                                        // Move & Selection MouseArea on widget body
+                                        MouseArea {
+                                            id: widgetBodyArea
+                                            anchors.fill: parent
+                                            z: 1
+                                            enabled: true
+                                            hoverEnabled: true
+                                            cursorShape: layoutWidget.isSelected ? Qt.SizeAllCursor : Qt.ArrowCursor
+                                            preventStealing: true
+
+                                            property real pressOffsetCanvasX: 0
+                                            property real pressOffsetCanvasY: 0
+                                            property bool isMoving: false
+
+                                            onPressed: function(mouse) {
+                                                root.selectedLayoutWidget = index;
+                                                layoutCanvas.forceActiveFocus();
+                                                var pt = mapToItem(layoutCanvas, mouse.x, mouse.y);
+                                                var curCanvasX = pt.x / layoutCanvas.editorScale;
+                                                var curCanvasY = pt.y / layoutCanvas.editorScale;
+                                                pressOffsetCanvasX = curCanvasX - layoutWidget.localX;
+                                                pressOffsetCanvasY = curCanvasY - layoutWidget.localY;
+                                                isMoving = false;
+                                                mouse.accepted = true;
+                                            }
+
+                                            onPositionChanged: function(mouse) {
+                                                if (!pressed || modelData.locked) return;
+                                                var pt = mapToItem(layoutCanvas, mouse.x, mouse.y);
+                                                var curCanvasX = pt.x / layoutCanvas.editorScale;
+                                                var curCanvasY = pt.y / layoutCanvas.editorScale;
+
+                                                var targetX = curCanvasX - pressOffsetCanvasX;
+                                                var targetY = curCanvasY - pressOffsetCanvasY;
+
+                                                if (!isMoving) {
+                                                    var diff = Math.abs(targetX - layoutWidget.localX) + Math.abs(targetY - layoutWidget.localY);
+                                                    if (diff > 1) {
+                                                        isMoving = true;
+                                                        root._pushUndo();
+                                                        root._editorState = "moving";
+                                                    } else {
+                                                        return;
+                                                    }
+                                                }
+
+                                                var altHeld = (mouse.modifiers & Qt.AltModifier) !== 0;
+                                                if (!altHeld) {
+                                                    var snapResult = layoutCanvas.calculateMoveSnapping(index, targetX, targetY, layoutWidget.localW, layoutWidget.localH);
+                                                    targetX = snapResult.x;
+                                                    targetY = snapResult.y;
+                                                    root._snapGuides = snapResult.guides;
+                                                } else {
+                                                    root._snapGuides = [];
+                                                }
+
+                                                layoutWidget.localX = targetX;
+                                                layoutWidget.localY = targetY;
+                                                mouse.accepted = true;
+                                            }
+
+                                            onReleased: function(mouse) {
+                                                if (isMoving) {
+                                                    isMoving = false;
+                                                    root._editorState = "idle";
+                                                    root._snapGuides = [];
+                                                    root.commitWidgetGeometry(index, Math.round(layoutWidget.localX), Math.round(layoutWidget.localY), Math.round(layoutWidget.localW), Math.round(layoutWidget.localH));
+                                                }
+                                                mouse.accepted = true;
+                                            }
+                                        }
+
+                                        // 8 Resize Handles (only visible when selected and not locked)
+                                        ResizeHandle { anchors.horizontalCenter: parent.left; anchors.verticalCenter: parent.top; visible: layoutWidget.isSelected && !modelData.locked; targetItem: layoutWidget; edgeX: -1; edgeY: -1; resizeCursor: Qt.SizeFDiagCursor }
+                                        ResizeHandle { anchors.horizontalCenter: parent.horizontalCenter; anchors.verticalCenter: parent.top; visible: layoutWidget.isSelected && !modelData.locked; targetItem: layoutWidget; edgeX: 0; edgeY: -1; resizeCursor: Qt.SizeVerCursor }
+                                        ResizeHandle { anchors.horizontalCenter: parent.right; anchors.verticalCenter: parent.top; visible: layoutWidget.isSelected && !modelData.locked; targetItem: layoutWidget; edgeX: 1; edgeY: -1; resizeCursor: Qt.SizeBDiagCursor }
+                                        ResizeHandle { anchors.horizontalCenter: parent.left; anchors.verticalCenter: parent.verticalCenter; visible: layoutWidget.isSelected && !modelData.locked; targetItem: layoutWidget; edgeX: -1; edgeY: 0; resizeCursor: Qt.SizeHorCursor }
+                                        ResizeHandle { anchors.horizontalCenter: parent.right; anchors.verticalCenter: parent.verticalCenter; visible: layoutWidget.isSelected && !modelData.locked; targetItem: layoutWidget; edgeX: 1; edgeY: 0; resizeCursor: Qt.SizeHorCursor }
+                                        ResizeHandle { anchors.horizontalCenter: parent.left; anchors.verticalCenter: parent.bottom; visible: layoutWidget.isSelected && !modelData.locked; targetItem: layoutWidget; edgeX: -1; edgeY: 1; resizeCursor: Qt.SizeBDiagCursor }
+                                        ResizeHandle { anchors.horizontalCenter: parent.horizontalCenter; anchors.verticalCenter: parent.bottom; visible: layoutWidget.isSelected && !modelData.locked; targetItem: layoutWidget; edgeX: 0; edgeY: 1; resizeCursor: Qt.SizeVerCursor }
+                                        ResizeHandle { anchors.horizontalCenter: parent.right; anchors.verticalCenter: parent.bottom; visible: layoutWidget.isSelected && !modelData.locked; targetItem: layoutWidget; edgeX: 1; edgeY: 1; resizeCursor: Qt.SizeFDiagCursor }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Right panel: Active widgets list
+                        Rectangle {
+                            Layout.preferredWidth: 230
+                            Layout.fillHeight: true
+                            radius: 10
+                            color: "#0d1320"
+                            border.width: 1
+                            border.color: cardEdge
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 8
+
+                                Text { text: "Шари та віджети"; color: ink; font.pixelSize: 14; font.bold: true }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "Вибирайте віджет, блокуйте або змінюйте порядок шарів."
+                                    color: muted; font.pixelSize: 11; wrapMode: Text.Wrap
+                                }
+
+                                ListView {
+                                    id: activeLayoutWidgets
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    clip: true
+                                    spacing: 5
+                                    model: root.layoutDoc.widgets || []
+
+                                    delegate: Rectangle {
+                                        required property var modelData
+                                        required property int index
+                                        width: activeLayoutWidgets.width
+                                        height: 42
+                                        radius: 7
+                                        color: index === root.selectedLayoutWidget ? "#134e4a" : (itemHover.hovered ? "#1b2537" : "#141c2c")
+                                        border.width: index === root.selectedLayoutWidget ? 1 : 0
+                                        border.color: "#5eead4"
+
+                                        HoverHandler { id: itemHover }
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 10
+                                            anchors.rightMargin: 6
+                                            spacing: 4
+
+                                            Text {
+                                                text: {
+                                                    var info = root.widgetTypeInfo(modelData.type);
+                                                    return (info.icon || "📦") + "  " + (info.label || modelData.type);
+                                                }
+                                                color: ink
+                                                font.pixelSize: 12
+                                                font.weight: index === root.selectedLayoutWidget ? Font.Medium : Font.Normal
+                                                Layout.fillWidth: true
+                                                elide: Text.ElideRight
+                                            }
+
+                                            // Move up layer
+                                            PillButton {
+                                                text: "▲"
+                                                pillFontSize: 10
+                                                implicitWidth: 22
+                                                implicitHeight: 22
+                                                enabled: index > 0
+                                                opacity: enabled ? 1.0 : 0.3
+                                                onClicked: root.moveWidgetLayer(index, index - 1)
+                                            }
+
+                                            // Move down layer
+                                            PillButton {
+                                                text: "▼"
+                                                pillFontSize: 10
+                                                implicitWidth: 22
+                                                implicitHeight: 22
+                                                enabled: index < (root.layoutDoc.widgets || []).length - 1
+                                                opacity: enabled ? 1.0 : 0.3
+                                                onClicked: root.moveWidgetLayer(index, index + 1)
+                                            }
+
+                                            // Lock toggle
+                                            PillButton {
+                                                text: modelData.locked ? "🔒" : "🔓"
+                                                pillFontSize: 11
+                                                implicitWidth: 24
+                                                implicitHeight: 24
+                                                onClicked: root.toggleWidgetLock(index)
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            z: -1
+                                            onClicked: {
+                                                root.selectedLayoutWidget = index;
+                                                layoutCanvas.forceActiveFocus();
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    visible: !(root.layoutDoc.widgets || []).length
+                                    Layout.fillWidth: true
+                                    text: "Додайте віджет з панелі зліва"
+                                    color: muted
+                                    font.pixelSize: 11
+                                    wrapMode: Text.Wrap
+                                }
+                            }
+                        }
+                    }
+
+                    // Bottom Panel: Canvas Settings & Widget Inspector
+                    Rectangle {
+                        Layout.fillWidth: true
+                        radius: 10
+                        color: "#0d1320"
+                        border.width: 1
+                        border.color: cardEdge
+                        implicitHeight: layoutProperties.implicitHeight + 20
+
+                        ColumnLayout {
+                            id: layoutProperties
+                            anchors.fill: parent
+                            anchors.margins: 10
+                            spacing: 8
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+                                Text { text: "Полотно:"; color: ink; font.pixelSize: 13; font.bold: true }
+                                StyledComboBox {
+                                    Layout.preferredWidth: 280
+                                    model: ["1920 × 1080 · Горизонталь", "1080 × 1920 · TikTok вертикаль", "1080 × 1080 · Квадрат", "1280 × 720 · HD", "Вручну"]
+                                    currentIndex: root.canvasPresetIndex
+                                    onActivated: function(index) { root.selectCanvasPreset(index); }
+                                    onUserActivated: function(index) { root.selectCanvasPreset(index); }
+                                }
+                                Text { visible: root.canvasPresetIndex === 4; text: "W:"; color: muted; font.pixelSize: 11 }
+                                StyledSpinBox {
+                                    visible: root.canvasPresetIndex === 4
+                                    Layout.preferredWidth: 100
+                                    from: 320; to: 10000
+                                    value: Number(root.layoutDoc.width || 1920)
+                                    onValueModified: {
+                                        if (value !== Number(root.layoutDoc.width || 1920)) {
+                                            root.applyLayoutPreset(value, Number(root.layoutDoc.height || 1080), "Custom");
+                                        }
+                                    }
+                                }
+                                Text { visible: root.canvasPresetIndex === 4; text: "H:"; color: muted; font.pixelSize: 11 }
+                                StyledSpinBox {
+                                    visible: root.canvasPresetIndex === 4
+                                    Layout.preferredWidth: 100
+                                    from: 180; to: 10000
+                                    value: Number(root.layoutDoc.height || 1080)
+                                    onValueModified: {
+                                        if (value !== Number(root.layoutDoc.height || 1080)) {
+                                            root.applyLayoutPreset(Number(root.layoutDoc.width || 1920), value, "Custom");
+                                        }
+                                    }
+                                }
+                                Item { Layout.fillWidth: true }
+                                PillButton {
+                                    text: "Видалити віджет"
+                                    enabled: root.selectedLayoutItem() !== null
+                                    opacity: enabled ? 1.0 : 0.4
+                                    onClicked: root.removeSelectedLayoutWidget()
+                                }
+                            }
+
+                            Rectangle { Layout.fillWidth: true; height: 1; color: cardEdge }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 10
+
+                                Text {
+                                    text: {
+                                        var item = root.selectedLayoutItem();
+                                        if (!item) return "Виберіть віджет для редагування параметрів";
+                                        var info = root.widgetTypeInfo(item.type);
+                                        return "Віджет: " + (info.icon || "📦") + " " + (info.label || item.type);
+                                    }
+                                    color: root.selectedLayoutItem() ? "#5eead4" : muted
+                                    font.pixelSize: 12
+                                    font.bold: root.selectedLayoutItem() !== null
+                                }
+
+                                Item { Layout.fillWidth: true }
+
+                                RowLayout {
+                                    visible: root.selectedLayoutItem() !== null
+                                    spacing: 8
+
+                                    Text { text: "X:"; color: muted; font.pixelSize: 12 }
+                                    StyledSpinBox {
+                                        Layout.preferredWidth: 110
+                                        from: -5000; to: 10000
+                                        value: root.selectedLayoutItem() ? Number(root.selectedLayoutItem().x || 0) : 0
+                                        onValueModified: {
+                                            if (root.selectedLayoutItem() && value !== Number(root.selectedLayoutItem().x || 0)) {
+                                                root.updateLayoutItem("x", value);
+                                            }
+                                        }
+                                    }
+
+                                    Text { text: "Y:"; color: muted; font.pixelSize: 12 }
+                                    StyledSpinBox {
+                                        Layout.preferredWidth: 110
+                                        from: -5000; to: 10000
+                                        value: root.selectedLayoutItem() ? Number(root.selectedLayoutItem().y || 0) : 0
+                                        onValueModified: {
+                                            if (root.selectedLayoutItem() && value !== Number(root.selectedLayoutItem().y || 0)) {
+                                                root.updateLayoutItem("y", value);
+                                            }
+                                        }
+                                    }
+
+                                    Text { text: "W:"; color: muted; font.pixelSize: 12 }
+                                    StyledSpinBox {
+                                        Layout.preferredWidth: 110
+                                        from: 1; to: 10000
+                                        value: root.selectedLayoutItem() ? Number(root.selectedLayoutItem().width || 320) : 320
+                                        onValueModified: {
+                                            if (root.selectedLayoutItem() && value !== Number(root.selectedLayoutItem().width || 320)) {
+                                                root.updateLayoutItem("width", value);
+                                            }
+                                        }
+                                    }
+
+                                    Text { text: "H:"; color: muted; font.pixelSize: 12 }
+                                    StyledSpinBox {
+                                        Layout.preferredWidth: 110
+                                        from: 1; to: 10000
+                                        value: root.selectedLayoutItem() ? Number(root.selectedLayoutItem().height || 180) : 180
+                                        onValueModified: {
+                                            if (root.selectedLayoutItem() && value !== Number(root.selectedLayoutItem().height || 180)) {
+                                                root.updateLayoutItem("height", value);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        TextField {
+                            Layout.fillWidth: true
+                            readOnly: true
+                            selectByMouse: true
+                            color: ink
+                            text: api ? api.layoutOverlayUrl("default") : ""
+                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                        }
+                        PillButton {
+                            text: "Скопіювати URL"
+                            onClicked: if (api) api.copyLayoutOverlayUrl("default")
                         }
                     }
                 }

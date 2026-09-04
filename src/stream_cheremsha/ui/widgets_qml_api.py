@@ -6,8 +6,8 @@ import time
 from typing import Any
 from urllib.parse import quote
 
-from PySide6.QtCore import Property, QObject, Qt, Signal, Slot
-from PySide6.QtGui import QFontDatabase, QGuiApplication
+from PySide6.QtCore import Property, QObject, Qt, QUrl, Signal, Slot
+from PySide6.QtGui import QDesktopServices, QFontDatabase, QGuiApplication
 from PySide6.QtQml import QJSValue
 from PySide6.QtQuick import QQuickView
 
@@ -46,6 +46,12 @@ from stream_cheremsha.overlays.live_leaderboard_overlay_config import (
     live_leaderboard_overlay_config_to_json_text,
     load_live_leaderboard_overlay_config,
     save_live_leaderboard_overlay_config,
+)
+from stream_cheremsha.overlays.layout import (
+    layouts_from_json_text,
+    layouts_to_json_text,
+    load_layouts,
+    save_layouts,
 )
 from stream_cheremsha.overlays.online_overlay_config import (
     load_online_overlay_config,
@@ -249,6 +255,7 @@ class WidgetsQmlApi(QObject):
         return list(self._system_font_families)
 
     chatOverlayUrlChanged = Signal()
+    layoutsChanged = Signal()
 
     def set_overlay_base_url(self, base_url: str) -> None:
         base = str(base_url or "").rstrip("/")
@@ -288,6 +295,122 @@ class WidgetsQmlApi(QObject):
         if clip is None:
             return
         clip.setText(url)
+
+    @Property(str, notify=layoutsChanged)
+    def layoutsJsonValue(self) -> str:
+        return layouts_to_json_text(load_layouts())
+
+    @Slot(result=str)
+    def loadLayoutsJson(self) -> str:
+        return layouts_to_json_text(load_layouts())
+
+    @Slot(str)
+    def saveLayoutsJson(self, layouts_json: str) -> None:
+        try:
+            layouts = layouts_from_json_text(str(layouts_json or ""))
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            _LOG.warning("saveLayoutsJson: rejected payload: %s", exc)
+            return
+        save_layouts(layouts)
+        self.layoutsChanged.emit()
+        self._publish_patch(
+            topic="overlay:layout:main",
+            patch={"action": "reload", "timestamp": time.time()},
+        )
+
+    @Slot(str, result=str)
+    def layoutOverlayUrl(self, layout_id: str) -> str:
+        if not self._base:
+            return ""
+        layout = quote(str(layout_id or "default"))
+        return f"{self._base}/overlay/layout?instance=main&layout={layout}"
+
+    @Slot(str, str, result=str)
+    def layoutWidgetPreviewUrl(self, widget_type: str, instance: str = "main") -> str:
+        if not self._base:
+            return ""
+        widget = quote(str(widget_type or ""), safe="")
+        widget_instance = quote(str(instance or "main"), safe="")
+        return f"{self._base}/overlay/{widget}?instance={widget_instance}"
+
+    @Slot(str)
+    @Slot()
+    def openLayoutPreview(self, layout_id: str = "default") -> None:
+        """Open the layout overlay URL in the default browser."""
+        url = self.layoutOverlayUrl(layout_id or "default")
+        if url:
+            QDesktopServices.openUrl(QUrl(url))
+
+    @Slot(str, str)
+    def previewLayoutWidget(self, widget_type: str, instance: str = "main") -> None:
+        """Send a representative event to the real overlay preview."""
+        typ = str(widget_type or "").strip()
+        inst = instance or "main"
+        if typ == "chat":
+            self._publish_patch(
+                topic=f"overlay:chat:{inst}",
+                patch={
+                    "append": {
+                        "author": "Preview Viewer",
+                        "text": "Це реальний preview віджета чату",
+                        "platform": "twitch",
+                        "received_at": "preview",
+                    }
+                },
+            )
+        elif typ == "actions":
+            self.previewActionsOverlay()
+        elif typ == "online":
+            self._publish_patch(
+                topic=f"overlay:online:{inst}",
+                patch={"online": True, "viewers": 1234},
+            )
+        elif typ == "stream_pet":
+            self.previewStreamPetOverlay()
+        elif typ == "community_world":
+            self.previewCommunityWorldOverlay()
+        elif typ == "battle_royale":
+            self.previewBattleRoyaleOverlay()
+        elif typ == "top_likers":
+            self.previewTopLikersOverlay()
+        elif typ == "top_gifters":
+            self.previewTopGiftersOverlay()
+        elif typ == "king_of_live":
+            self.previewKingOfLiveOverlay()
+        elif typ == "stream_goal":
+            self.previewStreamGoalOverlay()
+        elif typ == "live_leaderboard":
+            self.previewLiveLeaderboardOverlay()
+        elif typ == "social_rotator":
+            self.previewSocialRotatorOverlay()
+        elif typ == "webcam_frame":
+            self.previewWebcamFrameOverlay()
+        elif typ == "activity":
+            self._publish_patch(
+                topic="overlay:activity:main",
+                patch={"score": 75.0, "state": "hyped"},
+            )
+
+    @Slot(str)
+    @Slot()
+    def previewLayout(self, layout_id: str = "default") -> None:
+        """Prime all overlay previews with test events and open the layout in the browser."""
+        self.openLayoutPreview(layout_id or "default")
+        for widget_type in (
+            "chat", "actions", "online", "stream_pet", "community_world",
+            "battle_royale", "top_likers", "top_gifters", "king_of_live",
+            "stream_goal", "live_leaderboard", "social_rotator", "webcam_frame", "activity",
+        ):
+            self.previewLayoutWidget(widget_type)
+
+    @Slot(str)
+    def copyLayoutOverlayUrl(self, layout_id: str) -> None:
+        url = self.layoutOverlayUrl(layout_id)
+        if not url:
+            return
+        clip = QGuiApplication.clipboard()
+        if clip is not None:
+            clip.setText(url)
 
     # Music overlay was removed (local playback via yt-dlp instead of BrowserSource).
 
