@@ -42,11 +42,12 @@ Item {
             root._loadingStreamGoalCfg = false;
             root._loadingSocialRotatorCfg = false;
             root._loadingLiveLeaderboardCfg = false;
+            root._loadingWebcamFrameCfg = false;
         }
     }
 
     readonly property int titleBarH: 44
-    property string widgetMode: "grid" // grid | chat | actions | online | top_likers | top_gifters | king_of_live | battle_royale | stream_pet | community_world | stream_goal | live_leaderboard | social_rotator
+    property string widgetMode: "grid" // grid | chat | actions | online | top_likers | top_gifters | king_of_live | battle_royale | stream_pet | community_world | stream_goal | live_leaderboard | social_rotator | webcam_frame
 
     component PillButton: Button {
         id: pillCtl
@@ -361,6 +362,8 @@ Item {
                 return root._loadingLiveLeaderboardCfg;
             if (vsb.syncGroup === "social_rotator")
                 return root._loadingSocialRotatorCfg;
+            if (vsb.syncGroup === "webcam_frame")
+                return root._loadingWebcamFrameCfg;
             return true;
         }
 
@@ -385,6 +388,8 @@ Item {
                 root._saveLiveLeaderboard();
             else if (vsb.syncGroup === "social_rotator")
                 root._saveSocialRotator();
+            else if (vsb.syncGroup === "webcam_frame")
+                root._saveWebcamFrame();
         }
 
         function _pull() {
@@ -492,6 +497,14 @@ Item {
                 if (vsb.syncGroup === "social_rotator")
                     vsb._pull();
             }
+            function onWebcamFrameCfgChanged() {
+                if (vsb.syncGroup === "webcam_frame")
+                    vsb._pull();
+            }
+            function onWebcamFrameCfgEpochChanged() {
+                if (vsb.syncGroup === "webcam_frame")
+                    vsb._pull();
+            }
         }
 
         onValueChanged: {
@@ -554,6 +567,9 @@ Item {
     property var socialRotatorCfg: null
     property bool _loadingSocialRotatorCfg: false
     property int socialRotatorCfgEpoch: 0
+    property var webcamFrameCfg: null
+    property bool _loadingWebcamFrameCfg: false
+    property int webcamFrameCfgEpoch: 0
     property color _spBodyColor: "#fbbf24"
     property color _spEarColor: "#f59e0b"
     property color _spCollarColor: "#ef4444"
@@ -798,7 +814,8 @@ Item {
             (root.widgetMode === "community_world" && root.communityWorldCfg !== null) ||
             (root.widgetMode === "stream_goal" && root.streamGoalCfg !== null) ||
             (root.widgetMode === "live_leaderboard" && root.liveLeaderboardCfg !== null) ||
-            (root.widgetMode === "social_rotator" && root.socialRotatorCfg !== null)
+            (root.widgetMode === "social_rotator" && root.socialRotatorCfg !== null) ||
+            (root.widgetMode === "webcam_frame" && root.webcamFrameCfg !== null)
         )
 
     function _flushTierOverlayEditorsIntoCfg() {
@@ -864,6 +881,8 @@ Item {
             root._saveLiveLeaderboard();
         } else if (root.widgetMode === "social_rotator") {
             root._saveSocialRotator();
+        } else if (root.widgetMode === "webcam_frame") {
+            root._saveWebcamFrame();
         }
     }
 
@@ -884,87 +903,135 @@ Item {
         return 0
     }
 
-    function _rebuildSgSrComboModels() {
+    // NOTE: same scoping caveat as _rebuildWebcamFrameComboModels below - the sgXxx*/srXxx*
+    // ids live inside the `gatedUi` Component, not on root, so they must be passed in explicitly
+    // rather than bare-referenced here (bare references from root always silently no-op, which
+    // used to leave every one of these combo boxes empty).
+    function _rebuildStreamGoalComboModels(goalTypeModel, goalTypeBox, skinModel, skinBox, animModel, animBox, resetModel, resetBox) {
         var prevSgLoading = root._loadingStreamGoalCfg
-        var prevSrLoading = root._loadingSocialRotatorCfg
         root._loadingStreamGoalCfg = true
-        root._loadingSocialRotatorCfg = true
 
-        if (typeof sgGoalTypeModel !== "undefined") {
+        if (goalTypeModel) {
             var goalVal = (root.streamGoalCfg && root.streamGoalCfg.goal_type) ? root.streamGoalCfg.goal_type : "followers"
-            sgGoalTypeModel.clear()
-            sgGoalTypeModel.append({ value: "followers", text: root.loc("stream_goal.ui.type.followers") })
-            sgGoalTypeModel.append({ value: "likes", text: root.loc("stream_goal.ui.type.likes") })
-            sgGoalTypeModel.append({ value: "gifts", text: root.loc("stream_goal.ui.type.gifts") })
-            sgGoalTypeModel.append({ value: "shares", text: root.loc("stream_goal.ui.type.shares") })
-            sgGoalTypeModel.append({ value: "comments", text: root.loc("stream_goal.ui.type.comments") })
-            if (typeof sgGoalType !== "undefined")
-                sgGoalType.currentIndex = root._comboIndexFor(sgGoalTypeModel, goalVal)
+            goalTypeModel.clear()
+            goalTypeModel.append({ value: "followers", text: root.loc("stream_goal.ui.type.followers") })
+            goalTypeModel.append({ value: "likes", text: root.loc("stream_goal.ui.type.likes") })
+            goalTypeModel.append({ value: "gifts", text: root.loc("stream_goal.ui.type.gifts") })
+            goalTypeModel.append({ value: "shares", text: root.loc("stream_goal.ui.type.shares") })
+            goalTypeModel.append({ value: "comments", text: root.loc("stream_goal.ui.type.comments") })
+            if (goalTypeBox)
+                goalTypeBox.currentIndex = root._comboIndexFor(goalTypeModel, goalVal)
         }
-        if (typeof sgSkinModel !== "undefined") {
+        if (skinModel) {
             var skinVal = (root.streamGoalCfg && root.streamGoalCfg.skin) ? root.streamGoalCfg.skin : "digital_core"
-            sgSkinModel.clear()
-            sgSkinModel.append({ value: "digital_core", text: root.loc("stream_goal.ui.skin.digital_core") })
-            sgSkinModel.append({ value: "boss", text: root.loc("stream_goal.ui.skin.boss") })
-            sgSkinModel.append({ value: "reactor", text: root.loc("stream_goal.ui.skin.reactor") })
-            sgSkinModel.append({ value: "rocket", text: root.loc("stream_goal.ui.skin.rocket") })
-            sgSkinModel.append({ value: "vault", text: root.loc("stream_goal.ui.skin.vault") })
-            sgSkinModel.append({ value: "tower", text: root.loc("stream_goal.ui.skin.tower") })
-            sgSkinModel.append({ value: "creature", text: root.loc("stream_goal.ui.skin.creature") })
-            if (typeof sgSkin !== "undefined")
-                sgSkin.currentIndex = root._comboIndexFor(sgSkinModel, skinVal)
+            skinModel.clear()
+            skinModel.append({ value: "digital_core", text: root.loc("stream_goal.ui.skin.digital_core") })
+            skinModel.append({ value: "boss", text: root.loc("stream_goal.ui.skin.boss") })
+            skinModel.append({ value: "reactor", text: root.loc("stream_goal.ui.skin.reactor") })
+            skinModel.append({ value: "rocket", text: root.loc("stream_goal.ui.skin.rocket") })
+            skinModel.append({ value: "vault", text: root.loc("stream_goal.ui.skin.vault") })
+            skinModel.append({ value: "tower", text: root.loc("stream_goal.ui.skin.tower") })
+            skinModel.append({ value: "creature", text: root.loc("stream_goal.ui.skin.creature") })
+            if (skinBox)
+                skinBox.currentIndex = root._comboIndexFor(skinModel, skinVal)
         }
-        if (typeof sgAnimIntensityModel !== "undefined") {
+        if (animModel) {
             var animVal = (root.streamGoalCfg && root.streamGoalCfg.animation_intensity) ? root.streamGoalCfg.animation_intensity : "medium"
-            sgAnimIntensityModel.clear()
-            sgAnimIntensityModel.append({ value: "low", text: root.loc("stream_goal.ui.anim.low") })
-            sgAnimIntensityModel.append({ value: "medium", text: root.loc("stream_goal.ui.anim.medium") })
-            sgAnimIntensityModel.append({ value: "high", text: root.loc("stream_goal.ui.anim.high") })
-            if (typeof sgAnimIntensity !== "undefined")
-                sgAnimIntensity.currentIndex = root._comboIndexFor(sgAnimIntensityModel, animVal)
+            animModel.clear()
+            animModel.append({ value: "low", text: root.loc("stream_goal.ui.anim.low") })
+            animModel.append({ value: "medium", text: root.loc("stream_goal.ui.anim.medium") })
+            animModel.append({ value: "high", text: root.loc("stream_goal.ui.anim.high") })
+            if (animBox)
+                animBox.currentIndex = root._comboIndexFor(animModel, animVal)
         }
-        if (typeof sgResetBehaviorModel !== "undefined") {
+        if (resetModel) {
             var resetVal = (root.streamGoalCfg && root.streamGoalCfg.reset_behavior) ? root.streamGoalCfg.reset_behavior : "after_completion"
-            sgResetBehaviorModel.clear()
-            sgResetBehaviorModel.append({ value: "after_completion", text: root.loc("stream_goal.ui.reset.after_completion") })
-            sgResetBehaviorModel.append({ value: "manual", text: root.loc("stream_goal.ui.reset.manual") })
-            sgResetBehaviorModel.append({ value: "new_stream", text: root.loc("stream_goal.ui.reset.new_stream") })
-            if (typeof sgResetBehavior !== "undefined")
-                sgResetBehavior.currentIndex = root._comboIndexFor(sgResetBehaviorModel, resetVal)
-        }
-        if (typeof srTransitionModel !== "undefined") {
-            var trVal = (root.socialRotatorCfg && root.socialRotatorCfg.transition) ? root.socialRotatorCfg.transition : "glitch_morph"
-            srTransitionModel.clear()
-            srTransitionModel.append({ value: "glitch_morph", text: root.loc("social_rotator.ui.transition.glitch_morph") })
-            srTransitionModel.append({ value: "data_stream", text: root.loc("social_rotator.ui.transition.data_stream") })
-            srTransitionModel.append({ value: "energy_burst", text: root.loc("social_rotator.ui.transition.energy_burst") })
-            srTransitionModel.append({ value: "scan", text: root.loc("social_rotator.ui.transition.scan") })
-            srTransitionModel.append({ value: "pixel_dissolve", text: root.loc("social_rotator.ui.transition.pixel_dissolve") })
-            srTransitionModel.append({ value: "fade", text: root.loc("social_rotator.ui.transition.fade") })
-            if (typeof srTransition !== "undefined")
-                srTransition.currentIndex = root._comboIndexFor(srTransitionModel, trVal)
-        }
-        if (typeof srThemeModel !== "undefined") {
-            var themeVal = (root.socialRotatorCfg && root.socialRotatorCfg.theme) ? root.socialRotatorCfg.theme : "neon_cyber"
-            srThemeModel.clear()
-            srThemeModel.append({ value: "neon_cyber", text: root.loc("social_rotator.ui.theme.neon_cyber") })
-            srThemeModel.append({ value: "synthwave", text: root.loc("social_rotator.ui.theme.synthwave") })
-            srThemeModel.append({ value: "toxic", text: root.loc("social_rotator.ui.theme.toxic") })
-            srThemeModel.append({ value: "ice", text: root.loc("social_rotator.ui.theme.ice") })
-            srThemeModel.append({ value: "amber", text: root.loc("social_rotator.ui.theme.amber") })
-            if (typeof srTheme !== "undefined")
-                srTheme.currentIndex = root._comboIndexFor(srThemeModel, themeVal)
+            resetModel.clear()
+            resetModel.append({ value: "after_completion", text: root.loc("stream_goal.ui.reset.after_completion") })
+            resetModel.append({ value: "manual", text: root.loc("stream_goal.ui.reset.manual") })
+            resetModel.append({ value: "new_stream", text: root.loc("stream_goal.ui.reset.new_stream") })
+            if (resetBox)
+                resetBox.currentIndex = root._comboIndexFor(resetModel, resetVal)
         }
 
         root._loadingStreamGoalCfg = prevSgLoading
+    }
+
+    function _rebuildSocialRotatorComboModels(transitionModel, transitionBox, themeModel, themeBox) {
+        var prevSrLoading = root._loadingSocialRotatorCfg
+        root._loadingSocialRotatorCfg = true
+
+        if (transitionModel) {
+            var trVal = (root.socialRotatorCfg && root.socialRotatorCfg.transition) ? root.socialRotatorCfg.transition : "glitch_morph"
+            transitionModel.clear()
+            transitionModel.append({ value: "glitch_morph", text: root.loc("social_rotator.ui.transition.glitch_morph") })
+            transitionModel.append({ value: "data_stream", text: root.loc("social_rotator.ui.transition.data_stream") })
+            transitionModel.append({ value: "energy_burst", text: root.loc("social_rotator.ui.transition.energy_burst") })
+            transitionModel.append({ value: "scan", text: root.loc("social_rotator.ui.transition.scan") })
+            transitionModel.append({ value: "pixel_dissolve", text: root.loc("social_rotator.ui.transition.pixel_dissolve") })
+            transitionModel.append({ value: "fade", text: root.loc("social_rotator.ui.transition.fade") })
+            if (transitionBox)
+                transitionBox.currentIndex = root._comboIndexFor(transitionModel, trVal)
+        }
+        if (themeModel) {
+            var themeVal = (root.socialRotatorCfg && root.socialRotatorCfg.theme) ? root.socialRotatorCfg.theme : "neon_cyber"
+            themeModel.clear()
+            themeModel.append({ value: "neon_cyber", text: root.loc("social_rotator.ui.theme.neon_cyber") })
+            themeModel.append({ value: "synthwave", text: root.loc("social_rotator.ui.theme.synthwave") })
+            themeModel.append({ value: "toxic", text: root.loc("social_rotator.ui.theme.toxic") })
+            themeModel.append({ value: "ice", text: root.loc("social_rotator.ui.theme.ice") })
+            themeModel.append({ value: "amber", text: root.loc("social_rotator.ui.theme.amber") })
+            if (themeBox)
+                themeBox.currentIndex = root._comboIndexFor(themeModel, themeVal)
+        }
+
         root._loadingSocialRotatorCfg = prevSrLoading
     }
 
-    Connections {
-        target: (typeof navApi !== "undefined" && navApi) ? navApi : null
-        function onRefreshCounterChanged() {
-            root._rebuildSgSrComboModels()
+    // NOTE: this function lives on the root Item, but wfThemeModel/wfTheme/wfIntensityModel/
+    // wfIntensity are ids declared inside the `gatedUi` Component (see the Loader below). QML id
+    // scoping only flows outward (child components can see ancestor scope, never the reverse),
+    // so those ids are NOT resolvable via bare reference from here - hence the explicit
+    // parameters instead of `typeof wfThemeModel !== "undefined"` bare-id lookups, which always
+    // evaluated to false and silently left the combo boxes empty.
+    function _rebuildWebcamFrameComboModels(themeModel, themeBox, intensityModel, intensityBox, frameStyleModel, frameStyleBox) {
+        var prevWfLoading = root._loadingWebcamFrameCfg
+        root._loadingWebcamFrameCfg = true
+
+        if (themeModel) {
+            var wfThemeVal = (root.webcamFrameCfg && root.webcamFrameCfg.theme) ? root.webcamFrameCfg.theme : "neon_cyber"
+            themeModel.clear()
+            themeModel.append({ value: "neon_cyber", text: root.loc("webcam_frame.ui.theme.neon_cyber") })
+            themeModel.append({ value: "synthwave", text: root.loc("webcam_frame.ui.theme.synthwave") })
+            themeModel.append({ value: "toxic", text: root.loc("webcam_frame.ui.theme.toxic") })
+            themeModel.append({ value: "ice", text: root.loc("webcam_frame.ui.theme.ice") })
+            themeModel.append({ value: "amber", text: root.loc("webcam_frame.ui.theme.amber") })
+            themeModel.append({ value: "critical", text: root.loc("webcam_frame.ui.theme.critical") })
+            if (themeBox)
+                themeBox.currentIndex = root._comboIndexFor(themeModel, wfThemeVal)
         }
+        if (intensityModel) {
+            var wfIntensityVal = (root.webcamFrameCfg && root.webcamFrameCfg.intensity) ? root.webcamFrameCfg.intensity : "medium"
+            intensityModel.clear()
+            intensityModel.append({ value: "low", text: root.loc("webcam_frame.ui.intensity.low") })
+            intensityModel.append({ value: "medium", text: root.loc("webcam_frame.ui.intensity.medium") })
+            intensityModel.append({ value: "high", text: root.loc("webcam_frame.ui.intensity.high") })
+            if (intensityBox)
+                intensityBox.currentIndex = root._comboIndexFor(intensityModel, wfIntensityVal)
+        }
+        if (frameStyleModel) {
+            var wfFrameStyleVal = (root.webcamFrameCfg && root.webcamFrameCfg.frame_style) ? root.webcamFrameCfg.frame_style : "primary"
+            frameStyleModel.clear()
+            frameStyleModel.append({ value: "primary", text: root.loc("webcam_frame.ui.frame_style.primary") })
+            frameStyleModel.append({ value: "minimal", text: root.loc("webcam_frame.ui.frame_style.minimal") })
+            frameStyleModel.append({ value: "tactical", text: root.loc("webcam_frame.ui.frame_style.tactical") })
+            frameStyleModel.append({ value: "broadcast", text: root.loc("webcam_frame.ui.frame_style.broadcast") })
+            frameStyleModel.append({ value: "hologram", text: root.loc("webcam_frame.ui.frame_style.hologram") })
+            if (frameStyleBox)
+                frameStyleBox.currentIndex = root._comboIndexFor(frameStyleModel, wfFrameStyleVal)
+        }
+
+        root._loadingWebcamFrameCfg = prevWfLoading
     }
 
     function _saveStreamGoal() {
@@ -985,6 +1052,12 @@ Item {
         if (!api || root.socialRotatorCfg === null) return;
         root.socialRotatorCfgEpoch += 1;
         api.saveSocialRotatorOverlayConfigJson(JSON.stringify(root.socialRotatorCfg));
+    }
+
+    function _saveWebcamFrame() {
+        if (!api || root.webcamFrameCfg === null) return;
+        root.webcamFrameCfgEpoch += 1;
+        api.saveWebcamFrameOverlayConfigJson(JSON.stringify(root.webcamFrameCfg));
     }
 
     function _srMovePlatform(index, delta) {
@@ -1564,6 +1637,14 @@ Item {
                             onCopy: function() { if (api) api.copySocialRotatorOverlayUrl(); }
                             onPlay: function() { if (api) api.previewSocialRotatorOverlay(); }
                             onEdit: function() { root.widgetMode = "social_rotator"; }
+                        }
+
+                        WidgetCard {
+                            title: root.loc("widgets.webcam_frame.title")
+                            urlText: api ? api.webcamFrameOverlayUrlValue : ""
+                            onCopy: function() { if (api) api.copyWebcamFrameOverlayUrl(); }
+                            onPlay: function() { if (api) api.previewWebcamFrameOverlay(); }
+                            onEdit: function() { root.widgetMode = "webcam_frame"; }
                         }
 
                         WidgetCard {
@@ -2274,6 +2355,70 @@ Item {
                             text: "▶"
                             pillFontSize: 12
                             onClicked: if (api) api.previewSocialRotatorOverlay()
+                        }
+
+                        PillButton {
+                            text: root.loc("widgets.common.save")
+                            enabled: root._canSaveCurrentWidget
+                            onClicked: root._saveAndApplyCurrentWidget()
+                        }
+
+                        PillButton {
+                            text: root.loc("widgets.common.back")
+                            onClicked: root.widgetMode = "grid"
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                radius: 14
+                color: cardBase
+                border.width: 1
+                border.color: cardEdge
+                visible: root.widgetMode === "webcam_frame"
+                implicitHeight: editWebcamFrameHeader.implicitHeight + 20
+
+                ColumnLayout {
+                    id: editWebcamFrameHeader
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 12
+                    spacing: 8
+
+                    Text {
+                        text: root.loc("widgets.webcam_frame.title")
+                        color: ink
+                        font.pixelSize: 18
+                        font.bold: true
+                        Layout.fillWidth: true
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+
+                        TextField {
+                            Layout.fillWidth: true
+                            readOnly: true
+                            selectByMouse: true
+                            color: ink
+                            font.pixelSize: 12
+                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                            text: api ? api.webcamFrameOverlayUrlValue : ""
+                        }
+
+                        PillButton {
+                            text: root.loc("widgets.common.copy_url")
+                            onClicked: if (api) api.copyWebcamFrameOverlayUrl()
+                        }
+
+                        PillButton {
+                            text: "▶"
+                            pillFontSize: 12
+                            onClicked: if (api) api.previewWebcamFrameOverlay()
                         }
 
                         PillButton {
@@ -5184,13 +5329,20 @@ Item {
                                 model: ListModel {
                                     id: sgGoalTypeModel
                                 }
-                                Component.onCompleted: root._rebuildSgSrComboModels()
+                                Component.onCompleted: root._rebuildStreamGoalComboModels(sgGoalTypeModel, sgGoalType, sgSkinModel, sgSkin, sgAnimIntensityModel, sgAnimIntensity, sgResetBehaviorModel, sgResetBehavior)
                                 onCurrentIndexChanged: {
                                     if (root._loadingStreamGoalCfg || !root.streamGoalCfg) return;
                                     var v = sgGoalType.currentIndex >= 0 ? sgGoalType.model.get(sgGoalType.currentIndex).value : "followers";
                                     root.streamGoalCfg.goal_type = v;
                                     root._saveStreamGoal();
                                 }
+                            }
+                        }
+
+                        Connections {
+                            target: (typeof navApi !== "undefined" && navApi) ? navApi : null
+                            function onRefreshCounterChanged() {
+                                root._rebuildStreamGoalComboModels(sgGoalTypeModel, sgGoalType, sgSkinModel, sgSkin, sgAnimIntensityModel, sgAnimIntensity, sgResetBehaviorModel, sgResetBehavior)
                             }
                         }
 
@@ -5988,6 +6140,7 @@ Item {
                                 model: ListModel {
                                     id: srTransitionModel
                                 }
+                                Component.onCompleted: root._rebuildSocialRotatorComboModels(srTransitionModel, srTransition, srThemeModel, srTheme)
                                 onCurrentIndexChanged: {
                                     if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
                                     var v = srTransition.currentIndex >= 0
@@ -6011,6 +6164,7 @@ Item {
                                 model: ListModel {
                                     id: srThemeModel
                                 }
+                                Component.onCompleted: root._rebuildSocialRotatorComboModels(srTransitionModel, srTransition, srThemeModel, srTheme)
                                 onCurrentIndexChanged: {
                                     if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
                                     var v = srTheme.currentIndex >= 0
@@ -6019,6 +6173,13 @@ Item {
                                     root.socialRotatorCfg.theme = v;
                                     root._saveSocialRotator();
                                 }
+                            }
+                        }
+
+                        Connections {
+                            target: (typeof navApi !== "undefined" && navApi) ? navApi : null
+                            function onRefreshCounterChanged() {
+                                root._rebuildSocialRotatorComboModels(srTransitionModel, srTransition, srThemeModel, srTheme)
                             }
                         }
 
@@ -6188,6 +6349,237 @@ Item {
                         }
 
                         } // socialRotatorSettings
+
+                        ColumnLayout {
+                            id: webcamFrameSettings
+                            visible: root.widgetMode === "webcam_frame"
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                        Rectangle { Layout.fillWidth: true; height: 1; color: cardEdge; opacity: 0.6 }
+
+                        Text {
+                            text: root.loc("widgets.webcam_frame.settings_title")
+                            color: ink
+                            font.pixelSize: 16
+                            font.bold: true
+                            Layout.fillWidth: true
+                        }
+
+                        Text {
+                            text: root.loc("widgets.webcam_frame.settings_blurb")
+                            color: muted
+                            font.pixelSize: 12
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+
+                        StyledCheckBox {
+                            text: root.loc("widgets.common.enabled")
+                            checked: !root.webcamFrameCfg || root.webcamFrameCfg.enabled !== false
+                            onCheckedChanged: {
+                                if (root._loadingWebcamFrameCfg || !root.webcamFrameCfg) return;
+                                root.webcamFrameCfg.enabled = checked;
+                                root._saveWebcamFrame();
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: root.loc("widgets.common.theme"); color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: wfTheme
+                                Layout.fillWidth: true
+                                textRole: "text"
+                                valueRole: "value"
+                                model: ListModel {
+                                    id: wfThemeModel
+                                }
+                                Component.onCompleted: root._rebuildWebcamFrameComboModels(wfThemeModel, wfTheme, wfIntensityModel, wfIntensity, wfFrameStyleModel, wfFrameStyle)
+                                onCurrentIndexChanged: {
+                                    if (root._loadingWebcamFrameCfg || !root.webcamFrameCfg) return;
+                                    var v = wfTheme.currentIndex >= 0
+                                        ? wfTheme.model.get(wfTheme.currentIndex).value
+                                        : "neon_cyber";
+                                    root.webcamFrameCfg.theme = v;
+                                    root._saveWebcamFrame();
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: root.loc("webcam_frame.ui.intensity_label"); color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: wfIntensity
+                                Layout.fillWidth: true
+                                textRole: "text"
+                                valueRole: "value"
+                                model: ListModel {
+                                    id: wfIntensityModel
+                                }
+                                Component.onCompleted: root._rebuildWebcamFrameComboModels(wfThemeModel, wfTheme, wfIntensityModel, wfIntensity, wfFrameStyleModel, wfFrameStyle)
+                                onCurrentIndexChanged: {
+                                    if (root._loadingWebcamFrameCfg || !root.webcamFrameCfg) return;
+                                    var v = wfIntensity.currentIndex >= 0
+                                        ? wfIntensity.model.get(wfIntensity.currentIndex).value
+                                        : "medium";
+                                    root.webcamFrameCfg.intensity = v;
+                                    root._saveWebcamFrame();
+                                }
+                            }
+                        }
+
+                        Connections {
+                            target: (typeof navApi !== "undefined" && navApi) ? navApi : null
+                            function onRefreshCounterChanged() {
+                                root._rebuildWebcamFrameComboModels(wfThemeModel, wfTheme, wfIntensityModel, wfIntensity, wfFrameStyleModel, wfFrameStyle)
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: root.loc("webcam_frame.ui.frame_style_label"); color: muted; Layout.preferredWidth: 160 }
+                            StyledComboBox {
+                                id: wfFrameStyle
+                                Layout.fillWidth: true
+                                textRole: "text"
+                                valueRole: "value"
+                                model: ListModel {
+                                    id: wfFrameStyleModel
+                                }
+                                Component.onCompleted: root._rebuildWebcamFrameComboModels(wfThemeModel, wfTheme, wfIntensityModel, wfIntensity, wfFrameStyleModel, wfFrameStyle)
+                                onCurrentIndexChanged: {
+                                    if (root._loadingWebcamFrameCfg || !root.webcamFrameCfg) return;
+                                    var v = wfFrameStyle.currentIndex >= 0
+                                        ? wfFrameStyle.model.get(wfFrameStyle.currentIndex).value
+                                        : "primary";
+                                    root.webcamFrameCfg.frame_style = v;
+                                    root._saveWebcamFrame();
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: root.loc("webcam_frame.ui.cam_label"); color: muted; Layout.preferredWidth: 160 }
+                            TextField {
+                                Layout.fillWidth: true
+                                color: ink
+                                font.pixelSize: 12
+                                maximumLength: 24
+                                text: root.webcamFrameCfg ? (root.webcamFrameCfg.cam_label || "") : ""
+                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                onEditingFinished: {
+                                    if (root._loadingWebcamFrameCfg || !root.webcamFrameCfg) return;
+                                    root.webcamFrameCfg.cam_label = text;
+                                    root._saveWebcamFrame();
+                                }
+                            }
+                        }
+
+                        Text { text: root.loc("webcam_frame.ui.effects"); color: ink; font.pixelSize: 13; font.bold: true }
+
+                        StyledCheckBox {
+                            text: root.loc("webcam_frame.ui.energy_flow")
+                            checked: !root.webcamFrameCfg || root.webcamFrameCfg.enable_energy_flow !== false
+                            onCheckedChanged: {
+                                if (root._loadingWebcamFrameCfg || !root.webcamFrameCfg) return;
+                                root.webcamFrameCfg.enable_energy_flow = checked;
+                                root._saveWebcamFrame();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: root.loc("webcam_frame.ui.breathing_glow")
+                            checked: !root.webcamFrameCfg || root.webcamFrameCfg.enable_breathing_glow !== false
+                            onCheckedChanged: {
+                                if (root._loadingWebcamFrameCfg || !root.webcamFrameCfg) return;
+                                root.webcamFrameCfg.enable_breathing_glow = checked;
+                                root._saveWebcamFrame();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: root.loc("webcam_frame.ui.light_sweep")
+                            checked: !root.webcamFrameCfg || root.webcamFrameCfg.enable_light_sweep !== false
+                            onCheckedChanged: {
+                                if (root._loadingWebcamFrameCfg || !root.webcamFrameCfg) return;
+                                root.webcamFrameCfg.enable_light_sweep = checked;
+                                root._saveWebcamFrame();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: root.loc("webcam_frame.ui.micro_glitch")
+                            checked: !root.webcamFrameCfg || root.webcamFrameCfg.enable_micro_glitch !== false
+                            onCheckedChanged: {
+                                if (root._loadingWebcamFrameCfg || !root.webcamFrameCfg) return;
+                                root.webcamFrameCfg.enable_micro_glitch = checked;
+                                root._saveWebcamFrame();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: root.loc("webcam_frame.ui.sparks")
+                            checked: !root.webcamFrameCfg || root.webcamFrameCfg.enable_sparks !== false
+                            onCheckedChanged: {
+                                if (root._loadingWebcamFrameCfg || !root.webcamFrameCfg) return;
+                                root.webcamFrameCfg.enable_sparks = checked;
+                                root._saveWebcamFrame();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: root.loc("webcam_frame.ui.crt")
+                            checked: !root.webcamFrameCfg || root.webcamFrameCfg.enable_crt !== false
+                            onCheckedChanged: {
+                                if (root._loadingWebcamFrameCfg || !root.webcamFrameCfg) return;
+                                root.webcamFrameCfg.enable_crt = checked;
+                                root._saveWebcamFrame();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: root.loc("webcam_frame.ui.status_indicator")
+                            checked: !root.webcamFrameCfg || root.webcamFrameCfg.enable_status_indicator !== false
+                            onCheckedChanged: {
+                                if (root._loadingWebcamFrameCfg || !root.webcamFrameCfg) return;
+                                root.webcamFrameCfg.enable_status_indicator = checked;
+                                root._saveWebcamFrame();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: root.loc("webcam_frame.ui.boot_animation")
+                            checked: !root.webcamFrameCfg || root.webcamFrameCfg.enable_boot_animation !== false
+                            onCheckedChanged: {
+                                if (root._loadingWebcamFrameCfg || !root.webcamFrameCfg) return;
+                                root.webcamFrameCfg.enable_boot_animation = checked;
+                                root._saveWebcamFrame();
+                            }
+                        }
+                        StyledCheckBox {
+                            text: root.loc("webcam_frame.ui.shutdown_animation")
+                            checked: !root.webcamFrameCfg || root.webcamFrameCfg.enable_shutdown_animation !== false
+                            onCheckedChanged: {
+                                if (root._loadingWebcamFrameCfg || !root.webcamFrameCfg) return;
+                                root.webcamFrameCfg.enable_shutdown_animation = checked;
+                                root._saveWebcamFrame();
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: root.loc("widgets.common.scale_percent"); color: muted; Layout.preferredWidth: 160 }
+                            VarMapSpinBox {
+                                syncGroup: "webcam_frame"
+                                hostMap: root.webcamFrameCfg
+                                hostKey: "scale_percent"
+                                hostDefault: 100
+                                from: 40; to: 250; stepSize: 5
+                            }
+                        }
+
+                        } // webcamFrameSettings
 
                         ColumnLayout {
                             id: actionsSettings
@@ -6798,6 +7190,7 @@ Item {
                     root._loadingStreamGoalCfg = false;
                     root._loadingLiveLeaderboardCfg = false;
                     root._loadingSocialRotatorCfg = false;
+                    root._loadingWebcamFrameCfg = false;
                 }
                 try {
                 // This handler lives on the Loader's inner ColumnLayout, not on root Item:
@@ -6814,6 +7207,7 @@ Item {
                 root._loadingStreamGoalCfg = true;
                 root._loadingLiveLeaderboardCfg = true;
                 root._loadingSocialRotatorCfg = true;
+                root._loadingWebcamFrameCfg = true;
 
                 var obj = api.loadChatConfigMap();
                 if (!obj || typeof obj !== "object")
@@ -6991,7 +7385,17 @@ Item {
                     if (typeof srTheme !== "undefined")
                         srTheme.currentIndex = srIndexFor(srTheme.model, root.socialRotatorCfg.theme || "neon_cyber");
                 }
-                root._rebuildSgSrComboModels();
+                if (typeof sgGoalTypeModel !== "undefined")
+                    root._rebuildStreamGoalComboModels(sgGoalTypeModel, sgGoalType, sgSkinModel, sgSkin, sgAnimIntensityModel, sgAnimIntensity, sgResetBehaviorModel, sgResetBehavior);
+                if (typeof srTransitionModel !== "undefined")
+                    root._rebuildSocialRotatorComboModels(srTransitionModel, srTransition, srThemeModel, srTheme);
+                var wfobj = api.loadWebcamFrameOverlayConfigMap();
+                if (!wfobj || typeof wfobj !== "object")
+                    wfobj = {};
+                root.webcamFrameCfg = JSON.parse(JSON.stringify(wfobj));
+                root.webcamFrameCfgEpoch += 1;
+                if (typeof wfThemeModel !== "undefined")
+                    root._rebuildWebcamFrameComboModels(wfThemeModel, wfTheme, wfIntensityModel, wfIntensity, wfFrameStyleModel, wfFrameStyle);
                 if (root.communityWorldCfg) {
                     var cwIndexFor = function(mdl, val) {
                         for (var ci = 0; ci < mdl.count; ++ci) {

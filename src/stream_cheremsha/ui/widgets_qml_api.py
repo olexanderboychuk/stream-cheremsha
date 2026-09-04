@@ -88,6 +88,12 @@ from stream_cheremsha.overlays.top_likers_overlay_config import (
     top_likers_overlay_config_to_json_text,
 )
 from stream_cheremsha.overlays.ui_locale import load_ui_locale as _ui_locale
+from stream_cheremsha.overlays.webcam_frame_overlay_config import (
+    load_webcam_frame_overlay_config,
+    save_webcam_frame_overlay_config,
+    webcam_frame_overlay_config_from_json_text,
+    webcam_frame_overlay_config_to_json_text,
+)
 
 
 def _sorted_system_font_families() -> list[str]:
@@ -195,10 +201,12 @@ class WidgetsQmlApi(QObject):
         self._live_leaderboard_instance = str(online_instance or "main").strip() or "main"
         self._social_rotator_instance = str(online_instance or "main").strip() or "main"
         self._community_world_instance = str(online_instance or "main").strip() or "main"
+        self._webcam_frame_instance = str(online_instance or "main").strip() or "main"
         self._battle_host: Any | None = None
         self._stream_goal_controller: Any | None = None
         self._live_leaderboard_controller: Any | None = None
         self._social_rotator_controller: Any | None = None
+        self._webcam_frame_controller: Any | None = None
         self._system_font_families: list[str] | None = None
 
     def set_battle_host(self, host: Any) -> None:
@@ -212,6 +220,9 @@ class WidgetsQmlApi(QObject):
 
     def set_social_rotator_controller(self, controller: Any) -> None:
         self._social_rotator_controller = controller
+
+    def set_webcam_frame_controller(self, controller: Any) -> None:
+        self._webcam_frame_controller = controller
 
     def _current_tiktok_anchor_username(self) -> str:
         host = self._battle_host
@@ -256,6 +267,7 @@ class WidgetsQmlApi(QObject):
         self.liveLeaderboardOverlayUrlChanged.emit()
         self.socialRotatorOverlayUrlChanged.emit()
         self.streamGoalOverlayUrlChanged.emit()
+        self.webcamFrameOverlayUrlChanged.emit()
 
     @Property(str, notify=chatOverlayUrlChanged)
     def chatOverlayUrlValue(self) -> str:  # noqa: ANN201 - PySide pattern
@@ -644,6 +656,45 @@ class WidgetsQmlApi(QObject):
                 "viewers_by_platform": {"tiktok": 100, "twitch": 40, "kick": 12},
                 "viewers_total": 152,
             },
+        }
+        self._publish_patch(topic=topic, patch=patch)
+
+    webcamFrameOverlayUrlChanged = Signal()
+
+    @Property(str, notify=webcamFrameOverlayUrlChanged)
+    def webcamFrameOverlayUrlValue(self) -> str:  # noqa: ANN201 - PySide pattern
+        return self.webcamFrameOverlayUrl()
+
+    @Slot(result=str)
+    def webcamFrameOverlayUrl(self) -> str:
+        if not self._base:
+            return ""
+        return f"{self._base}/overlay/webcam_frame?instance={self._webcam_frame_instance}"
+
+    @Slot()
+    def copyWebcamFrameOverlayUrl(self) -> None:
+        url = self.webcamFrameOverlayUrl()
+        if not url:
+            return
+        clip = QGuiApplication.clipboard()
+        if clip is None:
+            return
+        clip.setText(url)
+
+    @Slot()
+    def previewWebcamFrameOverlay(self) -> None:
+        topic = f"overlay:webcam_frame:{self._webcam_frame_instance}"
+        if self._webcam_frame_controller is not None:
+            try:
+                patch = self._webcam_frame_controller.initial_state()
+                self._publish_patch(topic=topic, patch=patch)
+                return
+            except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+                _LOG.warning("previewWebcamFrameOverlay controller state failed: %s", exc)
+        cfg = load_webcam_frame_overlay_config()
+        patch = {
+            "config": json.loads(webcam_frame_overlay_config_to_json_text(cfg)),
+            "locale": _ui_locale(),
         }
         self._publish_patch(topic=topic, patch=patch)
 
@@ -1516,6 +1567,64 @@ class WidgetsQmlApi(QObject):
             return
         _LOG.info("widgets ConfigMap save: social_rotator ok json_len=%d", len(txt))
         self.saveSocialRotatorOverlayConfigJson(txt)
+
+    @Slot(result="QVariant")
+    def loadWebcamFrameOverlayConfigMap(self) -> dict[str, Any]:
+        cfg = load_webcam_frame_overlay_config()
+        return json.loads(webcam_frame_overlay_config_to_json_text(cfg))
+
+    @Slot(result=str)
+    def loadWebcamFrameOverlayConfigJson(self) -> str:
+        cfg = load_webcam_frame_overlay_config()
+        return webcam_frame_overlay_config_to_json_text(cfg)
+
+    @Slot(str)
+    def saveWebcamFrameOverlayConfigJson(self, cfg_json: str) -> None:
+        txt = (cfg_json or "").strip()
+        if not txt:
+            return
+        try:
+            cfg = webcam_frame_overlay_config_from_json_text(txt)
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            _LOG.warning(
+                "saveWebcamFrameOverlayConfigJson: rejected payload (%s): %s",
+                exc.__class__.__name__,
+                exc,
+            )
+            return
+        save_webcam_frame_overlay_config(cfg)
+        _LOG.info("widgets overlay persisted: webcam_frame")
+        if self._webcam_frame_controller is not None:
+            try:
+                self._webcam_frame_controller.reload_config()
+            except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+                _LOG.warning("Failed to reload webcam_frame_controller config: %s", exc)
+        if self._pubsub is not None:
+            topic = f"overlay:webcam_frame:{self._webcam_frame_instance}"
+            if self._webcam_frame_controller is not None:
+                try:
+                    patch = self._webcam_frame_controller.initial_state()
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    patch = {"config": json.loads(webcam_frame_overlay_config_to_json_text(cfg))}
+            else:
+                patch = {"config": json.loads(webcam_frame_overlay_config_to_json_text(cfg))}
+            self._publish_patch(topic=topic, patch=patch)
+
+    @Slot(QJSValue)
+    def saveWebcamFrameOverlayConfigMap(self, cfg_js: QJSValue) -> None:
+        plain = _qml_js_to_plain_cfg(cfg_js)
+        _LOG.info("widgets ConfigMap save: webcam_frame (plain_type=%s)", type(plain).__name__)
+        if plain is None:
+            _LOG.warning("widgets ConfigMap save: webcam_frame rejected (null/undefined)")
+            return
+        txt = _qml_cfg_map_to_json_text(plain)
+        if not txt or txt == "{}":
+            _LOG.warning(
+                "widgets ConfigMap save: webcam_frame rejected empty_or_non_serializable"
+            )
+            return
+        _LOG.info("widgets ConfigMap save: webcam_frame ok json_len=%d", len(txt))
+        self.saveWebcamFrameOverlayConfigJson(txt)
 
 
 class WidgetsWindowQmlApi(QObject):

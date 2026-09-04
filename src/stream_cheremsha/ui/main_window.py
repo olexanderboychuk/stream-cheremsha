@@ -173,6 +173,7 @@ from stream_cheremsha.overlays.tunnel_install import (
     provider_needs_cli,
     tunnel_cli_title,
 )
+from stream_cheremsha.overlays.webcam_frame_controller import WebcamFrameController
 from stream_cheremsha.paths import stream_cheremsha_root
 from stream_cheremsha.persistence.battle_royale_wins_sqlite import (
     fetch_hall_of_fame,
@@ -860,6 +861,12 @@ class MainWindow(FramelessWindow):
             instance="main",
             parent=self,
         )
+        self._webcam_frame = WebcamFrameController(
+            pubsub=self._overlay_server.pubsub(),
+            get_locale=lambda: self._locale,
+            instance="main",
+            parent=self,
+        )
         self._qml_pages_loaded: set[int] = set()
         self._active_qml_stack_index: int | None = None
         self._tiktok_username = QLineEdit()
@@ -1118,6 +1125,7 @@ class MainWindow(FramelessWindow):
         self._widgets_qml_api.set_stream_goal_controller(self._stream_goal)
         self._widgets_qml_api.set_live_leaderboard_controller(self._live_leaderboard)
         self._widgets_qml_api.set_social_rotator_controller(self._social_rotator)
+        self._widgets_qml_api.set_webcam_frame_controller(self._webcam_frame)
         self._donations_qml_api.set_donation_listener(self._on_external_donation)
         self._overlay_tunnel_qml_api = OverlayTunnelQmlApi(self)
         self._qml_widgets = QQuickWidget(self)
@@ -2905,6 +2913,8 @@ class MainWindow(FramelessWindow):
         self._schedule_battle_overlay_publish()
         if hasattr(self, "_live_leaderboard") and self._live_leaderboard is not None:
             self._live_leaderboard.schedule_publish()
+        if hasattr(self, "_webcam_frame") and self._webcam_frame is not None:
+            self._webcam_frame.schedule_publish()
 
     def _retranslate_ui(self) -> None:
         self.setWindowTitle(self._tr("app.window_title"))
@@ -6384,6 +6394,9 @@ class MainWindow(FramelessWindow):
             self._community_world.set_pubsub(self._overlay_server.pubsub())
             self._community_world.set_event_loop(self._asyncio_loop)
             self._community_world.start()
+            self._webcam_frame.set_pubsub(self._overlay_server.pubsub())
+            self._webcam_frame.set_event_loop(self._asyncio_loop)
+            self._webcam_frame.start()
             await self.apply_overlay_tunnel()
             self._schedule_king_overlay_publish()
             self._publish_battle_overlay_patch_sync()
@@ -6909,6 +6922,11 @@ class MainWindow(FramelessWindow):
                 self._community_world.stop()
             except (OSError, RuntimeError, ValueError, TypeError) as e:
                 logger.exception("Shutdown step failed (community_world.stop): %s", e)
+
+            try:
+                self._webcam_frame.stop()
+            except (OSError, RuntimeError, ValueError, TypeError) as e:
+                logger.exception("Shutdown step failed (webcam_frame.stop): %s", e)
 
             try:
                 self._queue_timer.stop()

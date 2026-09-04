@@ -19,6 +19,7 @@ from stream_cheremsha.overlays.stream_goal_overlay import StreamGoalOverlayType
 from stream_cheremsha.overlays.stream_pet_overlay import StreamPetOverlayType
 from stream_cheremsha.overlays.top_gifters_overlay import TopGiftersOverlayType
 from stream_cheremsha.overlays.top_likers_overlay import TopLikersOverlayType
+from stream_cheremsha.overlays.webcam_frame_overlay import WebcamFrameOverlayType
 
 
 class UnknownOverlayTypeError(KeyError):
@@ -143,6 +144,7 @@ class OverlayRegistry:
         self.register(SocialRotatorOverlayType())
         self.register(CommunityWorldOverlayType())
         self.register(ActionsOverlayType())
+        self.register(WebcamFrameOverlayType())
 
     def register(self, t: OverlayType) -> None:
         self._types[str(t.type)] = t

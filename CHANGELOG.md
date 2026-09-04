@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **CAM // LINK — Live Webcam Frame** overlay (`/overlay/webcam_frame`): a decorative animated cyberpunk HUD frame for surrounding a webcam/browser-source area in OBS. The center stays fully transparent for the camera; all effects (layered neon rails, unique corners, perimeter energy flow, breathing glow, rare light sweep, micro-glitch, sparks, boot/shutdown sequences) live on the border only.
+- 6 theme presets (Neon Cyber, Synthwave, Toxic System, Ice, Amber Core, Critical), 3 effect intensities, and per-effect toggles (energy flow, breathing glow, light sweep, micro glitch, sparks, CRT, status indicator, boot/shutdown animation), plus scale % and a custom cam label — all editable from the Widgets editor.
+- Respects `prefers-reduced-motion` and keeps particle/glitch effects bounded for long-running streams.
+
 ## [0.17.0] — 2026-09-04
 
 ### Added
