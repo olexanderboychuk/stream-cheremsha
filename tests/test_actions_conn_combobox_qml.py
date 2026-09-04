@@ -1,4 +1,4 @@
-"""QML smoke: ComboBox must show displayText with object model + textRole (ConnComboBox contract)."""
+"""QML smoke: ComboBox displayText with object model + textRole (ConnComboBox)."""
 
 from __future__ import annotations
 

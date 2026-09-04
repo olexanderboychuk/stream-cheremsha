@@ -7,7 +7,7 @@ import json
 import pytest
 from PySide6.QtWidgets import QApplication, QWidget
 
-from stream_cheremsha.actions.models import ruleset_from_json_text, ruleset_to_json_text, RuleV1
+from stream_cheremsha.actions.models import RuleV1, ruleset_from_json_text, ruleset_to_json_text
 from stream_cheremsha.actions.trigger_events import (
     build_trigger_event,
     kind_values_for_platform,

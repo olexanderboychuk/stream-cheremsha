@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import json
-import random
 import time
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from typing import Any, Literal
-
 
 GoalType = Literal["followers", "likes", "gifts", "shares", "comments"]
 SkinType = Literal["digital_core", "boss", "reactor", "rocket", "vault", "tower", "creature"]
@@ -77,12 +74,14 @@ class StreamGoalSession:
         try:
             parsed = json.loads(cfg.milestones_json)
             for m in parsed:
-                milestones.append(Milestone(
-                    percent=int(m.get("percent", 0)),
-                    label=str(m.get("label", "")),
-                    effect=str(m.get("effect", "pulse")),
-                    triggered=False,
-                ))
+                milestones.append(
+                    Milestone(
+                        percent=int(m.get("percent", 0)),
+                        label=str(m.get("label", "")),
+                        effect=str(m.get("effect", "pulse")),
+                        triggered=False,
+                    )
+                )
         except (json.JSONDecodeError, TypeError, ValueError):
             milestones = [
                 Milestone(25, "CORE ONLINE", "pulse"),
@@ -134,10 +133,13 @@ class StreamGoalSession:
             "enable_glitch": self.enable_glitch,
             "enable_particles": self.enable_particles,
             "enable_sound": self.enable_sound,
-            "milestones_json": json.dumps([
-                {"percent": m.percent, "label": m.label, "effect": m.effect}
-                for m in self.milestones
-            ], ensure_ascii=False),
+            "milestones_json": json.dumps(
+                [
+                    {"percent": m.percent, "label": m.label, "effect": m.effect}
+                    for m in self.milestones
+                ],
+                ensure_ascii=False,
+            ),
             "gift_coin_per_progress": self.gift_coin_per_progress,
             "combo_window_sec": self.combo_window_sec,
             "reset_behavior": self.reset_behavior,
@@ -192,11 +194,14 @@ class StreamGoalSession:
         for m in self.milestones:
             if not m.triggered and pct >= m.percent:
                 m.triggered = True
-                self._emit("milestone_reached", {
-                    "percent": m.percent,
-                    "label": m.label,
-                    "effect": m.effect,
-                })
+                self._emit(
+                    "milestone_reached",
+                    {
+                        "percent": m.percent,
+                        "label": m.label,
+                        "effect": m.effect,
+                    },
+                )
 
     def _check_critical_state(self) -> None:
         pct = self.progress_percent
@@ -213,10 +218,13 @@ class StreamGoalSession:
         if self.is_complete and not self.is_completing:
             self.is_completing = True
             self.completion_anim_seq += 1
-            self._emit("goal_complete", {
-                "anim_seq": self.completion_anim_seq,
-                "next_target": self.next_target_value,
-            })
+            self._emit(
+                "goal_complete",
+                {
+                    "anim_seq": self.completion_anim_seq,
+                    "next_target": self.next_target_value,
+                },
+            )
             return True
         return False
 
@@ -233,11 +241,14 @@ class StreamGoalSession:
             for m in self.milestones:
                 m.triggered = False
             self.is_completing = False
-            self._emit("goal_reset", {
-                "new_target": self.target_value,
-                "next_target": self.next_target_value,
-                "core_level": self.core_level,
-            })
+            self._emit(
+                "goal_reset",
+                {
+                    "new_target": self.target_value,
+                    "next_target": self.next_target_value,
+                    "core_level": self.core_level,
+                },
+            )
         elif self.reset_behavior == "manual":
             self.is_completing = True
         elif self.reset_behavior == "new_stream":
@@ -249,13 +260,17 @@ class StreamGoalSession:
         self._check_combo_expiration(now)
         self._check_critical_state()
 
-    def add_progress(self, amount: int, event_type: str, metadata: dict[str, Any] | None = None) -> None:
+    def add_progress(
+        self,
+        amount: int,
+        event_type: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
         if amount <= 0:
             return
         now = time.time()
         self.last_event_time = now
 
-        old_progress = self.progress
         self.current_value = min(self.target_value, self.current_value + amount)
 
         self._update_combo(now)
@@ -303,12 +318,25 @@ class StreamGoalSession:
             return
         self.add_progress(count, "share", metadata)
 
-    def add_gift(self, sender: str, gift_name: str, count: int, coins_each: int, metadata: dict[str, Any] | None = None) -> None:
+    def add_gift(
+        self,
+        sender: str,
+        gift_name: str,
+        count: int,
+        coins_each: int,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
         if self.goal_type != "gifts":
             return
         total_coins = coins_each * count
         progress = max(1, total_coins // self.gift_coin_per_progress)
-        meta = {"sender": sender, "gift_name": gift_name, "count": count, "coins_each": coins_each, "total_coins": total_coins}
+        meta = {
+            "sender": sender,
+            "gift_name": gift_name,
+            "count": count,
+            "coins_each": coins_each,
+            "total_coins": total_coins,
+        }
         if metadata:
             meta.update(metadata)
         self.add_progress(progress, "gift", meta)
@@ -327,22 +355,28 @@ class StreamGoalSession:
         self.combo_count = 0
         self.combo_expires_at = 0.0
         self.is_completing = False
-        self._emit("goal_reset", {
-            "new_target": self.target_value,
-            "next_target": self.next_target_value,
-            "core_level": self.core_level,
-        })
+        self._emit(
+            "goal_reset",
+            {
+                "new_target": self.target_value,
+                "next_target": self.next_target_value,
+                "core_level": self.core_level,
+            },
+        )
 
     def reset_manual(self) -> None:
         self.current_value = 0
         for m in self.milestones:
             m.triggered = False
         self.is_completing = False
-        self._emit("goal_reset", {
-            "new_target": self.target_value,
-            "next_target": self.next_target_value,
-            "core_level": self.core_level,
-        })
+        self._emit(
+            "goal_reset",
+            {
+                "new_target": self.target_value,
+                "next_target": self.next_target_value,
+                "core_level": self.core_level,
+            },
+        )
 
     def to_overlay_dict(self) -> dict[str, Any]:
         return {
@@ -367,7 +401,12 @@ class StreamGoalSession:
             "is_completing": self.is_completing,
             "completion_anim_seq": self.completion_anim_seq,
             "milestones": [
-                {"percent": m.percent, "label": m.label, "effect": m.effect, "triggered": m.triggered}
+                {
+                    "percent": m.percent,
+                    "label": m.label,
+                    "effect": m.effect,
+                    "triggered": m.triggered,
+                }
                 for m in self.milestones
             ],
             "visual_events": [

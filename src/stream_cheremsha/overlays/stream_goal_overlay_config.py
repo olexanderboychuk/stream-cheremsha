@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, replace
-from typing import Any
 
 from PySide6.QtCore import QSettings
-
 
 STREAM_GOAL_OVERLAY_CONFIG_SCHEMA_VERSION = 1
 STREAM_GOAL_OVERLAY_CONFIG_QSETTINGS_KEY = "overlays/stream_goal/main/config_json"
@@ -189,18 +187,36 @@ def stream_goal_overlay_config_from_json_text(text: str) -> StreamGoalOverlayCon
         accent_color=_ensure_hex_color(d.get("accent_color"), default=defaults.accent_color),
         animation_intensity=_validate_animation_intensity(d.get("animation_intensity")),
         scale_percent=_validate_scale_percent(d.get("scale_percent")),
-        enable_event_animations=_ensure_bool(d.get("enable_event_animations"), default=defaults.enable_event_animations),
+        enable_event_animations=_ensure_bool(
+            d.get("enable_event_animations"),
+            default=defaults.enable_event_animations,
+        ),
         enable_combo=_ensure_bool(d.get("enable_combo"), default=defaults.enable_combo),
-        enable_milestones=_ensure_bool(d.get("enable_milestones"), default=defaults.enable_milestones),
-        enable_completion_animation=_ensure_bool(d.get("enable_completion_animation"), default=defaults.enable_completion_animation),
+        enable_milestones=_ensure_bool(
+            d.get("enable_milestones"),
+            default=defaults.enable_milestones,
+        ),
+        enable_completion_animation=_ensure_bool(
+            d.get("enable_completion_animation"),
+            default=defaults.enable_completion_animation,
+        ),
         enable_glitch=_ensure_bool(d.get("enable_glitch"), default=defaults.enable_glitch),
         enable_particles=_ensure_bool(d.get("enable_particles"), default=defaults.enable_particles),
         enable_sound=_ensure_bool(d.get("enable_sound"), default=defaults.enable_sound),
         milestones_json=_validate_milestones_json(d.get("milestones_json")),
-        gift_coin_per_progress=max(1, _ensure_int(d.get("gift_coin_per_progress"), default=defaults.gift_coin_per_progress)),
-        combo_window_sec=max(0.5, min(30.0, _ensure_float(d.get("combo_window_sec"), default=defaults.combo_window_sec))),
+        gift_coin_per_progress=max(
+            1,
+            _ensure_int(d.get("gift_coin_per_progress"), default=defaults.gift_coin_per_progress),
+        ),
+        combo_window_sec=max(
+            0.5,
+            min(30.0, _ensure_float(d.get("combo_window_sec"), default=defaults.combo_window_sec)),
+        ),
         reset_behavior=_validate_reset_behavior(d.get("reset_behavior")),
-        next_target_value=max(1, _ensure_int(d.get("next_target_value"), default=defaults.next_target_value)),
+        next_target_value=max(
+            1,
+            _ensure_int(d.get("next_target_value"), default=defaults.next_target_value),
+        ),
     )
 
 
@@ -256,7 +272,8 @@ def load_stream_goal_overlay_config(settings: QSettings | None = None) -> Stream
             except (ValueError, TypeError, json.JSONDecodeError):
                 return stream_goal_overlay_config_defaults()
             s.setValue(
-                STREAM_GOAL_OVERLAY_CONFIG_QSETTINGS_KEY, stream_goal_overlay_config_to_json_text(cfg)
+                STREAM_GOAL_OVERLAY_CONFIG_QSETTINGS_KEY,
+                stream_goal_overlay_config_to_json_text(cfg),
             )
             return cfg
         return stream_goal_overlay_config_defaults()
