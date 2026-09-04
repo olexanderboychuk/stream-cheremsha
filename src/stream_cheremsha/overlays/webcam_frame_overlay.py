@@ -525,6 +525,52 @@ body { position: relative; }
   .corner-node { animation: none !important; opacity: .8; }
   .root.style-hologram .corner-bracket { animation: none !important; opacity: 0.75; }
 }
+
+/* ---------- ACTIVITY STATE MODULATION ---------- */
+.root { transition: --wf-glow-a 0.3s ease, --wf-loop-dur 0.3s ease; }
+
+/* Glow opacity modulated by activity score (0-100),
+   blended with the intensity base via clamp(). */
+.wf-glow-ambient {
+  box-shadow: inset 0 0 calc(38px * var(--wf-scale))
+    rgba(var(--wf-accent-rgb),
+      calc(var(--wf-glow-a) * 0.16 * clamp(0.5, 0.5 + var(--wf-activity-score) * 0.015, 1.0)));
+}
+
+/* Activity state classes — toggled via JS.  These override the
+   intensity-* classes when active (they appear later in the
+   stylesheet, so same-specificity rules win when present). */
+.root.activity-idle     { --wf-loop-dur: 15s; --wf-glow-a: 0.22; }
+.root.activity-active   { --wf-loop-dur: 12s; --wf-glow-a: 0.30; }
+.root.activity-hyped    { --wf-loop-dur: 9s;  --wf-glow-a: 0.42; }
+.root.activity-overdrive{ --wf-loop-dur: 7s;  --wf-glow-a: 0.52; }
+.root.activity-surge    { --wf-loop-dur: 5s;  --wf-glow-a: 0.65; }
+
+/* Surge transient — applied briefly by JS; overrides loop-dur/glow
+   for the duration of the surge, then the activity-state class
+   resumes. */
+.root .surge-active .rail-energy {
+  animation: wfSurgePulse 0.6s ease-out forwards;
+}
+.root .surge-active .corner-pulse {
+  animation: wfSurgeCorner 0.6s ease-out forwards;
+}
+@keyframes wfSurgePulse {
+  0%   { opacity: 0.4; transform: scale(0.8); }
+  50%  { opacity: 1;  transform: scale(1.2); }
+  100% { opacity: 0.4; transform: scale(0.8); }
+}
+@keyframes wfSurgeCorner {
+  0%   { opacity: 0.3; }
+  50%  { opacity: 1; }
+  100% { opacity: 0.3; }
+}
+
+/* Micro-glitch probability modulated by activity score */
+.root:not(.glitch-active) .rail-accent,
+.root:not(.glitch-active) .corner-bracket {
+  transition: filter 0.08s ease;
+}
 """
 
 _DOCUMENT_TEMPLATE = """<!doctype html>
@@ -641,6 +687,11 @@ let bootStarted = false;
 let hasBooted = false;
 let isOnline = false;
 
+let activityScore = 0;          // 0-100 from state/patch, drives visual modulation
+let currentState = "idle";      // idle | active | hyped | overdrive | surge
+let lastEmittedState = "idle"; // hysteresis buffer prevents jittery flapping
+const hysteresis = 3;          // activity-score points needed to cross state boundary
+
 function tr(key) {
   const pack = I18N[locale] || I18N.uk || {};
   const v = pack[key];
@@ -653,6 +704,51 @@ function tr(key) {
 function clearBootTimers() {
   bootTimers.forEach(function(id) { clearTimeout(id); });
   bootTimers = [];
+}
+
+function updateActivityState(score) {
+  // Clamp and store the score.
+  activityScore = Math.max(0, Math.min(100, Number(score) || 0));
+
+  // Determine the conceptual state from the score.
+  let newState;
+  if (activityScore <= 20) newState = "idle";
+  else if (activityScore <= 45) newState = "active";
+  else if (activityScore <= 70) newState = "hyped";
+  else if (activityScore <= 90) newState = "overdrive";
+  else newState = "surge";
+
+  // Hysteresis: only transition if the score crosses a threshold with buffer.
+  const crossed =
+    newState !== lastEmittedState &&
+    // IDLE -> ACTIVE: score must exceed 20 + hysteresis
+    (newState === "active" && activityScore > 20 + hysteresis) ||
+    // ACTIVE -> IDLE: score must fall below 20 - hysteresis
+    (newState === "idle" && activityScore < 20 - hysteresis) ||
+    // ACTIVE -> HYPED: score must exceed 45 + hysteresis
+    (newState === "hyped" && activityScore > 45 + hysteresis) ||
+    // HYPED -> ACTIVE: score must fall below 45 - hysteresis
+    (newState === "active" && activityScore < 45 - hysteresis) ||
+    // HYPED -> OVERDRIVE: score must exceed 70 + hysteresis
+    (newState === "overdrive" && activityScore > 70 + hysteresis) ||
+    // OVERDRIVE -> HYPED: score must fall below 70 - hysteresis
+    (newState === "hyped" && activityScore < 70 - hysteresis) ||
+    // OVERDRIVE -> SURGE: score must exceed 90 + hysteresis
+    (newState === "surge" && activityScore > 90 + hysteresis) ||
+    // SURGE -> OVERDRIVE: score must fall below 90 - hysteresis
+    (newState === "overdrive" && activityScore < 90 - hysteresis);
+
+  if (!crossed) return;
+
+  // Remove the previous state class and emit the new one.
+  rootEl.classList.remove(`activity-${lastEmittedState}`);
+  lastEmittedState = newState;
+  rootEl.classList.add(`activity-${newState}`);
+
+  // If we just entered SURGE, trigger the transient surge effect.
+  if (newState === "surge") {
+    triggerSurgeEffect();
+  }
 }
 
 function applyTheme() {
@@ -726,6 +822,20 @@ function triggerMicroGlitch() {
   setTimeout(function() { rootEl.classList.remove('glitch-active'); }, dur);
 }
 
+function triggerSurgeEffect() {
+  // Add surge-active class on a transient wrapper; the CSS keyframes
+  // will pulse briefly, then the activity-state class resumes.
+  rootEl.classList.add('surge-active');
+  // Remove surge transient after the animation completes (600ms),
+  // then return to the appropriate activity state.
+  const surgeTimeout = setTimeout(function() {
+    rootEl.classList.remove('surge-active');
+    // Re-evaluate state based on the current score so we return
+    // to the correct steady state (overdrive / hype / etc.).
+    updateActivityState(activityScore);
+  }, 600);
+}
+
 function scheduleSparks() {
   if (sparkInterval) clearInterval(sparkInterval);
   sparkInterval = setInterval(function() {
@@ -760,6 +870,65 @@ function fireSpark() {
     idle.removeEventListener('animationend', onEnd);
   };
   idle.addEventListener('animationend', onEnd);
+}
+
+function handleLikeMicroReaction() {
+  // Very small: a tiny pulse on a nearby corner segment.
+  // High-frequency likes are aggregated, so this fires once per call.
+  const corner = rootEl.querySelector('.corner-tl, .corner-tr, .corner-bl, .corner-br');
+  if (!corner) return;
+  const seg = corner.querySelector('.corner-pulse');
+  if (!seg) return;
+  seg.style.opacity = '1';
+  seg.style.transition = 'opacity 0.15s ease';
+  setTimeout(function() { seg.style.opacity = '0'; }, 120);
+}
+
+function handleCommentMicroReaction() {
+  // Small signal tick: briefly activate a rail segment.
+  const rail = rootEl.querySelector('.rail-top, .rail-right, .rail-bottom, .rail-left');
+  if (!rail) return;
+  const seg = rail.querySelector('.rail-accent');
+  if (!seg) return;
+  seg.style.opacity = '0.9';
+  setTimeout(function() { seg.style.opacity = ''; }, 80);
+}
+
+function handleFollowMicroReaction() {
+  // Stronger perimeter pulse: energize one rail section.
+  const rail = rootEl.querySelector('.rail-top, .rail-right, .rail-bottom, .rail-left');
+  if (!rail) return;
+  rail.classList.add('rail-energy');
+  setTimeout(function() { rail.classList.remove('rail-energy'); }, 400);
+}
+
+function handleShareMicroReaction() {
+  // Directional signal: activate a perimeter sweep on one side.
+  const dirs = ['top', 'right', 'bottom', 'left'];
+  const dir = dirs[Math.floor(Math.random() * dirs.length)];
+  const rail = rootEl.querySelector(`.rail-${dir} .rail-sweep`);
+  if (!rail) return;
+  rail.style.opacity = '0.9';
+  rail.style.transition = 'opacity 1.5s ease';
+  setTimeout(function() { rail.style.opacity = '0'; }, 1500);
+}
+
+function handleGiftMicroReaction() {
+  // Strongest normal event: short corner impact + perimeter pulse.
+  // Activate all corner pulses briefly.
+  const corners = rootEl.querySelectorAll('.corner-pulse');
+  corners.forEach(function(c, i) {
+    c.style.opacity = '1';
+    setTimeout(function() {
+      c.style.opacity = '0';
+    }, i * 40 + 120);
+  });
+  // Also briefly brighten the glow.
+  const baseGlow = Number(getComputedStyle(rootEl).getPropertyValue('--wf-glow-a')) || 0.36;
+  rootEl.style.setProperty('--wf-glow-a', Math.min(1.0, baseGlow + 0.15));
+  setTimeout(function() {
+    rootEl.style.removeProperty('--wf-glow-a');
+  }, 300);
 }
 
 function runBootSequence() {
@@ -819,8 +988,12 @@ function applyState(st) {
   }
   const wasEnabled = config.enabled !== false;
   if (st.config) config = Object.assign(config || {}, st.config);
-  const nowEnabled = config.enabled !== false;
   applyTheme();
+
+  // Handle activity score from state/patch — this drives the visual modulation.
+  if (st.activity_score !== undefined) {
+    updateActivityState(st.activity_score);
+  }
 
   if (!bootStarted && nowEnabled) {
     bootStarted = true;

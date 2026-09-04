@@ -563,8 +563,10 @@ class PlatformActionsEngine:
         pubsub: OverlayPubSub | None = None,
         actions_overlay_instance: str = "main",
         obs_execute: ObsExecute | None = None,
+        activity_engine: Any | None = None,
     ) -> None:
         self._sink = sink
+        self._activity_engine = activity_engine
         self._rules: list[RuleV1] = list(rules or [])
         self._status_callback: StatusCallback = status_callback or (lambda _msg: None)
         self._tts_speak: TtsSpeakCallback | None = tts_speak
@@ -586,6 +588,10 @@ class PlatformActionsEngine:
         self._tiktok_like_all_total = 0
         self._tiktok_like_user_totals.clear()
         self._tiktok_first_activity_seen_users.clear()
+
+    def set_activity_engine(self, activity_engine: Any | None) -> None:
+        """Set the optional activity engine for score updates."""
+        self._activity_engine = activity_engine
 
     async def _maybe_dispatch_tiktok_first_activity(
         self,
@@ -679,6 +685,10 @@ class PlatformActionsEngine:
             ev = TikTokFollowedEvent(platform=ChatPlatform.TIKTOK, user=u, received_at=received_at)
             await self._dispatch_actions(rule, ev)
 
+        # Update activity score if an activity engine is configured.
+        if self._activity_engine is not None:
+            self._activity_engine.handle_event("follow")
+
     async def on_tiktok_shared(self, user: str, count: int, received_at: datetime) -> None:
         u = (user or "").strip()
         try:
@@ -712,6 +722,10 @@ class PlatformActionsEngine:
             )
             await self._dispatch_actions(rule, ev)
 
+        # Update activity score if an activity engine is configured.
+        if self._activity_engine is not None:
+            self._activity_engine.handle_event("share")
+
     async def on_tiktok_paid_subscribed(self, user: str, received_at: datetime) -> None:
         u = (user or "").strip()
         await self._maybe_dispatch_tiktok_first_activity(
@@ -740,6 +754,10 @@ class PlatformActionsEngine:
                 platform=ChatPlatform.TIKTOK, user=u, received_at=received_at
             )
             await self._dispatch_actions(rule, ev)
+
+        # Update activity score if an activity engine is configured.
+        if self._activity_engine is not None:
+            self._activity_engine.handle_event("follow")
 
     async def on_twitch_follow(
         self,
@@ -775,6 +793,10 @@ class PlatformActionsEngine:
                 profile_picture_url=(profile_picture_url or "").strip(),
             )
             await self._dispatch_actions(rule, ev)
+
+        # Update activity score if an activity engine is configured.
+        if self._activity_engine is not None:
+            self._activity_engine.handle_event("follow")
 
     async def on_twitch_subscribe(
         self,
@@ -1299,6 +1321,10 @@ class PlatformActionsEngine:
             if matched:
                 await self._dispatch_actions(rule, ev)
 
+        # Update activity score if an activity engine is configured.
+        if self._activity_engine is not None:
+            self._activity_engine.handle_event("comment")
+
     async def on_gift_received(self, ev: GiftReceivedEvent) -> None:
         logger.info(
             (
@@ -1387,6 +1413,10 @@ class PlatformActionsEngine:
         if not matched_any:
             logger.info("Actions gift_received no matching rule")
 
+        # Update activity score if an activity engine is configured.
+        if self._activity_engine is not None:
+            self._activity_engine.handle_event("gift")
+
     async def on_tiktok_likes_received(
         self,
         user: str,
@@ -1452,6 +1482,10 @@ class PlatformActionsEngine:
                 )
                 logger.info("Actions tiktok_likes_received matched rule=%s", rule.id)
                 await self._dispatch_actions(rule, ev)
+
+        # Update activity score if an activity engine is configured.
+        if self._activity_engine is not None:
+            self._activity_engine.handle_event("like")
 
     def tiktok_likes_preview_batch(
         self, *, scope: str, min_count: int, user: str

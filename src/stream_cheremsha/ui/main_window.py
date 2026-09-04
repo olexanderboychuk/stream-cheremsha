@@ -76,6 +76,8 @@ from PySide6.QtWidgets import (
 )
 from qframelesswindow import FramelessWindow, StandardTitleBar
 
+from stream_cheremsha.overlays.activity_engine import ActivityEngine
+
 if sys.platform == "win32":
     try:
         import win32con
@@ -866,6 +868,18 @@ class MainWindow(FramelessWindow):
             get_locale=lambda: self._locale,
             instance="main",
             parent=self,
+        )
+        self._activity_engine = ActivityEngine(
+            pubsub=self._overlay_server.pubsub(),
+            enabled=True,
+            decay_speed=1.5,
+            event_weights={
+                "like": 2.0,
+                "comment": 4.0,
+                "follow": 6.0,
+                "share": 8.0,
+                "gift": 12.0,
+            },
         )
         self._qml_pages_loaded: set[int] = set()
         self._active_qml_stack_index: int | None = None
@@ -5299,6 +5313,7 @@ class MainWindow(FramelessWindow):
                 tts_speak=self.speak_action_tts,
                 pubsub=self._overlay_server.pubsub(),
                 obs_execute=self._obs_execute_for_actions,
+                activity_engine=self._activity_engine,
             )
             self._actions_engines[k] = eng
         return eng
