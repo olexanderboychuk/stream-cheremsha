@@ -4,7 +4,6 @@ import asyncio
 import logging
 import time
 from collections.abc import Callable
-from datetime import UTC, datetime
 from typing import Any
 
 from PySide6.QtCore import QObject, QTimer
@@ -84,6 +83,7 @@ class StreamGoalController(QObject):
         cfg = load_stream_goal_overlay_config()
         state = self._session.to_overlay_dict()
         state["config"] = stream_goal_overlay_config_to_public_dict(cfg)
+        state["locale"] = str(self._get_locale() or "uk")
         return state
 
     def on_follow(self, user: str, stable_key: str = "", unique_id: str = "") -> None:
@@ -93,7 +93,14 @@ class StreamGoalController(QObject):
         self._session.add_follow(user, {"stable_key": stable_key, "unique_id": unique_id})
         self.schedule_publish()
 
-    def on_like(self, user: str, count: int, profile_picture_url: str = "", user_key: str = "", unique_id: str = "") -> None:
+    def on_like(
+        self,
+        user: str,
+        count: int,
+        profile_picture_url: str = "",
+        user_key: str = "",
+        unique_id: str = "",
+    ) -> None:
         cfg = load_stream_goal_overlay_config()
         if not cfg.enabled:
             return
@@ -101,12 +108,15 @@ class StreamGoalController(QObject):
             n = max(1, int(count))
         except (TypeError, ValueError):
             n = 1
-        self._session.add_like(n, {
-            "user": user,
-            "profile_picture_url": profile_picture_url,
-            "user_key": user_key,
-            "unique_id": unique_id,
-        })
+        self._session.add_like(
+            n,
+            {
+                "user": user,
+                "profile_picture_url": profile_picture_url,
+                "user_key": user_key,
+                "unique_id": unique_id,
+            },
+        )
         # Don't schedule publish here - will be flushed by timer
 
     def _on_like_flush(self) -> None:
@@ -149,12 +159,18 @@ class StreamGoalController(QObject):
             each = max(0, int(tiktok_coin_each or 0))
         except (TypeError, ValueError):
             each = 0
-        self._session.add_gift(sender, gift_name, c, each, {
-            "gift_id": gift_id,
-            "icon_url": icon_url,
-            "sender_avatar_url": sender_avatar_url,
-            "sender_user_key": sender_user_key,
-        })
+        self._session.add_gift(
+            sender,
+            gift_name,
+            c,
+            each,
+            {
+                "gift_id": gift_id,
+                "icon_url": icon_url,
+                "sender_avatar_url": sender_avatar_url,
+                "sender_user_key": sender_user_key,
+            },
+        )
         self.schedule_publish()
 
     def on_comment(self, user: str, text: str, stable_key: str = "", unique_id: str = "") -> None:
@@ -186,6 +202,7 @@ class StreamGoalController(QObject):
         cfg = load_stream_goal_overlay_config()
         patch = self._session.to_overlay_dict()
         patch["config"] = stream_goal_overlay_config_to_public_dict(cfg)
+        patch["locale"] = str(self._get_locale() or "uk")
         topic = f"overlay:stream_goal:{self._instance}"
         await pubsub.publish(topic, patch)
 

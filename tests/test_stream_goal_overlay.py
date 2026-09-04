@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from PySide6.QtCore import QSettings
 
-from stream_cheremsha.overlays.registry import OverlayRegistry
 from stream_cheremsha.overlays.stream_goal_controller import StreamGoalController
 from stream_cheremsha.overlays.stream_goal_overlay import StreamGoalOverlayType
 from stream_cheremsha.overlays.stream_goal_overlay_config import (
-    StreamGoalOverlayConfig,
     load_stream_goal_overlay_config,
     save_stream_goal_overlay_config,
     stream_goal_overlay_config_defaults,
@@ -124,9 +121,7 @@ def test_stream_goal_session_combo_decay() -> None:
 
 
 def test_stream_goal_controller_events() -> None:
-    controller = StreamGoalController(
-        pubsub=None, get_locale=lambda: "en", instance="test"
-    )
+    controller = StreamGoalController(pubsub=None, get_locale=lambda: "en", instance="test")
     init_st = controller.initial_state()
     assert "goal_type" in init_st
 
@@ -141,15 +136,17 @@ def test_stream_goal_overlay_renderer() -> None:
     assert "<!doctype html>" in html.lower()
     assert "Stream Goal" in html
     assert "subscribe" in html.lower()
-    assert 'id="hdrTitle">FOLLOW GOAL</div>' in html
+    assert 'id="hdrTitle">' in html
     assert "tier-idle" in html
-    assert "CORE BREACH" in html  # present for completion anim only
     assert 'class="breach-text"' in html
+    assert "function tr(" in html or "I18N" in html
+    assert "goal.followers" in html or "FOLLOW GOAL" in html or "ЦІЛЬ: ФОЛОВИ" in html
 
     init_st = overlay.initial_state({"instance": "main"})
     assert "config" in init_st
     assert "goal_type" in init_st
     assert init_st["title"] != "CORE BREACH"
+    assert "locale" in init_st
 
 
 def test_widgets_qml_api_stream_goal() -> None:

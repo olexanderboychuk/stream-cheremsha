@@ -867,6 +867,106 @@ Item {
         }
     }
 
+
+    function loc(key) {
+        if (typeof navApi !== "undefined" && navApi) {
+            navApi.refreshCounter
+            return navApi.loc(key)
+        }
+        return key
+    }
+
+    function _comboIndexFor(mdl, val) {
+        if (!mdl) return 0
+        for (var i = 0; i < mdl.count; ++i) {
+            if (mdl.get(i).value === val) return i
+        }
+        return 0
+    }
+
+    function _rebuildSgSrComboModels() {
+        var prevSgLoading = root._loadingStreamGoalCfg
+        var prevSrLoading = root._loadingSocialRotatorCfg
+        root._loadingStreamGoalCfg = true
+        root._loadingSocialRotatorCfg = true
+
+        if (typeof sgGoalTypeModel !== "undefined") {
+            var goalVal = (root.streamGoalCfg && root.streamGoalCfg.goal_type) ? root.streamGoalCfg.goal_type : "followers"
+            sgGoalTypeModel.clear()
+            sgGoalTypeModel.append({ value: "followers", text: root.loc("stream_goal.ui.type.followers") })
+            sgGoalTypeModel.append({ value: "likes", text: root.loc("stream_goal.ui.type.likes") })
+            sgGoalTypeModel.append({ value: "gifts", text: root.loc("stream_goal.ui.type.gifts") })
+            sgGoalTypeModel.append({ value: "shares", text: root.loc("stream_goal.ui.type.shares") })
+            sgGoalTypeModel.append({ value: "comments", text: root.loc("stream_goal.ui.type.comments") })
+            if (typeof sgGoalType !== "undefined")
+                sgGoalType.currentIndex = root._comboIndexFor(sgGoalTypeModel, goalVal)
+        }
+        if (typeof sgSkinModel !== "undefined") {
+            var skinVal = (root.streamGoalCfg && root.streamGoalCfg.skin) ? root.streamGoalCfg.skin : "digital_core"
+            sgSkinModel.clear()
+            sgSkinModel.append({ value: "digital_core", text: root.loc("stream_goal.ui.skin.digital_core") })
+            sgSkinModel.append({ value: "boss", text: root.loc("stream_goal.ui.skin.boss") })
+            sgSkinModel.append({ value: "reactor", text: root.loc("stream_goal.ui.skin.reactor") })
+            sgSkinModel.append({ value: "rocket", text: root.loc("stream_goal.ui.skin.rocket") })
+            sgSkinModel.append({ value: "vault", text: root.loc("stream_goal.ui.skin.vault") })
+            sgSkinModel.append({ value: "tower", text: root.loc("stream_goal.ui.skin.tower") })
+            sgSkinModel.append({ value: "creature", text: root.loc("stream_goal.ui.skin.creature") })
+            if (typeof sgSkin !== "undefined")
+                sgSkin.currentIndex = root._comboIndexFor(sgSkinModel, skinVal)
+        }
+        if (typeof sgAnimIntensityModel !== "undefined") {
+            var animVal = (root.streamGoalCfg && root.streamGoalCfg.animation_intensity) ? root.streamGoalCfg.animation_intensity : "medium"
+            sgAnimIntensityModel.clear()
+            sgAnimIntensityModel.append({ value: "low", text: root.loc("stream_goal.ui.anim.low") })
+            sgAnimIntensityModel.append({ value: "medium", text: root.loc("stream_goal.ui.anim.medium") })
+            sgAnimIntensityModel.append({ value: "high", text: root.loc("stream_goal.ui.anim.high") })
+            if (typeof sgAnimIntensity !== "undefined")
+                sgAnimIntensity.currentIndex = root._comboIndexFor(sgAnimIntensityModel, animVal)
+        }
+        if (typeof sgResetBehaviorModel !== "undefined") {
+            var resetVal = (root.streamGoalCfg && root.streamGoalCfg.reset_behavior) ? root.streamGoalCfg.reset_behavior : "after_completion"
+            sgResetBehaviorModel.clear()
+            sgResetBehaviorModel.append({ value: "after_completion", text: root.loc("stream_goal.ui.reset.after_completion") })
+            sgResetBehaviorModel.append({ value: "manual", text: root.loc("stream_goal.ui.reset.manual") })
+            sgResetBehaviorModel.append({ value: "new_stream", text: root.loc("stream_goal.ui.reset.new_stream") })
+            if (typeof sgResetBehavior !== "undefined")
+                sgResetBehavior.currentIndex = root._comboIndexFor(sgResetBehaviorModel, resetVal)
+        }
+        if (typeof srTransitionModel !== "undefined") {
+            var trVal = (root.socialRotatorCfg && root.socialRotatorCfg.transition) ? root.socialRotatorCfg.transition : "glitch_morph"
+            srTransitionModel.clear()
+            srTransitionModel.append({ value: "glitch_morph", text: root.loc("social_rotator.ui.transition.glitch_morph") })
+            srTransitionModel.append({ value: "data_stream", text: root.loc("social_rotator.ui.transition.data_stream") })
+            srTransitionModel.append({ value: "energy_burst", text: root.loc("social_rotator.ui.transition.energy_burst") })
+            srTransitionModel.append({ value: "scan", text: root.loc("social_rotator.ui.transition.scan") })
+            srTransitionModel.append({ value: "pixel_dissolve", text: root.loc("social_rotator.ui.transition.pixel_dissolve") })
+            srTransitionModel.append({ value: "fade", text: root.loc("social_rotator.ui.transition.fade") })
+            if (typeof srTransition !== "undefined")
+                srTransition.currentIndex = root._comboIndexFor(srTransitionModel, trVal)
+        }
+        if (typeof srThemeModel !== "undefined") {
+            var themeVal = (root.socialRotatorCfg && root.socialRotatorCfg.theme) ? root.socialRotatorCfg.theme : "neon_cyber"
+            srThemeModel.clear()
+            srThemeModel.append({ value: "neon_cyber", text: root.loc("social_rotator.ui.theme.neon_cyber") })
+            srThemeModel.append({ value: "synthwave", text: root.loc("social_rotator.ui.theme.synthwave") })
+            srThemeModel.append({ value: "toxic", text: root.loc("social_rotator.ui.theme.toxic") })
+            srThemeModel.append({ value: "ice", text: root.loc("social_rotator.ui.theme.ice") })
+            srThemeModel.append({ value: "amber", text: root.loc("social_rotator.ui.theme.amber") })
+            if (typeof srTheme !== "undefined")
+                srTheme.currentIndex = root._comboIndexFor(srThemeModel, themeVal)
+        }
+
+        root._loadingStreamGoalCfg = prevSgLoading
+        root._loadingSocialRotatorCfg = prevSrLoading
+    }
+
+    Connections {
+        target: (typeof navApi !== "undefined" && navApi) ? navApi : null
+        function onRefreshCounterChanged() {
+            root._rebuildSgSrComboModels()
+        }
+    }
+
     function _saveStreamGoal() {
         if (!api || root.streamGoalCfg === null) return;
         root.streamGoalCfgEpoch += 1;
@@ -1368,12 +1468,12 @@ Item {
                                         onClicked: if (card.onPlay) card.onPlay()
                                     }
                                     PillButton {
-                                        text: "Скопіювати URL"
+                                        text: root.loc("widgets.common.copy_url")
                                         onClicked: if (card.onCopy) card.onCopy()
                                     }
                                     Item { Layout.fillWidth: true }
                                     PillButton {
-                                        text: "Редагувати"
+                                        text: root.loc("widgets.common.edit")
                                         onClicked: if (card.onEdit) card.onEdit()
                                     }
                                 }
@@ -1443,7 +1543,7 @@ Item {
                         }
 
                         WidgetCard {
-                            title: "Stream Goal (Cyberpunk Digital Core)"
+                            title: root.loc("widgets.stream_goal.title")
                             urlText: api ? api.streamGoalOverlayUrlValue : ""
                             onCopy: function() { if (api) api.copyStreamGoalOverlayUrl(); }
                             onPlay: function() { if (api) api.previewStreamGoalOverlay(); }
@@ -1459,7 +1559,7 @@ Item {
                         }
 
                         WidgetCard {
-                            title: "Social Rotator (Universal)"
+                            title: root.loc("widgets.social_rotator.title")
                             urlText: api ? api.socialRotatorOverlayUrlValue : ""
                             onCopy: function() { if (api) api.copySocialRotatorOverlayUrl(); }
                             onPlay: function() { if (api) api.previewSocialRotatorOverlay(); }
@@ -2016,7 +2116,7 @@ Item {
                     spacing: 8
 
                     Text {
-                        text: "Stream Goal (Cyberpunk Digital Core)"
+                        text: root.loc("widgets.stream_goal.title")
                         color: ink
                         font.pixelSize: 18
                         font.bold: true
@@ -2038,7 +2138,7 @@ Item {
                         }
 
                         PillButton {
-                            text: "Скопіювати URL"
+                            text: root.loc("widgets.common.copy_url")
                             onClicked: if (api) api.copyStreamGoalOverlayUrl()
                         }
 
@@ -2049,13 +2149,13 @@ Item {
                         }
 
                         PillButton {
-                            text: "Зберегти"
+                            text: root.loc("widgets.common.save")
                             enabled: root._canSaveCurrentWidget
                             onClicked: root._saveAndApplyCurrentWidget()
                         }
 
                         PillButton {
-                            text: "Назад"
+                            text: root.loc("widgets.common.back")
                             onClicked: root.widgetMode = "grid"
                         }
                     }
@@ -2144,7 +2244,7 @@ Item {
                     spacing: 8
 
                     Text {
-                        text: "Social Rotator (Universal)"
+                        text: root.loc("widgets.social_rotator.title")
                         color: ink
                         font.pixelSize: 18
                         font.bold: true
@@ -2166,7 +2266,7 @@ Item {
                         }
 
                         PillButton {
-                            text: "Скопіювати URL"
+                            text: root.loc("widgets.common.copy_url")
                             onClicked: if (api) api.copySocialRotatorOverlayUrl()
                         }
 
@@ -2177,13 +2277,13 @@ Item {
                         }
 
                         PillButton {
-                            text: "Зберегти"
+                            text: root.loc("widgets.common.save")
                             enabled: root._canSaveCurrentWidget
                             onClicked: root._saveAndApplyCurrentWidget()
                         }
 
                         PillButton {
-                            text: "Назад"
+                            text: root.loc("widgets.common.back")
                             onClicked: root.widgetMode = "grid"
                         }
                     }
@@ -5047,7 +5147,7 @@ Item {
                         Rectangle { Layout.fillWidth: true; height: 1; color: cardEdge; opacity: 0.6 }
 
                         Text {
-                            text: "Stream Goal — Мета стріму"
+                            text: root.loc("widgets.stream_goal.settings_title")
                             color: ink
                             font.pixelSize: 16
                             font.bold: true
@@ -5055,7 +5155,7 @@ Item {
                         }
 
                         Text {
-                            text: "Cyberpunk Digital Core відстежує прогрес каналу наживо (фолови, лайки, гіфти, шери, коментарі). Підтримує серії подій (combo), еволюцію енергетичного ядра та візуальні ефекти."
+                            text: root.loc("widgets.stream_goal.settings_blurb")
                             color: muted
                             font.pixelSize: 11
                             Layout.fillWidth: true
@@ -5063,7 +5163,7 @@ Item {
                         }
 
                         StyledCheckBox {
-                            text: "Увімкнено"
+                            text: root.loc("widgets.common.enabled")
                             checked: !root.streamGoalCfg || root.streamGoalCfg.enabled !== false
                             onCheckedChanged: {
                                 if (root._loadingStreamGoalCfg || !root.streamGoalCfg) return;
@@ -5075,19 +5175,16 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "Тип цілі"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: root.loc("stream_goal.ui.goal_type"); color: muted; Layout.preferredWidth: 160 }
                             StyledComboBox {
                                 id: sgGoalType
                                 Layout.fillWidth: true
                                 textRole: "text"
                                 valueRole: "value"
                                 model: ListModel {
-                                    ListElement { value: "followers"; text: "Фолови (Followers)" }
-                                    ListElement { value: "likes"; text: "Лайки (Likes)" }
-                                    ListElement { value: "gifts"; text: "Подарунки (Gifts)" }
-                                    ListElement { value: "shares"; text: "Шери (Shares)" }
-                                    ListElement { value: "comments"; text: "Коментарі (Comments)" }
+                                    id: sgGoalTypeModel
                                 }
+                                Component.onCompleted: root._rebuildSgSrComboModels()
                                 onCurrentIndexChanged: {
                                     if (root._loadingStreamGoalCfg || !root.streamGoalCfg) return;
                                     var v = sgGoalType.currentIndex >= 0 ? sgGoalType.model.get(sgGoalType.currentIndex).value : "followers";
@@ -5100,7 +5197,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "Заголовок"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: root.loc("stream_goal.ui.title"); color: muted; Layout.preferredWidth: 160 }
                             TextField {
                                 Layout.fillWidth: true
                                 color: ink
@@ -5118,7 +5215,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "Підзаголовок"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: root.loc("stream_goal.ui.subtitle"); color: muted; Layout.preferredWidth: 160 }
                             TextField {
                                 Layout.fillWidth: true
                                 color: ink
@@ -5136,7 +5233,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "Поточне значення"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: root.loc("stream_goal.ui.current"); color: muted; Layout.preferredWidth: 160 }
                             VarMapSpinBox {
                                 syncGroup: "stream_goal"
                                 hostMap: root.streamGoalCfg
@@ -5150,7 +5247,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "Цільове значення"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: root.loc("stream_goal.ui.target"); color: muted; Layout.preferredWidth: 160 }
                             VarMapSpinBox {
                                 syncGroup: "stream_goal"
                                 hostMap: root.streamGoalCfg
@@ -5164,20 +5261,14 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "Скин / Тема"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: root.loc("stream_goal.ui.skin"); color: muted; Layout.preferredWidth: 160 }
                             StyledComboBox {
                                 id: sgSkin
                                 Layout.fillWidth: true
                                 textRole: "text"
                                 valueRole: "value"
                                 model: ListModel {
-                                    ListElement { value: "digital_core"; text: "Digital Core (Cyberpunk)" }
-                                    ListElement { value: "boss"; text: "Boss HP (Healthbar)" }
-                                    ListElement { value: "reactor"; text: "Nuclear Reactor" }
-                                    ListElement { value: "rocket"; text: "Space Rocket" }
-                                    ListElement { value: "vault"; text: "Cyber Vault" }
-                                    ListElement { value: "tower"; text: "Neontower" }
-                                    ListElement { value: "creature"; text: "Bio Core" }
+                                    id: sgSkinModel
                                 }
                                 onCurrentIndexChanged: {
                                     if (root._loadingStreamGoalCfg || !root.streamGoalCfg) return;
@@ -5207,7 +5298,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "Акцентний колір"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: root.loc("stream_goal.ui.accent"); color: muted; Layout.preferredWidth: 160 }
                             TextField {
                                 Layout.fillWidth: true
                                 color: ink
@@ -5225,7 +5316,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "Масштаб (%)"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: root.loc("widgets.common.scale_percent"); color: muted; Layout.preferredWidth: 160 }
                             VarMapSpinBox {
                                 syncGroup: "stream_goal"
                                 hostMap: root.streamGoalCfg
@@ -5234,7 +5325,7 @@ Item {
                                 from: 40; to: 250; stepSize: 5
                             }
                             Text {
-                                text: "Масштаб елементів у межах віджета (не zoom за край)"
+                                text: root.loc("stream_goal.ui.scale_hint")
                                 color: muted
                                 font.pixelSize: 11
                                 Layout.fillWidth: true
@@ -5245,16 +5336,14 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "Інтенсивність анімацій"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: root.loc("stream_goal.ui.anim_intensity"); color: muted; Layout.preferredWidth: 160 }
                             StyledComboBox {
                                 id: sgAnimIntensity
                                 Layout.fillWidth: true
                                 textRole: "text"
                                 valueRole: "value"
                                 model: ListModel {
-                                    ListElement { value: "low"; text: "Низька (Low)" }
-                                    ListElement { value: "medium"; text: "Середня (Medium)" }
-                                    ListElement { value: "high"; text: "Висока (High)" }
+                                    id: sgAnimIntensityModel
                                 }
                                 onCurrentIndexChanged: {
                                     if (root._loadingStreamGoalCfg || !root.streamGoalCfg) return;
@@ -5266,7 +5355,7 @@ Item {
                         }
 
                         StyledCheckBox {
-                            text: "Показувати комбо лічильник"
+                            text: root.loc("stream_goal.ui.enable_combo")
                             checked: !root.streamGoalCfg || root.streamGoalCfg.enable_combo !== false
                             onCheckedChanged: {
                                 if (root._loadingStreamGoalCfg || !root.streamGoalCfg) return;
@@ -5276,7 +5365,7 @@ Item {
                         }
 
                         StyledCheckBox {
-                            text: "Показувати контрольні точки (Milestones)"
+                            text: root.loc("stream_goal.ui.enable_milestones")
                             checked: !root.streamGoalCfg || root.streamGoalCfg.enable_milestones !== false
                             onCheckedChanged: {
                                 if (root._loadingStreamGoalCfg || !root.streamGoalCfg) return;
@@ -5286,7 +5375,7 @@ Item {
                         }
 
                         StyledCheckBox {
-                            text: "Частинки (Particles)"
+                            text: root.loc("stream_goal.ui.enable_particles")
                             checked: !root.streamGoalCfg || root.streamGoalCfg.enable_particles !== false
                             onCheckedChanged: {
                                 if (root._loadingStreamGoalCfg || !root.streamGoalCfg) return;
@@ -5296,7 +5385,7 @@ Item {
                         }
 
                         StyledCheckBox {
-                            text: "Глітч ефекти (Glitch)"
+                            text: root.loc("stream_goal.ui.enable_glitch")
                             checked: !root.streamGoalCfg || root.streamGoalCfg.enable_glitch !== false
                             onCheckedChanged: {
                                 if (root._loadingStreamGoalCfg || !root.streamGoalCfg) return;
@@ -5308,16 +5397,14 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "Поведінка скидання"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: root.loc("stream_goal.ui.reset_behavior"); color: muted; Layout.preferredWidth: 160 }
                             StyledComboBox {
                                 id: sgResetBehavior
                                 Layout.fillWidth: true
                                 textRole: "text"
                                 valueRole: "value"
                                 model: ListModel {
-                                    ListElement { value: "after_completion"; text: "Авто-скидання та нова мета" }
-                                    ListElement { value: "manual"; text: "Ручне скидання" }
-                                    ListElement { value: "new_stream"; text: "Скидати з новим стрімом" }
+                                    id: sgResetBehaviorModel
                                 }
                                 onCurrentIndexChanged: {
                                     if (root._loadingStreamGoalCfg || !root.streamGoalCfg) return;
@@ -5331,7 +5418,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "Наступна мета"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: root.loc("stream_goal.ui.next_target"); color: muted; Layout.preferredWidth: 160 }
                             VarMapSpinBox {
                                 syncGroup: "stream_goal"
                                 hostMap: root.streamGoalCfg
@@ -5731,7 +5818,7 @@ Item {
                         Rectangle { Layout.fillWidth: true; height: 1; color: cardEdge; opacity: 0.6 }
 
                         Text {
-                            text: "Social Rotator — Універсальна ротація соцмереж"
+                            text: root.loc("widgets.social_rotator.settings_title")
                             color: ink
                             font.pixelSize: 16
                             font.bold: true
@@ -5739,7 +5826,7 @@ Item {
                         }
 
                         StyledCheckBox {
-                            text: "Увімкнено"
+                            text: root.loc("widgets.common.enabled")
                             checked: !root.socialRotatorCfg || root.socialRotatorCfg.enabled !== false
                             onCheckedChanged: {
                                 if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
@@ -5749,7 +5836,7 @@ Item {
                         }
 
                         Text {
-                            text: "ПЛАТФОРМИ"
+                            text: root.loc("social_rotator.ui.platforms")
                             color: ink
                             font.pixelSize: 13
                             font.bold: true
@@ -5780,7 +5867,7 @@ Item {
                                         Layout.preferredWidth: 100
                                     }
                                     StyledCheckBox {
-                                        text: "On"
+                                        text: root.loc("widgets.common.on")
                                         checked: !prow || prow.enabled !== false
                                         onCheckedChanged: {
                                             if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
@@ -5799,14 +5886,14 @@ Item {
                                         onClicked: root._srMovePlatform(pIndex, 1)
                                     }
                                     PillButton {
-                                        text: "Remove"
+                                        text: root.loc("widgets.common.remove")
                                         onClicked: root._srRemovePlatform(pIndex)
                                     }
                                 }
                                 RowLayout {
                                     Layout.fillWidth: true
                                     spacing: 8
-                                    Text { text: "Username"; color: muted; Layout.preferredWidth: 80 }
+                                    Text { text: root.loc("widgets.common.username"); color: muted; Layout.preferredWidth: 80 }
                                     TextField {
                                         Layout.fillWidth: true
                                         color: ink
@@ -5823,7 +5910,7 @@ Item {
                                 RowLayout {
                                     Layout.fillWidth: true
                                     spacing: 8
-                                    Text { text: "URL override"; color: muted; Layout.preferredWidth: 80 }
+                                    Text { text: root.loc("social_rotator.ui.url_override"); color: muted; Layout.preferredWidth: 80 }
                                     TextField {
                                         Layout.fillWidth: true
                                         color: ink
@@ -5861,7 +5948,7 @@ Item {
                                 Component.onCompleted: currentIndex = 0
                             }
                             PillButton {
-                                text: "+ ADD PLATFORM"
+                                text: root.loc("social_rotator.ui.add_platform")
                                 onClicked: {
                                     var v = "twitch";
                                     if (srAddPlatform.currentIndex >= 0)
@@ -5874,7 +5961,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "Rotation (ms)"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: root.loc("social_rotator.ui.rotation_ms"); color: muted; Layout.preferredWidth: 160 }
                             VarMapSpinBox {
                                 syncGroup: "social_rotator"
                                 hostMap: root.socialRotatorCfg
@@ -5884,7 +5971,7 @@ Item {
                             }
                         }
                         Text {
-                            text: "8000 = 8 секунд"
+                            text: root.loc("social_rotator.ui.rotation_hint")
                             color: muted
                             font.pixelSize: 11
                         }
@@ -5892,19 +5979,14 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "Transition"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: root.loc("social_rotator.ui.transition"); color: muted; Layout.preferredWidth: 160 }
                             StyledComboBox {
                                 id: srTransition
                                 Layout.fillWidth: true
                                 textRole: "text"
                                 valueRole: "value"
                                 model: ListModel {
-                                    ListElement { value: "glitch_morph"; text: "Glitch Morph" }
-                                    ListElement { value: "data_stream"; text: "Data Stream" }
-                                    ListElement { value: "energy_burst"; text: "Energy Burst" }
-                                    ListElement { value: "scan"; text: "Scan" }
-                                    ListElement { value: "pixel_dissolve"; text: "Pixel Dissolve" }
-                                    ListElement { value: "fade"; text: "Fade" }
+                                    id: srTransitionModel
                                 }
                                 onCurrentIndexChanged: {
                                     if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
@@ -5920,18 +6002,14 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "Theme"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: root.loc("widgets.common.theme"); color: muted; Layout.preferredWidth: 160 }
                             StyledComboBox {
                                 id: srTheme
                                 Layout.fillWidth: true
                                 textRole: "text"
                                 valueRole: "value"
                                 model: ListModel {
-                                    ListElement { value: "neon_cyber"; text: "Neon Cyber" }
-                                    ListElement { value: "synthwave"; text: "Synthwave" }
-                                    ListElement { value: "toxic"; text: "Toxic" }
-                                    ListElement { value: "ice"; text: "Ice" }
-                                    ListElement { value: "amber"; text: "Amber" }
+                                    id: srThemeModel
                                 }
                                 onCurrentIndexChanged: {
                                     if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
@@ -5944,10 +6022,10 @@ Item {
                             }
                         }
 
-                        Text { text: "ВІДОБРАЖЕННЯ"; color: ink; font.pixelSize: 13; font.bold: true }
+                        Text { text: root.loc("social_rotator.ui.display"); color: ink; font.pixelSize: 13; font.bold: true }
 
                         StyledCheckBox {
-                            text: "Show URL"
+                            text: root.loc("social_rotator.ui.show_url")
                             checked: !root.socialRotatorCfg || root.socialRotatorCfg.show_url !== false
                             onCheckedChanged: {
                                 if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
@@ -5956,7 +6034,7 @@ Item {
                             }
                         }
                         StyledCheckBox {
-                            text: "Show secondary platforms"
+                            text: root.loc("social_rotator.ui.show_secondary")
                             checked: !root.socialRotatorCfg || root.socialRotatorCfg.show_secondary_platforms !== false
                             onCheckedChanged: {
                                 if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
@@ -5965,7 +6043,7 @@ Item {
                             }
                         }
                         StyledCheckBox {
-                            text: "Show countdown"
+                            text: root.loc("social_rotator.ui.show_countdown")
                             checked: !root.socialRotatorCfg || root.socialRotatorCfg.show_countdown !== false
                             onCheckedChanged: {
                                 if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
@@ -5974,7 +6052,7 @@ Item {
                             }
                         }
                         StyledCheckBox {
-                            text: "Glow"
+                            text: root.loc("social_rotator.ui.glow")
                             checked: !root.socialRotatorCfg || root.socialRotatorCfg.enable_glow !== false
                             onCheckedChanged: {
                                 if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
@@ -5983,7 +6061,7 @@ Item {
                             }
                         }
                         StyledCheckBox {
-                            text: "Particles"
+                            text: root.loc("social_rotator.ui.particles")
                             checked: !root.socialRotatorCfg || root.socialRotatorCfg.enable_particles !== false
                             onCheckedChanged: {
                                 if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
@@ -5992,7 +6070,7 @@ Item {
                             }
                         }
                         StyledCheckBox {
-                            text: "CRT effects"
+                            text: root.loc("social_rotator.ui.crt")
                             checked: !root.socialRotatorCfg || root.socialRotatorCfg.enable_crt !== false
                             onCheckedChanged: {
                                 if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
@@ -6000,11 +6078,38 @@ Item {
                                 root._saveSocialRotator();
                             }
                         }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            Text { text: root.loc("social_rotator.ui.bg_opacity"); color: muted; Layout.preferredWidth: 160 }
+                            StyledSlider {
+                                Layout.fillWidth: true
+                                from: 0
+                                to: 100
+                                stepSize: 1
+                                value: root.socialRotatorCfg && root.socialRotatorCfg.background_opacity_percent !== undefined
+                                    ? root.socialRotatorCfg.background_opacity_percent
+                                    : 85
+                                onMoved: {
+                                    if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
+                                    root.socialRotatorCfg.background_opacity_percent = Math.round(value);
+                                    root._saveSocialRotator();
+                                }
+                            }
+                            Text {
+                                text: (root.socialRotatorCfg && root.socialRotatorCfg.background_opacity_percent !== undefined
+                                    ? Math.round(root.socialRotatorCfg.background_opacity_percent)
+                                    : 85) + "%"
+                                color: ink
+                                Layout.preferredWidth: 40
+                                horizontalAlignment: Text.AlignRight
+                            }
+                        }
 
-                        Text { text: "STATS STRIP"; color: ink; font.pixelSize: 13; font.bold: true }
+                        Text { text: root.loc("social_rotator.ui.stats_strip"); color: ink; font.pixelSize: 13; font.bold: true }
 
                         StyledCheckBox {
-                            text: "Latest Follower"
+                            text: root.loc("social_rotator.ui.stat.latest_follower")
                             checked: !root.socialRotatorCfg || root.socialRotatorCfg.show_latest_follower !== false
                             onCheckedChanged: {
                                 if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
@@ -6013,7 +6118,7 @@ Item {
                             }
                         }
                         StyledCheckBox {
-                            text: "Latest Donation"
+                            text: root.loc("social_rotator.ui.stat.latest_donation")
                             checked: !root.socialRotatorCfg || root.socialRotatorCfg.show_latest_donation !== false
                             onCheckedChanged: {
                                 if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
@@ -6022,7 +6127,7 @@ Item {
                             }
                         }
                         StyledCheckBox {
-                            text: "Stream Time"
+                            text: root.loc("social_rotator.ui.stat.stream_time")
                             checked: !root.socialRotatorCfg || root.socialRotatorCfg.show_stream_time !== false
                             onCheckedChanged: {
                                 if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
@@ -6031,7 +6136,7 @@ Item {
                             }
                         }
                         StyledCheckBox {
-                            text: "Top Donator"
+                            text: root.loc("social_rotator.ui.stat.top_donator")
                             checked: !root.socialRotatorCfg || root.socialRotatorCfg.show_top_donator !== false
                             onCheckedChanged: {
                                 if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
@@ -6040,7 +6145,7 @@ Item {
                             }
                         }
                         StyledCheckBox {
-                            text: "Online"
+                            text: root.loc("social_rotator.ui.stat.online")
                             checked: !root.socialRotatorCfg || root.socialRotatorCfg.show_online !== false
                             onCheckedChanged: {
                                 if (root._loadingSocialRotatorCfg || !root.socialRotatorCfg) return;
@@ -6052,7 +6157,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "TikTok coin → value rate"; color: muted; Layout.preferredWidth: 180 }
+                            Text { text: root.loc("social_rotator.ui.coin_rate"); color: muted; Layout.preferredWidth: 180 }
                             TextField {
                                 Layout.preferredWidth: 100
                                 color: ink
@@ -6072,7 +6177,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { text: "Scale %"; color: muted; Layout.preferredWidth: 160 }
+                            Text { text: root.loc("widgets.common.scale_percent"); color: muted; Layout.preferredWidth: 160 }
                             VarMapSpinBox {
                                 syncGroup: "social_rotator"
                                 hostMap: root.socialRotatorCfg
@@ -6886,6 +6991,7 @@ Item {
                     if (typeof srTheme !== "undefined")
                         srTheme.currentIndex = srIndexFor(srTheme.model, root.socialRotatorCfg.theme || "neon_cyber");
                 }
+                root._rebuildSgSrComboModels();
                 if (root.communityWorldCfg) {
                     var cwIndexFor = function(mdl, val) {
                         for (var ci = 0; ci < mdl.count; ++ci) {

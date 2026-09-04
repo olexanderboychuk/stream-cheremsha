@@ -175,7 +175,7 @@ def test_registry_has_social_rotator_overlay() -> None:
     assert t.type == "social_rotator"
     html = t.render_html({"instance": "main"})
     assert "/ws" in html
-    assert "LIVE SOCIAL" in html
+    assert "LIVE SOCIAL" in html or "СОЦМЕРЕЖІ LIVE" in html or "social_rotator" in html.lower()
     st = t.initial_state({"instance": "main"})
     assert "config" in st
     assert "rotation" in st

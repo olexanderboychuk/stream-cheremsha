@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from stream_cheremsha import l10n
 from stream_cheremsha.overlays.models import normalize_instance_id
 from stream_cheremsha.overlays.stream_goal_overlay_config import (
     load_stream_goal_overlay_config,
@@ -10,21 +11,53 @@ from stream_cheremsha.overlays.stream_goal_overlay_config import (
 )
 from stream_cheremsha.overlays.ui_locale import load_ui_locale
 
+_I18N_KEYS = (
+    "goal.followers",
+    "goal.likes",
+    "goal.gifts",
+    "goal.shares",
+    "goal.comments",
+    "goal.generic",
+    "breach",
+    "combo",
+    "new_target",
+    "notif.follow",
+    "notif.like_one",
+    "notif.like_many",
+    "notif.share",
+    "notif.gift",
+    "notif.gift_fallback",
+    "notif.comment",
+    "skin_target.digital_core",
+    "skin_target.boss",
+    "skin_target.reactor",
+    "skin_target.rocket",
+    "skin_target.vault",
+    "skin_target.tower",
+    "skin_target.creature",
+)
+
+
+def _overlay_i18n_bundle() -> dict[str, dict[str, str]]:
+    out: dict[str, dict[str, str]] = {"uk": {}, "en": {}}
+    for short in _I18N_KEYS:
+        key = f"stream_goal.{short}"
+        out["uk"][short] = l10n.tr("uk", key)
+        out["en"][short] = l10n.tr("en", key)
+    return out
+
 
 def _json_for_script(value: Any) -> str:
     s = json.dumps(value, ensure_ascii=False)
     return s.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
 
 
-def _goal_label(goal_type: str) -> str:
-    labels = {
-        "followers": "FOLLOW GOAL",
-        "likes": "LIKE GOAL",
-        "gifts": "GIFT GOAL",
-        "shares": "SHARE GOAL",
-        "comments": "COMMENT GOAL",
-    }
-    return labels.get(goal_type, "GOAL")
+def _goal_label(goal_type: str, locale: str | None = None) -> str:
+    loc = l10n.normalize_locale(str(locale or load_ui_locale()))
+    key = f"stream_goal.goal.{goal_type}"
+    if goal_type in ("followers", "likes", "gifts", "shares", "comments"):
+        return l10n.tr(loc, key)
+    return l10n.tr(loc, "stream_goal.goal.generic")
 
 
 def _skin_palette(skin: str) -> dict[str, str]:
@@ -107,8 +140,15 @@ class StreamGoalOverlayType:
         }
         locale = load_ui_locale()
         cfg = load_stream_goal_overlay_config()
+        i18n = _overlay_i18n_bundle()
         return self._render_template(
-            params, locale, subscribe_msg, cfg.accent_color, cfg.skin, cfg.scale_percent
+            params,
+            locale,
+            subscribe_msg,
+            cfg.accent_color,
+            cfg.skin,
+            cfg.scale_percent,
+            i18n,
         )
 
     def initial_state(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -121,9 +161,13 @@ class StreamGoalOverlayType:
             "subtitle": cfg.subtitle,
             "current_value": cfg.current_value,
             "target_value": cfg.target_value,
-            "progress": 0.0 if cfg.target_value <= 0 else min(1.0, cfg.current_value / cfg.target_value),
+            "progress": 0.0
+            if cfg.target_value <= 0
+            else min(1.0, cfg.current_value / cfg.target_value),
             "progress_percent": (
-                0 if cfg.target_value <= 0 else int(min(1.0, cfg.current_value / cfg.target_value) * 100)
+                0
+                if cfg.target_value <= 0
+                else int(min(1.0, cfg.current_value / cfg.target_value) * 100)
             ),
             "remaining": max(0, cfg.target_value - cfg.current_value),
             "skin": cfg.skin,
@@ -140,6 +184,7 @@ class StreamGoalOverlayType:
             "completion_anim_seq": 0,
             "milestones": [],
             "visual_events": [],
+            "locale": load_ui_locale(),
         }
 
     def _render_template(
@@ -150,9 +195,15 @@ class StreamGoalOverlayType:
         accent: str,
         skin: str = "digital_core",
         scale_percent: int = 100,
+        i18n: dict[str, dict[str, str]] | None = None,
     ) -> str:
         _ = params
-        html = """<!doctype html>
+        i18n_bundle = i18n or _overlay_i18n_bundle()
+        pack = i18n_bundle.get(locale) or i18n_bundle["uk"]
+        breach_label = pack.get("breach") or "CORE BREACH"
+        combo_seed = (pack.get("combo") or "COMBO x{n}").replace("{n}", "1")
+        html = (
+            """<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
@@ -731,7 +782,9 @@ class StreamGoalOverlayType:
       </div>
 
       <div class="hdr">
-        <div class="hdr-title" id="hdrTitle">""" + _goal_label("followers") + """</div>
+        <div class="hdr-title" id="hdrTitle">"""
+            + _goal_label("followers", locale)
+            + """</div>
         <div class="hdr-subtitle" id="hdrSubtitle"></div>
       </div>
 
@@ -821,22 +874,58 @@ class StreamGoalOverlayType:
         <div class="mt-percent" id="mtPercent"></div>
       </div>
       <div class="breach-layer" id="breachOverlay"></div>
-      <div class="breach-text" id="breachText">CORE BREACH</div>
+      <div class="breach-text" id="breachText">"""
+            + breach_label
+            + """</div>
       <div class="new-target-text" id="newTargetText"></div>
-      <div class="combo-display" id="comboDisplay">COMBO x1</div>
+      <div class="combo-display" id="comboDisplay">"""
+            + combo_seed
+            + """</div>
       <div class="glitch-line" id="glitchLine"></div>
     </div>
 
     <script>
       (function() {
-        var locale = """ + _json_for_script(locale) + """;
-        var GOAL_LABELS = {
-          followers: 'FOLLOW GOAL',
-          likes: 'LIKE GOAL',
-          gifts: 'GIFT GOAL',
-          shares: 'SHARE GOAL',
-          comments: 'COMMENT GOAL'
-        };
+        var locale = """
+            + _json_for_script(locale)
+            + """;
+        var I18N = """
+            + _json_for_script(i18n_bundle)
+            + """;
+        function tr(key, vars) {
+          var pack = I18N[locale] || I18N.uk || {};
+          var s = pack[key];
+          if (s === undefined || s === null || s === '') s = (I18N.en || {})[key] || key;
+          if (vars) {
+            Object.keys(vars).forEach(function(k) {
+              s = String(s).split('{' + k + '}').join(String(vars[k]));
+            });
+          }
+          return s;
+        }
+        function goalLabels() {
+          return {
+            followers: tr('goal.followers'),
+            likes: tr('goal.likes'),
+            gifts: tr('goal.gifts'),
+            shares: tr('goal.shares'),
+            comments: tr('goal.comments')
+          };
+        }
+        function allStockTitles() {
+          var out = {};
+          ['uk', 'en'].forEach(function(loc) {
+            var pack = I18N[loc] || {};
+            ['goal.followers','goal.likes','goal.gifts','goal.shares','goal.comments','goal.generic','breach'].forEach(function(k) {
+              if (pack[k]) out[String(pack[k]).trim().toUpperCase()] = true;
+            });
+          });
+          out['FOLLOW GOAL'] = true; out['LIKE GOAL'] = true; out['GIFT GOAL'] = true;
+          out['SHARE GOAL'] = true; out['COMMENT GOAL'] = true; out['GOAL'] = true;
+          out['CORE BREACH'] = true;
+          return out;
+        }
+        var STOCK_TITLES = allStockTitles();
 
         var root = document.getElementById('root');
         var coreArea = document.getElementById('coreArea');
@@ -869,13 +958,13 @@ class StreamGoalOverlayType:
         var targetLbl = document.getElementById('targetLbl');
 
         var SKIN_PALETTES = {
-          digital_core: { accent:'#00ffff', magenta:'#ff2bd6', purple:'#9b5cff', warn:'#ffe066', ok:'#39ff88', bg:'#050507', targetLbl:'TARGET' },
-          boss:         { accent:'#ff3355', magenta:'#ff0066', purple:'#aa2244', warn:'#ffcc33', ok:'#44ff88', bg:'#0a0406', targetLbl:'HP MAX' },
-          reactor:      { accent:'#39ff88', magenta:'#b8ff00', purple:'#1faa66', warn:'#ffe066', ok:'#00ffcc', bg:'#030806', targetLbl:'CAPACITY' },
-          rocket:       { accent:'#ff6600', magenta:'#ff3366', purple:'#ff9933', warn:'#ffe066', ok:'#66ccff', bg:'#080503', targetLbl:'THRUST' },
-          vault:        { accent:'#88ff00', magenta:'#33ff99', purple:'#66aa00', warn:'#ccff33', ok:'#00ffaa', bg:'#040805', targetLbl:'LOCK' },
-          tower:        { accent:'#ff00aa', magenta:'#ff44ff', purple:'#9b5cff', warn:'#ffccff', ok:'#00ffff', bg:'#08040a', targetLbl:'HEIGHT' },
-          creature:     { accent:'#ff66cc', magenta:'#ff99ff', purple:'#cc44aa', warn:'#ffe066', ok:'#66ff99', bg:'#0a0508', targetLbl:'BIOMASS' }
+          digital_core: { accent:'#00ffff', magenta:'#ff2bd6', purple:'#9b5cff', warn:'#ffe066', ok:'#39ff88', bg:'#050507', targetKey:'skin_target.digital_core' },
+          boss:         { accent:'#ff3355', magenta:'#ff0066', purple:'#aa2244', warn:'#ffcc33', ok:'#44ff88', bg:'#0a0406', targetKey:'skin_target.boss' },
+          reactor:      { accent:'#39ff88', magenta:'#b8ff00', purple:'#1faa66', warn:'#ffe066', ok:'#00ffcc', bg:'#030806', targetKey:'skin_target.reactor' },
+          rocket:       { accent:'#ff6600', magenta:'#ff3366', purple:'#ff9933', warn:'#ffe066', ok:'#66ccff', bg:'#080503', targetKey:'skin_target.rocket' },
+          vault:        { accent:'#88ff00', magenta:'#33ff99', purple:'#66aa00', warn:'#ccff33', ok:'#00ffaa', bg:'#040805', targetKey:'skin_target.vault' },
+          tower:        { accent:'#ff00aa', magenta:'#ff44ff', purple:'#9b5cff', warn:'#ffccff', ok:'#00ffff', bg:'#08040a', targetKey:'skin_target.tower' },
+          creature:     { accent:'#ff66cc', magenta:'#ff99ff', purple:'#cc44aa', warn:'#ffe066', ok:'#66ff99', bg:'#0a0508', targetKey:'skin_target.creature' }
         };
         var SKIN_DEFAULT_ACCENTS = {};
         Object.keys(SKIN_PALETTES).forEach(function(k) {
@@ -891,7 +980,7 @@ class StreamGoalOverlayType:
           root.style.setProperty('--sg-warn', pal.warn);
           root.style.setProperty('--sg-ok', pal.ok);
           root.style.setProperty('--sg-bg', pal.bg);
-          if (targetLbl) targetLbl.textContent = pal.targetLbl || 'TARGET';
+          if (targetLbl) targetLbl.textContent = tr(pal.targetKey || 'skin_target.digital_core');
           accentColor = accent;
         }
 
@@ -929,16 +1018,19 @@ class StreamGoalOverlayType:
 
         function isStockGoalTitle(t) {
           var u = String(t || '').trim().toUpperCase();
-          if (!u || u === 'CORE BREACH' || u === 'GOAL') return true;
-          for (var k in GOAL_LABELS) {
-            if (GOAL_LABELS[k] === u || GOAL_LABELS[k] === String(t || '').trim()) return true;
+          if (!u) return true;
+          if (STOCK_TITLES[u]) return true;
+          var labels = goalLabels();
+          for (var k in labels) {
+            if (String(labels[k]).trim().toUpperCase() === u) return true;
           }
           return false;
         }
 
         function goalTitleFromState(st, cfg) {
           var gt = st.goal_type !== undefined ? st.goal_type : (cfg && cfg.goal_type);
-          var stock = GOAL_LABELS[gt] || ((gt ? String(gt).toUpperCase() + ' GOAL' : 'GOAL'));
+          var labels = goalLabels();
+          var stock = labels[gt] || tr('goal.generic');
           var titleVal = st.title !== undefined ? st.title : (cfg && cfg.title);
           if (titleVal !== undefined && titleVal !== null) {
             var t = String(titleVal).trim();
@@ -970,6 +1062,14 @@ class StreamGoalOverlayType:
 
         function applyState(st) {
           if (!st) return;
+          if (st.locale) {
+            var nextLocale = String(st.locale || '').trim().toLowerCase();
+            if (nextLocale === 'en' || nextLocale === 'uk') {
+              locale = nextLocale;
+              STOCK_TITLES = allStockTitles();
+              if (breachText) breachText.textContent = tr('breach');
+            }
+          }
           var cfg = st.config || config || {};
           if (st.config) config = st.config;
 
@@ -1105,7 +1205,7 @@ class StreamGoalOverlayType:
         }
 
         function showCombo(count) {
-          comboDisplay.textContent = 'COMBO x' + count;
+          comboDisplay.textContent = tr('combo', {n: count});
           comboDisplay.classList.add('show');
           addRx('rx-pulse', 450);
           spawnParticles(12, 'burst');
@@ -1113,8 +1213,10 @@ class StreamGoalOverlayType:
         }
 
         function showMilestone(label, percent) {
-          // CORE BREACH is reserved for the completion sequence, not toast chrome.
-          if (String(label || '').toUpperCase() === 'CORE BREACH') return;
+          // Completion breach toast is reserved for the completion sequence.
+          var breachU = String(tr('breach') || '').trim().toUpperCase();
+          var labelU = String(label || '').trim().toUpperCase();
+          if (labelU === 'CORE BREACH' || (breachU && labelU === breachU)) return;
           mtLabel.textContent = label || '';
           mtPercent.textContent = (percent || 0) + '%';
           milestoneToast.classList.add('show');
@@ -1148,6 +1250,7 @@ class StreamGoalOverlayType:
 
           // extreme brightness + explosion
           setTimeout(function() {
+            if (breachText) breachText.textContent = tr('breach');
             breachOverlay.classList.add('active');
             breachText.classList.add('show');
             fireShock('gift');
@@ -1166,7 +1269,7 @@ class StreamGoalOverlayType:
             breachText.classList.remove('show');
             breachOverlay.classList.remove('active');
             if (nextTarget) {
-              newTargetText.textContent = 'NEW TARGET ' + fmtInt(nextTarget);
+              newTargetText.textContent = tr('new_target', {n: fmtInt(nextTarget)});
               newTargetText.classList.add('show');
             }
           }, 2400);
@@ -1213,11 +1316,11 @@ class StreamGoalOverlayType:
             var batched = !!(payload.batched) || !!(meta.batched) || amount > 1;
 
             if (type === 'follow') {
-              showNotif('+1 FOLLOW', 'follow');
+              showNotif(tr('notif.follow'), 'follow');
               addRx('rx-pulse', 400);
               spawnParticles(6, 'burst');
             } else if (type === 'like') {
-              var label = amount > 1 ? ('+' + amount + ' LIKES') : '+1 LIKE';
+              var label = amount > 1 ? tr('notif.like_many', {n: amount}) : tr('notif.like_one');
               showNotif(label, 'like');
               if (batched || amount > 5) {
                 addRx('rx-pulse', 500);
@@ -1229,14 +1332,14 @@ class StreamGoalOverlayType:
               }
               if (combo > 5) showCombo(combo);
             } else if (type === 'share') {
-              showNotif('SHARE DETECTED', 'share');
+              showNotif(tr('notif.share'), 'share');
               fireBeam();
               fireShock('share');
               spawnParticles(14, 'stream');
               addRx('rx-pulse', 450);
             } else if (type === 'gift') {
-              var gname = payload.gift_name || meta.gift_name || 'Gift';
-              showNotif('GIFT: ' + gname, 'gift');
+              var gname = payload.gift_name || meta.gift_name || tr('notif.gift_fallback');
+              showNotif(tr('notif.gift', {name: gname}), 'gift');
               fireShock('gift');
               addRx('rx-shake', 400);
               spawnParticles(22, 'explode');
@@ -1245,7 +1348,7 @@ class StreamGoalOverlayType:
                 setTimeout(function() { fireShock('gift'); triggerGlitch(); }, 180);
               }
             } else if (type === 'comment') {
-              showNotif('COMMENT', 'like');
+              showNotif(tr('notif.comment'), 'like');
               spawnParticles(4, 'burst');
               addRx('rx-pulse', 300);
             }
@@ -1332,7 +1435,9 @@ class StreamGoalOverlayType:
 
             ws.onopen = function() {
               tries = 0;
-              var subscribeMsg = """ + _json_for_script(subscribe_msg) + """;
+              var subscribeMsg = """
+            + _json_for_script(subscribe_msg)
+            + """;
               ws.send(JSON.stringify(subscribeMsg));
             };
             ws.onmessage = function(ev) {
@@ -1349,19 +1454,41 @@ class StreamGoalOverlayType:
     </script>
   </body>
 </html>"""
-        safe_skin = skin if skin in {
-            "digital_core", "boss", "reactor", "rocket", "vault", "tower", "creature",
-        } else "digital_core"
+        )
+        safe_skin = (
+            skin
+            if skin
+            in {
+                "digital_core",
+                "boss",
+                "reactor",
+                "rocket",
+                "vault",
+                "tower",
+                "creature",
+            }
+            else "digital_core"
+        )
         palette = _skin_palette(safe_skin)
         accent_use = (accent or "").strip()
         if not accent_use.startswith("#"):
             accent_use = palette["accent"]
         # If accent is still a stock skin default, follow the selected skin palette.
-        stock_accents = {p["accent"].lower() for p in (
-            _skin_palette(s) for s in (
-                "digital_core", "boss", "reactor", "rocket", "vault", "tower", "creature",
+        stock_accents = {
+            p["accent"].lower()
+            for p in (
+                _skin_palette(s)
+                for s in (
+                    "digital_core",
+                    "boss",
+                    "reactor",
+                    "rocket",
+                    "vault",
+                    "tower",
+                    "creature",
+                )
             )
-        )}
+        }
         if accent_use.lower() in stock_accents:
             accent_use = palette["accent"]
         root_style = (

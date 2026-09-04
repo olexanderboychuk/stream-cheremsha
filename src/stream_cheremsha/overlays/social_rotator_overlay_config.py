@@ -58,6 +58,7 @@ class SocialRotatorOverlayConfig:
     enable_glow: bool
     enable_particles: bool
     enable_crt: bool
+    background_opacity_percent: int
     show_latest_follower: bool
     show_latest_donation: bool
     show_stream_time: bool
@@ -85,6 +86,7 @@ def social_rotator_overlay_config_defaults() -> SocialRotatorOverlayConfig:
         enable_glow=True,
         enable_particles=True,
         enable_crt=True,
+        background_opacity_percent=85,
         show_latest_follower=True,
         show_latest_donation=True,
         show_stream_time=True,
@@ -148,6 +150,10 @@ def _validate_theme(v: object) -> str:
 
 def _validate_scale_percent(v: object) -> int:
     return max(40, min(250, _ensure_int(v, default=100)))
+
+
+def _validate_background_opacity_percent(v: object) -> int:
+    return max(0, min(100, _ensure_int(v, default=85)))
 
 
 def _validate_interval_ms(v: object) -> int:
@@ -243,6 +249,9 @@ def social_rotator_overlay_config_from_json_text(text: str) -> SocialRotatorOver
         enable_glow=_ensure_bool(d.get("enable_glow"), default=defaults.enable_glow),
         enable_particles=_ensure_bool(d.get("enable_particles"), default=defaults.enable_particles),
         enable_crt=_ensure_bool(d.get("enable_crt"), default=defaults.enable_crt),
+        background_opacity_percent=_validate_background_opacity_percent(
+            d.get("background_opacity_percent", defaults.background_opacity_percent)
+        ),
         show_latest_follower=_ensure_bool(
             d.get("show_latest_follower"), default=defaults.show_latest_follower
         ),
@@ -276,6 +285,7 @@ def social_rotator_overlay_config_to_public_dict(
         "enable_glow": bool(cfg.enable_glow),
         "enable_particles": bool(cfg.enable_particles),
         "enable_crt": bool(cfg.enable_crt),
+        "background_opacity_percent": int(cfg.background_opacity_percent),
         "show_latest_follower": bool(cfg.show_latest_follower),
         "show_latest_donation": bool(cfg.show_latest_donation),
         "show_stream_time": bool(cfg.show_stream_time),

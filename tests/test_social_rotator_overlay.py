@@ -8,7 +8,12 @@ def test_overlay_renderer_and_registry() -> None:
     overlay = SocialRotatorOverlayType()
     html = overlay.render_html({"instance": "main"})
     assert "<!doctype html>" in html.lower()
-    assert "Social Rotator" in html or "LIVE SOCIAL" in html
+    assert (
+        "Social Rotator" in html
+        or "LIVE SOCIAL" in html
+        or "СОЦМЕРЕЖІ LIVE" in html
+        or "I18N" in html
+    )
     assert "hud-frame" in html
     assert "hero-icon" in html
     assert "next-box" in html
@@ -22,6 +27,17 @@ def test_overlay_renderer_and_registry() -> None:
     assert "Press+Start+2P" in html
     assert "VT323" in html
     assert "transform: scale(var(--sr-widget-scale))" not in html
+    assert "position: absolute; inset: 0" in html
+    assert "width: 100%" in html
+    assert "height: 100%" in html
+    assert "920px" not in html
+    assert "--sr-bg-a" in html
+    assert "background_opacity_percent" in html
+    assert "applyBackgroundOpacity" in html
+    assert "0.45vw" in html or "+ 0.45vw" in html
+    assert "updateReadableScale" in html
+    assert "300 / h" in html
+    assert "function tr(" in html or "applyChromeI18n" in html
     st = overlay.initial_state({"instance": "main"})
     assert "config" in st
     assert "rotation" in st

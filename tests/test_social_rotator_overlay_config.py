@@ -28,6 +28,7 @@ def test_defaults_have_five_platforms() -> None:
     assert cfg.transition == "glitch_morph"
     assert cfg.theme == "neon_cyber"
     assert cfg.tiktok_coin_to_value_rate == 1.0
+    assert cfg.background_opacity_percent == 85
 
 
 def test_roundtrip_clamps() -> None:
@@ -77,7 +78,25 @@ def test_drops_unknown_platform_entries() -> None:
 def test_qsettings_roundtrip(tmp_path) -> None:  # type: ignore[no-untyped-def]
     ini = str(tmp_path / "sr.ini")
     settings = QSettings(ini, QSettings.Format.IniFormat)
-    cfg = social_rotator_overlay_config_defaults().replace(show_url=False)
+    cfg = social_rotator_overlay_config_defaults().replace(
+        show_url=False, background_opacity_percent=0
+    )
     save_social_rotator_overlay_config(cfg, settings)
     loaded = load_social_rotator_overlay_config(settings)
     assert loaded.show_url is False
+    assert loaded.background_opacity_percent == 0
+
+
+def test_background_opacity_clamped() -> None:
+    cfg = social_rotator_overlay_config_from_json_text(
+        social_rotator_overlay_config_to_json_text(
+            social_rotator_overlay_config_defaults().replace(background_opacity_percent=250)
+        )
+    )
+    assert cfg.background_opacity_percent == 100
+    cfg2 = social_rotator_overlay_config_from_json_text(
+        social_rotator_overlay_config_to_json_text(
+            social_rotator_overlay_config_defaults().replace(background_opacity_percent=-5)
+        )
+    )
+    assert cfg2.background_opacity_percent == 0

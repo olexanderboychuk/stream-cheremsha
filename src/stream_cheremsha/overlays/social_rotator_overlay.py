@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from stream_cheremsha import l10n
 from stream_cheremsha.overlays.models import normalize_instance_id
 from stream_cheremsha.overlays.social_platforms import PLATFORM_DEFINITIONS
 from stream_cheremsha.overlays.social_rotator_overlay_config import (
@@ -16,6 +17,27 @@ from stream_cheremsha.overlays.social_rotator_rotation import (
 )
 from stream_cheremsha.overlays.social_rotator_stats import SocialRotatorStatsSession
 from stream_cheremsha.overlays.ui_locale import load_ui_locale
+
+_I18N_KEYS = (
+    "kicker",
+    "next",
+    "sec",
+    "stat.latest_follower",
+    "stat.latest_donation",
+    "stat.stream_time",
+    "stat.top_donator",
+    "stat.online",
+    "empty",
+)
+
+
+def _overlay_i18n_bundle() -> dict[str, dict[str, str]]:
+    out: dict[str, dict[str, str]] = {"uk": {}, "en": {}}
+    for short in _I18N_KEYS:
+        key = f"social_rotator.{short}"
+        out["uk"][short] = l10n.tr("uk", key)
+        out["en"][short] = l10n.tr("en", key)
+    return out
 
 
 def _json_for_script(value: Any) -> str:
@@ -44,7 +66,10 @@ class SocialRotatorOverlayType:
         cfg_dict = social_rotator_overlay_config_to_public_dict(cfg)
         accent = str(cfg.accent_color or "#00ffff")
         scale = max(40, min(250, int(cfg.scale_percent))) / 100.0
+        bg_a = max(0, min(100, int(cfg.background_opacity_percent))) / 100.0
         locale = load_ui_locale()
+        i18n = _overlay_i18n_bundle()
+        pack = i18n.get(locale) or i18n["uk"]
         platforms_meta = _platform_meta()
         entries = enabled_rotation_entries(parse_platforms(cfg))
         rotation = SocialRotatorRotationEngine.from_entries(
@@ -95,6 +120,7 @@ class SocialRotatorOverlayType:
         --sr-u: var(--sr-widget-scale);
         --sr-read: 1;
         --sr-glow: 0.28;
+        --sr-bg-a: {bg_a:.4f};
       }}
       html, body {{
         margin: 0; padding: 0; width: 100%; height: 100%;
@@ -102,10 +128,17 @@ class SocialRotatorOverlayType:
       }}
       .root {{
         position: absolute; inset: 0;
-        display: flex; align-items: center; justify-content: center;
+        display: flex;
+        flex-direction: column;
         font-family: 'VT323', monospace;
         color: #e8f7ff;
         --sr-font-display: 'Press Start 2P', monospace;
+        --sr-u: var(--sr-widget-scale);
+        --sr-read: 1;
+        padding: calc(6px * var(--sr-u) * var(--sr-read));
+        box-sizing: border-box;
+        overflow: hidden;
+        pointer-events: none;
       }}
       .root.theme-synthwave {{ --sr-accent: #ff71ce; --sr-magenta: #b967ff; }}
       .root.theme-toxic {{ --sr-accent: #b8ff00; --sr-magenta: #39ff88; }}
@@ -113,15 +146,25 @@ class SocialRotatorOverlayType:
       .root.theme-amber {{ --sr-accent: #ffb000; --sr-magenta: #ff6b35; }}
       .hud-frame {{
         position: relative;
-        width: min(96vw, calc(920px * var(--sr-u) * var(--sr-read)));
-        max-width: 100%;
-        padding: calc(10px * var(--sr-u) * var(--sr-read));
-        background: linear-gradient(180deg, rgba(8,10,16,0.82), rgba(4,5,8,0.88));
+        flex: 1 1 auto;
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        padding: calc(clamp(8px, 1.2vw, 14px) * var(--sr-u) * var(--sr-read));
+        background: linear-gradient(
+          180deg,
+          rgba(8,10,16,var(--sr-bg-a)),
+          rgba(4,5,8,calc(var(--sr-bg-a) * 1.07))
+        );
         border: 1px solid color-mix(in srgb, var(--sr-accent) 55%, transparent);
         box-shadow:
           0 0 calc(18px * var(--sr-u)) color-mix(in srgb, var(--sr-accent) calc(var(--sr-glow) * 100%), transparent),
           inset 0 0 calc(24px * var(--sr-u)) rgba(0,255,255,0.04);
         border-radius: 2px;
+        box-sizing: border-box;
       }}
       .hud-frame::after {{
         content: '';
@@ -131,17 +174,20 @@ class SocialRotatorOverlayType:
         pointer-events: none;
       }}
       .hud-corner {{
-        position: absolute; width: 14px; height: 14px;
+        position: absolute;
+        width: calc(clamp(12px, 1.6vw, 18px) * var(--sr-u));
+        height: calc(clamp(12px, 1.6vw, 18px) * var(--sr-u));
         border: 2px solid var(--sr-accent);
         opacity: 0.85;
         pointer-events: none;
+        z-index: 6;
       }}
       .hud-corner.tl {{ top: -1px; left: -1px; border-right: 0; border-bottom: 0; }}
       .hud-corner.tr {{ top: -1px; right: -1px; border-left: 0; border-bottom: 0; }}
       .hud-corner.bl {{ bottom: -1px; left: -1px; border-right: 0; border-top: 0; }}
       .hud-corner.br {{ bottom: -1px; right: -1px; border-left: 0; border-top: 0; }}
       .scanlines {{
-        pointer-events: none; position: absolute; inset: 0; opacity: 0.22;
+        pointer-events: none; position: absolute; inset: 0; opacity: 0.22; z-index: 5;
         background: repeating-linear-gradient(
           0deg, transparent, transparent 2px, rgba(0,0,0,0.18) 3px
         );
@@ -153,7 +199,7 @@ class SocialRotatorOverlayType:
         from {{ background-position: 0 0; }}
         to {{ background-position: 0 24px; }}
       }}
-      .particles {{ pointer-events: none; position: absolute; inset: 0; overflow: hidden; }}
+      .particles {{ pointer-events: none; position: absolute; inset: 0; overflow: hidden; z-index: 4; }}
       .fx-particle {{
         position: absolute; width: 3px; height: 3px; border-radius: 50%;
         background: var(--sr-accent);
@@ -167,23 +213,32 @@ class SocialRotatorOverlayType:
       }}
       .panel-top {{
         position: relative; z-index: 2;
+        flex: 1 1 auto;
+        min-height: 0;
+        width: 100%;
         display: grid;
         grid-template-columns: minmax(0, 1.35fr) auto minmax(0, 1.2fr);
-        gap: calc(10px * var(--sr-u) * var(--sr-read));
+        gap: calc((8px + 0.35vw) * var(--sr-u) * var(--sr-read));
         align-items: center;
-        min-height: calc(118px * var(--sr-u) * var(--sr-read));
       }}
       .hero {{
-        display: flex; align-items: center; gap: calc(14px * var(--sr-u) * var(--sr-read));
+        display: flex; align-items: center;
+        gap: calc((12px + 0.4vw) * var(--sr-u) * var(--sr-read));
         min-width: 0;
-        padding: calc(8px * var(--sr-u) * var(--sr-read));
+        min-height: 0;
+        height: 100%;
+        padding: calc((8px + 0.25vw) * var(--sr-u) * var(--sr-read));
         border: 1px solid color-mix(in srgb, var(--sr-accent) 35%, transparent);
-        background: rgba(0,0,0,0.28);
+        background: rgba(0,0,0,calc(var(--sr-bg-a) * 0.34));
+        box-sizing: border-box;
       }}
       .hero-icon-wrap {{
         position: relative;
-        width: calc(78px * var(--sr-u) * var(--sr-read));
-        height: calc(78px * var(--sr-u) * var(--sr-read));
+        width: calc((64px + 2.2vw) * var(--sr-u) * var(--sr-read));
+        height: calc((64px + 2.2vw) * var(--sr-u) * var(--sr-read));
+        max-width: 42%;
+        max-height: 100%;
+        aspect-ratio: 1;
         flex: 0 0 auto;
       }}
       .orbit-ring {{
@@ -227,33 +282,34 @@ class SocialRotatorOverlayType:
       }}
       .hero-icon svg {{ width: 58%; height: 58%; z-index: 1; }}
       .hero-text {{ min-width: 0; flex: 1; }}
+      /* Fluid px+vw — no low max caps (those made banner text tiny). */
       .kicker {{
         font-family: var(--sr-font-display);
-        font-size: calc(7px * var(--sr-u) * var(--sr-read));
+        font-size: calc((12px + 0.45vw) * var(--sr-u) * var(--sr-read));
         color: var(--sr-accent);
-        letter-spacing: 0.12em;
+        letter-spacing: 0.1em;
         text-shadow: 0 0 8px color-mix(in srgb, var(--sr-accent) 60%, transparent);
-        margin-bottom: 6px;
+        margin-bottom: calc(4px * var(--sr-u) * var(--sr-read));
       }}
       .platform-name {{
         font-family: var(--sr-font-display);
-        font-size: calc(11px * var(--sr-u) * var(--sr-read));
+        font-size: calc((15px + 0.55vw) * var(--sr-u) * var(--sr-read));
         color: var(--sr-platform);
         text-shadow: 0 0 10px color-mix(in srgb, var(--sr-platform) 70%, transparent);
-        margin-bottom: 8px;
+        margin-bottom: calc(5px * var(--sr-u) * var(--sr-read));
       }}
       .username {{
         font-family: var(--sr-font-display);
-        font-size: calc(16px * var(--sr-u) * var(--sr-read));
+        font-size: calc((20px + 1.05vw) * var(--sr-u) * var(--sr-read));
         color: #fff;
-        line-height: 1.35;
+        line-height: 1.25;
         word-break: break-word;
         text-shadow: 0 0 12px rgba(255,255,255,0.25);
-        margin-bottom: 6px;
+        margin-bottom: calc(4px * var(--sr-u) * var(--sr-read));
       }}
       .url {{
         font-family: 'VT323', monospace;
-        font-size: calc(16px * var(--sr-u) * var(--sr-read));
+        font-size: calc((18px + 0.7vw) * var(--sr-u) * var(--sr-read));
         color: var(--sr-magenta);
         opacity: 0.95;
         white-space: nowrap;
@@ -263,104 +319,138 @@ class SocialRotatorOverlayType:
       .root.hide-url .url {{ display: none; }}
       .next-box {{
         display: flex; flex-direction: column; align-items: center; justify-content: center;
-        min-width: calc(54px * var(--sr-u) * var(--sr-read));
-        padding: 4px 6px;
+        min-width: calc((58px + 1.2vw) * var(--sr-u) * var(--sr-read));
+        padding: calc(4px * var(--sr-u) * var(--sr-read)) calc(8px * var(--sr-u) * var(--sr-read));
         border-left: 1px solid color-mix(in srgb, var(--sr-accent) 40%, transparent);
         border-right: 1px solid color-mix(in srgb, var(--sr-accent) 40%, transparent);
         color: var(--sr-accent);
         text-shadow: 0 0 8px color-mix(in srgb, var(--sr-accent) 55%, transparent);
+        align-self: stretch;
       }}
       .root.hide-countdown .next-box {{ display: none; }}
       .next-label, .next-sec {{
         font-family: var(--sr-font-display);
-        font-size: calc(7px * var(--sr-u) * var(--sr-read));
-        letter-spacing: 0.08em;
+        font-size: calc((11px + 0.35vw) * var(--sr-u) * var(--sr-read));
+        letter-spacing: 0.06em;
       }}
       .next-num {{
         font-family: 'VT323', monospace;
-        font-size: calc(34px * var(--sr-u) * var(--sr-read));
+        font-size: calc((42px + 1.4vw) * var(--sr-u) * var(--sr-read));
         line-height: 1;
         margin: 2px 0;
       }}
-      .secondary-wrap {{ min-width: 0; position: relative; }}
+      .secondary-wrap {{
+        min-width: 0;
+        min-height: 0;
+        height: 100%;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }}
       .root.hide-secondary .secondary-wrap {{ display: none; }}
       .secondary {{
-        display: flex; gap: calc(8px * var(--sr-u) * var(--sr-read));
+        display: flex; gap: calc((8px + 0.35vw) * var(--sr-u) * var(--sr-read));
         overflow-x: auto; overflow-y: hidden;
         scrollbar-width: none;
-        padding-bottom: 4px;
+        padding-bottom: 2px;
+        align-items: stretch;
+        height: 100%;
       }}
       .secondary::-webkit-scrollbar {{ display: none; }}
       .sec-card {{
-        flex: 0 0 auto;
-        width: calc(78px * var(--sr-u) * var(--sr-read));
+        flex: 1 1 0;
+        min-width: calc((80px + 1.5vw) * var(--sr-u) * var(--sr-read));
+        max-width: none;
         text-align: center;
-        opacity: 0.72;
+        opacity: 0.82;
         transition: opacity 0.35s ease, transform 0.35s ease;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
       }}
       .sec-card.active {{ opacity: 1; transform: translateY(-2px); }}
       .sec-icon {{
-        width: calc(42px * var(--sr-u) * var(--sr-read));
-        height: calc(42px * var(--sr-u) * var(--sr-read));
+        width: calc((46px + 1.3vw) * var(--sr-u) * var(--sr-read));
+        height: calc((46px + 1.3vw) * var(--sr-u) * var(--sr-read));
         margin: 0 auto 6px;
         border-radius: 10px;
         border: 2px solid var(--sec-accent, var(--sr-accent));
         display: flex; align-items: center; justify-content: center;
-        background: rgba(0,0,0,0.45);
+        background: rgba(0,0,0,calc(var(--sr-bg-a) * 0.55));
         box-shadow: 0 0 10px color-mix(in srgb, var(--sec-accent, var(--sr-accent)) 45%, transparent);
       }}
       .sec-icon svg {{ width: 55%; height: 55%; }}
       .sec-name {{
         font-family: var(--sr-font-display);
-        font-size: calc(6px * var(--sr-u) * var(--sr-read));
+        font-size: calc((11px + 0.32vw) * var(--sr-u) * var(--sr-read));
         color: #fff;
         margin-bottom: 3px;
+        line-height: 1.2;
       }}
       .sec-user {{
         font-family: 'VT323', monospace;
-        font-size: calc(12px * var(--sr-u) * var(--sr-read));
-        color: rgba(255,255,255,0.75);
+        font-size: calc((16px + 0.55vw) * var(--sr-u) * var(--sr-read));
+        color: rgba(255,255,255,0.88);
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        max-width: 100%;
+        padding: 0 2px;
+        line-height: 1.1;
       }}
       .pager-dots {{
-        display: flex; justify-content: center; gap: 5px; margin-top: 4px;
+        display: flex; justify-content: center; gap: 5px; margin-top: 2px;
       }}
+      .root.short .pager-dots {{ display: none; }}
       .pager-dots span {{
-        width: 5px; height: 5px; border-radius: 50%;
+        width: 6px; height: 6px; border-radius: 50%;
         background: rgba(255,255,255,0.25);
       }}
       .pager-dots span.on {{ background: var(--sr-accent); box-shadow: 0 0 6px var(--sr-accent); }}
       .panel-stats {{
         position: relative; z-index: 2;
-        margin-top: calc(10px * var(--sr-u) * var(--sr-read));
+        flex: 0 0 auto;
+        margin-top: calc((6px + 0.25vw) * var(--sr-u) * var(--sr-read));
         display: grid;
         grid-template-columns: repeat(5, minmax(0, 1fr));
-        gap: calc(6px * var(--sr-u) * var(--sr-read));
+        gap: calc((5px + 0.25vw) * var(--sr-u) * var(--sr-read));
+        width: 100%;
       }}
       .stat-cell {{
         min-width: 0;
-        padding: calc(6px * var(--sr-u) * var(--sr-read)) calc(8px * var(--sr-u) * var(--sr-read));
+        padding: calc((6px + 0.2vw) * var(--sr-u) * var(--sr-read))
+                 calc((8px + 0.25vw) * var(--sr-u) * var(--sr-read));
         border: 1px solid color-mix(in srgb, var(--sr-accent) 40%, transparent);
-        background: rgba(0,0,0,0.35);
+        background: rgba(0,0,0,calc(var(--sr-bg-a) * 0.42));
       }}
       .stat-cell.hidden {{ display: none; }}
       .stat-label {{
         font-family: var(--sr-font-display);
-        font-size: calc(6px * var(--sr-u) * var(--sr-read));
+        font-size: calc((11px + 0.32vw) * var(--sr-u) * var(--sr-read));
         color: var(--sr-accent);
         margin-bottom: 4px;
-        letter-spacing: 0.04em;
+        letter-spacing: 0.03em;
+        line-height: 1.25;
       }}
       .stat-value {{
         font-family: 'VT323', monospace;
-        font-size: calc(18px * var(--sr-u) * var(--sr-read));
+        font-size: calc((20px + 0.7vw) * var(--sr-u) * var(--sr-read));
         color: #fff;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        line-height: 1.1;
       }}
       .stat-value.big {{
         color: var(--sr-accent);
-        font-size: calc(24px * var(--sr-u) * var(--sr-read));
+        font-size: calc((26px + 0.95vw) * var(--sr-u) * var(--sr-read));
         text-shadow: 0 0 10px color-mix(in srgb, var(--sr-accent) 50%, transparent);
+      }}
+      .root.short .hud-frame {{
+        padding: calc((5px + 0.2vw) * var(--sr-u) * var(--sr-read));
+      }}
+      .root.short .kicker,
+      .root.short .platform-name,
+      .root.short .username {{
+        margin-bottom: calc(2px * var(--sr-u) * var(--sr-read));
       }}
       .fx-layer {{
         pointer-events: none;
@@ -473,20 +563,43 @@ class SocialRotatorOverlayType:
       }}
       .empty {{
         font-family: var(--sr-font-display);
-        font-size: calc(9px * var(--sr-u) * var(--sr-read));
+        font-size: calc(max(8px, clamp(8px, 1.1vw, 12px)) * var(--sr-u) * var(--sr-read));
         color: var(--sr-accent);
         opacity: 0.7;
-        padding: 18px;
+        padding: calc(clamp(12px, 2vw, 24px) * var(--sr-u) * var(--sr-read));
         text-align: center;
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }}
+      .root.hide-countdown .panel-top {{
+        grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.15fr);
+      }}
+      .root.hide-secondary .panel-top {{
+        grid-template-columns: minmax(0, 1.4fr) auto;
+      }}
+      .root.hide-countdown.hide-secondary .panel-top {{
+        grid-template-columns: 1fr;
       }}
       @media (max-width: 720px) {{
-        .panel-top {{ grid-template-columns: 1fr; }}
-        .next-box {{ flex-direction: row; gap: 8px; border: 0; }}
+        .panel-top,
+        .root.hide-countdown .panel-top,
+        .root.hide-secondary .panel-top,
+        .root.hide-countdown.hide-secondary .panel-top {{
+          grid-template-columns: 1fr;
+          grid-template-rows: minmax(0, 1fr) auto auto;
+        }}
+        .next-box {{
+          flex-direction: row; gap: 8px; border: 0;
+          min-width: 0; width: 100%;
+          justify-content: center;
+        }}
         .panel-stats {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
       }}
       .root.narrow-xs .url {{ display: none; }}
       .root.narrow-xs .username {{
-        font-size: calc(13px * var(--sr-u) * var(--sr-read));
+        font-size: calc((16px + 0.8vw) * var(--sr-u) * var(--sr-read));
       }}
     </style>
   </head>
@@ -507,16 +620,16 @@ class SocialRotatorOverlayType:
               <div class="hero-icon" id="heroIcon"></div>
             </div>
             <div class="hero-text">
-              <div class="kicker">LIVE SOCIAL</div>
+              <div class="kicker" id="kicker">{pack.get("kicker") or "LIVE SOCIAL"}</div>
               <div class="platform-name" id="platformName">—</div>
               <div class="username" id="username">—</div>
               <div class="url" id="url"></div>
             </div>
           </div>
           <div class="next-box" id="nextBox">
-            <div class="next-label">NEXT</div>
+            <div class="next-label" id="nextLabel">{pack.get("next") or "NEXT"}</div>
             <div class="next-num" id="nextNum">00</div>
-            <div class="next-sec">SEC</div>
+            <div class="next-sec" id="nextSec">{pack.get("sec") or "SEC"}</div>
           </div>
           <div class="secondary-wrap">
             <div class="secondary" id="secondary"></div>
@@ -525,37 +638,39 @@ class SocialRotatorOverlayType:
         </div>
         <div class="panel-stats" id="stats">
           <div class="stat-cell" data-stat="latest_follower">
-            <div class="stat-label">LATEST FOLLOWER</div>
+            <div class="stat-label" data-i18n="stat.latest_follower">{pack.get("stat.latest_follower") or "LATEST FOLLOWER"}</div>
             <div class="stat-value" id="statFollow">—</div>
           </div>
           <div class="stat-cell" data-stat="latest_donation">
-            <div class="stat-label">LATEST DONATION</div>
+            <div class="stat-label" data-i18n="stat.latest_donation">{pack.get("stat.latest_donation") or "LATEST DONATION"}</div>
             <div class="stat-value" id="statDonation">—</div>
           </div>
           <div class="stat-cell" data-stat="stream_time">
-            <div class="stat-label">STREAM TIME</div>
+            <div class="stat-label" data-i18n="stat.stream_time">{pack.get("stat.stream_time") or "STREAM TIME"}</div>
             <div class="stat-value big" id="statTime">00:00:00</div>
           </div>
           <div class="stat-cell" data-stat="top_donator">
-            <div class="stat-label">TOP DONATOR</div>
+            <div class="stat-label" data-i18n="stat.top_donator">{pack.get("stat.top_donator") or "TOP DONATOR"}</div>
             <div class="stat-value" id="statTop">—</div>
           </div>
           <div class="stat-cell" data-stat="online">
-            <div class="stat-label">ONLINE</div>
+            <div class="stat-label" data-i18n="stat.online">{pack.get("stat.online") or "ONLINE"}</div>
             <div class="stat-value big" id="statOnline">0</div>
           </div>
         </div>
-        <div class="empty" id="empty" style="display:none">AWAITING PLATFORMS</div>
+        <div class="empty" id="empty" style="display:none">{pack.get("empty") or "AWAITING PLATFORMS"}</div>
       </div>
     </div>
     <script>
       (function() {{
         const PLATFORMS = {_json_for_script(platforms_meta)};
+        const I18N = {_json_for_script(i18n)};
         let state = {_json_for_script(initial)};
         let config = state.config || {{}};
         let rotation = state.rotation || {{}};
         let platformsEnabled = state.platforms_enabled || [];
         let stats = state.stats || {{}};
+        let locale = String(state.locale || 'uk');
         let lastToken = -1;
         let lastTransitionName = '';
         let transitionTimer = null;
@@ -587,6 +702,29 @@ class SocialRotatorOverlayType:
             .replace(/"/g, '&quot;');
         }}
 
+        function tr(key) {{
+          const pack = I18N[locale] || I18N.uk || {{}};
+          const v = pack[key];
+          if (v === undefined || v === null || v === '') {{
+            return (I18N.en && I18N.en[key]) || key;
+          }}
+          return v;
+        }}
+
+        function applyChromeI18n() {{
+          const kicker = document.getElementById('kicker');
+          if (kicker) kicker.textContent = tr('kicker');
+          const nextLabel = document.getElementById('nextLabel');
+          if (nextLabel) nextLabel.textContent = tr('next');
+          const nextSec = document.getElementById('nextSec');
+          if (nextSec) nextSec.textContent = tr('sec');
+          if (emptyEl) emptyEl.textContent = tr('empty');
+          Array.prototype.forEach.call(document.querySelectorAll('[data-i18n]'), function(el) {{
+            const key = el.getAttribute('data-i18n');
+            if (key) el.textContent = tr(key);
+          }});
+        }}
+
         function iconSvg(pid) {{
           const a = (PLATFORMS[pid] && PLATFORMS[pid].accent) || '#fff';
           const common = ' xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="' + a + '"';
@@ -606,12 +744,32 @@ class SocialRotatorOverlayType:
           rootEl.style.setProperty('--sr-widget-scale', String(p / 100));
         }}
 
+        function applyBackgroundOpacity(percent) {{
+          var p = Number(percent);
+          if (!Number.isFinite(p)) p = Number(config.background_opacity_percent);
+          if (!Number.isFinite(p)) p = 85;
+          p = Math.max(0, Math.min(100, Math.round(p)));
+          rootEl.style.setProperty('--sr-bg-a', String(p / 100));
+        }}
+
         function updateReadableScale() {{
-          const w = rootEl.clientWidth || 800;
-          let read = 1;
-          rootEl.classList.remove('narrow-xs');
-          if (w < 560) {{ read = 0.92; rootEl.classList.add('narrow-xs'); }}
-          else if (w < 720) read = 0.96;
+          const w = rootEl.clientWidth || 0;
+          const h = rootEl.clientHeight || 0;
+          // Enlarge type when the browser source is short (common OBS banner crop).
+          // Grow further on very wide boxes so px+vw stays readable on canvas.
+          let read = 1.15;
+          if (h > 0) {{
+            read = Math.max(read, Math.min(2.35, 300 / h));
+          }}
+          if (w > 0) {{
+            read = Math.max(read, Math.min(1.55, w / 1000));
+          }}
+          if (w > 0 && h > 0 && (h / w) < 0.24) {{
+            read = Math.max(read, Math.min(2.5, 320 / h));
+          }}
+          rootEl.classList.toggle('short', h > 0 && h < 300);
+          rootEl.classList.toggle('banner', w > 0 && h > 0 && (h / w) < 0.28);
+          rootEl.classList.toggle('narrow-xs', w > 0 && w < 420);
           rootEl.style.setProperty('--sr-read', String(read));
         }}
 
@@ -811,12 +969,21 @@ class SocialRotatorOverlayType:
           rootEl.classList.toggle('crt', config.enable_crt !== false);
           rootEl.classList.toggle('hide-url', config.show_url === false);
           applyScale(config.scale_percent);
+          applyBackgroundOpacity(config.background_opacity_percent);
           if (config.enable_glow === false) rootEl.style.setProperty('--sr-glow', '0.08');
           else rootEl.style.setProperty('--sr-glow', '0.28');
+          applyChromeI18n();
         }}
 
         function applyState(st) {{
           if (!st) return;
+          if (st.locale) {{
+            const nextLocale = String(st.locale || '').trim().toLowerCase();
+            if (nextLocale === 'en' || nextLocale === 'uk') {{
+              locale = nextLocale;
+              applyChromeI18n();
+            }}
+          }}
           let transitionPresetChanged = false;
           if (st.config) {{
             const prevTransition = String((config && config.transition) || '');
@@ -908,7 +1075,7 @@ class SocialRotatorOverlayType:
         updateReadableScale();
         setInterval(function() {{
           renderCountdown();
-          if (stats && stats.stream_started_at_ms) {{
+          if (stats && stats.stream_started_at_ms != null && Number(stats.stream_started_at_ms) > 0) {{
             document.getElementById('statTime').textContent = fmtTime(stats.stream_started_at_ms);
           }}
         }}, 250);

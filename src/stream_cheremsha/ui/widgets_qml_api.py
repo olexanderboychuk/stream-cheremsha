@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any
 from urllib.parse import quote
 
@@ -639,7 +640,7 @@ class WidgetsQmlApi(QObject):
                 "latest_follower": {"name": "kittencat_42"},
                 "latest_donation": {"name": "Dimon4ik", "value": 250, "source": "donatik"},
                 "top_donator": {"name": "Diamond_ua", "value": 1500},
-                "stream_started_at_ms": 0,
+                "stream_started_at_ms": int(time.time() * 1000) - 95 * 60 * 1000,
                 "viewers_by_platform": {"tiktok": 100, "twitch": 40, "kick": 12},
                 "viewers_total": 152,
             },

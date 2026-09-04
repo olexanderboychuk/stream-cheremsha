@@ -28,6 +28,26 @@ def test_events_do_not_advance_rotation() -> None:
     assert ctl.initial_state()["stats"]["viewers_total"] == 9
 
 
+def test_reset_for_new_stream_starts_stream_timer() -> None:
+    ctl = SocialRotatorController(pubsub=None, get_locale=lambda: "en", instance="test")
+    ctl.on_follow("old")
+    ctl.on_stream_live(False)
+    assert ctl.initial_state()["stats"]["stream_started_at_ms"] is None
+    ctl.reset_for_new_stream()
+    st = ctl.initial_state()["stats"]
+    assert st["latest_follower"] is None
+    assert isinstance(st["stream_started_at_ms"], int)
+    assert st["stream_started_at_ms"] > 0
+
+
+def test_on_stream_live_sets_and_clears_timer() -> None:
+    ctl = SocialRotatorController(pubsub=None, get_locale=lambda: "en", instance="test")
+    ctl.on_stream_live(True)
+    assert isinstance(ctl.initial_state()["stats"]["stream_started_at_ms"], int)
+    ctl.on_stream_live(False)
+    assert ctl.initial_state()["stats"]["stream_started_at_ms"] is None
+
+
 def test_rotation_tick_advances() -> None:
     ctl = SocialRotatorController(pubsub=None, get_locale=lambda: "en", instance="test")
     ctl._rotation = SocialRotatorRotationEngine.from_entries(

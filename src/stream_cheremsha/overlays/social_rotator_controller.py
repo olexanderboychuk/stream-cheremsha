@@ -72,6 +72,10 @@ class SocialRotatorController(QObject):
 
     def reset_for_new_stream(self) -> None:
         self._stats.reset()
+        # TikTok stream-start resets session stats; restart the elapsed timer here.
+        # (on_stream_live(True) alone is not enough — connect often fires after it and
+        # would clear the timestamp via this reset.)
+        self._stats.set_stream_started_at_ms(int(time.time() * 1000))
         self._rotation.started_at_ms = int(time.time() * 1000)
         self.schedule_publish()
 
