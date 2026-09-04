@@ -6,10 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-09-04
+
 ### Added
 
 - **Universal Social Rotator** overlay (`/overlay/social_rotator`): rotating cyberpunk social HUD with platform hero, NEXT countdown, secondary platform cards, and a bottom stats strip (latest follower, donations, stream time, top donator, online).
-- Widgets editor for platforms (add/remove/reorder), rotation interval, transition presets, themes, effect toggles, and per-stat visibility.
+- Widgets editor for platforms (add/remove/reorder), rotation interval, transition presets, themes, effect toggles, background opacity, and per-stat visibility.
+- Ukrainian / English strings for Social Rotator and Stream Goal overlays and their widgets settings (driven by the app UI locale).
+
+### Fixed
+
+- Social Rotator stream timer no longer stays at `00:00:00` after TikTok connect resets the session.
+- Social Rotator HUD fills the browser source area more reliably and keeps text readable on short/wide layouts.
 
 ## [0.16.0] — 2026-09-04
 
