@@ -1619,9 +1619,7 @@ class WidgetsQmlApi(QObject):
             return
         txt = _qml_cfg_map_to_json_text(plain)
         if not txt or txt == "{}":
-            _LOG.warning(
-                "widgets ConfigMap save: webcam_frame rejected empty_or_non_serializable"
-            )
+            _LOG.warning("widgets ConfigMap save: webcam_frame rejected empty_or_non_serializable")
             return
         _LOG.info("widgets ConfigMap save: webcam_frame ok json_len=%d", len(txt))
         self.saveWebcamFrameOverlayConfigJson(txt)

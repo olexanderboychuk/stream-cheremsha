@@ -7,9 +7,7 @@ from PySide6.QtCore import QSettings
 
 WEBCAM_FRAME_OVERLAY_CONFIG_SCHEMA_VERSION = 1
 WEBCAM_FRAME_OVERLAY_CONFIG_QSETTINGS_KEY = "overlays/webcam_frame/main/config_json"
-_WEBCAM_FRAME_OVERLAY_CONFIG_QSETTINGS_BACKUP_KEY = (
-    "overlays/webcam_frame/main/config_json_backup"
-)
+_WEBCAM_FRAME_OVERLAY_CONFIG_QSETTINGS_BACKUP_KEY = "overlays/webcam_frame/main/config_json_backup"
 
 VALID_THEMES = frozenset({"neon_cyber", "synthwave", "toxic", "ice", "amber", "critical"})
 VALID_INTENSITIES = frozenset({"low", "medium", "high"})
