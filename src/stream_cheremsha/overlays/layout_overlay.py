@@ -42,7 +42,7 @@ html,body {{ margin:0; width:100%; height:100%; overflow:hidden; background:tran
 .canvas {{ position:relative; width:{layout.width}px; height:{layout.height}px;
  transform-origin:top left; }}
 .widget {{ position:absolute; display:block; border:0; background:transparent; overflow:hidden; }}
-</style></head><body><div class="canvas">{''.join(frames)}</div>
+</style></head><body><div class="canvas">{"".join(frames)}</div>
 <script>
 const canvas = document.querySelector('.canvas');
 function scale() {{

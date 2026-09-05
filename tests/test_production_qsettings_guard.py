@@ -68,6 +68,6 @@ def test_no_test_file_references_production_scope() -> None:
                 continue
             if needle_dq in line or needle_sq in line:
                 offenders.append(f"{path.name}:{lineno}: {stripped}")
-    assert not offenders, (
-        "tests must not reference the production QSettings scope:\n" + "\n".join(offenders)
+    assert not offenders, "tests must not reference the production QSettings scope:\n" + "\n".join(
+        offenders
     )

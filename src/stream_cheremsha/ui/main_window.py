@@ -213,7 +213,6 @@ from stream_cheremsha.telegram.tiktok_song_filter import (
 )
 from stream_cheremsha.tts.edge_tts import (
     EdgeTts,
-    EdgeVoice,
     filter_edge_voices_for_locale,
     list_edge_voices_cached,
 )
@@ -3476,8 +3475,10 @@ class MainWindow(FramelessWindow):
         main_lay.addWidget(self._frm_edge_voice)
 
         # --- ReSpeecher card (voice selection per language) ---
-        self._frm_respeecher_voice, respeecher_body, self._lbl_audio_respeecher_card_h = self._make_audio_card(
-            "#a855f7",
+        self._frm_respeecher_voice, respeecher_body, self._lbl_audio_respeecher_card_h = (
+            self._make_audio_card(
+                "#a855f7",
+            )
         )
         self._lbl_respeecher_voice = QLabel()
         self._combo_respeecher_voice = QComboBox()
@@ -3777,11 +3778,10 @@ class MainWindow(FramelessWindow):
         return super().eventFilter(watched, event)
 
     async def _swap_tts_backend(self) -> None:
+        from stream_cheremsha.tts.edge_tts import RandomizedEdgeTts
         from stream_cheremsha.tts.google_translate_tts import GoogleTranslateTts
-        from stream_cheremsha.tts.edge_tts import EdgeTts, RandomizedEdgeTts
         from stream_cheremsha.tts.respeecher_tts import (
             REPEECHER_VOICES,
-            ReSpeecherTts,
             RandomizedReSpeecherTts,
         )
 
@@ -3797,19 +3797,17 @@ class MainWindow(FramelessWindow):
 
         lang = self._current_tts_language()
         rate_percent = self._tts_rate_percent_from_settings()
-        randomize_edge = (
-            hasattr(self, "_cb_edge_randomize")
-            and self._cb_edge_randomize.isChecked()
-        )
+        randomize_edge = hasattr(self, "_cb_edge_randomize") and self._cb_edge_randomize.isChecked()
         randomize_respeecher = (
-            hasattr(self, "_cb_respeecher_randomize")
-            and self._cb_respeecher_randomize.isChecked()
+            hasattr(self, "_cb_respeecher_randomize") and self._cb_respeecher_randomize.isChecked()
         )
 
         if eng == _TTS_ENGINE_EDGE:
             if randomize_edge:
                 try:
-                    new_tts = RandomizedEdgeTts(locale=lang, rate=self._edge_rate_string(rate_percent))
+                    new_tts = RandomizedEdgeTts(
+                        locale=lang, rate=self._edge_rate_string(rate_percent)
+                    )
                 except ValueError:
                     self._on_user_status(self._tr("status.edge_voices_failed"))
                     new_tts = GoogleTranslateTts(language=lang, rate_percent=rate_percent)

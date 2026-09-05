@@ -13,11 +13,7 @@ import re
 from pathlib import Path
 
 _WIDGETS_VIEW = (
-    Path(__file__).resolve().parents[1]
-    / "src"
-    / "stream_cheremsha"
-    / "qml"
-    / "WidgetsView.qml"
+    Path(__file__).resolve().parents[1] / "src" / "stream_cheremsha" / "qml" / "WidgetsView.qml"
 )
 
 

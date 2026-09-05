@@ -237,13 +237,10 @@ def signal_system_overlay_config_from_json_text(text: str) -> SignalSystemOverla
         unknown_signals_enabled=_ensure_bool(d.get("unknown_signals_enabled"), default=True),
         milestones_enabled=_ensure_bool(d.get("milestones_enabled"), default=True),
         activity_surge_enabled=_ensure_bool(d.get("activity_surge_enabled"), default=True),
-        font_family=(
-            str(d.get("font_family") or "Share Tech Mono").strip() or "Share Tech Mono"
-        ),
+        font_family=(str(d.get("font_family") or "Share Tech Mono").strip() or "Share Tech Mono"),
         custom_title=(
             str(
-                d.get("custom_title")
-                or signal_system_overlay_config_defaults().custom_title
+                d.get("custom_title") or signal_system_overlay_config_defaults().custom_title
             ).strip()
             or signal_system_overlay_config_defaults().custom_title
         ),

@@ -6,7 +6,7 @@ import json
 import logging
 import random
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 import numpy as np
 
@@ -15,7 +15,7 @@ from stream_cheremsha.domain.protocols import TextToSpeech
 logger = logging.getLogger(__name__)
 
 # 13 Ukrainian voices from specification
-REPEECHER_VOICES: Dict[str, str] = {
+REPEECHER_VOICES: dict[str, str] = {
     "olesia-conversation": "Олеся (розмова)",
     "olesia-media": "Олеся (медіа)",
     "olesia-announcement": "Олеся (оголошення)",
@@ -35,7 +35,7 @@ REPEECHER_VOICES: Dict[str, str] = {
 WSS_URL: str = "wss://space.respeecher.com/v1/public/tts/ua-rt/tts/websocket?source=lp"
 
 # Required HTTP headers for ReSpeecher API
-HEADERS: Dict[str, str] = {
+HEADERS: dict[str, str] = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Origin": "https://respeecher.com",
     "Host": "space.respeecher.com",
@@ -53,6 +53,7 @@ CHANNELS: int = 1  # Mono
 
 class ReSpeecherVoice:
     """Voice descriptor for ReSpeecher."""
+
     __slots__ = ("id", "label")
 
     def __init__(self, id: str, label: str) -> None:
@@ -79,7 +80,7 @@ class ReSpeecherTts:
         voice: str = DEFAULT_VOICE_ID,
         *,
         rate_percent: int = 100,
-        fallback_tts: Optional[TextToSpeech] = None,
+        fallback_tts: TextToSpeech | None = None,
         min_interval_sec: float = 0.4,
     ) -> None:
         # Validate voice exists in our supported list
@@ -173,7 +174,7 @@ class ReSpeecherTts:
             return await self._fallback_tts.synthesize(text)
 
         # Open WebSocket connection with full headers
-        websocket: Optional[Any] = None
+        websocket: Any | None = None
         try:
             import websockets
 
@@ -236,9 +237,7 @@ class ReSpeecherTts:
                 # Check if it was a close/error code
                 # Codes 1008 (Policy Violation), 1011 (Internal Server Error),
                 # 429 (Too Many Requests), 403 (Forbidden) should trigger backoff
-                logger.warning(
-                    "ReSpeecher: no audio chunks received for text (len=%d)", len(text)
-                )
+                logger.warning("ReSpeecher: no audio chunks received for text (len=%d)", len(text))
                 raise RuntimeError("ReSpeecher: no audio data received")
 
             # Concatenate all Float32 arrays
@@ -248,8 +247,8 @@ class ReSpeecherTts:
             audio_int16 = np.clip(audio_float32 * 32767, -32768, 32767).astype(np.int16)
 
             # Write WAV bytes (mono, 22050 Hz, 16-bit PCM)
-            import wave
             import io
+            import wave
 
             wav_buffer = io.BytesIO()
             with wave.open(wav_buffer, "wb") as wav_file:
@@ -341,7 +340,7 @@ class RandomizedReSpeecherTts:
         self,
         *,
         rate_percent: int = 100,
-        fallback_tts: Optional[TextToSpeech] = None,
+        fallback_tts: TextToSpeech | None = None,
         min_interval_sec: float = 0.4,
     ) -> None:
         self._rate_percent = max(50, min(200, rate_percent))

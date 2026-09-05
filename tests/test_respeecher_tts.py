@@ -1,17 +1,12 @@
 from __future__ import annotations
 
-import asyncio
-import base64
-import json
-from types import SimpleNamespace
-
 import numpy as np
 import pytest
 
 
 def test_repeecher_voices() -> None:
     """Verify that all 13 Ukrainian voices are defined."""
-    from stream_cheremsha.tts.respeecher_tts import REPEECHER_VOICES, ReSpeecherVoice
+    from stream_cheremsha.tts.respeecher_tts import REPEECHER_VOICES
 
     assert len(REPEECHER_VOICES) == 13, f"Expected 13 voices, got {len(REPEECHER_VOICES)}"
 
@@ -50,7 +45,7 @@ async def test_repeecher_payload_building(monkeypatch: pytest.MonkeyPatch) -> No
 
 def test_repeecher_450_char_limit() -> None:
     """Verify that the MAX_CHARS constant is 450."""
-    from stream_cheremsha.tts.respeecher_tts import MAX_CHARS, REPEECHER_VOICES
+    from stream_cheremsha.tts.respeecher_tts import MAX_CHARS
 
     # 450 chars should be the hard limit
     assert MAX_CHARS == 450
@@ -80,7 +75,6 @@ def test_repeecher_header_constants() -> None:
 @pytest.mark.asyncio
 async def test_repeecher_float32_to_int16_conversion() -> None:
     """Verify Float32 PCM to Int16 WAV conversion logic."""
-    from stream_cheremsha.tts.respeecher_tts import SAMPLE_RATE, CHANNELS
 
     # Create some test Float32 audio data
     float_data = np.array([0.5, -0.3, 0.8, -0.1], dtype=np.float32)

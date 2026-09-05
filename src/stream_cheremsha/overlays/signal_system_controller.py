@@ -289,7 +289,6 @@ class SignalSystemController(QObject):
         self._current_event_end_time = now + (next_event.duration_ms / 1000.0)
         self.schedule_publish()
 
-
     # --- Ingestion Methods ---
 
     def _normalize_gift(
@@ -652,9 +651,7 @@ class SignalSystemController(QObject):
                 tiktok_catalog_gift_image_url as _catalog_url,
             )
 
-            resolved = _catalog_url(
-                gift_id=_pl_str("gift_id", ""), gift_name=sample_name
-            )
+            resolved = _catalog_url(gift_id=_pl_str("gift_id", ""), gift_name=sample_name)
             if resolved and _is_allowed_gift_icon_url(resolved):
                 sample_icon = resolved
                 sample_source = "catalog"

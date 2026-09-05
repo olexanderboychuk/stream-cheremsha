@@ -19,9 +19,7 @@ _ENV_OVERLAY_PRIVATE_KEY = "STREAM_CHEREMSHA_OVERLAY_PRIVATE_KEY"
 _ENV_OVERLAY_PUBLIC_HOSTNAME = "STREAM_CHEREMSHA_OVERLAY_PUBLIC_HOSTNAME"
 
 
-def _write_embedded_local(
-    *, overlay_cert_path: str = "", overlay_key_path: str = ""
-) -> bool:
+def _write_embedded_local(*, overlay_cert_path: str = "", overlay_key_path: str = "") -> bool:
     """Materialize build-time secrets for Nuitka to compile into the binary."""
     token = (os.environ.get(_ENV_CLOUDFLARE_TUNNEL_TOKEN) or "").strip()
     hostname = (os.environ.get(_ENV_CLOUDFLARE_TUNNEL_HOSTNAME) or "").strip()

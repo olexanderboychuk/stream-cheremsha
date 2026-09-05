@@ -13,11 +13,7 @@ from pathlib import Path
 import pytest
 
 _WIDGETS_VIEW = (
-    Path(__file__).resolve().parents[1]
-    / "src"
-    / "stream_cheremsha"
-    / "qml"
-    / "WidgetsView.qml"
+    Path(__file__).resolve().parents[1] / "src" / "stream_cheremsha" / "qml" / "WidgetsView.qml"
 )
 
 
@@ -74,7 +70,11 @@ def test_every_settings_styled_combobox_uses_live_selection_signal(qml_text: str
             bad.append(cid)
             continue
         # Must not rely solely on dead onActivated without userActivated/currentIndex.
-        if "onActivated:" in block and "onUserActivated:" not in block and "onCurrentIndexChanged:" not in block:
+        if (
+            "onActivated:" in block
+            and "onUserActivated:" not in block
+            and "onCurrentIndexChanged:" not in block
+        ):
             bad.append(f"{cid}:onActivated-only")
     assert bad == [], f"StyledComboBox settings missing live selection handler: {bad}"
 

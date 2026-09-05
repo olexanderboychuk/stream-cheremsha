@@ -21,10 +21,7 @@ _PROD_APP = "cheremsha"
 
 def is_production_scope(settings: QSettings) -> bool:
     try:
-        return (
-            settings.organizationName() == _PROD_ORG
-            and settings.applicationName() == _PROD_APP
-        )
+        return settings.organizationName() == _PROD_ORG and settings.applicationName() == _PROD_APP
     except Exception:
         return False
 

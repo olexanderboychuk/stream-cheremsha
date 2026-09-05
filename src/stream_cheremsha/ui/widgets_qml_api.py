@@ -41,17 +41,17 @@ from stream_cheremsha.overlays.king_of_live_overlay_config import (
     load_king_of_live_overlay_config,
     save_king_of_live_overlay_config,
 )
-from stream_cheremsha.overlays.live_leaderboard_overlay_config import (
-    live_leaderboard_overlay_config_from_json_text,
-    live_leaderboard_overlay_config_to_json_text,
-    load_live_leaderboard_overlay_config,
-    save_live_leaderboard_overlay_config,
-)
 from stream_cheremsha.overlays.layout import (
     layouts_from_json_text,
     layouts_to_json_text,
     load_layouts,
     save_layouts,
+)
+from stream_cheremsha.overlays.live_leaderboard_overlay_config import (
+    live_leaderboard_overlay_config_from_json_text,
+    live_leaderboard_overlay_config_to_json_text,
+    load_live_leaderboard_overlay_config,
+    save_live_leaderboard_overlay_config,
 )
 from stream_cheremsha.overlays.online_overlay_config import (
     load_online_overlay_config,
@@ -412,9 +412,21 @@ class WidgetsQmlApi(QObject):
         """Prime all overlay previews with test events and open the layout in the browser."""
         self.openLayoutPreview(layout_id or "default")
         for widget_type in (
-            "chat", "actions", "online", "stream_pet", "community_world",
-            "battle_royale", "top_likers", "top_gifters", "king_of_live",
-            "stream_goal", "live_leaderboard", "social_rotator", "webcam_frame", "activity", "signal_system",
+            "chat",
+            "actions",
+            "online",
+            "stream_pet",
+            "community_world",
+            "battle_royale",
+            "top_likers",
+            "top_gifters",
+            "king_of_live",
+            "stream_goal",
+            "live_leaderboard",
+            "social_rotator",
+            "webcam_frame",
+            "activity",
+            "signal_system",
         ):
             self.previewLayoutWidget(widget_type)
 

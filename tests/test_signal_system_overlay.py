@@ -1,23 +1,20 @@
 from __future__ import annotations
 
-import json
 from typing import Any
+
 from PySide6.QtCore import QSettings
 
 from stream_cheremsha.overlays.registry import OverlayRegistry
 from stream_cheremsha.overlays.signal_system_controller import SignalSystemController
 from stream_cheremsha.overlays.signal_system_overlay import SignalSystemOverlayType
 from stream_cheremsha.overlays.signal_system_overlay_config import (
-    SignalSystemOverlayConfig,
     load_signal_system_overlay_config,
     save_signal_system_overlay_config,
     signal_system_overlay_config_defaults,
     signal_system_overlay_config_from_json_text,
     signal_system_overlay_config_to_json_text,
-    signal_system_overlay_config_to_public_dict,
 )
 from stream_cheremsha.ui.widgets_qml_api import WidgetsQmlApi
-
 
 _ISOLATED_ORG = "stream-cheremsha-test"
 _ISOLATED_APP = "test-signal-system"
@@ -103,7 +100,9 @@ def test_signal_system_core_vertical_pct_clamped() -> None:
 
 def test_signal_system_qsettings_persistence() -> None:
     s = _isolated_settings()
-    cfg = signal_system_overlay_config_defaults().replace(theme="amber_core", min_gift_coins_for_event=250)
+    cfg = signal_system_overlay_config_defaults().replace(
+        theme="amber_core", min_gift_coins_for_event=250
+    )
     save_signal_system_overlay_config(cfg, s)
     loaded = load_signal_system_overlay_config(s)
     assert loaded.theme == "amber_core"
@@ -197,13 +196,13 @@ def test_signal_system_controller_event_dispatch() -> None:
     s = _isolated_settings()
     pubsub = DummyPubSub()
     ctrl = SignalSystemController(pubsub=pubsub, instance="main", settings=s)
-    
+
     # Test gift trigger
     ctrl.on_gift(sender="MegaGifter", gift_name="Universe", count=1, tiktok_coin_each=500)
     # Direct tick
     ctrl._on_dispatch_tick()
     ctrl._flush_publish()
-    
+
     assert len(pubsub.published) > 0
     topic, patch = pubsub.published[-1]
     assert "signal_system" in topic
@@ -220,16 +219,17 @@ def test_signal_system_controller_priority_queue() -> None:
         save_signal_system_overlay_config,
         signal_system_overlay_config_defaults,
     )
+
     s = _isolated_settings()
     save_signal_system_overlay_config(signal_system_overlay_config_defaults(), s)
     s.sync()
     pubsub = DummyPubSub()
     ctrl = SignalSystemController(pubsub=pubsub, instance="main", settings=s)
-    
+
     # Queue multiple events
     ctrl.on_activity_surge(level=1, count=50, top_chatter="ChatHero")
     ctrl.on_milestone(milestone_type="followers", count=1000, target=1000)
-    
+
     # Tick to dispatch highest priority
     ctrl._on_dispatch_tick()
     ctrl._flush_publish()
@@ -248,7 +248,13 @@ def test_signal_system_controller_test_triggers() -> None:
         pubsub=pubsub, instance="main", settings=s, get_locale=lambda: "uk"
     )
 
-    for test_type in ("big_gift", "milestone", "activity_surge", "ai_observation", "unknown_signal"):
+    for test_type in (
+        "big_gift",
+        "milestone",
+        "activity_surge",
+        "ai_observation",
+        "unknown_signal",
+    ):
         ctrl.trigger_test_event(test_type)
         ctrl._flush_publish()
         assert len(pubsub.published) > 0
@@ -296,29 +302,31 @@ def test_widgets_qml_api_signal_system(monkeypatch) -> None:
     ctrl = SignalSystemController(pubsub=pubsub, instance="main", settings=s)
     api = WidgetsQmlApi(overlay_base_url="http://127.0.0.1:17171", pubsub=pubsub)
     api.set_signal_system_controller(ctrl)
-    
+
     assert (
-        api.signalSystemOverlayUrl()
+        api.signalSystemOverlayUrl() == "http://127.0.0.1:17171/overlay/signal_system?instance=main"
+    )
+    assert (
+        api.signalSystemOverlayUrlValue
         == "http://127.0.0.1:17171/overlay/signal_system?instance=main"
     )
-    assert api.signalSystemOverlayUrlValue == "http://127.0.0.1:17171/overlay/signal_system?instance=main"
-    
+
     cfg = api.loadSignalSystemOverlayConfigMap()
     assert cfg["theme"] == "neon_cyber"
     assert "idle_opacity_pct" in cfg
     assert cfg["scale_percent"] == 100
-    
+
     # Test updating config via map
     cfg["theme"] = "ice_protocol"
     cfg["min_gift_coins_for_event"] = 75
     cfg["scale_percent"] = 125
     api.saveSignalSystemOverlayConfigMap(cfg)
-    
+
     reloaded = api.loadSignalSystemOverlayConfigMap()
     assert reloaded["theme"] == "ice_protocol"
     assert reloaded["min_gift_coins_for_event"] == 75
     assert reloaded["scale_percent"] == 125
-    
+
     # Test trigger test event through API
     api.triggerSignalSystemTest("ai_observation")
     ctrl._flush_publish()
