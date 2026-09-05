@@ -28,6 +28,7 @@ SUPPORTED_LAYOUT_WIDGETS = (
     "social_rotator",
     "webcam_frame",
     "music",
+    "signal_system",
 )
 
 

@@ -66,6 +66,7 @@ Item {
         {type: "live_leaderboard", label: "Live Leaderboard", icon: "🏆"},
         {type: "social_rotator", label: "Social Rotator", icon: "🔄"},
         {type: "webcam_frame", label: "Webcam Frame", icon: "📷"},
+        {type: "signal_system", label: "Signal System", icon: "⚡"},
         {type: "music", label: "Музика", icon: "🎵"}
     ]
 
@@ -85,6 +86,7 @@ Item {
             case "live_leaderboard": return {w: 360, h: 280};
             case "social_rotator": return {w: 360, h: 120};
             case "webcam_frame": return {w: 480, h: 360};
+            case "signal_system": return {w: 1920, h: 1080};
             case "music": return {w: 340, h: 140};
             default: return {w: 360, h: 200};
         }
@@ -122,11 +124,12 @@ Item {
             root._loadingSocialRotatorCfg = false;
             root._loadingLiveLeaderboardCfg = false;
             root._loadingWebcamFrameCfg = false;
+            root._loadingSignalSystemCfg = false;
         }
     }
 
     readonly property int titleBarH: 44
-    property string widgetMode: "grid" // grid | chat | actions | online | top_likers | top_gifters | king_of_live | battle_royale | stream_pet | community_world | stream_goal | live_leaderboard | social_rotator | webcam_frame
+    property string widgetMode: "grid" // grid | chat | actions | online | top_likers | top_gifters | king_of_live | battle_royale | stream_pet | community_world | stream_goal | live_leaderboard | social_rotator | webcam_frame | signal_system
 
     function _deepCopy(obj) {
         try {
@@ -378,11 +381,23 @@ Item {
 
     component StyledComboBox: ComboBox {
         id: cb
+        // Custom delegate clicks do not emit C++ ComboBox.activated — use userActivated
+        // (and onActivated bridge below for keyboard / native activation paths).
         signal userActivated(int index)
+        property bool _userEmitGuard: false
         hoverEnabled: true
         focusPolicy: Qt.StrongFocus
         font.pixelSize: 13
         padding: 10
+
+        function _emitUserActivated(index) {
+            if (cb._userEmitGuard)
+                return;
+            cb._userEmitGuard = true;
+            cb.userActivated(index);
+            cb._userEmitGuard = false;
+        }
+
         contentItem: Text {
             text: cb.editable ? (cb.editText || "") : cb.displayText
             color: root.ink
@@ -397,13 +412,18 @@ Item {
             border.color: cb.hovered ? root.cardEdgeStrong : root.cardEdge
             Behavior on border.color { ColorAnimation { duration: 80 } }
         }
+        onActivated: function (index) {
+            cb._emitUserActivated(index);
+        }
         delegate: ItemDelegate {
             required property int index
             width: ListView.view ? ListView.view.width : implicitWidth
             implicitHeight: 36
+            highlighted: cb.highlightedIndex === index
             onClicked: {
                 cb.currentIndex = index;
-                cb.userActivated(index);
+                // Mouse path: C++ activated does not fire with this custom delegate.
+                cb._emitUserActivated(index);
                 cb.popup.close();
             }
             contentItem: Text {
@@ -714,7 +734,7 @@ Item {
         required property var hostMap
         required property string hostKey
         property int hostDefault: 0
-        /// "chat" | "online" | "actions" | "tier" | "king" | "battle"
+        /// syncGroup must match a branch in _loadingForGroup / _persist / Connections pulls.
         required property string syncGroup
         property bool __vsync: false
 
@@ -741,6 +761,10 @@ Item {
                 return root._loadingSocialRotatorCfg;
             if (vsb.syncGroup === "webcam_frame")
                 return root._loadingWebcamFrameCfg;
+            if (vsb.syncGroup === "signal_system")
+                return root._loadingSignalSystemCfg;
+            if (vsb.syncGroup === "stream_pet")
+                return root._loadingStreamPetCfg;
             return true;
         }
 
@@ -767,6 +791,10 @@ Item {
                 root._saveSocialRotator();
             else if (vsb.syncGroup === "webcam_frame")
                 root._saveWebcamFrame();
+            else if (vsb.syncGroup === "signal_system")
+                root._saveSignalSystem();
+            else if (vsb.syncGroup === "stream_pet")
+                root._saveStreamPet();
         }
 
         function _pull() {
@@ -880,6 +908,22 @@ Item {
             }
             function onWebcamFrameCfgEpochChanged() {
                 if (vsb.syncGroup === "webcam_frame")
+                    vsb._pull();
+            }
+            function onSignalSystemCfgChanged() {
+                if (vsb.syncGroup === "signal_system")
+                    vsb._pull();
+            }
+            function onSignalSystemCfgEpochChanged() {
+                if (vsb.syncGroup === "signal_system")
+                    vsb._pull();
+            }
+            function onStreamPetCfgChanged() {
+                if (vsb.syncGroup === "stream_pet")
+                    vsb._pull();
+            }
+            function onStreamPetCfgEpochChanged() {
+                if (vsb.syncGroup === "stream_pet")
                     vsb._pull();
             }
         }
@@ -1192,7 +1236,8 @@ Item {
             (root.widgetMode === "stream_goal" && root.streamGoalCfg !== null) ||
             (root.widgetMode === "live_leaderboard" && root.liveLeaderboardCfg !== null) ||
             (root.widgetMode === "social_rotator" && root.socialRotatorCfg !== null) ||
-            (root.widgetMode === "webcam_frame" && root.webcamFrameCfg !== null)
+            (root.widgetMode === "webcam_frame" && root.webcamFrameCfg !== null) ||
+            (root.widgetMode === "signal_system" && root.signalSystemCfg !== null)
         )
 
     function _flushTierOverlayEditorsIntoCfg() {
@@ -1260,6 +1305,8 @@ Item {
             root._saveSocialRotator();
         } else if (root.widgetMode === "webcam_frame") {
             root._saveWebcamFrame();
+        } else if (root.widgetMode === "signal_system") {
+            root._saveSignalSystem();
         }
     }
 
@@ -1435,6 +1482,36 @@ Item {
         if (!api || root.webcamFrameCfg === null) return;
         root.webcamFrameCfgEpoch += 1;
         api.saveWebcamFrameOverlayConfigJson(JSON.stringify(root.webcamFrameCfg));
+    }
+
+    property var signalSystemCfg: null
+    property int signalSystemCfgEpoch: 0
+    property bool _loadingSignalSystemCfg: false
+
+    function _saveSignalSystem() {
+        if (!api || root.signalSystemCfg === null) return;
+        root.signalSystemCfgEpoch += 1;
+        if (typeof api.saveSignalSystemOverlayConfigMap === "function")
+            api.saveSignalSystemOverlayConfigMap(root.signalSystemCfg);
+        else
+            api.saveSignalSystemOverlayConfigJson(JSON.stringify(root.signalSystemCfg));
+    }
+
+    function _rebuildSignalSystemComboModels(themeModel, themeBox) {
+        var prevSsLoading = root._loadingSignalSystemCfg
+        root._loadingSignalSystemCfg = true
+        if (themeModel) {
+            var themeVal = (root.signalSystemCfg && root.signalSystemCfg.theme) ? root.signalSystemCfg.theme : "neon_cyber"
+            themeModel.clear()
+            themeModel.append({ value: "neon_cyber", text: root.loc("signal_system.theme.neon_cyber") })
+            themeModel.append({ value: "toxic_system", text: root.loc("signal_system.theme.toxic_system") })
+            themeModel.append({ value: "ice_protocol", text: root.loc("signal_system.theme.ice_protocol") })
+            themeModel.append({ value: "amber_core", text: root.loc("signal_system.theme.amber_core") })
+            themeModel.append({ value: "critical", text: root.loc("signal_system.theme.critical") })
+            if (themeBox)
+                themeBox.currentIndex = root._comboIndexFor(themeModel, themeVal)
+        }
+        root._loadingSignalSystemCfg = prevSsLoading
     }
 
     function _srMovePlatform(index, delta) {
@@ -1614,15 +1691,92 @@ Item {
 
     // QVariantMap from load*ConfigMap() is not always a plain JS object; cloning avoids
     // JSON.stringify -> "{}" on save and prevents mutating engine-owned maps in-place.
-    function _detachTierOverlayCfgMap(m) {
+    function _detachCfgMap(m) {
         var x = m;
         if (!x || typeof x !== "object")
             x = {};
         try {
             return JSON.parse(JSON.stringify(x));
         } catch (e) {
-            console.warn("WidgetsView: tier cfg clone failed:", e);
+            console.warn("WidgetsView: cfg clone failed:", e);
             return {};
+        }
+    }
+
+    function _detachTierOverlayCfgMap(m) {
+        return root._detachCfgMap(m);
+    }
+
+    function _syncActionsCombosFromCfg() {
+        if (!root.actionsCfg)
+            return;
+        if (typeof actionsFontFamily !== "undefined") {
+            var ff = (root.actionsCfg.font_family || "").trim();
+            var fi = actionsFontFamily.model.indexOf(ff);
+            if (fi >= 0)
+                actionsFontFamily.currentIndex = fi;
+            else {
+                actionsFontFamily.currentIndex = -1;
+                actionsFontFamily.editText = ff || "Segoe UI";
+            }
+        }
+        if (typeof actionsUsernameEffect !== "undefined") {
+            var raw = (root.actionsCfg.username_text_effect || "none").trim().toLowerCase();
+            actionsUsernameEffect.currentIndex =
+                (raw === "rainbow") ? 1
+                : (raw === "aurora") ? 2
+                : (raw === "neon") ? 3
+                : (raw === "fire") ? 4
+                : 0;
+        }
+    }
+
+    function _syncChatCombosFromCfg() {
+        if (!root.cfg)
+            return;
+        if (typeof usernameColorMode !== "undefined") {
+            var mode = root.cfg.username_color_mode || "auto";
+            usernameColorMode.currentIndex =
+                (mode === "platform") ? 1 : ((mode === "custom") ? 2 : 0);
+        }
+        if (typeof fontFamily !== "undefined") {
+            var cff = (root.cfg.font_family || "").trim();
+            var cfi = fontFamily.model.indexOf(cff);
+            if (cfi >= 0)
+                fontFamily.currentIndex = cfi;
+            else {
+                fontFamily.currentIndex = -1;
+                fontFamily.editText = cff || "Segoe UI";
+            }
+        }
+    }
+
+    function _syncOnlineCombosFromCfg() {
+        if (!root.onlineCfg)
+            return;
+        if (typeof onlineLayoutMode !== "undefined") {
+            var lm = root.onlineCfg.layout_mode || "combined";
+            onlineLayoutMode.currentIndex = (lm === "per_platform") ? 1 : 0;
+        }
+        if (typeof onlineFontFamily !== "undefined") {
+            var off = (root.onlineCfg.font_family || "").trim();
+            var ofi = onlineFontFamily.model.indexOf(off);
+            if (ofi >= 0)
+                onlineFontFamily.currentIndex = ofi;
+            else {
+                onlineFontFamily.currentIndex = -1;
+                onlineFontFamily.editText = off || "Segoe UI";
+            }
+        }
+        if (typeof onlineTextEffect !== "undefined") {
+            var fx = (root.onlineCfg.text_effect || "none").trim().toLowerCase();
+            onlineTextEffect.currentIndex =
+                (fx === "glow") ? 1
+                : (fx === "neon") ? 2
+                : (fx === "rainbow") ? 3
+                : (fx === "aurora") ? 4
+                : (fx === "fire") ? 5
+                : 0;
         }
     }
 
@@ -2047,6 +2201,14 @@ Item {
                             onCopy: function() { if (api) api.copyBattleRoyaleOverlayUrl(); }
                             onPlay: function() { if (api) api.previewBattleRoyaleOverlay(); }
                             onEdit: function() { root.widgetMode = "battle_royale"; }
+                        }
+
+                        WidgetCard {
+                            title: root.loc("widgets.signal_system.card_title")
+                            urlText: api ? api.signalSystemOverlayUrlValue : ""
+                            onCopy: function() { if (api) api.copySignalSystemOverlayUrl(); }
+                            onPlay: function() { if (api) api.previewSignalSystemOverlay(); }
+                            onEdit: function() { root.widgetMode = "signal_system"; }
                         }
                     }
 
@@ -2898,7 +3060,6 @@ Item {
                                     Layout.preferredWidth: 280
                                     model: ["1920 × 1080 · Горизонталь", "1080 × 1920 · TikTok вертикаль", "1080 × 1080 · Квадрат", "1280 × 720 · HD", "Вручну"]
                                     currentIndex: root.canvasPresetIndex
-                                    onActivated: function(index) { root.selectCanvasPreset(index); }
                                     onUserActivated: function(index) { root.selectCanvasPreset(index); }
                                 }
                                 Text { visible: root.canvasPresetIndex === 4; text: "W:"; color: muted; font.pixelSize: 11 }
@@ -3794,6 +3955,70 @@ Item {
 
             Rectangle {
                 Layout.fillWidth: true
+                radius: 14
+                color: cardBase
+                border.width: 1
+                border.color: cardEdge
+                visible: root.widgetMode === "signal_system"
+                implicitHeight: editSignalSystemHeader.implicitHeight + 20
+
+                ColumnLayout {
+                    id: editSignalSystemHeader
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 12
+                    spacing: 8
+
+                    Text {
+                        text: root.loc("widgets.signal_system.edit_header")
+                        color: ink
+                        font.pixelSize: 18
+                        font.bold: true
+                        Layout.fillWidth: true
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+
+                        TextField {
+                            Layout.fillWidth: true
+                            readOnly: true
+                            selectByMouse: true
+                            color: ink
+                            font.pixelSize: 12
+                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                            text: api ? api.signalSystemOverlayUrlValue : ""
+                        }
+
+                        PillButton {
+                            text: root.loc("widgets.common.copy_url")
+                            onClicked: if (api) api.copySignalSystemOverlayUrl()
+                        }
+
+                        PillButton {
+                            text: "▶"
+                            pillFontSize: 12
+                            onClicked: if (api) api.previewSignalSystemOverlay()
+                        }
+
+                        PillButton {
+                            text: root.loc("widgets.common.save")
+                            enabled: root._canSaveCurrentWidget
+                            onClicked: root._saveAndApplyCurrentWidget()
+                        }
+
+                        PillButton {
+                            text: root.loc("widgets.common.back")
+                            onClicked: root.widgetMode = "grid"
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
                 Layout.fillHeight: true
                 radius: 14
                 color: cardBase
@@ -3901,7 +4126,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: root.cfg && root.cfg.widget_bg_enabled
+                            visible: root.chatCfgEpoch >= 0 && root.cfg && root.cfg.widget_bg_enabled
                             Text { text: "Колір фону"; color: muted; Layout.preferredWidth: 160 }
                             Rectangle {
                                 width: 26
@@ -3937,7 +4162,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: root.cfg && root.cfg.widget_bg_enabled
+                            visible: root.chatCfgEpoch >= 0 && root.cfg && root.cfg.widget_bg_enabled
                             Text { text: "Заокруглення фону (px)"; color: muted; Layout.preferredWidth: 160 }
                             VarMapSpinBox {
                                 id: widgetBgRadius
@@ -3954,7 +4179,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: root.cfg && root.cfg.widget_bg_enabled
+                            visible: root.chatCfgEpoch >= 0 && root.cfg && root.cfg.widget_bg_enabled
                             Text { text: "Внутрішній відступ (px)"; color: muted; Layout.preferredWidth: 160 }
                             VarMapSpinBox {
                                 id: widgetBgPadding
@@ -3987,7 +4212,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: root.cfg && root.cfg.bubble_bg_enabled
+                            visible: root.chatCfgEpoch >= 0 && root.cfg && root.cfg.bubble_bg_enabled
                             Text { text: "Фон бульбашки"; color: muted; Layout.preferredWidth: 160 }
                             Rectangle {
                                 width: 26
@@ -4023,7 +4248,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: root.cfg && root.cfg.bubble_bg_enabled
+                            visible: root.chatCfgEpoch >= 0 && root.cfg && root.cfg.bubble_bg_enabled
                             Text { text: "Заокруглення (px)"; color: muted; Layout.preferredWidth: 160 }
                             VarMapSpinBox {
                                 id: bubbleRadius
@@ -4045,8 +4270,8 @@ Item {
                                 id: usernameColorMode
                                 model: ["Авто", "Колір платформи", "Свій колір"]
                                 Layout.fillWidth: true
-                                onActivated: {
-                                    if (root.cfg === null) return;
+                                onUserActivated: {
+                                    if (root._loadingCfg || root.cfg === null) return;
                                     root.cfg.username_color_mode = (currentIndex === 1) ? "platform" : ((currentIndex === 2) ? "custom" : "auto");
                                     root._save();
                                 }
@@ -4061,7 +4286,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: root.cfg && root.cfg.username_color_mode === "custom"
+                            visible: root.chatCfgEpoch >= 0 && root.cfg && root.cfg.username_color_mode === "custom"
                             Text { text: "Свій колір ніку"; color: muted; Layout.preferredWidth: 160 }
                             Rectangle {
                                 width: 26
@@ -4137,7 +4362,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: root.cfg && root.cfg.text_shadow_enabled
+                            visible: root.chatCfgEpoch >= 0 && root.cfg && root.cfg.text_shadow_enabled
                             Text { text: "Колір тіні"; color: muted; Layout.preferredWidth: 160 }
                             Rectangle {
                                 width: 26
@@ -4173,7 +4398,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: root.cfg && root.cfg.text_shadow_enabled
+                            visible: root.chatCfgEpoch >= 0 && root.cfg && root.cfg.text_shadow_enabled
                             Text { text: "Розмиття тіні"; color: muted; Layout.preferredWidth: 160 }
                             VarMapSpinBox {
                                 id: textShadowBlur
@@ -4190,7 +4415,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: root.cfg && root.cfg.text_shadow_enabled
+                            visible: root.chatCfgEpoch >= 0 && root.cfg && root.cfg.text_shadow_enabled
                             Text { text: "Зміщення X"; color: muted; Layout.preferredWidth: 160 }
                             VarMapSpinBox {
                                 id: textShadowOffX
@@ -4207,7 +4432,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: root.cfg && root.cfg.text_shadow_enabled
+                            visible: root.chatCfgEpoch >= 0 && root.cfg && root.cfg.text_shadow_enabled
                             Text { text: "Зміщення Y"; color: muted; Layout.preferredWidth: 160 }
                             VarMapSpinBox {
                                 id: textShadowOffY
@@ -4230,13 +4455,13 @@ Item {
                                 Layout.fillWidth: true
                                 editable: true
                                 model: api ? api.systemFontFamilies() : []
-                                onActivated: {
-                                    if (root.cfg === null) return;
+                                onUserActivated: {
+                                    if (root._loadingCfg || root.cfg === null) return;
                                     root.cfg.font_family = currentText;
                                     root._save();
                                 }
                                 onAccepted: {
-                                    if (root.cfg === null) return;
+                                    if (root._loadingCfg || root.cfg === null) return;
                                     root.cfg.font_family = editText || currentText;
                                     root._save();
                                 }
@@ -4282,8 +4507,8 @@ Item {
                                     "З усіх площадок (іконки + сума)",
                                     "Окремо по кожній площадці"
                                 ]
-                                onActivated: {
-                                    if (root.onlineCfg === null) return;
+                                onUserActivated: {
+                                    if (root._loadingOnlineCfg || root.onlineCfg === null) return;
                                     root.onlineCfg.layout_mode = (currentIndex === 1) ? "per_platform" : "combined";
                                     root._saveOnline();
                                 }
@@ -4374,13 +4599,13 @@ Item {
                                 Layout.fillWidth: true
                                 editable: true
                                 model: api ? api.systemFontFamilies() : []
-                                onActivated: {
-                                    if (root.onlineCfg === null) return;
+                                onUserActivated: {
+                                    if (root._loadingOnlineCfg || root.onlineCfg === null) return;
                                     root.onlineCfg.font_family = currentText;
                                     root._saveOnline();
                                 }
                                 onAccepted: {
-                                    if (root.onlineCfg === null) return;
+                                    if (root._loadingOnlineCfg || root.onlineCfg === null) return;
                                     root.onlineCfg.font_family = editText || currentText;
                                     root._saveOnline();
                                 }
@@ -4462,7 +4687,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: root.onlineCfg && root.onlineCfg.text_shadow_enabled
+                            visible: root.onlineCfgEpoch >= 0 && root.onlineCfg && root.onlineCfg.text_shadow_enabled
                             Text { text: "Колір тіні"; color: muted; Layout.preferredWidth: 220 }
                             Rectangle {
                                 width: 26
@@ -4536,7 +4761,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: root.onlineCfg && root.onlineCfg.font_border_enabled
+                            visible: root.onlineCfgEpoch >= 0 && root.onlineCfg && root.onlineCfg.font_border_enabled
                             Text { text: "Колір контуру"; color: muted; Layout.preferredWidth: 220 }
                             Rectangle {
                                 width: 26
@@ -4571,8 +4796,8 @@ Item {
                                 id: onlineTextEffect
                                 Layout.fillWidth: true
                                 model: ["Немає", "Glow", "Neon", "Rainbow", "The Aurora", "Fire"]
-                                onActivated: {
-                                    if (root.onlineCfg === null) return;
+                                onUserActivated: {
+                                    if (root._loadingOnlineCfg || root.onlineCfg === null) return;
                                     root.onlineCfg.text_effect =
                                         (currentIndex === 1) ? "glow"
                                         : (currentIndex === 2) ? "neon"
@@ -4648,7 +4873,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: root.onlineCfg && root.onlineCfg.bubble_bg_enabled
+                            visible: root.onlineCfgEpoch >= 0 && root.onlineCfg && root.onlineCfg.bubble_bg_enabled
                             Text { text: "Непрозорість фону"; color: muted; Layout.preferredWidth: 220 }
                             StyledSlider {
                                 Layout.fillWidth: true
@@ -4667,7 +4892,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: root.onlineCfg && root.onlineCfg.bubble_bg_enabled
+                            visible: root.onlineCfgEpoch >= 0 && root.onlineCfg && root.onlineCfg.bubble_bg_enabled
                             Text { text: "Радіус кутів (px)"; color: muted; Layout.preferredWidth: 220 }
                             VarMapSpinBox {
                                 syncGroup: "online"
@@ -4707,7 +4932,7 @@ Item {
                                 Layout.fillWidth: true
                                 editable: true
                                 model: api ? api.systemFontFamilies() : []
-                                onActivated: {
+                                onUserActivated: {
                                     if (root.tierOverlayCfg === null) return;
                                     root.tierOverlayCfg.font_family = currentText;
                                     root._saveTierOverlay();
@@ -5018,7 +5243,7 @@ Item {
                                     ListElement { label: "Мороз"; value: "freeze" }
                                     ListElement { label: "Потужний"; value: "strong" }
                                 }
-                                onActivated: function (index) {
+                                onUserActivated: function (index) {
                                     if (root.tierOverlayCfg === null) return;
                                     root.tierOverlayCfg.text_effect_username = tlTextFx.model.get(index).value;
                                     root._saveTierOverlay();
@@ -5071,7 +5296,7 @@ Item {
                                     ListElement { label: "Звичайна"; value: "normal" }
                                     ListElement { label: "Швидко"; value: "fast" }
                                 }
-                                onActivated: function (index) {
+                                onUserActivated: function (index) {
                                     if (root.tierOverlayCfg === null) return;
                                     root.tierOverlayCfg.wave_speed = tlWaveSpd.model.get(index).value;
                                     root._saveTierOverlay();
@@ -5224,7 +5449,7 @@ Item {
                                 model: root.widgetMode === "top_gifters"
                                     ? ["Монети: спадання", "Монети: зростання", "Ім'я: А–Я"]
                                     : ["Лайки: спадання", "Лайки: зростання", "Ім'я: А–Я"]
-                                onActivated: {
+                                onUserActivated: {
                                     if (root.tierOverlayCfg === null) return;
                                     var index = currentIndex;
                                     if (index === 0) root.tierOverlayCfg.leader_sort = "likes_desc";
@@ -5394,7 +5619,7 @@ Item {
                                     ListElement { text: "Dark Overlord"; value: "dark_overlord" }
                                     ListElement { text: "Minimalist"; value: "minimalist" }
                                 }
-                                onActivated: {
+                                onUserActivated: {
                                     if (root._loadingKingCfg || root.kingCfg === null) return;
                                     var v = model.get(index).value;
                                     if (v) { root.kingCfg.preset = v; root._saveKing(); }
@@ -5480,7 +5705,7 @@ Item {
                                 Layout.fillWidth: true
                                 editable: true
                                 model: api ? api.systemFontFamilies() : []
-                                onActivated: {
+                                onUserActivated: {
                                     if (root._loadingKingCfg || root.kingCfg === null) return;
                                     root.kingCfg.font_family = currentText;
                                     root._saveKing();
@@ -5886,7 +6111,7 @@ Item {
                                     ListElement { text: "Sunset Shiba"; value: "sunset_shiba" }
                                     ListElement { text: "Custom (свій)"; value: "custom" }
                                 }
-                                onActivated: {
+                                onUserActivated: {
                                     if (root._loadingStreamPetCfg || root.streamPetCfg === null) return;
                                     var v = model.get(index).value;
                                     if (v) root._applyStreamPetPreset(v);
@@ -7939,6 +8164,286 @@ Item {
                         } // webcamFrameSettings
 
                         ColumnLayout {
+                            id: signalSystemSettings
+                            visible: root.widgetMode === "signal_system"
+                            Layout.fillWidth: true
+                            spacing: 12
+
+                            Rectangle { Layout.fillWidth: true; height: 1; color: cardEdge; opacity: 0.6 }
+
+Text {
+                                 text: root.loc("widgets.signal_system.settings_title")
+                                 color: ink
+                                 font.pixelSize: 16
+                                 font.bold: true
+                                 Layout.fillWidth: true
+                             }
+
+StyledCheckBox {
+                                 text: root.loc("widgets.common.enabled")
+                                 checked: !root.signalSystemCfg || root.signalSystemCfg.enabled !== false
+                                 onCheckedChanged: {
+                                     if (root._loadingSignalSystemCfg || !root.signalSystemCfg) return;
+                                     root.signalSystemCfg.enabled = checked;
+                                     root._saveSignalSystem();
+                                 }
+                             }
+
+                             RowLayout {
+                                 Layout.fillWidth: true
+                                 spacing: 10
+                                 Text { text: root.loc("signal_system.ui.theme"); color: muted; Layout.preferredWidth: 200 }
+                                 StyledComboBox {
+                                     id: ssTheme
+                                     Layout.fillWidth: true
+                                     textRole: "text"
+                                     valueRole: "value"
+                                     model: ListModel {
+                                         id: ssThemeModel
+                                     }
+                                     Component.onCompleted: root._rebuildSignalSystemComboModels(ssThemeModel, ssTheme)
+                                     onCurrentIndexChanged: {
+                                         if (root._loadingSignalSystemCfg || !root.signalSystemCfg) return;
+                                         var v = ssTheme.currentIndex >= 0
+                                             ? ssTheme.model.get(ssTheme.currentIndex).value
+                                             : "neon_cyber";
+                                         root.signalSystemCfg.theme = v;
+                                        root._saveSignalSystem();
+                                    }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 10
+                                Text { text: root.loc("signal_system.ui.title"); color: muted; Layout.preferredWidth: 200 }
+                                TextField {
+                                    Layout.fillWidth: true
+                                    color: ink
+                                    font.pixelSize: 12
+                                    placeholderText: root.loc("signal_system.goal.system")
+                                    text: root.signalSystemCfg ? (root.signalSystemCfg.custom_title || "") : ""
+                                    background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                                    onEditingFinished: {
+                                        if (root._loadingSignalSystemCfg || !root.signalSystemCfg) return;
+                                        root.signalSystemCfg.custom_title = text;
+                                        root._saveSignalSystem();
+                                    }
+                                }
+                            }
+
+                            Text { text: root.loc("signal_system.ui.perimeter") + " / " + root.loc("widgets.common.enabled"); color: ink; font.pixelSize: 13; font.bold: true }
+
+                            StyledCheckBox {
+                                text: root.loc("signal_system.ui.perimeter")
+                                checked: !root.signalSystemCfg || root.signalSystemCfg.perimeter_enabled !== false
+                                onCheckedChanged: {
+                                    if (root._loadingSignalSystemCfg || !root.signalSystemCfg) return;
+                                    root.signalSystemCfg.perimeter_enabled = checked;
+                                    root._saveSignalSystem();
+                                }
+                            }
+
+StyledCheckBox {
+                                 text: root.loc("signal_system.ui.particles")
+                                 checked: !root.signalSystemCfg || root.signalSystemCfg.particles_enabled !== false
+                                 onCheckedChanged: {
+                                     if (root._loadingSignalSystemCfg || !root.signalSystemCfg) return;
+                                     root.signalSystemCfg.particles_enabled = checked;
+                                     root._saveSignalSystem();
+                                 }
+                             }
+
+                             StyledCheckBox {
+                                 text: root.loc("signal_system.ui.glitch")
+                                 checked: !root.signalSystemCfg || root.signalSystemCfg.glitch_enabled !== false
+                                 onCheckedChanged: {
+                                     if (root._loadingSignalSystemCfg || !root.signalSystemCfg) return;
+                                     root.signalSystemCfg.glitch_enabled = checked;
+                                     root._saveSignalSystem();
+                                 }
+                             }
+
+                             StyledCheckBox {
+                                 text: root.loc("signal_system.ui.sound")
+                                 checked: !root.signalSystemCfg || root.signalSystemCfg.sound_enabled !== false
+                                 onCheckedChanged: {
+                                     if (root._loadingSignalSystemCfg || !root.signalSystemCfg) return;
+                                     root.signalSystemCfg.sound_enabled = checked;
+                                     root._saveSignalSystem();
+                                 }
+                             }
+
+                             RowLayout {
+                                 Layout.fillWidth: true
+                                 spacing: 10
+                                 Text { text: root.loc("signal_system.ui.opacity_idle"); color: muted; Layout.preferredWidth: 200 }
+                                VarMapSpinBox {
+                                    syncGroup: "signal_system"
+                                    hostMap: root.signalSystemCfg
+                                    hostKey: "idle_opacity_pct"
+                                    hostDefault: 35
+                                    from: 0; to: 100; stepSize: 5
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 10
+                                Text { text: root.loc("signal_system.ui.opacity_active"); color: muted; Layout.preferredWidth: 200 }
+                                VarMapSpinBox {
+                                    syncGroup: "signal_system"
+                                    hostMap: root.signalSystemCfg
+                                    hostKey: "active_opacity_pct"
+                                    hostDefault: 100
+                                    from: 50; to: 100; stepSize: 5
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 10
+                                Text { text: root.loc("signal_system.ui.min_gift_coins"); color: muted; Layout.preferredWidth: 200 }
+                                VarMapSpinBox {
+                                    syncGroup: "signal_system"
+                                    hostMap: root.signalSystemCfg
+                                    hostKey: "min_gift_coins_for_event"
+                                    hostDefault: 100
+                                    from: 1; to: 10000; stepSize: 10
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 10
+                                Text { text: root.loc("signal_system.ui.cooldown"); color: muted; Layout.preferredWidth: 200 }
+                                VarMapSpinBox {
+                                    syncGroup: "signal_system"
+                                    hostMap: root.signalSystemCfg
+                                    hostKey: "cooldown_ms"
+                                    hostDefault: 3000
+                                    from: 500; to: 15000; stepSize: 500
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 10
+                                Text { text: root.loc("signal_system.ui.scale"); color: muted; Layout.preferredWidth: 200 }
+                                VarMapSpinBox {
+                                    syncGroup: "signal_system"
+                                    hostMap: root.signalSystemCfg
+                                    hostKey: "scale_percent"
+                                    hostDefault: 100
+                                    from: 40; to: 250; stepSize: 5
+                                }
+                                Text {
+                                    text: root.loc("signal_system.ui.scale_hint")
+                                    color: muted
+                                    font.pixelSize: 11
+                                    Layout.fillWidth: true
+                                    wrapMode: Text.WordWrap
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 10
+                                Text { text: root.loc("signal_system.ui.core_vertical"); color: muted; Layout.preferredWidth: 200 }
+                                VarMapSpinBox {
+                                    syncGroup: "signal_system"
+                                    hostMap: root.signalSystemCfg
+                                    hostKey: "core_vertical_pct"
+                                    hostDefault: 50
+                                    from: 20; to: 80; stepSize: 1
+                                }
+                                Text {
+                                    text: root.loc("signal_system.ui.core_vertical_hint")
+                                    color: muted
+                                    font.pixelSize: 11
+                                    Layout.fillWidth: true
+                                    wrapMode: Text.WordWrap
+                                }
+                            }
+
+                            Text { text: root.loc("signal_system.ui.perimeter") + " / " + root.loc("widgets.common.enabled") + ": " + root.loc("signal_system.goal.activity"); color: ink; font.pixelSize: 13; font.bold: true }
+
+                            StyledCheckBox {
+                                text: root.loc("signal_system.goal.milestone") + " " + root.loc("widgets.common.enabled")
+                                checked: !root.signalSystemCfg || root.signalSystemCfg.milestones_enabled !== false
+                                onCheckedChanged: {
+                                    if (root._loadingSignalSystemCfg || !root.signalSystemCfg) return;
+                                    root.signalSystemCfg.milestones_enabled = checked;
+                                    root._saveSignalSystem();
+                                }
+                            }
+
+                            StyledCheckBox {
+                                text: root.loc("signal_system.goal.surge") + " " + root.loc("widgets.common.enabled")
+                                checked: !root.signalSystemCfg || root.signalSystemCfg.activity_surge_enabled !== false
+                                onCheckedChanged: {
+                                    if (root._loadingSignalSystemCfg || !root.signalSystemCfg) return;
+                                    root.signalSystemCfg.activity_surge_enabled = checked;
+                                    root._saveSignalSystem();
+                                }
+                            }
+
+                            StyledCheckBox {
+                                 text: root.loc("signal_system.goal.ai") + " " + root.loc("widgets.common.enabled")
+                                 checked: !root.signalSystemCfg || root.signalSystemCfg.ai_observations_enabled !== false
+                                 onCheckedChanged: {
+                                     if (root._loadingSignalSystemCfg || !root.signalSystemCfg) return;
+                                     root.signalSystemCfg.ai_observations_enabled = checked;
+                                     root._saveSignalSystem();
+                                 }
+                             }
+
+                             StyledCheckBox {
+                                 text: root.loc("signal_system.goal.anomaly") + " " + root.loc("widgets.common.enabled")
+                                 checked: !root.signalSystemCfg || root.signalSystemCfg.unknown_signals_enabled !== false
+                                 onCheckedChanged: {
+                                     if (root._loadingSignalSystemCfg || !root.signalSystemCfg) return;
+                                     root.signalSystemCfg.unknown_signals_enabled = checked;
+                                     root._saveSignalSystem();
+                                 }
+                             }
+
+                             Rectangle { Layout.fillWidth: true; height: 1; color: cardEdge; opacity: 0.6 }
+
+                             Text { text: root.loc("signal_system.goal.test"); color: ink; font.pixelSize: 13; font.bold: true }
+
+                            Flow {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                PillButton {
+                                    text: "⚡ " + root.loc("signal_system.goal.test") + ": " + root.loc("signal_system.goal.gifts")
+                                    onClicked: if (api) api.triggerSignalSystemTest("big_gift")
+                                }
+
+                                PillButton {
+                                    text: "🎯 " + root.loc("signal_system.goal.test") + ": " + root.loc("signal_system.goal.milestone")
+                                    onClicked: if (api) api.triggerSignalSystemTest("milestone")
+                                }
+
+                                PillButton {
+                                    text: "🔥 " + root.loc("signal_system.goal.test") + ": " + root.loc("signal_system.goal.surge")
+                                    onClicked: if (api) api.triggerSignalSystemTest("activity_surge")
+                                }
+
+                                PillButton {
+                                    text: "🧠 " + root.loc("signal_system.goal.test") + ": " + root.loc("signal_system.goal.ai")
+                                    onClicked: if (api) api.triggerSignalSystemTest("ai_observation")
+                                }
+
+                                PillButton {
+                                    text: "👁️ " + root.loc("signal_system.goal.test") + ": " + root.loc("signal_system.goal.anomaly")
+                                    onClicked: if (api) api.triggerSignalSystemTest("unknown_signal")
+                                }
+                            }
+                        } // signalSystemSettings
+
+                        ColumnLayout {
                             id: actionsSettings
                             visible: root.widgetMode === "actions"
                             Layout.fillWidth: true
@@ -7963,13 +8468,13 @@ Item {
                                 Layout.fillWidth: true
                                 editable: true
                                 model: api ? api.systemFontFamilies() : []
-                                onActivated: {
-                                    if (root.actionsCfg === null) return;
+                                onUserActivated: {
+                                    if (root._loadingActionsCfg || root.actionsCfg === null) return;
                                     root.actionsCfg.font_family = currentText;
                                     root._saveActions();
                                 }
                                 onAccepted: {
-                                    if (root.actionsCfg === null) return;
+                                    if (root._loadingActionsCfg || root.actionsCfg === null) return;
                                     root.actionsCfg.font_family = editText || currentText;
                                     root._saveActions();
                                 }
@@ -8113,7 +8618,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: root.actionsCfg && root.actionsCfg.text_shadow_enabled
+                            visible: root.actionsCfgEpoch >= 0 && root.actionsCfg && root.actionsCfg.text_shadow_enabled
                             Text { text: "Shadow Color"; color: muted; Layout.preferredWidth: 220 }
                             Rectangle {
                                 width: 26
@@ -8187,7 +8692,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: root.actionsCfg && root.actionsCfg.font_border_enabled
+                            visible: root.actionsCfgEpoch >= 0 && root.actionsCfg && root.actionsCfg.font_border_enabled
                             Text { text: "Border Color"; color: muted; Layout.preferredWidth: 220 }
                             Rectangle {
                                 width: 26
@@ -8232,7 +8737,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: root.actionsCfg && root.actionsCfg.username_custom_color_enabled
+                            visible: root.actionsCfgEpoch >= 0 && root.actionsCfg && root.actionsCfg.username_custom_color_enabled
                             Text { text: "Custom Color"; color: muted; Layout.preferredWidth: 220 }
                             Rectangle {
                                 width: 26
@@ -8265,8 +8770,8 @@ Item {
                                 id: actionsUsernameEffect
                                 Layout.fillWidth: true
                                 model: ["None", "Rainbow", "The Aurora", "Neon", "Fire"]
-                                onActivated: {
-                                    if (root.actionsCfg === null) return;
+                                onUserActivated: {
+                                    if (root._loadingActionsCfg || root.actionsCfg === null) return;
                                     root.actionsCfg.username_text_effect =
                                         (currentIndex === 1) ? "rainbow"
                                         : (currentIndex === 2) ? "aurora"
@@ -8355,7 +8860,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: root.actionsCfg && root.actionsCfg.bubble_bg_enabled
+                            visible: root.actionsCfgEpoch >= 0 && root.actionsCfg && root.actionsCfg.bubble_bg_enabled
                             Text { text: "Bubble opacity"; color: muted; Layout.preferredWidth: 220 }
                             StyledSlider {
                                 Layout.fillWidth: true
@@ -8368,13 +8873,23 @@ Item {
                                     root.actionsCfg.bubble_bg_alpha = value;
                                     root._saveActions();
                                 }
+                                // Nested map mutations don't notify; re-read after epoch bumps.
+                                Connections {
+                                    target: root
+                                    function onActionsCfgEpochChanged() {
+                                        if (!root.actionsCfg) return;
+                                        var a = root.actionsCfg.bubble_bg_alpha;
+                                        if (a === undefined || a === null) return;
+                                        parent.value = a;
+                                    }
+                                }
                             }
                         }
 
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            visible: root.actionsCfg && root.actionsCfg.bubble_bg_enabled
+                            visible: root.actionsCfgEpoch >= 0 && root.actionsCfg && root.actionsCfg.bubble_bg_enabled
                             Text { text: "Bubble radius (px)"; color: muted; Layout.preferredWidth: 220 }
                             VarMapSpinBox {
                                 syncGroup: "actions"
@@ -8548,6 +9063,7 @@ Item {
                     root._loadingLiveLeaderboardCfg = false;
                     root._loadingSocialRotatorCfg = false;
                     root._loadingWebcamFrameCfg = false;
+                    root._loadingSignalSystemCfg = false;
                 }
                 try {
                 // This handler lives on the Loader's inner ColumnLayout, not on root Item:
@@ -8565,11 +9081,13 @@ Item {
                 root._loadingLiveLeaderboardCfg = true;
                 root._loadingSocialRotatorCfg = true;
                 root._loadingWebcamFrameCfg = true;
+                root._loadingSignalSystemCfg = true;
 
                 var obj = api.loadChatConfigMap();
                 if (!obj || typeof obj !== "object")
                     obj = {};
-                root.cfg = root._ensureDefaults(obj);
+                root.cfg = root._ensureDefaults(root._detachCfgMap(obj));
+                root.chatCfgEpoch += 1;
                 // Initialize derived UI state for pickers.
                 var p = root._parseRgba(root.cfg.bubble_bg_rgba);
                 root._bubbleColor = p.c;
@@ -8584,23 +9102,28 @@ Item {
                 root._widgetBgColor = wp.c;
                 root._widgetBgAlpha = wp.a;
                 widgetBgAlpha.value = root._widgetBgAlpha;
+                root._syncChatCombosFromCfg();
 
                 var aobj = api.loadActionsConfigMap();
                 if (!aobj || typeof aobj !== "object")
                     aobj = {};
-                root.actionsCfg = root._ensureActionsDefaults(aobj);
+                root.actionsCfg = root._ensureActionsDefaults(root._detachCfgMap(aobj));
+                root.actionsCfgEpoch += 1;
                 root._actionsTextShadowColor = root.actionsCfg.text_shadow_color || "#000000";
                 root._actionsBorderColor = root.actionsCfg.font_border_color || "#242424";
                 root._actionsCustomColor = root.actionsCfg.username_custom_color || "#32c3a6";
                 root._actionsTextColor = root.actionsCfg.text_color || "#e5e7eb";
+                root._syncActionsCombosFromCfg();
 
                 var oobj = api.loadOnlineOverlayConfigMap();
                 if (!oobj || typeof oobj !== "object")
                     oobj = {};
-                root.onlineCfg = root._ensureOnlineDefaults(oobj);
+                root.onlineCfg = root._ensureOnlineDefaults(root._detachCfgMap(oobj));
+                root.onlineCfgEpoch += 1;
                 root._onlineTextShadowColor = root.onlineCfg.text_shadow_color || "#000000";
                 root._onlineBorderColor = root.onlineCfg.font_border_color || "#242424";
                 root._onlineTextColor = root.onlineCfg.text_color || "#e5e7eb";
+                root._syncOnlineCombosFromCfg();
 
                 var tobj = api.loadTopLikersOverlayConfigMap();
                 if (!tobj || typeof tobj !== "object")
@@ -8753,6 +9276,13 @@ Item {
                 root.webcamFrameCfgEpoch += 1;
                 if (typeof wfThemeModel !== "undefined")
                     root._rebuildWebcamFrameComboModels(wfThemeModel, wfTheme, wfIntensityModel, wfIntensity, wfFrameStyleModel, wfFrameStyle);
+                var ssobj = api.loadSignalSystemOverlayConfigMap();
+                if (!ssobj || typeof ssobj !== "object")
+                    ssobj = {};
+                root.signalSystemCfg = JSON.parse(JSON.stringify(ssobj));
+                root.signalSystemCfgEpoch += 1;
+                if (typeof ssThemeModel !== "undefined")
+                    root._rebuildSignalSystemComboModels(ssThemeModel, ssTheme);
                 if (root.communityWorldCfg) {
                     var cwIndexFor = function(mdl, val) {
                         for (var ci = 0; ci < mdl.count; ++ci) {

@@ -776,7 +776,9 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Повернутися до зв'язків (головна)",
         "en": "Back to connections (home)",
     },
-    "ui.nav_home": {"uk": "Додому", "en": "Home"},
+    "ui.brand_name": {"uk": "CHEREMSHA", "en": "CHEREMSHA"},
+    "ui.brand_tagline": {"uk": "STREAM TOGETHER", "en": "STREAM TOGETHER"},
+    "ui.nav_home": {"uk": "Головна", "en": "Home"},
     "ui.nav_home_hint": {
         "uk": "Повернутися на екран підключення Twitch / YouTube",
         "en": "Back to Twitch / YouTube connections",
@@ -1132,8 +1134,16 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "Google Translate (online)",
     },
     "audio.tts_engine_edge": {"uk": "Edge TTS (мережа)", "en": "Edge TTS (online)"},
+    "audio.tts_engine_respeecher": {"uk": "ReSpeecher (мережа)", "en": "ReSpeecher (online)"},
     "audio.edge_voice_group": {"uk": "Edge — голос", "en": "Edge — voice"},
     "audio.edge_voice_label": {"uk": "Голос", "en": "Voice"},
+    "audio.respeecher_voice_group": {"uk": "ReSpeecher — голос", "en": "ReSpeecher — voice"},
+    "audio.respeecher_voice_label": {"uk": "Голос", "en": "Voice"},
+    "audio.tts_randomize_voice": {"uk": "Випадковий голос", "en": "Randomize voice"},
+    "audio.tts_randomize_voice_hint": {
+        "uk": "Кожне озвучення буде використовувати випадковий голос із доступного списку.",
+        "en": "Each speech will use a random voice from the available list.",
+    },
     "audio.tts_language": {"uk": "Мова озвучення (TTS)", "en": "Speech language (TTS)"},
     "tts_lang.uk_UA": {"uk": "Українська (uk-UA)", "en": "Ukrainian (uk-UA)"},
     "tts_lang.en_US": {"uk": "English US (en-US)", "en": "English US (en-US)"},
@@ -2597,6 +2607,178 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "webcam_frame.status.offline": {"uk": "SIGNAL // OFFLINE", "en": "SIGNAL // OFFLINE"},
     "webcam_frame.status.live": {"uk": "LIVE", "en": "LIVE"},
     "webcam_frame.boot.online": {"uk": "SYSTEM ONLINE", "en": "SYSTEM ONLINE"},
+    # Signal System overlay + widgets chrome
+    "widgets.signal_system.title": {
+        "uk": "Система сигналів",
+        "en": "Signal System",
+    },
+    "widgets.signal_system.settings_title": {
+        "uk": "Система сигналів — налаштування",
+        "en": "Signal System — settings",
+    },
+    "widgets.signal_system.settings_blurb": {
+        "uk": "Система сигналів відстежує події чату, подарунки та активність із візуальними ефектами та звуковими підказками.",
+        "en": "Signal System tracks chat events, gifts, and activity with visual effects and audio cues.",
+    },
+    "widgets.signal_system.card_title": {
+        "uk": "Система сигналів (оверлей)",
+        "en": "Signal System (overlay)",
+    },
+    "widgets.signal_system.edit_header": {
+        "uk": "СИГНАЛ // СИСТЕМА — кінематографічний оверлей",
+        "en": "SIGNAL // SYSTEM — cinematic stream overlay",
+    },
+    "signal_system.goal.detected": {"uk": "СИГНАЛ // ВИЯВЛЕНО", "en": "SIGNAL // DETECTED"},
+    "signal_system.goal.mega": {"uk": "МЕГА // ТРАНСМІСІЯ", "en": "MEGA // TRANSMISSION"},
+    "signal_system.goal.milestone": {"uk": "СИГНАЛ // РЕКОРД", "en": "SIGNAL // MILESTONE"},
+    "signal_system.goal.milestone_reached": {
+        "uk": "РЕКОРД // ДОСЯГНУТО",
+        "en": "MILESTONE // REACHED",
+    },
+    "signal_system.goal.milestone_default": {
+        "uk": "СТРІМ // РЕКОРД",
+        "en": "STREAM // MILESTONE",
+    },
+    "signal_system.goal.milestone_sub": {
+        "uk": "НОВИЙ РЕКОРД",
+        "en": "NEW RECORD REACHED",
+    },
+    "signal_system.goal.milestone_test_sub": {
+        "uk": "10 000 ПІДПИСНИКІВ",
+        "en": "10,000 FOLLOWERS",
+    },
+    "signal_system.goal.milestone_test_value": {
+        "uk": "РІВЕНЬ 3 ВІДКРИТО",
+        "en": "TIER 3 UNLOCKED",
+    },
+    "signal_system.goal.surge": {"uk": "СИГНАЛ // СПЛЕСК", "en": "SIGNAL // SURGE"},
+    "signal_system.goal.overdrive": {
+        "uk": "ОВЕРДРАЙВ // ВИЯВЛЕНО",
+        "en": "OVERDRIVE // DETECTED",
+    },
+    "signal_system.goal.surge_sub": {
+        "uk": "КРИТИЧНА ШВИДКІСТЬ ЧАТУ",
+        "en": "CHAT VELOCITY CRITICAL",
+    },
+    "signal_system.goal.ai": {"uk": "СИГНАЛ // КОГНІЦІЯ", "en": "SIGNAL // COGNITION"},
+    "signal_system.goal.ai_title": {
+        "uk": "СИСТЕМА // КОГНІЦІЯ",
+        "en": "SYSTEM // COGNITION",
+    },
+    "signal_system.goal.ai_default_sub": {
+        "uk": "ВИЯВЛЕНО АНОМАЛЬНИЙ ПАТЕРН ЧАТУ",
+        "en": "ANOMALOUS CHAT PATTERN OBSERVED",
+    },
+    "signal_system.goal.ai_test_sub": {
+        "uk": "ВИСОКА ЕМОЦІЙНА АКТИВНІСТЬ",
+        "en": "HIGH SENTIMENT ENGAGEMENT",
+    },
+    "signal_system.goal.anomaly": {"uk": "СИГНАЛ // АНОМАЛІЯ", "en": "SIGNAL // ANOMALY"},
+    "signal_system.goal.anomaly_title": {
+        "uk": "АНОМАЛІЯ // ВИЯВЛЕНО",
+        "en": "ANOMALY // DETECTED",
+    },
+    "signal_system.goal.anomaly_sub": {
+        "uk": "НЕІДЕНТИФІКОВАНА ЧАСТОТА",
+        "en": "UNIDENTIFIED FREQUENCY",
+    },
+    "signal_system.goal.anomaly_test_sub": {
+        "uk": "НЕІДЕНТИФІКОВАНИЙ СПЕКТРАЛЬНИЙ СЛІД",
+        "en": "UNIDENTIFIED SPECTRAL TRACE",
+    },
+    "signal_system.goal.test": {"uk": "СИГНАЛ // ТЕСТ", "en": "SIGNAL // TEST"},
+    "signal_system.goal.test_sub": {
+        "uk": "ТЕСТОВА ТРАНСМІСІЯ",
+        "en": "TEST TRANSMISSION",
+    },
+    "signal_system.goal.system": {"uk": "СИГНАЛ // СИСТЕМА", "en": "SIGNAL // SYSTEM"},
+    "signal_system.goal.unknown": {"uk": "НЕВІДОМА СУТНІСТЬ", "en": "UNKNOWN ENTITY"},
+    "signal_system.goal.online": {"uk": "ОНЛАЙН", "en": "ONLINE"},
+    "signal_system.goal.offline": {"uk": "ОФЛАЙН", "en": "OFFLINE"},
+    "signal_system.goal.activity": {"uk": "АКТИВНІСТЬ", "en": "ACTIVITY"},
+    "signal_system.goal.gifts": {"uk": "ПОДАРУНКИ", "en": "GIFTS"},
+    "signal_system.goal.gift": {"uk": "ПОДАРУНОК", "en": "GIFT"},
+    "signal_system.goal.coins": {"uk": "МОНЕТИ", "en": "COINS"},
+    "signal_system.goal.coins_fmt": {"uk": "{n} МОНЕТ", "en": "{n} COINS"},
+    "signal_system.goal.per_min_fmt": {"uk": "+{n}/ХВ", "en": "+{n}/MIN"},
+    "signal_system.goal.min_gift": {"uk": "МІН. ПОДАРУНОК", "en": "MIN GIFT"},
+    "signal_system.goal.anonymous": {"uk": "АНОНІМ", "en": "ANONYMOUS"},
+    "signal_system.goal.community": {"uk": "СПІЛЬНОТА", "en": "COMMUNITY"},
+    "signal_system.goal.test_pilot": {"uk": "ТЕСТ-ПІЛОТ", "en": "TEST PILOT"},
+    "signal_system.overlay.gift_prefix": {"uk": "ПОДАРУНОК //", "en": "GIFT //"},
+    "signal_system.overlay.signal_lost": {
+        "uk": "// СИГНАЛ ВТРАЧЕНО //",
+        "en": "// SIGNAL LOST //",
+    },
+    "signal_system.overlay.signal_intensity": {
+        "uk": "ІНТЕНСИВНІСТЬ СИГНАЛУ",
+        "en": "SIGNAL INTENSITY",
+    },
+    "signal_system.overlay.neural_scan": {
+        "uk": "НЕЙРОСКАН :: АКТИВНИЙ",
+        "en": "NEURAL SCAN :: ACTIVE",
+    },
+    "signal_system.overlay.conf": {"uk": "ДОВІРА", "en": "CONF"},
+    "signal_system.overlay.pattern_observed": {
+        "uk": "СПОСТЕРЕЖЕНО ПАТЕРН",
+        "en": "PATTERN OBSERVED",
+    },
+    "signal_system.overlay.new_record": {"uk": "НОВИЙ РЕКОРД", "en": "NEW RECORD"},
+    "signal_system.overlay.sys": {"uk": "СИС //", "en": "SYS //"},
+    "signal_system.overlay.act": {"uk": "АКТ", "en": "ACT"},
+    "signal_system.overlay.per_min": {"uk": "/ХВ", "en": "/MIN"},
+    "signal_system.overlay.grid_link": {
+        "uk": "МЕРЕЖА 48.21 // 16.34  [ЗВ'ЯЗОК OK]",
+        "en": "GRID 48.21 // 16.34  [LINK OK]",
+    },
+    "signal_system.overlay.sec_pwr": {
+        "uk": "СЕК-A :: ЖИВ {n}%",
+        "en": "SEC-A :: PWR {n}%",
+    },
+    "signal_system.ui.scale_hint": {
+        "uk": "Масштаб елементів у межах віджета (не zoom за край)",
+        "en": "Scales elements inside the widget (does not zoom past edges)",
+    },
+    "signal_system.ui.scale": {"uk": "Масштаб (%)", "en": "Scale (%)"},
+    "signal_system.ui.core_vertical": {
+        "uk": "Висота core (%)",
+        "en": "Core height (%)",
+    },
+    "signal_system.ui.core_vertical_hint": {
+        "uk": "Вертикальна позиція ядра: 50 = центр, менше = вище, більше = нижче",
+        "en": "Core vertical position: 50 = center, lower = higher up, higher = lower down",
+    },
+    "signal_system.ui.theme": {"uk": "Тема", "en": "Theme"},
+    "signal_system.ui.title": {"uk": "Заголовок", "en": "Title"},
+    "signal_system.ui.perimeter": {"uk": "Периметр", "en": "Perimeter"},
+    "signal_system.ui.particles": {"uk": "Частинки", "en": "Particles"},
+    "signal_system.ui.glitch": {"uk": "Глітч", "en": "Glitch"},
+    "signal_system.ui.sound": {"uk": "Звук", "en": "Sound"},
+    "signal_system.ui.font": {"uk": "Шрифт", "en": "Font"},
+    "signal_system.ui.opacity_idle": {"uk": "Прозорість у спокої", "en": "Idle opacity"},
+    "signal_system.ui.opacity_active": {"uk": "Прозорість при сигналі", "en": "Active opacity"},
+    "signal_system.ui.cooldown": {"uk": "Кулдаун (мс)", "en": "Cooldown (ms)"},
+    "signal_system.ui.min_gift_coins": {"uk": "Мін. монет для подарунка", "en": "Min gift coins"},
+    "signal_system.theme.neon_cyber": {
+        "uk": "Neon Cyber (ціан / пурпур)",
+        "en": "Neon Cyber (Cyan / Magenta)",
+    },
+    "signal_system.theme.toxic_system": {
+        "uk": "Toxic System (матричний зелений)",
+        "en": "Toxic System (Matrix Green)",
+    },
+    "signal_system.theme.ice_protocol": {
+        "uk": "Ice Protocol (кобальт)",
+        "en": "Ice Protocol (Cobalt Blue)",
+    },
+    "signal_system.theme.amber_core": {
+        "uk": "Amber Core (золото / бурштин)",
+        "en": "Amber Core (Gold / Amber)",
+    },
+    "signal_system.theme.critical": {
+        "uk": "Critical (червона тривога)",
+        "en": "Critical (Red Alert)",
+    },
 }
 
 

@@ -157,6 +157,7 @@ from stream_cheremsha.overlays.king_of_live_overlay_config import (
 from stream_cheremsha.overlays.live_leaderboard_controller import LiveLeaderboardController
 from stream_cheremsha.overlays.registry import OverlayRegistry
 from stream_cheremsha.overlays.server import OverlayServer
+from stream_cheremsha.overlays.signal_system_controller import SignalSystemController
 from stream_cheremsha.overlays.social_rotator_controller import SocialRotatorController
 from stream_cheremsha.overlays.stream_goal_controller import StreamGoalController
 from stream_cheremsha.overlays.stream_pet_controller import StreamPetController
@@ -212,10 +213,12 @@ from stream_cheremsha.telegram.tiktok_song_filter import (
 )
 from stream_cheremsha.tts.edge_tts import (
     EdgeTts,
+    EdgeVoice,
     filter_edge_voices_for_locale,
     list_edge_voices_cached,
 )
 from stream_cheremsha.tts.google_translate_tts import GoogleTranslateTts
+from stream_cheremsha.tts.respeecher_tts import REPEECHER_VOICES, ReSpeecherTts
 from stream_cheremsha.ui.actions_qml_api import ActionsQmlApi
 from stream_cheremsha.ui.chat_formatting import (
     CHAT_DEFAULT_FONT_FAMILY,
@@ -296,6 +299,8 @@ _SETTINGS_AUTOSTART_KICK = "startup/auto_start_kick"
 _SETTINGS_TTS_GAIN_DB = "audio/tts_gain_db"
 _TTS_ENGINE_GOOGLE = "google"
 _TTS_ENGINE_EDGE = "edge"
+_TTS_ENGINE_RESPEECHER = "respeecher"
+_TTS_DEFAULT_VOICE_ID = "olesia-conversation"
 _SETTINGS_TTS_ENGINE = "tts/engine"
 _SETTINGS_TTS_LANG = "tts/output_language"
 _SETTINGS_EDGE_VOICE_BY_LANG = "tts/edge_voice_by_lang"
@@ -315,6 +320,9 @@ _SETTINGS_TTS_RATE_PERCENT = "tts/rate_percent"
 _TTS_RATE_MIN = 50
 _TTS_RATE_MAX = 200
 _TTS_RATE_DEFAULT = 100
+_SETTINGS_TTS_MIN_INTERVAL_SEC = "tts/min_interval_sec"
+_SETTINGS_TTS_RANDOMIZE_EDGE = "tts/randomize_edge"
+_SETTINGS_TTS_RANDOMIZE_RESPEECHER = "tts/randomize_respeecher"
 
 _SETTINGS_TELEGRAM_ENABLED = "telegram/enabled"
 _SETTINGS_TELEGRAM_ADMIN_ID = "telegram/admin_id"
@@ -750,6 +758,7 @@ class MainWindow(FramelessWindow):
         self._log_handler: QtLogHandler | None = None
 
         self._tts = self._construct_initial_tts()
+        self._fallback_tts = None
         self._sink = QtAudioSink(self)
         self._coordinator = StreamCoordinator(
             tts=self._tts,
@@ -869,6 +878,12 @@ class MainWindow(FramelessWindow):
             instance="main",
             parent=self,
         )
+        self._signal_system = SignalSystemController(
+            pubsub=self._overlay_server.pubsub(),
+            get_locale=lambda: self._locale,
+            instance="main",
+            parent=self,
+        )
         self._activity_engine = ActivityEngine(
             pubsub=self._overlay_server.pubsub(),
             enabled=True,
@@ -880,6 +895,9 @@ class MainWindow(FramelessWindow):
                 "share": 8.0,
                 "gift": 12.0,
             },
+            on_score_change=lambda score: (
+                self._signal_system.on_activity_surge(score) if score >= 85.0 else None
+            ),
         )
         self._qml_pages_loaded: set[int] = set()
         self._active_qml_stack_index: int | None = None
@@ -1095,6 +1113,14 @@ class MainWindow(FramelessWindow):
             v = _TTS_RATE_DEFAULT
         return max(_TTS_RATE_MIN, min(_TTS_RATE_MAX, v))
 
+    def _min_interval_sec_from_settings(self) -> float:
+        raw = self._settings.value(_SETTINGS_TTS_MIN_INTERVAL_SEC, 0.4)
+        try:
+            v = float(raw)
+        except (TypeError, ValueError):
+            v = 0.4
+        return v
+
     @staticmethod
     def _edge_rate_string(rate_percent: int) -> str | None:
         """Map absolute speed percent (100 = normal) to Edge's relative rate, e.g. ``+25%``."""
@@ -1140,6 +1166,7 @@ class MainWindow(FramelessWindow):
         self._widgets_qml_api.set_live_leaderboard_controller(self._live_leaderboard)
         self._widgets_qml_api.set_social_rotator_controller(self._social_rotator)
         self._widgets_qml_api.set_webcam_frame_controller(self._webcam_frame)
+        self._widgets_qml_api.set_signal_system_controller(self._signal_system)
         self._donations_qml_api.set_donation_listener(self._on_external_donation)
         self._overlay_tunnel_qml_api = OverlayTunnelQmlApi(self)
         self._qml_widgets = QQuickWidget(self)
@@ -1161,9 +1188,157 @@ class MainWindow(FramelessWindow):
         # (not managed by layouts), so we reserve vertical space for it.
         root.setContentsMargins(0, int(self.titleBar.height()), 0, 0)
 
+        body = QHBoxLayout()
+        body.setSpacing(0)
+        body.setContentsMargins(0, 0, 0, 0)
+        root.addLayout(body, stretch=1)
+
+        self._sidebar_frame = QFrame()
+        self._sidebar_frame.setObjectName("appSidebar")
+        # Design artboard sidebar content width is 212px (plus 1px divider).
+        self._sidebar_frame.setFixedWidth(212)
+        side_lay = QVBoxLayout(self._sidebar_frame)
+        # Measured from design: left 12 / top 19 / right 13 / bottom 16; item gap 25.
+        side_lay.setContentsMargins(12, 19, 13, 16)
+        side_lay.setSpacing(25)
+
+        brand = QWidget()
+        brand.setObjectName("sidebarBrand")
+        brand_lay = QHBoxLayout(brand)
+        # Logo sits at x=20 in the design → +8px inside the 12px sidebar inset.
+        brand_lay.setContentsMargins(8, 0, 0, 0)
+        brand_lay.setSpacing(10)
+        logo = QLabel()
+        logo.setObjectName("sidebarLogo")
+        logo.setFixedSize(34, 34)
+        logo_path = _asset_path("icon.png")
+        if logo_path.is_file():
+            pm = QPixmap(str(logo_path))
+            logo.setPixmap(
+                pm.scaled(
+                    34,
+                    34,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                ),
+            )
+        brand_text = QWidget()
+        brand_text_lay = QVBoxLayout(brand_text)
+        brand_text_lay.setContentsMargins(0, 0, 0, 0)
+        brand_text_lay.setSpacing(1)
+        self._lbl_brand_name = QLabel()
+        self._lbl_brand_name.setObjectName("sidebarBrandName")
+        self._lbl_brand_tagline = QLabel()
+        self._lbl_brand_tagline.setObjectName("sidebarBrandTagline")
+        brand_text_lay.addWidget(self._lbl_brand_name)
+        brand_text_lay.addWidget(self._lbl_brand_tagline)
+        brand_lay.addWidget(logo, 0, Qt.AlignmentFlag.AlignVCenter)
+        brand_lay.addWidget(brand_text, 1, Qt.AlignmentFlag.AlignVCenter)
+        side_lay.addWidget(brand)
+
+        def _nav_icon(asset_name: str, fallback: QStyle.StandardPixmap) -> QIcon:
+            p = _asset_path(asset_name)
+            if p.is_file():
+                return QIcon(str(p))
+            return self.style().standardIcon(fallback)
+
+        def _make_nav_btn(
+            *,
+            nav_id: str,
+            asset_name: str,
+            fallback: QStyle.StandardPixmap,
+            on_click,
+        ) -> QToolButton:
+            b = QToolButton()
+            b.setObjectName("sideNav")
+            b.setProperty("navId", nav_id)
+            b.setIcon(_nav_icon(asset_name, fallback))
+            b.setIconSize(QSize(22, 22))
+            b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            b.clicked.connect(on_click)
+            return b
+
+        self._btn_footer_home = _make_nav_btn(
+            nav_id="navHome",
+            asset_name="home.png",
+            fallback=QStyle.StandardPixmap.SP_DirHomeIcon,
+            on_click=lambda: self._set_main_page(self._IX_CONN),
+        )
+        self._btn_footer_donations = _make_nav_btn(
+            nav_id="navDonations",
+            asset_name="donate.png",
+            fallback=QStyle.StandardPixmap.SP_DialogApplyButton,
+            on_click=lambda: self._set_main_page(self._IX_DONATIONS),
+        )
+        self._btn_footer_actions = _make_nav_btn(
+            nav_id="navActions",
+            asset_name="actions.png",
+            fallback=QStyle.StandardPixmap.SP_FileDialogContentsView,
+            on_click=self.open_actions,
+        )
+        self._btn_footer_widgets = _make_nav_btn(
+            nav_id="navWidgets",
+            asset_name="widgets.png",
+            fallback=QStyle.StandardPixmap.SP_DesktopIcon,
+            on_click=lambda: self._set_main_page(self._IX_WIDGETS),
+        )
+        self._btn_footer_docks = _make_nav_btn(
+            nav_id="navDocks",
+            asset_name="docks.png",
+            fallback=QStyle.StandardPixmap.SP_TitleBarUnshadeButton,
+            on_click=lambda: self._set_main_page(self._IX_DOCKS),
+        )
+        self._btn_footer_music = _make_nav_btn(
+            nav_id="navMusic",
+            asset_name="music.png",
+            fallback=QStyle.StandardPixmap.SP_MediaPlay,
+            on_click=lambda: self._set_main_page(self._IX_MUSIC),
+        )
+        self._btn_footer_logs = _make_nav_btn(
+            nav_id="navLogs",
+            asset_name="logs.png",
+            fallback=QStyle.StandardPixmap.SP_FileDialogDetailedView,
+            on_click=lambda: self._set_main_page(self._IX_LOGS),
+        )
+        self._btn_footer_chat = _make_nav_btn(
+            nav_id="navChat",
+            asset_name="chat.png",
+            fallback=QStyle.StandardPixmap.SP_MessageBoxInformation,
+            on_click=lambda: self._set_main_page(self._IX_CHAT),
+        )
+        self._btn_footer_tts = _make_nav_btn(
+            nav_id="navTts",
+            asset_name="tts.png",
+            fallback=QStyle.StandardPixmap.SP_MediaVolume,
+            on_click=lambda: self._set_main_page(self._IX_AUDIO),
+        )
+
+        for btn in (
+            self._btn_footer_home,
+            self._btn_footer_donations,
+            self._btn_footer_actions,
+            self._btn_footer_widgets,
+            self._btn_footer_docks,
+            self._btn_footer_music,
+            self._btn_footer_logs,
+            self._btn_footer_chat,
+            self._btn_footer_tts,
+        ):
+            side_lay.addWidget(btn)
+        side_lay.addStretch(1)
+        body.addWidget(self._sidebar_frame, 0)
+
+        right = QVBoxLayout()
+        right.setSpacing(0)
+        right.setContentsMargins(0, 0, 0, 0)
+        body.addLayout(right, stretch=1)
+
         self._stack = QStackedWidget()
         self._apply_dark_chrome()
-        root.addWidget(self._stack, stretch=1)
+        right.addWidget(self._stack, stretch=1)
 
         self._stack.addWidget(self._qml_conn)
         self._stack.addWidget(self._build_settings_tab())
@@ -1184,184 +1359,15 @@ class MainWindow(FramelessWindow):
         self._footer_frame = QFrame()
         self._footer_frame.setObjectName("appFooter")
         _foot = QHBoxLayout(self._footer_frame)
-        _foot.setContentsMargins(12, 10, 12, 10)
+        _foot.setContentsMargins(14, 8, 14, 8)
         _foot.setSpacing(8)
         self._status_label = QLabel()
         self._status_label.setWordWrap(True)
         self._status_label.setTextFormat(Qt.TextFormat.RichText)
         self._status_label.setObjectName("footerStatus")
         _foot.addWidget(self._status_label, stretch=1, alignment=Qt.AlignmentFlag.AlignTop)
+        right.addWidget(self._footer_frame, 0)
 
-        def _footer_icon(asset_name: str, fallback: QStyle.StandardPixmap) -> QIcon:
-            p = _asset_path(asset_name)
-            if p.is_file():
-                return QIcon(str(p))
-            return self.style().standardIcon(fallback)
-
-        self._btn_footer_logs = QToolButton()
-        self._btn_footer_logs.setObjectName("footerNav")
-        self._btn_footer_logs.setProperty("navId", "navLogs")
-        self._btn_footer_logs.setIcon(
-            _footer_icon("logs.png", QStyle.StandardPixmap.SP_FileDialogDetailedView),
-        )
-        self._btn_footer_logs.setIconSize(QSize(18, 18))
-        self._btn_footer_logs.setToolButtonStyle(
-            Qt.ToolButtonStyle.ToolButtonTextBesideIcon,
-        )
-        self._btn_footer_logs.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._btn_footer_logs.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_footer_logs.clicked.connect(lambda: self._set_main_page(self._IX_LOGS))
-        self._btn_footer_home = QToolButton()
-        self._btn_footer_home.setObjectName("footerNav")
-        self._btn_footer_home.setProperty("navId", "navHome")
-        self._btn_footer_home.setIcon(
-            _footer_icon("home.png", QStyle.StandardPixmap.SP_DirHomeIcon),
-        )
-        self._btn_footer_home.setIconSize(QSize(18, 18))
-        self._btn_footer_home.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self._btn_footer_home.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._btn_footer_home.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_footer_home.clicked.connect(
-            lambda: self._set_main_page(self._IX_CONN),
-        )
-        self._btn_footer_donations = QToolButton()
-        self._btn_footer_donations.setObjectName("footerNav")
-        self._btn_footer_donations.setProperty("navId", "navDonations")
-        self._btn_footer_donations.setIcon(
-            _footer_icon("donate.png", QStyle.StandardPixmap.SP_DialogApplyButton),
-        )
-        self._btn_footer_donations.setIconSize(QSize(18, 18))
-        self._btn_footer_donations.setToolButtonStyle(
-            Qt.ToolButtonStyle.ToolButtonTextBesideIcon,
-        )
-        self._btn_footer_donations.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._btn_footer_donations.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_footer_donations.clicked.connect(
-            lambda: self._set_main_page(self._IX_DONATIONS),
-        )
-        self._btn_footer_actions = QToolButton()
-        self._btn_footer_actions.setObjectName("footerNav")
-        self._btn_footer_actions.setProperty("navId", "navActions")
-        self._btn_footer_actions.setIcon(
-            _footer_icon("actions.png", QStyle.StandardPixmap.SP_FileDialogContentsView),
-        )
-        self._btn_footer_actions.setIconSize(QSize(18, 18))
-        self._btn_footer_actions.setToolButtonStyle(
-            Qt.ToolButtonStyle.ToolButtonTextBesideIcon,
-        )
-        self._btn_footer_actions.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._btn_footer_actions.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_footer_actions.clicked.connect(self.open_actions)
-        self._btn_footer_widgets = QToolButton()
-        self._btn_footer_widgets.setObjectName("footerNav")
-        self._btn_footer_widgets.setProperty("navId", "navWidgets")
-        self._btn_footer_widgets.setIcon(
-            _footer_icon("widgets.png", QStyle.StandardPixmap.SP_DesktopIcon),
-        )
-        self._btn_footer_widgets.setIconSize(QSize(18, 18))
-        self._btn_footer_widgets.setToolButtonStyle(
-            Qt.ToolButtonStyle.ToolButtonTextBesideIcon,
-        )
-        self._btn_footer_widgets.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._btn_footer_widgets.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_footer_widgets.clicked.connect(lambda: self._set_main_page(self._IX_WIDGETS))
-
-        self._btn_footer_docks = QToolButton()
-        self._btn_footer_docks.setObjectName("footerNav")
-        self._btn_footer_docks.setProperty("navId", "navDocks")
-        self._btn_footer_docks.setIcon(
-            _footer_icon("docks.png", QStyle.StandardPixmap.SP_TitleBarUnshadeButton),
-        )
-        self._btn_footer_docks.setIconSize(QSize(18, 18))
-        self._btn_footer_docks.setToolButtonStyle(
-            Qt.ToolButtonStyle.ToolButtonTextBesideIcon,
-        )
-        self._btn_footer_docks.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._btn_footer_docks.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_footer_docks.clicked.connect(lambda: self._set_main_page(self._IX_DOCKS))
-
-        self._btn_footer_music = QToolButton()
-        self._btn_footer_music.setObjectName("footerNav")
-        self._btn_footer_music.setProperty("navId", "navMusic")
-        self._btn_footer_music.setIcon(
-            _footer_icon("music.png", QStyle.StandardPixmap.SP_MediaPlay),
-        )
-        self._btn_footer_music.setIconSize(QSize(18, 18))
-        self._btn_footer_music.setToolButtonStyle(
-            Qt.ToolButtonStyle.ToolButtonTextBesideIcon,
-        )
-        self._btn_footer_music.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._btn_footer_music.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_footer_music.clicked.connect(lambda: self._set_main_page(self._IX_MUSIC))
-
-        _foot.addWidget(
-            self._btn_footer_home,
-            0,
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-        )
-        _foot.addWidget(
-            self._btn_footer_donations,
-            0,
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-        )
-        _foot.addWidget(
-            self._btn_footer_actions,
-            0,
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-        )
-        _foot.addWidget(
-            self._btn_footer_widgets,
-            0,
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-        )
-        _foot.addWidget(
-            self._btn_footer_docks,
-            0,
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-        )
-        _foot.addWidget(
-            self._btn_footer_music,
-            0,
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-        )
-        _foot.addWidget(
-            self._btn_footer_logs,
-            0,
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-        )
-
-        self._btn_footer_chat = QToolButton()
-        self._btn_footer_tts = QToolButton()
-        for b, name in ((self._btn_footer_chat, "navChat"), (self._btn_footer_tts, "navTts")):
-            b.setObjectName("footerNav")
-            b.setProperty("navId", name)
-            b.setIcon(
-                _footer_icon(
-                    "chat.png" if name == "navChat" else "tts.png",
-                    QStyle.StandardPixmap.SP_MessageBoxInformation,
-                ),
-            )
-            b.setIconSize(QSize(18, 18))
-            b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            b.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_footer_chat.clicked.connect(
-            lambda: self._set_main_page(self._IX_CHAT),
-        )
-        self._btn_footer_tts.clicked.connect(
-            lambda: self._set_main_page(self._IX_AUDIO),
-        )
-        _foot.addWidget(
-            self._btn_footer_chat,
-            0,
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-        )
-        _foot.addWidget(
-            self._btn_footer_tts,
-            0,
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-        )
-        root.addWidget(self._footer_frame, 0)
         self._qml_api.refresh()
         self._refresh_footer()
         self._apply_in_app_chrome_texts()
@@ -1499,6 +1505,7 @@ class MainWindow(FramelessWindow):
         self._bp_was_maximized = self.isMaximized()
         self._bp_was_fullscreen = self.isFullScreen()
         self._reparent_chat_to_big_picture()
+        self._sidebar_frame.hide()
         self._footer_frame.hide()
         self._set_main_page(self._IX_BIG_PICTURE)
         self._big_picture_active = True
@@ -1516,6 +1523,7 @@ class MainWindow(FramelessWindow):
             return
         self._big_picture_active = False
         self._reparent_chat_to_chat_tab()
+        self._sidebar_frame.show()
         self._footer_frame.show()
         return_index = self._bp_return_index
         if not (0 <= return_index < self._stack.count()):
@@ -1689,7 +1697,7 @@ class MainWindow(FramelessWindow):
         self._stack.setCurrentIndex(index)
 
     def _sync_footer_nav(self, _index: int = 0) -> None:
-        """Subtle active state for Home / Chat / TTS when the stacked page matches."""
+        """Subtle active state for side nav buttons when the stacked page matches."""
         if not hasattr(self, "_stack") or not hasattr(self, "_btn_footer_chat"):
             return
         on_conn = self._stack.currentIndex() == self._IX_CONN
@@ -1746,6 +1754,10 @@ class MainWindow(FramelessWindow):
                     pass
         if hasattr(self, "_lbl_bp_chat_header"):
             self._lbl_bp_chat_header.setText(self._tr("ui.big_picture_chat"))
+        if hasattr(self, "_lbl_brand_name"):
+            self._lbl_brand_name.setText(self._tr("ui.brand_name"))
+        if hasattr(self, "_lbl_brand_tagline"):
+            self._lbl_brand_tagline.setText(self._tr("ui.brand_tagline"))
         if hasattr(self, "_btn_footer_home"):
             th = self._tr("ui.nav_home")
             self._btn_footer_home.setText(th)
@@ -1807,15 +1819,24 @@ class MainWindow(FramelessWindow):
             "background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
             "stop:0 #0f172a, stop:0.55 #0b1220, stop:1 #070910); }"
             "QWidget#settingsScrollBody { background-color: transparent; }"
+            "QFrame#appSidebar { background-color: #080a0e; border: none; "
+            "border-right: 1px solid #1a2030; }"
+            "QLabel#sidebarBrandName { color: #f3f4f6; font-size: 15px; font-weight: 800; "
+            "letter-spacing: 1.2px; }"
+            "QLabel#sidebarBrandTagline { color: #8b95a5; font-size: 10px; font-weight: 600; "
+            "letter-spacing: 1.6px; }"
+            "QToolButton#sideNav { background: transparent; color: #d7deea; "
+            "border: none; border-radius: 14px; font-weight: 500; font-size: 15px; "
+            "text-align: left; padding: 9px 14px; min-height: 40px; }"
+            "QToolButton#sideNav:hover { background: #1a2233; color: #eef2f6; }"
+            'QToolButton#sideNav[activeNav="on"] { '
+            "background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1, "
+            "stop:0 #5b3cc8, stop:0.45 #3f3a9a, stop:1 #2f55c8); "
+            "color: #ffffff; font-weight: 700; border-radius: 16px; "
+            "padding: 18px 14px; min-height: 56px; }"
             "QFrame#appFooter { background-color: #080a0e; border: none; "
             "border-top: 1px solid #1e2430; }"
             "QLabel#footerStatus { color: #b8c0ce; font-size: 11px; }"
-            "QToolButton#footerNav { min-width: 64px; min-height: 36px; background: #121720; "
-            "color: #e2e8f0; border: 1px solid #2a3142; border-radius: 10px; font-weight: 600; "
-            "font-size: 12px; padding: 4px 10px; }"
-            "QToolButton#footerNav:hover { background: #1a2030; border-color: #3b4458; }"
-            'QToolButton#footerNav[activeNav="on"] { background: #1a2540; '
-            "border-color: #3d4f6a; }"
             "QGroupBox { border: 1px solid #2a3142; border-radius: 12px; margin-top: 16px; "
             "padding-top: 10px; padding-bottom: 12px; padding-left: 14px; padding-right: 14px; "
             "font-weight: 600; background-color: rgba(18, 22, 32, 210); }"
@@ -3364,6 +3385,7 @@ class MainWindow(FramelessWindow):
         self._combo_tts_engine = QComboBox()
         self._combo_tts_engine.addItem("", _TTS_ENGINE_GOOGLE)
         self._combo_tts_engine.addItem("", _TTS_ENGINE_EDGE)
+        self._combo_tts_engine.addItem("", _TTS_ENGINE_RESPEECHER)
         self._combo_tts_engine.currentIndexChanged.connect(self._on_tts_engine_changed)
         self._engine_row = QWidget()
         er = QHBoxLayout(self._engine_row)
@@ -3441,14 +3463,39 @@ class MainWindow(FramelessWindow):
         self._lbl_edge_voice = QLabel()
         self._combo_edge_voice = QComboBox()
         self._combo_edge_voice.currentIndexChanged.connect(self._on_edge_voice_changed)
+        self._cb_edge_randomize = QCheckBox()
+        self._cb_edge_randomize.toggled.connect(self._on_edge_randomize_changed)
         edge_form = QFormLayout()
         edge_form.setContentsMargins(0, 0, 0, 0)
         edge_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         edge_form.setHorizontalSpacing(10)
         edge_form.setVerticalSpacing(8)
         edge_form.addRow(self._lbl_edge_voice, self._combo_edge_voice)
+        edge_form.addRow(self._tr("audio.tts_randomize_voice"), self._cb_edge_randomize)
         edge_body.addLayout(edge_form)
         main_lay.addWidget(self._frm_edge_voice)
+
+        # --- ReSpeecher card (voice selection per language) ---
+        self._frm_respeecher_voice, respeecher_body, self._lbl_audio_respeecher_card_h = self._make_audio_card(
+            "#a855f7",
+        )
+        self._lbl_respeecher_voice = QLabel()
+        self._combo_respeecher_voice = QComboBox()
+        # Populate with the 13 Ukrainian voices
+        for voice_id, voice_label in REPEECHER_VOICES.items():
+            self._combo_respeecher_voice.addItem(voice_label, voice_id)
+        self._combo_respeecher_voice.currentIndexChanged.connect(self._on_respeecher_voice_changed)
+        self._cb_respeecher_randomize = QCheckBox()
+        self._cb_respeecher_randomize.toggled.connect(self._on_respeecher_randomize_changed)
+        respeecher_form = QFormLayout()
+        respeecher_form.setContentsMargins(0, 0, 0, 0)
+        respeecher_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        respeecher_form.setHorizontalSpacing(10)
+        respeecher_form.setVerticalSpacing(8)
+        respeecher_form.addRow(self._lbl_respeecher_voice, self._combo_respeecher_voice)
+        respeecher_form.addRow(self._tr("audio.tts_randomize_voice"), self._cb_respeecher_randomize)
+        respeecher_body.addLayout(respeecher_form)
+        main_lay.addWidget(self._frm_respeecher_voice)
 
         # --- Output & levels card ---
         _lv_card, lv_body, self._lbl_audio_levels_card_h = self._make_audio_card("#0ea5e9")
@@ -3517,6 +3564,7 @@ class MainWindow(FramelessWindow):
         self._lbl_tts_engine.setText(self._tr("audio.tts_engine"))
         self._combo_tts_engine.setItemText(0, self._tr("audio.tts_engine_google"))
         self._combo_tts_engine.setItemText(1, self._tr("audio.tts_engine_edge"))
+        self._combo_tts_engine.setItemText(2, self._tr("audio.tts_engine_respeecher"))
         self._btn_audio_flush_queues.setText(self._tr("audio.flush_queues"))
         self._btn_audio_flush_queues.setToolTip(self._tr("audio.flush_queues_hint"))
         self._lbl_audio_tts_card_h.setText(self._tr("audio.card_tts_title"))
@@ -3534,6 +3582,12 @@ class MainWindow(FramelessWindow):
         self._lbl_tts_rate.setToolTip(_rate_tip)
         self._lbl_audio_edge_card_h.setText(self._tr("audio.edge_voice_group"))
         self._lbl_edge_voice.setText(self._tr("audio.edge_voice_label"))
+        self._cb_edge_randomize.setText(self._tr("audio.tts_randomize_voice"))
+        self._cb_edge_randomize.setToolTip(self._tr("audio.tts_randomize_voice_hint"))
+        self._lbl_audio_respeecher_card_h.setText(self._tr("audio.respeecher_voice_group"))
+        self._lbl_respeecher_voice.setText(self._tr("audio.respeecher_voice_label"))
+        self._cb_respeecher_randomize.setText(self._tr("audio.tts_randomize_voice"))
+        self._cb_respeecher_randomize.setToolTip(self._tr("audio.tts_randomize_voice_hint"))
         self._update_tts_engine_related_visibility()
         self._lbl_audio_volume.setText(self._tr("audio.volume"))
         self._lbl_audio_tts_gain.setText(self._tr("audio.tts_gain"))
@@ -3556,14 +3610,21 @@ class MainWindow(FramelessWindow):
     def _update_tts_engine_related_visibility(self) -> None:
         eng = self._combo_tts_engine.currentData()
         use_edge = eng == _TTS_ENGINE_EDGE
+        use_respeecher = eng == _TTS_ENGINE_RESPEECHER
         self._frm_edge_voice.setVisible(use_edge)
+        self._frm_respeecher_voice.setVisible(use_respeecher)
 
     def _sync_tts_engine_combo_to_backend(self) -> None:
         """Combo reflects saved engine (not live ``self._tts``)."""
         raw_eng = str(self._settings.value(_SETTINGS_TTS_ENGINE, _TTS_ENGINE_GOOGLE, str))
         gid = raw_eng.strip().lower()
         self._combo_tts_engine.blockSignals(True)
-        idx = 1 if gid == _TTS_ENGINE_EDGE else 0
+        if gid == _TTS_ENGINE_EDGE:
+            idx = 1
+        elif gid == _TTS_ENGINE_RESPEECHER:
+            idx = 2
+        else:
+            idx = 0
         self._combo_tts_engine.setCurrentIndex(idx)
         self._combo_tts_engine.blockSignals(False)
         self._update_tts_engine_related_visibility()
@@ -3575,6 +3636,9 @@ class MainWindow(FramelessWindow):
         self._update_tts_engine_related_visibility()
         if eng == _TTS_ENGINE_EDGE:
             asyncio.ensure_future(self._refresh_edge_voices_for_current_language())
+        elif eng == _TTS_ENGINE_RESPEECHER:
+            # No voice refresh needed for ReSpeecher at this time
+            pass
         asyncio.ensure_future(self._swap_tts_backend())
 
     @Slot(int)
@@ -3585,6 +3649,9 @@ class MainWindow(FramelessWindow):
         eng = self._combo_tts_engine.currentData()
         if eng == _TTS_ENGINE_EDGE:
             asyncio.ensure_future(self._refresh_edge_voices_for_current_language())
+            asyncio.ensure_future(self._swap_tts_backend())
+            return
+        if eng == _TTS_ENGINE_RESPEECHER:
             asyncio.ensure_future(self._swap_tts_backend())
             return
         if eng == _TTS_ENGINE_GOOGLE:
@@ -3689,11 +3756,34 @@ class MainWindow(FramelessWindow):
         if self._combo_tts_engine.currentData() == _TTS_ENGINE_EDGE:
             asyncio.ensure_future(self._swap_tts_backend())
 
+    def _on_respeecher_voice_changed(self, _index: int) -> None:
+        # When voice changes, swap the backend to use the new voice
+        if self._combo_tts_engine.currentData() == _TTS_ENGINE_RESPEECHER:
+            asyncio.ensure_future(self._swap_tts_backend())
+
+    @Slot(bool)
+    def _on_edge_randomize_changed(self, checked: bool) -> None:
+        self._settings.setValue(_SETTINGS_TTS_RANDOMIZE_EDGE, checked)
+        if self._combo_tts_engine.currentData() == _TTS_ENGINE_EDGE:
+            asyncio.ensure_future(self._swap_tts_backend())
+
+    @Slot(bool)
+    def _on_respeecher_randomize_changed(self, checked: bool) -> None:
+        self._settings.setValue(_SETTINGS_TTS_RANDOMIZE_RESPEECHER, checked)
+        if self._combo_tts_engine.currentData() == _TTS_ENGINE_RESPEECHER:
+            asyncio.ensure_future(self._swap_tts_backend())
+
     def eventFilter(self, watched: QObject, event: QEvent | None) -> bool:  # noqa: N802
         return super().eventFilter(watched, event)
 
     async def _swap_tts_backend(self) -> None:
         from stream_cheremsha.tts.google_translate_tts import GoogleTranslateTts
+        from stream_cheremsha.tts.edge_tts import EdgeTts, RandomizedEdgeTts
+        from stream_cheremsha.tts.respeecher_tts import (
+            REPEECHER_VOICES,
+            ReSpeecherTts,
+            RandomizedReSpeecherTts,
+        )
 
         eng = self._combo_tts_engine.currentData()
         new_tts: TextToSpeech
@@ -3707,25 +3797,66 @@ class MainWindow(FramelessWindow):
 
         lang = self._current_tts_language()
         rate_percent = self._tts_rate_percent_from_settings()
+        randomize_edge = (
+            hasattr(self, "_cb_edge_randomize")
+            and self._cb_edge_randomize.isChecked()
+        )
+        randomize_respeecher = (
+            hasattr(self, "_cb_respeecher_randomize")
+            and self._cb_respeecher_randomize.isChecked()
+        )
+
         if eng == _TTS_ENGINE_EDGE:
-            voice = None
-            if hasattr(self, "_combo_edge_voice"):
-                cd = self._combo_edge_voice.currentData()
-                if isinstance(cd, str) and cd.strip():
-                    voice = cd.strip()
-            if not voice:
-                m = self._load_edge_voice_map()
-                voice = (m.get(lang, "") or "").strip() or None
-            if not voice:
-                self._on_user_status(self._tr("status.edge_voices_failed"))
-                new_tts = GoogleTranslateTts(language=lang, rate_percent=rate_percent)
-            else:
+            if randomize_edge:
                 try:
-                    new_tts = EdgeTts(voice, rate=self._edge_rate_string(rate_percent))
-                except (ImportError, ValueError, OSError) as e:
-                    QMessageBox.warning(self, self._tr("dlg.tts"), str(e))
-                    _revert_to_google_combo()
+                    new_tts = RandomizedEdgeTts(locale=lang, rate=self._edge_rate_string(rate_percent))
+                except ValueError:
+                    self._on_user_status(self._tr("status.edge_voices_failed"))
                     new_tts = GoogleTranslateTts(language=lang, rate_percent=rate_percent)
+            else:
+                voice = None
+                if hasattr(self, "_combo_edge_voice"):
+                    cd = self._combo_edge_voice.currentData()
+                    if isinstance(cd, str) and cd.strip():
+                        voice = cd.strip()
+                if not voice:
+                    m = self._load_edge_voice_map()
+                    voice = (m.get(lang, "") or "").strip() or None
+                if not voice:
+                    self._on_user_status(self._tr("status.edge_voices_failed"))
+                    new_tts = GoogleTranslateTts(language=lang, rate_percent=rate_percent)
+                else:
+                    try:
+                        new_tts = EdgeTts(voice, rate=self._edge_rate_string(rate_percent))
+                    except (ImportError, ValueError, OSError) as e:
+                        QMessageBox.warning(self, self._tr("dlg.tts"), str(e))
+                        _revert_to_google_combo()
+                        new_tts = GoogleTranslateTts(language=lang, rate_percent=rate_percent)
+        elif eng == _TTS_ENGINE_RESPEECHER:
+            if randomize_respeecher:
+                new_tts = RandomizedReSpeecherTts(
+                    rate_percent=rate_percent,
+                    fallback_tts=EdgeTts(voice="olesia-conversation"),
+                    min_interval_sec=self._min_interval_sec_from_settings(),
+                )
+            else:
+                # Get voice ID from the UI combo (if available) or default
+                voice = _TTS_DEFAULT_VOICE_ID
+                if hasattr(self, "_combo_respeecher_voice"):
+                    cd = self._combo_respeecher_voice.currentData()
+                    if isinstance(cd, str) and cd.strip():
+                        voice = cd.strip()
+                # Validate voice is in our supported list
+                if voice not in REPEECHER_VOICES:
+                    voice = _TTS_DEFAULT_VOICE_ID
+                # Instantiate ReSpeecherTts with Edge TTS as fallback
+                fallback = EdgeTts(voice=_TTS_DEFAULT_VOICE_ID)
+                new_tts = ReSpeecherTts(
+                    voice=voice,
+                    rate_percent=rate_percent,
+                    fallback_tts=fallback,
+                    min_interval_sec=self._min_interval_sec_from_settings(),
+                )
         else:
             new_tts = GoogleTranslateTts(language=lang, rate_percent=rate_percent)
 
@@ -3896,6 +4027,20 @@ class MainWindow(FramelessWindow):
                 bool(self._settings.value(_SETTINGS_TTS_STRIP_NON_ALPHA, False, bool)),
             )
             self._cb_tts_strip_non_alpha.blockSignals(False)
+
+        if hasattr(self, "_cb_edge_randomize"):
+            self._cb_edge_randomize.blockSignals(True)
+            self._cb_edge_randomize.setChecked(
+                bool(self._settings.value(_SETTINGS_TTS_RANDOMIZE_EDGE, False, bool)),
+            )
+            self._cb_edge_randomize.blockSignals(False)
+
+        if hasattr(self, "_cb_respeecher_randomize"):
+            self._cb_respeecher_randomize.blockSignals(True)
+            self._cb_respeecher_randomize.setChecked(
+                bool(self._settings.value(_SETTINGS_TTS_RANDOMIZE_RESPEECHER, False, bool)),
+            )
+            self._cb_respeecher_randomize.blockSignals(False)
 
         if hasattr(self, "_edit_tts_whitelist"):
             whitelist = str(self._settings.value(_SETTINGS_TTS_WHITELIST, "", str) or "").strip()
@@ -4274,6 +4419,12 @@ class MainWindow(FramelessWindow):
             unique_id=message.tiktok_unique_id,
         )
         self._community_world.on_chat(user=message.author, text=message.text)
+        self._signal_system.on_comment(
+            user=message.author,
+            text=message.text,
+            stable_key=message.tiktok_stable_key,
+            unique_id=message.tiktok_unique_id,
+        )
 
     def _try_tiktok_link_from_comment(self, message: ChatMessage) -> None:
         if self._closing or not self._points_enabled():
@@ -4448,6 +4599,7 @@ class MainWindow(FramelessWindow):
         self._stream_goal.on_follow(user=user, stable_key=stable_key)
         self._social_rotator.on_follow(user=user, stable_key=stable_key)
         self._community_world.on_follow(user=user, user_key=stable_key)
+        self._signal_system.on_follow(user=user, stable_key=stable_key, unique_id=unique_id)
 
     def _on_tiktok_room_viewers_current(self, n: int) -> None:
         self._tiktok_analytics.enqueue_viewers_current(int(n))
@@ -4602,6 +4754,11 @@ class MainWindow(FramelessWindow):
             n=n_i,
             user_key=user_key,
             avatar_url=profile_picture_url,
+        )
+        self._signal_system.on_like(
+            user=user,
+            count=n_i,
+            profile_picture_url=profile_picture_url,
         )
 
     def _schedule_top_likers_overlay_publish(self) -> None:
@@ -5213,6 +5370,7 @@ class MainWindow(FramelessWindow):
             unique_id=unique_id,
         )
         self._community_world.on_share(user=user, n=int(n), user_key=stable_key)
+        self._signal_system.on_share(user=user, count=int(n))
 
     def _on_tiktok_paid_sub_any(self, user: str) -> None:
         if self._closing:
@@ -5591,6 +5749,18 @@ class MainWindow(FramelessWindow):
                 icon_url=str(icon_url or ""),
                 avatar_url=str(sender_avatar_url or ""),
             )
+            self._signal_system.on_gift(
+                sender=sender,
+                gift_name=gift_name,
+                count=count,
+                tiktok_coin_each=tiktok_coin_each,
+                extra={
+                    "gift_id": gift_id,
+                    "icon_url": str(icon_url or ""),
+                    "sender_avatar_url": str(sender_avatar_url or ""),
+                    "sender_user_key": sender_user_key,
+                },
+            )
 
     def _ensure_widgets_window(self) -> QQuickView:
         if self._qml_widgets_win is not None:
@@ -5622,6 +5792,7 @@ class MainWindow(FramelessWindow):
             pubsub=self._overlay_server.pubsub(),
         )
         self._widgets_qml_api.set_battle_host(self)
+        self._widgets_qml_api.set_signal_system_controller(self._signal_system)
         self._widgets_window_qml_api = WidgetsWindowQmlApi(view=view)
         ctx = view.engine().rootContext()
         ctx.setContextProperty("api", self._widgets_qml_api)
@@ -6417,6 +6588,9 @@ class MainWindow(FramelessWindow):
             self._webcam_frame.set_pubsub(self._overlay_server.pubsub())
             self._webcam_frame.set_event_loop(self._asyncio_loop)
             self._webcam_frame.start()
+            self._signal_system.set_pubsub(self._overlay_server.pubsub())
+            self._signal_system.set_event_loop(self._asyncio_loop)
+            self._signal_system.start()
             await self.apply_overlay_tunnel()
             self._schedule_king_overlay_publish()
             self._publish_battle_overlay_patch_sync()
@@ -6958,6 +7132,11 @@ class MainWindow(FramelessWindow):
                 self._webcam_frame.stop()
             except (OSError, RuntimeError, ValueError, TypeError) as e:
                 logger.exception("Shutdown step failed (webcam_frame.stop): %s", e)
+
+            try:
+                self._signal_system.stop()
+            except (OSError, RuntimeError, ValueError, TypeError) as e:
+                logger.exception("Shutdown step failed (signal_system.stop): %s", e)
 
             try:
                 self._queue_timer.stop()

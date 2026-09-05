@@ -13,7 +13,8 @@ from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlparse
 
-import httpx
+from curl_cffi import requests as curl_requests
+from curl_cffi.requests.exceptions import RequestException
 
 from stream_cheremsha.actions.actions_play_sound import play_sound_from_file
 from stream_cheremsha.domain.protocols import AudioSink
@@ -26,6 +27,24 @@ _MP3_URL_RE = re.compile(
     r'(?P<url>https?://[^\s"\']+?\.mp3(?:[?#][^\s"\']*)?)',
     re.IGNORECASE,
 )
+
+# Cloudflare blocks plain httpx/requests TLS fingerprints; curl_cffi impersonates Chrome.
+_MYINSTANTS_ORIGIN = "https://www.myinstants.com"
+_BROWSER_IMPERSONATE = "chrome"
+_BROWSER_HEADERS = {
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;q=0.9,"
+        "image/avif,image/webp,image/apng,*/*;q=0.8"
+    ),
+    "Accept-Language": "en-US,en;q=0.9,uk-UA,uk;q=0.8",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+}
 
 
 def extract_instant_page_paths_from_ua_index_html(html: str) -> list[str]:
@@ -198,9 +217,19 @@ async def play_random_myinstants_ua(
         )
         return
 
-    except (httpx.HTTPError, OSError, ValueError) as e:
+    except (RequestException, OSError, ValueError) as e:
         status(f"myinstants: failed: {e}")
         return
+
+
+def _myinstants_session() -> curl_requests.Session:
+    # impersonate sets a matching User-Agent + TLS/HTTP2 fingerprint.
+    return curl_requests.Session(
+        impersonate=_BROWSER_IMPERSONATE,
+        headers=dict(_BROWSER_HEADERS),
+        timeout=20.0,
+        allow_redirects=True,
+    )
 
 
 def _prepare_random_myinstants_ua_mp3_sync(
@@ -216,23 +245,13 @@ def _prepare_random_myinstants_ua_mp3_sync(
     sw = list(skip_words or [])
 
     status("myinstants: fetching UA index…")
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0 Safari/537.36"
-        ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9,uk-UA,uk;q=0.8",
-    }
-    timeout = httpx.Timeout(connect=10.0, read=20.0, write=20.0, pool=10.0)
-    with httpx.Client(headers=headers, timeout=timeout, follow_redirects=True) as client:
+    with _myinstants_session() as client:
         rng = random.SystemRandom()
         page_n = rng.randint(1, mp)
         index_url = (
-            "https://www.myinstants.com/en/index/ua/"
+            f"{_MYINSTANTS_ORIGIN}/en/index/us/"
             if page_n == 1
-            else f"https://www.myinstants.com/en/index/ua/?page={page_n}"
+            else f"{_MYINSTANTS_ORIGIN}/en/index/us/?page={page_n}"
         )
         index_resp = client.get(index_url)
         index_resp.raise_for_status()
@@ -252,9 +271,15 @@ def _prepare_random_myinstants_ua_mp3_sync(
                 status("myinstants: skipped (word filter)…")
                 continue
 
-            instant_page_url = f"https://www.myinstants.com{chosen_path}"
+            instant_page_url = f"{_MYINSTANTS_ORIGIN}{chosen_path}"
             status("myinstants: fetching instant page…")
-            page_resp = client.get(instant_page_url)
+            page_resp = client.get(
+                instant_page_url,
+                headers={
+                    "Referer": index_url,
+                    "Sec-Fetch-Site": "same-origin",
+                },
+            )
             page_resp.raise_for_status()
             mp3_url = extract_mp3_url_from_instant_page_html(page_resp.text)
 
@@ -276,7 +301,16 @@ def _prepare_random_myinstants_ua_mp3_sync(
                 return cache_path
 
             status("myinstants: downloading mp3…")
-            mp3_resp = client.get(mp3_url)
+            mp3_resp = client.get(
+                mp3_url,
+                headers={
+                    "Referer": instant_page_url,
+                    "Accept": "*/*",
+                    "Sec-Fetch-Dest": "audio",
+                    "Sec-Fetch-Mode": "no-cors",
+                    "Sec-Fetch-Site": "same-origin",
+                },
+            )
             mp3_resp.raise_for_status()
             data = mp3_resp.content
             if not data:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import json
 from typing import Any
 from urllib.parse import quote
 
@@ -16,6 +17,7 @@ class LayoutOverlayType:
         layouts = load_layouts()
         layout = next((x for x in layouts if x.id == requested), None) or layouts[0]
         frames: list[str] = []
+        signal_system_instances: list[str] = []
         for widget in sorted(layout.widgets, key=lambda x: x.z_index):
             if not widget.visible:
                 continue
@@ -26,6 +28,9 @@ class LayoutOverlayType:
                 f'style="left:{widget.x}px;top:{widget.y}px;width:{widget.width}px;'
                 f'height:{widget.height}px;z-index:{widget.z_index}" src="{src}"></iframe>'
             )
+            if widget.type == "signal_system":
+                signal_system_instances.append(widget_instance)
+        safe_instances_json = json.dumps(signal_system_instances)
         safe_instance = html.escape(instance)
         safe_requested = html.escape(requested)
         return f"""<!doctype html>
@@ -47,6 +52,7 @@ function scale() {{
 addEventListener('resize', scale); scale();
 
 (function() {{
+  var signalSystemInstances = {safe_instances_json};
   var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   var wsUrl = proto + '//' + location.host + '/ws';
   var ws;
@@ -59,7 +65,20 @@ addEventListener('resize', scale); scale();
       try {{
         var msg = JSON.parse(ev.data);
         if (msg && msg.op === 'patch') {{
-          location.reload();
+          var forwarded = false;
+          var widgets = document.querySelectorAll('.widget');
+          for (var i = 0; i < widgets.length; i++) {{
+            var w = widgets[i];
+            try {{
+              var wSrc = w.getAttribute('src') || '';
+              if (wSrc.indexOf('/overlay/signal_system') === 0) {{
+                try {{ w.contentWindow.postMessage({{op: 'patch', patch: msg.patch}}, '*'); forwarded = true; }} catch(e) {{}}
+              }}
+            }} catch(e) {{}}
+          }}
+          if (!forwarded) {{
+            location.reload();
+          }}
         }}
       }} catch(e) {{}}
     }};

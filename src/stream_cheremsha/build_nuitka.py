@@ -211,6 +211,7 @@ def _nuitka_cmd(
         "httplib2",
         "google.auth",
         "requests",
+        "curl_cffi",
         "chat_downloader",
         "uritemplate",
     ):

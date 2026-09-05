@@ -15,6 +15,7 @@ from stream_cheremsha.overlays.layout_overlay import LayoutOverlayType
 from stream_cheremsha.overlays.models import normalize_instance_id
 from stream_cheremsha.overlays.music_overlay import MusicOverlayType
 from stream_cheremsha.overlays.online_overlay import OnlineOverlayType
+from stream_cheremsha.overlays.signal_system_overlay import SignalSystemOverlayType
 from stream_cheremsha.overlays.social_rotator_overlay import SocialRotatorOverlayType
 from stream_cheremsha.overlays.stream_goal_overlay import StreamGoalOverlayType
 from stream_cheremsha.overlays.stream_pet_overlay import StreamPetOverlayType
@@ -146,10 +147,14 @@ class OverlayRegistry:
         self.register(CommunityWorldOverlayType())
         self.register(ActionsOverlayType())
         self.register(WebcamFrameOverlayType())
+        self.register(SignalSystemOverlayType())
         self.register(LayoutOverlayType())
 
     def register(self, t: OverlayType) -> None:
         self._types[str(t.type)] = t
+
+    def registered_types(self) -> list[str]:
+        return sorted(self._types.keys())
 
     def get(self, overlay_type: str) -> OverlayType:
         k = str(overlay_type or "").strip()

@@ -5,7 +5,10 @@ import random
 from pathlib import Path
 
 from stream_cheremsha.actions.actions_play_random_myinstants_ua import (
+    _BROWSER_HEADERS,
+    _BROWSER_IMPERSONATE,
     _enforce_cache_max_files,
+    _myinstants_session,
     extract_instant_entries_from_ua_index_html,
     extract_instant_page_paths_from_ua_index_html,
     extract_mp3_url_from_instant_page_html,
@@ -59,6 +62,13 @@ def test_enforce_cache_max_files(tmp_path: Path) -> None:
 
     remaining = sorted(p.name for p in cache_dir.glob("*.mp3") if p.is_file())
     assert remaining == ["3.mp3", "4.mp3"]
+
+
+def test_myinstants_session_uses_chrome_impersonation() -> None:
+    assert _BROWSER_IMPERSONATE == "chrome"
+    assert "Accept-Language" in _BROWSER_HEADERS
+    with _myinstants_session() as session:
+        assert session is not None
 
 
 def test_pick_random_instant_path_is_deterministic() -> None:

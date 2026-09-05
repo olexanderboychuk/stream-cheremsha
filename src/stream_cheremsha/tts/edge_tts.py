@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import time
 from dataclasses import dataclass
 from typing import Any, Final
@@ -147,6 +148,79 @@ class EdgeTts:
 
         edge_tts = _import_edge_tts()
         kwargs: dict[str, object] = {"voice": self._voice}
+        if self._rate is not None:
+            kwargs["rate"] = self._rate
+        if self._volume is not None:
+            kwargs["volume"] = self._volume
+        communicate = edge_tts.Communicate(stripped, **kwargs)
+
+        chunks: list[bytes] = []
+        async for ev in communicate.stream():
+            if not isinstance(ev, dict):
+                continue
+            if ev.get("type") != "audio":
+                continue
+            data = ev.get("data", b"")
+            if isinstance(data, (bytes, bytearray)) and data:
+                chunks.append(bytes(data))
+
+        out = b"".join(chunks)
+        if not out:
+            raise ValueError("Edge returned empty audio")
+        return out
+
+    async def aclose(self) -> None:
+        return
+
+
+class RandomizedEdgeTts:
+    """Edge TTS wrapper that randomly selects a voice for each synthesis."""
+
+    ENGINE_ID: Final[str] = "edge-random"
+
+    def __init__(
+        self,
+        locale: str,
+        *,
+        rate: str | None = None,
+        volume: str | None = None,
+    ) -> None:
+        self._locale = locale
+        self._rate = rate
+        self._volume = volume
+        self._voices: list[EdgeVoice] = []
+
+    async def _ensure_voices(self) -> None:
+        if not self._voices:
+            all_voices = await list_edge_voices_cached()
+            self._voices = filter_edge_voices_for_locale(all_voices, self._locale)
+            if not self._voices:
+                raise ValueError(f"No Edge voices found for locale {self._locale}")
+
+    def _pick_random_voice(self) -> str:
+        if not self._voices:
+            raise ValueError("No voices available")
+        return random.choice(self._voices).short_name
+
+    @property
+    def voice(self) -> str:
+        """Returns a randomly selected voice (for compatibility)."""
+        return self._pick_random_voice()
+
+    @property
+    def rate(self) -> str | None:
+        return self._rate
+
+    async def synthesize(self, text: str) -> bytes:
+        stripped = text.strip()
+        if not stripped:
+            raise ValueError("empty TTS text")
+
+        await self._ensure_voices()
+        voice = self._pick_random_voice()
+
+        edge_tts = _import_edge_tts()
+        kwargs: dict[str, object] = {"voice": voice}
         if self._rate is not None:
             kwargs["rate"] = self._rate
         if self._volume is not None:

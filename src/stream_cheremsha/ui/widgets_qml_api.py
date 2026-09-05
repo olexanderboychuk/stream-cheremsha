@@ -60,6 +60,13 @@ from stream_cheremsha.overlays.online_overlay_config import (
     save_online_overlay_config,
 )
 from stream_cheremsha.overlays.pubsub import OverlayPubSub
+from stream_cheremsha.overlays.signal_system_overlay_config import (
+    load_signal_system_overlay_config,
+    save_signal_system_overlay_config,
+    signal_system_overlay_config_from_json_text,
+    signal_system_overlay_config_to_json_text,
+    signal_system_overlay_config_to_public_dict,
+)
 from stream_cheremsha.overlays.social_rotator_overlay_config import (
     load_social_rotator_overlay_config,
     save_social_rotator_overlay_config,
@@ -208,11 +215,13 @@ class WidgetsQmlApi(QObject):
         self._social_rotator_instance = str(online_instance or "main").strip() or "main"
         self._community_world_instance = str(online_instance or "main").strip() or "main"
         self._webcam_frame_instance = str(online_instance or "main").strip() or "main"
+        self._signal_system_instance = str(online_instance or "main").strip() or "main"
         self._battle_host: Any | None = None
         self._stream_goal_controller: Any | None = None
         self._live_leaderboard_controller: Any | None = None
         self._social_rotator_controller: Any | None = None
         self._webcam_frame_controller: Any | None = None
+        self._signal_system_controller: Any | None = None
         self._system_font_families: list[str] | None = None
 
     def set_battle_host(self, host: Any) -> None:
@@ -229,6 +238,9 @@ class WidgetsQmlApi(QObject):
 
     def set_webcam_frame_controller(self, controller: Any) -> None:
         self._webcam_frame_controller = controller
+
+    def set_signal_system_controller(self, controller: Any) -> None:
+        self._signal_system_controller = controller
 
     def _current_tiktok_anchor_username(self) -> str:
         host = self._battle_host
@@ -275,6 +287,7 @@ class WidgetsQmlApi(QObject):
         self.socialRotatorOverlayUrlChanged.emit()
         self.streamGoalOverlayUrlChanged.emit()
         self.webcamFrameOverlayUrlChanged.emit()
+        self.signalSystemOverlayUrlChanged.emit()
 
     @Property(str, notify=chatOverlayUrlChanged)
     def chatOverlayUrlValue(self) -> str:  # noqa: ANN201 - PySide pattern
@@ -390,6 +403,8 @@ class WidgetsQmlApi(QObject):
                 topic="overlay:activity:main",
                 patch={"score": 75.0, "state": "hyped"},
             )
+        elif typ == "signal_system":
+            self.previewSignalSystemOverlay()
 
     @Slot(str)
     @Slot()
@@ -399,7 +414,7 @@ class WidgetsQmlApi(QObject):
         for widget_type in (
             "chat", "actions", "online", "stream_pet", "community_world",
             "battle_royale", "top_likers", "top_gifters", "king_of_live",
-            "stream_goal", "live_leaderboard", "social_rotator", "webcam_frame", "activity",
+            "stream_goal", "live_leaderboard", "social_rotator", "webcam_frame", "activity", "signal_system",
         ):
             self.previewLayoutWidget(widget_type)
 
@@ -818,6 +833,77 @@ class WidgetsQmlApi(QObject):
         patch = {
             "config": json.loads(webcam_frame_overlay_config_to_json_text(cfg)),
             "locale": _ui_locale(),
+        }
+        self._publish_patch(topic=topic, patch=patch)
+
+    signalSystemOverlayUrlChanged = Signal()
+
+    @Property(str, notify=signalSystemOverlayUrlChanged)
+    def signalSystemOverlayUrlValue(self) -> str:  # noqa: ANN201 - PySide pattern
+        return self.signalSystemOverlayUrl()
+
+    @Slot(result=str)
+    def signalSystemOverlayUrl(self) -> str:
+        if not self._base:
+            return ""
+        return f"{self._base}/overlay/signal_system?instance={self._signal_system_instance}"
+
+    @Slot()
+    def copySignalSystemOverlayUrl(self) -> None:
+        url = self.signalSystemOverlayUrl()
+        if not url:
+            return
+        clip = QGuiApplication.clipboard()
+        if clip is None:
+            return
+        clip.setText(url)
+
+    @Slot()
+    def previewSignalSystemOverlay(self) -> None:
+        if self._signal_system_controller is not None:
+            try:
+                self._signal_system_controller.trigger_test_event("big_gift")
+                return
+            except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+                _LOG.warning("previewSignalSystemOverlay trigger failed: %s", exc)
+        topic = f"overlay:signal_system:{self._signal_system_instance}"
+        cfg = load_signal_system_overlay_config()
+        try:
+            from stream_cheremsha.actions.tiktok_gifts import (
+                tiktok_catalog_gift_image_url as _catalog_url,
+            )
+
+            _preview_icon = _catalog_url(gift_name="Galaxy") or ""
+        except (ImportError, AttributeError, TypeError, ValueError):
+            _preview_icon = ""
+        patch = {
+            "config": signal_system_overlay_config_to_public_dict(cfg),
+            "current_event": {
+                "id": "preview_01",
+                "type": "big_gift",
+                "priority": 80,
+                "title": "SIGNAL // DETECTED",
+                "subtitle": "GALAXY x3",
+                "username": "KODI THE CAT",
+                "value": "2,500 COINS",
+                "intensity": 0.85,
+                "duration_ms": 5000,
+                "created_at": time.time(),
+                "gift_id": "",
+                "gift_name": "Galaxy",
+                "gift_icon_url": _preview_icon,
+                "gift_icon_source": "catalog" if _preview_icon else "none",
+                "gift_quantity": 3,
+                "coin_value": 2500,
+                "sender_avatar_url": "",
+                "metadata": {"icon_source": "catalog" if _preview_icon else "none"},
+            },
+            "event_seq": 1,
+            "idle_metrics": {
+                "activity_rate": 42,
+                "system_status": "ONLINE",
+                "uptime_s": 120,
+            },
         }
         self._publish_patch(topic=topic, patch=patch)
 
@@ -1746,6 +1832,71 @@ class WidgetsQmlApi(QObject):
             return
         _LOG.info("widgets ConfigMap save: webcam_frame ok json_len=%d", len(txt))
         self.saveWebcamFrameOverlayConfigJson(txt)
+
+    @Slot(str)
+    def triggerSignalSystemTest(self, event_type: str) -> None:
+        if self._signal_system_controller is not None:
+            try:
+                self._signal_system_controller.trigger_test_event(event_type)
+                return
+            except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+                _LOG.warning("triggerSignalSystemTest failed: %s", exc)
+
+    @Slot(result="QVariant")
+    def loadSignalSystemOverlayConfigMap(self) -> dict[str, Any]:
+        cfg = load_signal_system_overlay_config()
+        return json.loads(signal_system_overlay_config_to_json_text(cfg))
+
+    @Slot(result=str)
+    def loadSignalSystemOverlayConfigJson(self) -> str:
+        cfg = load_signal_system_overlay_config()
+        return signal_system_overlay_config_to_json_text(cfg)
+
+    @Slot(str)
+    def saveSignalSystemOverlayConfigJson(self, cfg_json: str) -> None:
+        txt = (cfg_json or "").strip()
+        if not txt:
+            return
+        try:
+            cfg = signal_system_overlay_config_from_json_text(txt)
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            _LOG.warning(
+                "saveSignalSystemOverlayConfigJson: rejected payload (%s): %s",
+                exc.__class__.__name__,
+                exc,
+            )
+            return
+        save_signal_system_overlay_config(cfg)
+        _LOG.info("widgets overlay persisted: signal_system")
+        if self._signal_system_controller is not None:
+            try:
+                self._signal_system_controller.reload_config()
+            except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+                _LOG.warning("Failed to reload signal_system_controller config: %s", exc)
+        if self._pubsub is not None:
+            topic = f"overlay:signal_system:{self._signal_system_instance}"
+            if self._signal_system_controller is not None:
+                try:
+                    patch = self._signal_system_controller.initial_state()
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    patch = {"config": json.loads(signal_system_overlay_config_to_json_text(cfg))}
+            else:
+                patch = {"config": json.loads(signal_system_overlay_config_to_json_text(cfg))}
+            self._publish_patch(topic=topic, patch=patch)
+
+    @Slot(QJSValue)
+    def saveSignalSystemOverlayConfigMap(self, cfg_js: QJSValue) -> None:
+        plain = _qml_js_to_plain_cfg(cfg_js)
+        _LOG.info("widgets ConfigMap save: signal_system (plain_type=%s)", type(plain).__name__)
+        if plain is None:
+            _LOG.warning("widgets ConfigMap save: signal_system rejected (null/undefined)")
+            return
+        txt = _qml_cfg_map_to_json_text(plain)
+        if not txt or txt == "{}":
+            _LOG.warning("widgets ConfigMap save: signal_system rejected empty_or_non_serializable")
+            return
+        _LOG.info("widgets ConfigMap save: signal_system ok json_len=%d", len(txt))
+        self.saveSignalSystemOverlayConfigJson(txt)
 
 
 class WidgetsWindowQmlApi(QObject):
