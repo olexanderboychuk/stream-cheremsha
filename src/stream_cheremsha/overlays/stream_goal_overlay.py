@@ -157,9 +157,11 @@ class StreamGoalOverlayType:
         from stream_cheremsha.overlays.widget_instances import typed_config_for_type
 
         cfg = typed_config_for_type(
-            "stream_goal", params,
+            "stream_goal",
+            params,
             load_stream_goal_overlay_config,
-            stream_goal_overlay_config_from_json_text)
+            stream_goal_overlay_config_from_json_text,
+        )
         return {
             "config": stream_goal_overlay_config_to_public_dict(cfg),
             "goal_type": cfg.goal_type,

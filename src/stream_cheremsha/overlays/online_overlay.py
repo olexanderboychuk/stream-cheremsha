@@ -438,8 +438,8 @@ class OnlineOverlayType:
         from stream_cheremsha.overlays.widget_instances import typed_config_for_type
 
         cfg = typed_config_for_type(
-            "online", params,
-            load_online_overlay_config, online_overlay_config_from_json_text)
+            "online", params, load_online_overlay_config, online_overlay_config_from_json_text
+        )
         return {
             "config": json.loads(online_overlay_config_to_json_text(cfg)),
             "online": {

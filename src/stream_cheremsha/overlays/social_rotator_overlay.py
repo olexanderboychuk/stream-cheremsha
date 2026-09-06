@@ -1104,9 +1104,11 @@ class SocialRotatorOverlayType:
         from stream_cheremsha.overlays.widget_instances import typed_config_for_type
 
         cfg = typed_config_for_type(
-            "social_rotator", params,
+            "social_rotator",
+            params,
             load_social_rotator_overlay_config,
-            social_rotator_overlay_config_from_json_text)
+            social_rotator_overlay_config_from_json_text,
+        )
         entries = enabled_rotation_entries(parse_platforms(cfg))
         rotation = SocialRotatorRotationEngine.from_entries(
             entries, interval_ms=cfg.rotation_interval_ms

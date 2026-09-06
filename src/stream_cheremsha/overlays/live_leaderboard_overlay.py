@@ -1377,9 +1377,11 @@ class LiveLeaderboardOverlayType:
         from stream_cheremsha.overlays.widget_instances import typed_config_for_type
 
         cfg = typed_config_for_type(
-            "live_leaderboard", params,
+            "live_leaderboard",
+            params,
             load_live_leaderboard_overlay_config,
-            live_leaderboard_overlay_config_from_json_text)
+            live_leaderboard_overlay_config_from_json_text,
+        )
         return {
             "config": live_leaderboard_overlay_config_to_public_dict(cfg),
             "rankings": LiveLeaderboardRankingEngine().all_rankings(limit=cfg.top_n),

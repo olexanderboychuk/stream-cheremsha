@@ -254,8 +254,9 @@ def upsert_layout(layout: StreamLayout, settings: QSettings | None = None) -> St
     return layout
 
 
-def create_layout(name: str = "", *, width: int = 1920, height: int = 1080,
-                  settings: QSettings | None = None) -> StreamLayout:
+def create_layout(
+    name: str = "", *, width: int = 1920, height: int = 1080, settings: QSettings | None = None
+) -> StreamLayout:
     s = settings or QSettings("stream-cheremsha", "cheremsha")
     layouts = load_layouts(s)
     base = default_layout()
@@ -271,8 +272,9 @@ def create_layout(name: str = "", *, width: int = 1920, height: int = 1080,
     return layout
 
 
-def rename_layout(layout_id: str, name: str,
-                  settings: QSettings | None = None) -> StreamLayout | None:
+def rename_layout(
+    layout_id: str, name: str, settings: QSettings | None = None
+) -> StreamLayout | None:
     s = settings or QSettings("stream-cheremsha", "cheremsha")
     ident = normalize_layout_id(str(layout_id or "default"))
     changed: StreamLayout | None = None
@@ -280,9 +282,13 @@ def rename_layout(layout_id: str, name: str,
     for layout in load_layouts(s):
         if layout.id == ident:
             layout = StreamLayout(
-                id=layout.id, name=(str(name or "").strip() or layout.name)[:120],
-                width=layout.width, height=layout.height,
-                widgets=layout.widgets, schema_version=layout.schema_version)
+                id=layout.id,
+                name=(str(name or "").strip() or layout.name)[:120],
+                width=layout.width,
+                height=layout.height,
+                widgets=layout.widgets,
+                schema_version=layout.schema_version,
+            )
             changed = layout
         out.append(layout)
     if changed is None:
@@ -301,7 +307,8 @@ def duplicate_layout(layout_id: str, settings: QSettings | None = None) -> Strea
     dup = StreamLayout(
         id=_new_layout_id(),
         name=f"{src.name}{layout_copy_suffix()}"[:120],
-        width=src.width, height=src.height,
+        width=src.width,
+        height=src.height,
         widgets=tuple(copy.deepcopy(src.widgets)),
     )
     layouts.append(dup)
@@ -339,7 +346,9 @@ def ensure_layouts(settings: QSettings | None = None) -> list[StreamLayout]:
 def get_active_layout_id(settings: QSettings | None = None) -> str:
     s = settings or QSettings("stream-cheremsha", "cheremsha")
     try:
-        return normalize_layout_id(str(s.value(_ACTIVE_LAYOUT_QSETTINGS_KEY, "default", str) or "default"))
+        return normalize_layout_id(
+            str(s.value(_ACTIVE_LAYOUT_QSETTINGS_KEY, "default", str) or "default")
+        )
     except ValueError:
         return "default"
 

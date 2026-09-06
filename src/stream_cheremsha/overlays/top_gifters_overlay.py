@@ -1003,9 +1003,11 @@ class TopGiftersOverlayType:
         from stream_cheremsha.overlays.widget_instances import typed_config_for_type
 
         cfg = typed_config_for_type(
-            "top_gifters", params,
+            "top_gifters",
+            params,
             load_top_gifters_overlay_config,
-            top_gifters_overlay_config_from_json_text)
+            top_gifters_overlay_config_from_json_text,
+        )
         return {
             "config": json.loads(top_gifters_overlay_config_to_json_text(cfg)),
             "leaders": [],

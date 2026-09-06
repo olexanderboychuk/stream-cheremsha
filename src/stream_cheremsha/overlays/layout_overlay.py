@@ -27,7 +27,11 @@ class LayoutOverlayType:
             if not widget.visible:
                 continue
             widget_instance = quote(widget.instance or instance, safe="")
-            bound = _get_inst(widget.widget_instance_id) if (_get_inst and widget.widget_instance_id) else None
+            bound = (
+                _get_inst(widget.widget_instance_id)
+                if (_get_inst and widget.widget_instance_id)
+                else None
+            )
             if bound is not None:
                 src = f"/overlay/by-id/{quote(bound.id, safe='')}"
             else:

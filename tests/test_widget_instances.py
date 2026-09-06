@@ -113,8 +113,9 @@ def test_renderer_prefers_injected_settings() -> None:
         load_chat_config,
     )
 
-    out = wi.config_for_type("chat", {"instance_settings": {"max_items": 77}},
-                             load_chat_config, chat_config_to_json_text)
+    out = wi.config_for_type(
+        "chat", {"instance_settings": {"max_items": 77}}, load_chat_config, chat_config_to_json_text
+    )
     assert out["max_items"] == 77
 
 
@@ -122,43 +123,76 @@ def test_typed_config_prefers_injected_settings() -> None:
     from stream_cheremsha.overlays.chat_config import chat_config_from_json_text
 
     cfg = wi.typed_config_for_type(
-        "chat", {"instance_settings": {"max_items": 77}},
+        "chat",
+        {"instance_settings": {"max_items": 77}},
         __import__("stream_cheremsha.overlays.chat_config", fromlist=["x"]).load_chat_config,
-        chat_config_from_json_text)
+        chat_config_from_json_text,
+    )
     assert cfg.max_items == 77
 
 
 def test_no_static_type_cards_duplicate_instance_list() -> None:
     from pathlib import Path
 
-    qml = (Path(__file__).resolve().parents[1]
-           / "src" / "stream_cheremsha" / "qml" / "WidgetsView.qml").read_text(encoding="utf-8")
+    qml = (
+        Path(__file__).resolve().parents[1] / "src" / "stream_cheremsha" / "qml" / "WidgetsView.qml"
+    ).read_text(encoding="utf-8")
     # instance list is the single widget list; old per-type cards are gone
-    for dead in ('title: "Chat overlay"', 'title: "Actions overlay"',
-                 'title: "Top Likers (TikTok)"', 'title: "Top GIFters (TikTok)"',
-                 'title: "King of the Live (TikTok)"', 'title: "StreamPet (Тамагочі)"'):
+    for dead in (
+        'title: "Chat overlay"',
+        'title: "Actions overlay"',
+        'title: "Top Likers (TikTok)"',
+        'title: "Top GIFters (TikTok)"',
+        'title: "King of the Live (TikTok)"',
+        'title: "StreamPet (Тамагочі)"',
+    ):
         assert dead not in qml, dead
-    for live in ("createWidgetInstance", "editWidgetInstance(",
-                 "reloadAllWidgetConfigs", "setEditingInstanceId",
-                 "widgets.instances.create_button",
-                 "widgets.instances.new_title",
-                 "widgets.common.create", "widgets.common.duplicate",
-                 "layoutDocList", "openLayoutEditor(",
-                 "switchLayoutByIndex", "widget_instance_id",
-                 "createLayout", "duplicateLayout", "deleteLayout",
-                 "widgets.layouts.scene", "widgets.layouts.new",
-                 "widgets.layouts.instance"):
+    for live in (
+        "createWidgetInstance",
+        "editWidgetInstance(",
+        "reloadAllWidgetConfigs",
+        "setEditingInstanceId",
+        "widgets.instances.create_button",
+        "widgets.instances.new_title",
+        "widgets.common.create",
+        "widgets.common.duplicate",
+        "layoutDocList",
+        "openLayoutEditor(",
+        "switchLayoutByIndex",
+        "widget_instance_id",
+        "createLayout",
+        "duplicateLayout",
+        "deleteLayout",
+        "widgets.layouts.scene",
+        "widgets.layouts.new",
+        "widgets.layouts.instance",
+    ):
         assert live in qml, live
     # settings tab adaptation: editing banner, abort guards, verified open
-    for live in ("widgets.instances.editing_title", "widgets.instances.editing_hint",
-                 "editingInstanceName", "copyWidgetInstanceUrl(root.editingInstanceId)",
-                 "backend did not accept id"):
+    for live in (
+        "widgets.instances.editing_title",
+        "widgets.instances.editing_hint",
+        "editingInstanceName",
+        "copyWidgetInstanceUrl(root.editingInstanceId)",
+        "backend did not accept id",
+    ):
         assert live in qml, live
     # editor headers must show/copy the instance by-id URL while editing,
     # never the legacy ?instance=main URL
-    for name in ("chat", "actions", "online", "kingOfLive", "battleRoyale",
-                 "streamPet", "communityWorld", "streamGoal", "liveLeaderboard",
-                 "socialRotator", "webcamFrame", "signalSystem"):
+    for name in (
+        "chat",
+        "actions",
+        "online",
+        "kingOfLive",
+        "battleRoyale",
+        "streamPet",
+        "communityWorld",
+        "streamGoal",
+        "liveLeaderboard",
+        "socialRotator",
+        "webcamFrame",
+        "signalSystem",
+    ):
         assert f"text: api ? api.{name}OverlayUrlValue" not in qml, name
         assert f"root.editorUrlValue(api.{name}OverlayUrlValue)" in qml, name
     assert qml.count("root.copyEditorUrl(function()") == 13
@@ -169,16 +203,26 @@ def test_new_strings_translated_uk_en() -> None:
     from stream_cheremsha.overlays import widget_instances as wimod
 
     keys = [
-        "widgets.common.create", "widgets.common.cancel",
-        "widgets.common.duplicate", "widgets.common.delete",
-        "widgets.common.enable", "widgets.common.disable",
-        "widgets.instances.create_button", "widgets.instances.active",
-        "widgets.instances.disabled", "widgets.instances.new_title",
-        "widgets.instances.name_placeholder", "widgets.instances.copy_suffix",
-        "widgets.layouts.scene", "widgets.layouts.new",
-        "widgets.layouts.name_placeholder", "widgets.layouts.untitled",
-        "widgets.layouts.default_name", "widgets.layouts.new_name",
-        "widgets.layouts.copy_suffix", "widgets.layouts.default_instance",
+        "widgets.common.create",
+        "widgets.common.cancel",
+        "widgets.common.duplicate",
+        "widgets.common.delete",
+        "widgets.common.enable",
+        "widgets.common.disable",
+        "widgets.instances.create_button",
+        "widgets.instances.active",
+        "widgets.instances.disabled",
+        "widgets.instances.new_title",
+        "widgets.instances.name_placeholder",
+        "widgets.instances.copy_suffix",
+        "widgets.layouts.scene",
+        "widgets.layouts.new",
+        "widgets.layouts.name_placeholder",
+        "widgets.layouts.untitled",
+        "widgets.layouts.default_name",
+        "widgets.layouts.new_name",
+        "widgets.layouts.copy_suffix",
+        "widgets.layouts.default_instance",
         "widgets.layouts.instance",
     ]
     for t in sorted(wimod.WIDGET_TYPES):
@@ -194,34 +238,85 @@ def test_new_strings_translated_uk_en() -> None:
 
 
 INST_ROUTING_CASES = [
-    ("chat", "stream_cheremsha.overlays.chat_config",
-     "loadChatConfigMap", "saveChatConfigJson"),
-    ("actions", "stream_cheremsha.overlays.actions_config",
-     "loadActionsConfigMap", "saveActionsConfigJson"),
-    ("online", "stream_cheremsha.overlays.online_overlay_config",
-     "loadOnlineOverlayConfigMap", "saveOnlineOverlayConfigJson"),
-    ("top_likers", "stream_cheremsha.overlays.top_likers_overlay_config",
-     "loadTopLikersOverlayConfigMap", "saveTopLikersOverlayConfigJson"),
-    ("top_gifters", "stream_cheremsha.overlays.top_gifters_overlay_config",
-     "loadTopGiftersOverlayConfigMap", "saveTopGiftersOverlayConfigJson"),
-    ("king_of_live", "stream_cheremsha.overlays.king_of_live_overlay_config",
-     "loadKingOfLiveOverlayConfigMap", "saveKingOfLiveOverlayConfigJson"),
-    ("battle_royale", "stream_cheremsha.overlays.battle_royale_overlay_config",
-     "loadBattleRoyaleOverlayConfigMap", "saveBattleRoyaleOverlayConfigJson"),
-    ("stream_pet", "stream_cheremsha.overlays.stream_pet_overlay_config",
-     "loadStreamPetOverlayConfigMap", "saveStreamPetOverlayConfigJson"),
-    ("community_world", "stream_cheremsha.overlays.community_world_config",
-     "loadCommunityWorldOverlayConfigMap", "saveCommunityWorldOverlayConfigJson"),
-    ("stream_goal", "stream_cheremsha.overlays.stream_goal_overlay_config",
-     "loadStreamGoalOverlayConfigMap", "saveStreamGoalOverlayConfigJson"),
-    ("live_leaderboard", "stream_cheremsha.overlays.live_leaderboard_overlay_config",
-     "loadLiveLeaderboardOverlayConfigMap", "saveLiveLeaderboardOverlayConfigJson"),
-    ("social_rotator", "stream_cheremsha.overlays.social_rotator_overlay_config",
-     "loadSocialRotatorOverlayConfigMap", "saveSocialRotatorOverlayConfigJson"),
-    ("webcam_frame", "stream_cheremsha.overlays.webcam_frame_overlay_config",
-     "loadWebcamFrameOverlayConfigMap", "saveWebcamFrameOverlayConfigJson"),
-    ("signal_system", "stream_cheremsha.overlays.signal_system_overlay_config",
-     "loadSignalSystemOverlayConfigMap", "saveSignalSystemOverlayConfigJson"),
+    ("chat", "stream_cheremsha.overlays.chat_config", "loadChatConfigMap", "saveChatConfigJson"),
+    (
+        "actions",
+        "stream_cheremsha.overlays.actions_config",
+        "loadActionsConfigMap",
+        "saveActionsConfigJson",
+    ),
+    (
+        "online",
+        "stream_cheremsha.overlays.online_overlay_config",
+        "loadOnlineOverlayConfigMap",
+        "saveOnlineOverlayConfigJson",
+    ),
+    (
+        "top_likers",
+        "stream_cheremsha.overlays.top_likers_overlay_config",
+        "loadTopLikersOverlayConfigMap",
+        "saveTopLikersOverlayConfigJson",
+    ),
+    (
+        "top_gifters",
+        "stream_cheremsha.overlays.top_gifters_overlay_config",
+        "loadTopGiftersOverlayConfigMap",
+        "saveTopGiftersOverlayConfigJson",
+    ),
+    (
+        "king_of_live",
+        "stream_cheremsha.overlays.king_of_live_overlay_config",
+        "loadKingOfLiveOverlayConfigMap",
+        "saveKingOfLiveOverlayConfigJson",
+    ),
+    (
+        "battle_royale",
+        "stream_cheremsha.overlays.battle_royale_overlay_config",
+        "loadBattleRoyaleOverlayConfigMap",
+        "saveBattleRoyaleOverlayConfigJson",
+    ),
+    (
+        "stream_pet",
+        "stream_cheremsha.overlays.stream_pet_overlay_config",
+        "loadStreamPetOverlayConfigMap",
+        "saveStreamPetOverlayConfigJson",
+    ),
+    (
+        "community_world",
+        "stream_cheremsha.overlays.community_world_config",
+        "loadCommunityWorldOverlayConfigMap",
+        "saveCommunityWorldOverlayConfigJson",
+    ),
+    (
+        "stream_goal",
+        "stream_cheremsha.overlays.stream_goal_overlay_config",
+        "loadStreamGoalOverlayConfigMap",
+        "saveStreamGoalOverlayConfigJson",
+    ),
+    (
+        "live_leaderboard",
+        "stream_cheremsha.overlays.live_leaderboard_overlay_config",
+        "loadLiveLeaderboardOverlayConfigMap",
+        "saveLiveLeaderboardOverlayConfigJson",
+    ),
+    (
+        "social_rotator",
+        "stream_cheremsha.overlays.social_rotator_overlay_config",
+        "loadSocialRotatorOverlayConfigMap",
+        "saveSocialRotatorOverlayConfigJson",
+    ),
+    (
+        "webcam_frame",
+        "stream_cheremsha.overlays.webcam_frame_overlay_config",
+        "loadWebcamFrameOverlayConfigMap",
+        "saveWebcamFrameOverlayConfigJson",
+    ),
+    (
+        "signal_system",
+        "stream_cheremsha.overlays.signal_system_overlay_config",
+        "loadSignalSystemOverlayConfigMap",
+        "saveSignalSystemOverlayConfigJson",
+    ),
 ]
 
 
@@ -233,18 +328,18 @@ def test_slot_routing_all_types_legacy_untouched(monkeypatch) -> None:
     """
     import importlib
 
-    import pytest
-
     import stream_cheremsha.overlays.widget_instances as wimod
     from stream_cheremsha.ui.widgets_qml_api import WidgetsQmlApi
 
     for type_id, cfg_mod_name, load_slot, save_slot in INST_ROUTING_CASES:
         scope = f"t-app-route-{type_id}"
         monkeypatch.setattr(
-            wimod, "QSettings", lambda *a, _s=scope, **k: QSettings("t-org-route", _s))
+            wimod, "QSettings", lambda *a, _s=scope, **k: QSettings("t-org-route", _s)
+        )
         cfg_mod = importlib.import_module(cfg_mod_name)
         monkeypatch.setattr(
-            cfg_mod, "QSettings", lambda *a, _s=scope, **k: QSettings("t-org-route", _s))
+            cfg_mod, "QSettings", lambda *a, _s=scope, **k: QSettings("t-org-route", _s)
+        )
         QSettings("t-org-route", scope).clear()
 
         api = WidgetsQmlApi(overlay_base_url="")
@@ -260,8 +355,11 @@ def test_slot_routing_all_types_legacy_untouched(monkeypatch) -> None:
         assert api.editingInstanceId() == iid, type_id
 
         loaded = getattr(api, load_slot)()
-        int_keys = [k for k, v in loaded.items()
-                    if isinstance(v, int) and not isinstance(v, bool) and k != "schema_version"]
+        int_keys = [
+            k
+            for k, v in loaded.items()
+            if isinstance(v, int) and not isinstance(v, bool) and k != "schema_version"
+        ]
         assert int_keys, (type_id, "no int key to mutate")
         key = int_keys[0]
         loaded[key] = int(loaded[key]) + 1
@@ -315,11 +413,13 @@ def test_by_id_page_subscribes_with_full_id_token() -> None:
 
     s = _fresh_settings()
     inst = wi.create_instance("chat", "Full Token", {"max_items": 7}, s)
-    html = ChatOverlayType().render_html({
-        "instance": wi.ws_token_for(inst),
-        "instance_id": inst.id,
-        "instance_settings": wi.merged_settings(inst),
-    })
+    html = ChatOverlayType().render_html(
+        {
+            "instance": wi.ws_token_for(inst),
+            "instance_id": inst.id,
+            "instance_settings": wi.merged_settings(inst),
+        }
+    )
     assert inst.id in html  # subscribe carries the full token, not a prefix
     assert "?instance=main" not in html
 
@@ -335,10 +435,8 @@ def test_legacy_edit_writes_through_to_singleton(monkeypatch) -> None:
     import stream_cheremsha.overlays.widget_instances as wimod
     from stream_cheremsha.ui.widgets_qml_api import WidgetsQmlApi
 
-    monkeypatch.setattr(
-        wimod, "QSettings", lambda *a, **k: QSettings("t-org-wt", "t-app-wt"))
-    monkeypatch.setattr(
-        srmod, "QSettings", lambda *a, **k: QSettings("t-org-wt", "t-app-wt"))
+    monkeypatch.setattr(wimod, "QSettings", lambda *a, **k: QSettings("t-org-wt", "t-app-wt"))
+    monkeypatch.setattr(srmod, "QSettings", lambda *a, **k: QSettings("t-org-wt", "t-app-wt"))
     QSettings("t-org-wt", "t-app-wt").clear()
 
     api = WidgetsQmlApi(overlay_base_url="")
@@ -351,9 +449,11 @@ def test_legacy_edit_writes_through_to_singleton(monkeypatch) -> None:
     api.setEditingInstanceId(legacy.id)
 
     loaded = api.loadSocialRotatorOverlayConfigMap()
-    int_keys = [k for k, v in loaded.items()
-                if isinstance(v, int) and not isinstance(v, bool)
-                and k != "schema_version"]
+    int_keys = [
+        k
+        for k, v in loaded.items()
+        if isinstance(v, int) and not isinstance(v, bool) and k != "schema_version"
+    ]
     assert int_keys
     key = int_keys[0]
     loaded[key] = int(loaded[key]) + 1000
@@ -373,8 +473,7 @@ def test_legacy_edit_writes_through_to_singleton(monkeypatch) -> None:
 
 def test_reconcile_heals_diverged_singleton() -> None:
     s = _fresh_settings()
-    s.setValue("overlays/chat/main/config_json",
-               json.dumps({"schema_version": 1, "max_items": 5}))
+    s.setValue("overlays/chat/main/config_json", json.dumps({"schema_version": 1, "max_items": 5}))
     s.sync()
     wi.migrate_legacy_to_instances(s)
     # simulate divergence: editor saves went only to the store
@@ -390,13 +489,11 @@ def test_reconcile_heals_diverged_singleton() -> None:
 
 def test_sync_store_from_legacy_singleton() -> None:
     s = _fresh_settings()
-    s.setValue("overlays/chat/main/config_json",
-               json.dumps({"schema_version": 1, "max_items": 5}))
+    s.setValue("overlays/chat/main/config_json", json.dumps({"schema_version": 1, "max_items": 5}))
     s.sync()
     wi.migrate_legacy_to_instances(s)
     # direct singleton rewrite (repair path) syncs back into the store
-    s.setValue("overlays/chat/main/config_json",
-               json.dumps({"schema_version": 1, "max_items": 9}))
+    s.setValue("overlays/chat/main/config_json", json.dumps({"schema_version": 1, "max_items": 9}))
     s.sync()
     assert wi.sync_store_from_legacy_singleton("chat", s) is True
     assert wi.find_legacy_instance("chat", "main", s).settings["max_items"] == 9
@@ -405,12 +502,29 @@ def test_sync_store_from_legacy_singleton() -> None:
 def test_all_type_editors_route_through_instances() -> None:
     from pathlib import Path
 
-    src = (Path(__file__).resolve().parents[1]
-           / "src" / "stream_cheremsha" / "ui" / "widgets_qml_api.py").read_text(encoding="utf-8")
-    for t in ("chat", "actions", "online", "top_likers", "top_gifters",
-              "king_of_live", "battle_royale", "stream_pet", "community_world",
-              "stream_goal", "live_leaderboard", "social_rotator",
-              "webcam_frame", "signal_system"):
+    src = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "stream_cheremsha"
+        / "ui"
+        / "widgets_qml_api.py"
+    ).read_text(encoding="utf-8")
+    for t in (
+        "chat",
+        "actions",
+        "online",
+        "top_likers",
+        "top_gifters",
+        "king_of_live",
+        "battle_royale",
+        "stream_pet",
+        "community_world",
+        "stream_goal",
+        "live_leaderboard",
+        "social_rotator",
+        "webcam_frame",
+        "signal_system",
+    ):
         assert f'_load_cfg_or_instance("{t}")' in src, t
         assert f'_save_cfg_to_instance("{t}"' in src, t
 
@@ -420,8 +534,7 @@ def test_edit_routing_load_save_instance(monkeypatch) -> None:
     import stream_cheremsha.overlays.widget_instances as wimod
     from stream_cheremsha.ui.widgets_qml_api import WidgetsQmlApi
 
-    monkeypatch.setattr(
-        wimod, "QSettings", lambda *a, **k: QSettings("t-org-edit", "t-app-edit"))
+    monkeypatch.setattr(wimod, "QSettings", lambda *a, **k: QSettings("t-org-edit", "t-app-edit"))
     QSettings("t-org-edit", "t-app-edit").clear()
 
     api = WidgetsQmlApi(overlay_base_url="")

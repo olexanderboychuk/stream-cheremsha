@@ -689,9 +689,11 @@ class BattleRoyaleOverlayType:
         from stream_cheremsha.overlays.widget_instances import typed_config_for_type
 
         cfg = typed_config_for_type(
-            "battle_royale", params,
+            "battle_royale",
+            params,
             load_battle_royale_overlay_config,
-            battle_royale_overlay_config_from_json_text)
+            battle_royale_overlay_config_from_json_text,
+        )
         cfg_payload = json.loads(battle_royale_overlay_config_to_json_text(cfg))
         cfg_payload["ui_locale"] = load_ui_locale()
         return {

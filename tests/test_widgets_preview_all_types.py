@@ -1,4 +1,5 @@
 """Preview (▶) must publish to the targeted widget instance topic for every type."""
+
 from __future__ import annotations
 
 import asyncio

@@ -654,9 +654,11 @@ class KingOfLiveOverlayType:
         from stream_cheremsha.overlays.widget_instances import typed_config_for_type
 
         cfg = typed_config_for_type(
-            "king_of_live", params,
+            "king_of_live",
+            params,
             load_king_of_live_overlay_config,
-            king_of_live_overlay_config_from_json_text)
+            king_of_live_overlay_config_from_json_text,
+        )
         anchor = str(params.get("anchor") or "").strip().lstrip("@").strip()
         tops = fetch_all_time_gifter_totals(
             limit=3,

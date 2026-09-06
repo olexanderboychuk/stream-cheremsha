@@ -2591,7 +2591,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "widgets.type.music.desc": {"uk": "Музичний оверлей.", "en": "Music overlay."},
     # Widgets gallery redesign (search / filters / stats / sort / cards)
     "widgets.gallery.title": {"uk": "Віджети", "en": "Widgets"},
-    "widgets.gallery.subtitle": {"uk": "Керуйте інтерактивними елементами вашого стріму", "en": "Manage interactive elements of your stream"},
+    "widgets.gallery.subtitle": {
+        "uk": "Керуйте інтерактивними елементами вашого стріму",
+        "en": "Manage interactive elements of your stream",
+    },
     "widgets.gallery.search_ph": {"uk": "Пошук віджетів...", "en": "Search widgets..."},
     "widgets.gallery.all_categories": {"uk": "Усі категорії", "en": "All categories"},
     "widgets.gallery.create": {"uk": "Створити віджет", "en": "Create widget"},
@@ -2599,8 +2602,14 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "widgets.gallery.active": {"uk": "Активних", "en": "Active"},
     "widgets.gallery.disabled": {"uk": "Вимкнено", "en": "Disabled"},
     "widgets.gallery.attention": {"uk": "Потребує уваги", "en": "Needs attention"},
-    "widgets.gallery.promo_title": {"uk": "Створюйте унікальний стрім", "en": "Create a unique stream"},
-    "widgets.gallery.promo_sub": {"uk": "Віджети, що залучають вашу аудиторію", "en": "Widgets that engage your audience"},
+    "widgets.gallery.promo_title": {
+        "uk": "Створюйте унікальний стрім",
+        "en": "Create a unique stream",
+    },
+    "widgets.gallery.promo_sub": {
+        "uk": "Віджети, що залучають вашу аудиторію",
+        "en": "Widgets that engage your audience",
+    },
     "widgets.gallery.filter_all": {"uk": "Усі", "en": "All"},
     "widgets.gallery.sort_label": {"uk": "Сортування:", "en": "Sort by:"},
     "widgets.gallery.sort_name": {"uk": "За назвою", "en": "By name"},
@@ -2613,7 +2622,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "widgets.gallery.toggle": {"uk": "Увімкнути/вимкнути віджет", "en": "Enable/disable widget"},
     "widgets.gallery.needs_setup": {"uk": "Потребує налаштування", "en": "Needs setup"},
     "widgets.gallery.create_new": {"uk": "Створити новий віджет", "en": "Create new widget"},
-    "widgets.gallery.create_new_sub": {"uk": "Розширюйте можливості вашого стріму", "en": "Extend your stream capabilities"},
+    "widgets.gallery.create_new_sub": {
+        "uk": "Розширюйте можливості вашого стріму",
+        "en": "Extend your stream capabilities",
+    },
     "widgets.gallery.empty": {"uk": "Нічого не знайдено", "en": "Nothing found"},
     "widgets.gallery.cat_tiktok": {"uk": "TikTok", "en": "TikTok"},
     "widgets.gallery.cat_twitch": {"uk": "Twitch", "en": "Twitch"},

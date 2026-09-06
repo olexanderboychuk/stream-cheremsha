@@ -347,8 +347,14 @@ class WidgetsQmlApi(QObject):
         layouts = ensure_layouts()
         active = get_active_layout_id()
         items = [
-            {"id": x.id, "name": x.name, "width": x.width, "height": x.height,
-             "widget_count": len(x.widgets), "active": x.id == active}
+            {
+                "id": x.id,
+                "name": x.name,
+                "width": x.width,
+                "height": x.height,
+                "widget_count": len(x.widgets),
+                "active": x.id == active,
+            }
             for x in layouts
         ]
         return json.dumps(items, ensure_ascii=False)
@@ -1428,7 +1434,9 @@ class WidgetsQmlApi(QObject):
                 exc,
             )
             return
-        if self._save_cfg_to_instance("online", json.loads(online_overlay_config_to_json_text(cfg))):
+        if self._save_cfg_to_instance(
+            "online", json.loads(online_overlay_config_to_json_text(cfg))
+        ):
             return
         save_online_overlay_config(cfg)
         if self._pubsub is not None:
@@ -1477,7 +1485,9 @@ class WidgetsQmlApi(QObject):
                 exc,
             )
             return
-        if self._save_cfg_to_instance("top_likers", json.loads(top_likers_overlay_config_to_json_text(cfg))):
+        if self._save_cfg_to_instance(
+            "top_likers", json.loads(top_likers_overlay_config_to_json_text(cfg))
+        ):
             return
         save_top_likers_overlay_config(cfg)
         _LOG.info("widgets overlay persisted: top_likers")
@@ -1527,7 +1537,9 @@ class WidgetsQmlApi(QObject):
                 exc,
             )
             return
-        if self._save_cfg_to_instance("top_gifters", json.loads(top_gifters_overlay_config_to_json_text(cfg))):
+        if self._save_cfg_to_instance(
+            "top_gifters", json.loads(top_gifters_overlay_config_to_json_text(cfg))
+        ):
             return
         save_top_gifters_overlay_config(cfg)
         _LOG.info("widgets overlay persisted: top_gifters")
@@ -1577,7 +1589,9 @@ class WidgetsQmlApi(QObject):
                 exc,
             )
             return
-        if self._save_cfg_to_instance("king_of_live", json.loads(king_of_live_overlay_config_to_json_text(cfg))):
+        if self._save_cfg_to_instance(
+            "king_of_live", json.loads(king_of_live_overlay_config_to_json_text(cfg))
+        ):
             return
         save_king_of_live_overlay_config(cfg)
         _LOG.info("widgets overlay persisted: king_of_live")
@@ -1627,7 +1641,9 @@ class WidgetsQmlApi(QObject):
                 exc,
             )
             return
-        if self._save_cfg_to_instance("battle_royale", json.loads(battle_royale_overlay_config_to_json_text(cfg))):
+        if self._save_cfg_to_instance(
+            "battle_royale", json.loads(battle_royale_overlay_config_to_json_text(cfg))
+        ):
             return
         save_battle_royale_overlay_config(cfg)
         _LOG.info("widgets overlay persisted: battle_royale")
@@ -1682,7 +1698,9 @@ class WidgetsQmlApi(QObject):
                 exc,
             )
             return
-        if self._save_cfg_to_instance("stream_pet", json.loads(stream_pet_overlay_config_to_json_text(cfg))):
+        if self._save_cfg_to_instance(
+            "stream_pet", json.loads(stream_pet_overlay_config_to_json_text(cfg))
+        ):
             return
         save_stream_pet_overlay_config(cfg)
         _LOG.info("widgets overlay persisted: stream_pet")
@@ -1732,7 +1750,9 @@ class WidgetsQmlApi(QObject):
                 exc,
             )
             return
-        if self._save_cfg_to_instance("community_world", json.loads(community_world_overlay_config_to_json_text(cfg))):
+        if self._save_cfg_to_instance(
+            "community_world", json.loads(community_world_overlay_config_to_json_text(cfg))
+        ):
             return
         save_community_world_overlay_config(cfg)
         _LOG.info("widgets overlay persisted: community_world")
@@ -1784,7 +1804,9 @@ class WidgetsQmlApi(QObject):
                 exc,
             )
             return
-        if self._save_cfg_to_instance("stream_goal", json.loads(stream_goal_overlay_config_to_json_text(cfg))):
+        if self._save_cfg_to_instance(
+            "stream_goal", json.loads(stream_goal_overlay_config_to_json_text(cfg))
+        ):
             return
         save_stream_goal_overlay_config(cfg)
         _LOG.info("widgets overlay persisted: stream_goal")
@@ -1859,7 +1881,9 @@ class WidgetsQmlApi(QObject):
                 exc,
             )
             return
-        if self._save_cfg_to_instance("live_leaderboard", json.loads(live_leaderboard_overlay_config_to_json_text(cfg))):
+        if self._save_cfg_to_instance(
+            "live_leaderboard", json.loads(live_leaderboard_overlay_config_to_json_text(cfg))
+        ):
             return
         save_live_leaderboard_overlay_config(cfg)
         _LOG.info("widgets overlay persisted: live_leaderboard")
@@ -1924,7 +1948,9 @@ class WidgetsQmlApi(QObject):
                 exc,
             )
             return
-        if self._save_cfg_to_instance("social_rotator", json.loads(social_rotator_overlay_config_to_json_text(cfg))):
+        if self._save_cfg_to_instance(
+            "social_rotator", json.loads(social_rotator_overlay_config_to_json_text(cfg))
+        ):
             return
         save_social_rotator_overlay_config(cfg)
         _LOG.info("widgets overlay persisted: social_rotator")
@@ -1987,7 +2013,9 @@ class WidgetsQmlApi(QObject):
                 exc,
             )
             return
-        if self._save_cfg_to_instance("webcam_frame", json.loads(webcam_frame_overlay_config_to_json_text(cfg))):
+        if self._save_cfg_to_instance(
+            "webcam_frame", json.loads(webcam_frame_overlay_config_to_json_text(cfg))
+        ):
             return
         save_webcam_frame_overlay_config(cfg)
         _LOG.info("widgets overlay persisted: webcam_frame")
@@ -2057,7 +2085,9 @@ class WidgetsQmlApi(QObject):
                 exc,
             )
             return
-        if self._save_cfg_to_instance("signal_system", json.loads(signal_system_overlay_config_to_json_text(cfg))):
+        if self._save_cfg_to_instance(
+            "signal_system", json.loads(signal_system_overlay_config_to_json_text(cfg))
+        ):
             return
         save_signal_system_overlay_config(cfg)
         _LOG.info("widgets overlay persisted: signal_system")
@@ -2090,7 +2120,6 @@ class WidgetsQmlApi(QObject):
             return
         _LOG.info("widgets ConfigMap save: signal_system ok json_len=%d", len(txt))
         self.saveSignalSystemOverlayConfigJson(txt)
-
 
     # ---- Widget instances (Type -> Instances) ----
     widgetInstancesChanged = Signal()
@@ -2137,8 +2166,7 @@ class WidgetsQmlApi(QObject):
         inst = self._editing_instance_for(type_id)
         if inst is None:
             return False
-        _LOG.info("saving type=%s into instance %r (%r)",
-                  type_id, inst.id[:12], inst.name)
+        _LOG.info("saving type=%s into instance %r (%r)", type_id, inst.id[:12], inst.name)
         update_instance_settings(inst.id, dict(cfg_dict))
         self.widgetInstancesChanged.emit()
         if (inst.legacy_key or "") == "main":
@@ -2171,23 +2199,36 @@ class WidgetsQmlApi(QObject):
         )
 
         items = [
-            {"type_id": tid, "name": widget_type_name(tid),
-             "description": widget_type_desc(tid), "icon": m.get("icon", "📦"),
-             "platforms": list(m.get("platforms", ["all"]))}
+            {
+                "type_id": tid,
+                "name": widget_type_name(tid),
+                "description": widget_type_desc(tid),
+                "icon": m.get("icon", "📦"),
+                "platforms": list(m.get("platforms", ["all"])),
+            }
             for tid, m in sorted(WIDGET_TYPES.items())
         ]
         return json.dumps(items, ensure_ascii=False)
 
     @Slot(result=str)
     def widgetInstancesJson(self) -> str:
-        from stream_cheremsha.overlays.widget_instances import list_instances, migrate_legacy_to_instances
+        from stream_cheremsha.overlays.widget_instances import (
+            list_instances,
+            migrate_legacy_to_instances,
+        )
 
         migrate_legacy_to_instances()
         items = [
-            {"id": x.id, "type_id": x.type_id, "name": x.name,
-             "settings": dict(x.settings), "enabled": bool(x.enabled),
-             "created_at": x.created_at, "updated_at": x.updated_at,
-             "legacy_key": x.legacy_key}
+            {
+                "id": x.id,
+                "type_id": x.type_id,
+                "name": x.name,
+                "settings": dict(x.settings),
+                "enabled": bool(x.enabled),
+                "created_at": x.created_at,
+                "updated_at": x.updated_at,
+                "legacy_key": x.legacy_key,
+            }
             for x in list_instances()
         ]
         return json.dumps(items, ensure_ascii=False)

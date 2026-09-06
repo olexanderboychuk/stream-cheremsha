@@ -4,15 +4,17 @@ Backward-compatible layer over the existing per-widget QSettings blobs
 (``overlays/<type>/main/config_json``). Instances live in the SAME
 QSettings mechanism under ``overlays/widget_instances/config_json``.
 """
+
 from __future__ import annotations
 
 import copy
 import json
 import logging
 import uuid
-from dataclasses import asdict, dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Callable
+from typing import Any
 
 from PySide6.QtCore import QSettings
 
@@ -27,52 +29,118 @@ SCHEMA_VERSION = 1
 # platforms: list of "tiktok" | "twitch" | "kick" | "youtube" | "all".
 # A widget may list several platforms; "all" means platform-agnostic.
 WIDGET_TYPES: dict[str, dict[str, Any]] = {
-    "chat": {"name": "Чат", "description": "Оверлей чату трансляції.", "icon": "💬",
-             "legacy_key": "overlays/chat/main/config_json",
-             "platforms": ["tiktok", "twitch", "kick", "youtube"]},
-    "actions": {"name": "Дії та алерти", "description": "Алерти та дії.", "icon": "⚡",
-                "legacy_key": "overlays/actions/main/config_json",
-                "platforms": ["all"]},
-    "activity": {"name": "Активність", "description": "Стрічка активності.", "icon": "📊",
-                 "legacy_key": "", "platforms": ["all"]},
-    "online": {"name": "Онлайн / глядачі", "description": "Лічильник онлайну.", "icon": "👥",
-               "legacy_key": "overlays/online/main/config_json",
-               "platforms": ["all"]},
-    "top_likers": {"name": "Топ лайкерів", "description": "Рейтинг користувачів за лайками.", "icon": "👍",
-                   "legacy_key": "overlays/top_likers/main/config_json",
-                   "platforms": ["tiktok"]},
-    "top_gifters": {"name": "Топ GIFтерів", "description": "Рейтинг користувачів за подарунками.", "icon": "🎁",
-                    "legacy_key": "overlays/top_gifters/main/config_json",
-                    "platforms": ["tiktok"]},
-    "king_of_live": {"name": "King of the Live", "description": "Король ефіру.", "icon": "👑",
-                     "legacy_key": "overlays/king_of_live/main/config_json",
-                     "platforms": ["tiktok"]},
-    "battle_royale": {"name": "Battle Royale", "description": "Битва глядачів.", "icon": "⚔️",
-                      "legacy_key": "overlays/battle_royale/main/config_json",
-                      "platforms": ["tiktok"]},
-    "stream_pet": {"name": "Stream Pet", "description": "Пет стріму.", "icon": "🐾",
-                   "legacy_key": "overlays/stream_pet/main/config_json",
-                   "platforms": ["all"]},
-    "community_world": {"name": "Community World", "description": "Світ спільноти.", "icon": "🏘️",
-                        "legacy_key": "overlays/community_world/main/config_json",
-                        "platforms": ["all"]},
-    "stream_goal": {"name": "Stream Goal", "description": "Ціль стріму.", "icon": "🎯",
-                    "legacy_key": "overlays/stream_goal/main/config_json",
-                    "platforms": ["all"]},
-    "live_leaderboard": {"name": "Live Leaderboard", "description": "Живий лідерборд.", "icon": "🏆",
-                         "legacy_key": "overlays/live_leaderboard/main/config_json",
-                         "platforms": ["all"]},
-    "social_rotator": {"name": "Social Rotator", "description": "Ротація соцмереж.", "icon": "🔄",
-                       "legacy_key": "overlays/social_rotator/main/config_json",
-                       "platforms": ["all"]},
-    "webcam_frame": {"name": "Webcam Frame", "description": "Рамка камери (CAM/LINK).", "icon": "📷",
-                     "legacy_key": "overlays/webcam_frame/main/config_json",
-                     "platforms": ["all"]},
-    "signal_system": {"name": "Signal System", "description": "Сигнальна система.", "icon": "📡",
-                      "legacy_key": "overlays/signal_system/main/config_json",
-                      "platforms": ["all"]},
-    "music": {"name": "Музика", "description": "Музичний оверлей.", "icon": "🎵",
-              "legacy_key": "", "platforms": ["all"]},
+    "chat": {
+        "name": "Чат",
+        "description": "Оверлей чату трансляції.",
+        "icon": "💬",
+        "legacy_key": "overlays/chat/main/config_json",
+        "platforms": ["tiktok", "twitch", "kick", "youtube"],
+    },
+    "actions": {
+        "name": "Дії та алерти",
+        "description": "Алерти та дії.",
+        "icon": "⚡",
+        "legacy_key": "overlays/actions/main/config_json",
+        "platforms": ["all"],
+    },
+    "activity": {
+        "name": "Активність",
+        "description": "Стрічка активності.",
+        "icon": "📊",
+        "legacy_key": "",
+        "platforms": ["all"],
+    },
+    "online": {
+        "name": "Онлайн / глядачі",
+        "description": "Лічильник онлайну.",
+        "icon": "👥",
+        "legacy_key": "overlays/online/main/config_json",
+        "platforms": ["all"],
+    },
+    "top_likers": {
+        "name": "Топ лайкерів",
+        "description": "Рейтинг користувачів за лайками.",
+        "icon": "👍",
+        "legacy_key": "overlays/top_likers/main/config_json",
+        "platforms": ["tiktok"],
+    },
+    "top_gifters": {
+        "name": "Топ GIFтерів",
+        "description": "Рейтинг користувачів за подарунками.",
+        "icon": "🎁",
+        "legacy_key": "overlays/top_gifters/main/config_json",
+        "platforms": ["tiktok"],
+    },
+    "king_of_live": {
+        "name": "King of the Live",
+        "description": "Король ефіру.",
+        "icon": "👑",
+        "legacy_key": "overlays/king_of_live/main/config_json",
+        "platforms": ["tiktok"],
+    },
+    "battle_royale": {
+        "name": "Battle Royale",
+        "description": "Битва глядачів.",
+        "icon": "⚔️",
+        "legacy_key": "overlays/battle_royale/main/config_json",
+        "platforms": ["tiktok"],
+    },
+    "stream_pet": {
+        "name": "Stream Pet",
+        "description": "Пет стріму.",
+        "icon": "🐾",
+        "legacy_key": "overlays/stream_pet/main/config_json",
+        "platforms": ["all"],
+    },
+    "community_world": {
+        "name": "Community World",
+        "description": "Світ спільноти.",
+        "icon": "🏘️",
+        "legacy_key": "overlays/community_world/main/config_json",
+        "platforms": ["all"],
+    },
+    "stream_goal": {
+        "name": "Stream Goal",
+        "description": "Ціль стріму.",
+        "icon": "🎯",
+        "legacy_key": "overlays/stream_goal/main/config_json",
+        "platforms": ["all"],
+    },
+    "live_leaderboard": {
+        "name": "Live Leaderboard",
+        "description": "Живий лідерборд.",
+        "icon": "🏆",
+        "legacy_key": "overlays/live_leaderboard/main/config_json",
+        "platforms": ["all"],
+    },
+    "social_rotator": {
+        "name": "Social Rotator",
+        "description": "Ротація соцмереж.",
+        "icon": "🔄",
+        "legacy_key": "overlays/social_rotator/main/config_json",
+        "platforms": ["all"],
+    },
+    "webcam_frame": {
+        "name": "Webcam Frame",
+        "description": "Рамка камери (CAM/LINK).",
+        "icon": "📷",
+        "legacy_key": "overlays/webcam_frame/main/config_json",
+        "platforms": ["all"],
+    },
+    "signal_system": {
+        "name": "Signal System",
+        "description": "Сигнальна система.",
+        "icon": "📡",
+        "legacy_key": "overlays/signal_system/main/config_json",
+        "platforms": ["all"],
+    },
+    "music": {
+        "name": "Музика",
+        "description": "Музичний оверлей.",
+        "icon": "🎵",
+        "legacy_key": "",
+        "platforms": ["all"],
+    },
 }
 
 _LEGACY_DEFAULTS_LOADERS: dict[str, str] = {
@@ -140,14 +208,18 @@ class WidgetInstance:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "id": self.id, "type_id": self.type_id, "name": self.name,
-            "settings": copy.deepcopy(self.settings), "enabled": bool(self.enabled),
-            "created_at": self.created_at, "updated_at": self.updated_at,
+            "id": self.id,
+            "type_id": self.type_id,
+            "name": self.name,
+            "settings": copy.deepcopy(self.settings),
+            "enabled": bool(self.enabled),
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
             "legacy_key": self.legacy_key,
         }
 
     @staticmethod
-    def from_dict(raw: dict[str, Any]) -> "WidgetInstance":
+    def from_dict(raw: dict[str, Any]) -> WidgetInstance:
         return WidgetInstance(
             id=str(raw.get("id") or _new_id()),
             type_id=str(raw.get("type_id") or "").strip(),
@@ -172,6 +244,7 @@ def default_settings_for(type_id: str) -> dict[str, Any]:
     try:
         mod_name, defaults_fn, to_json_fn = spec.split(":")
         import importlib
+
         mod = importlib.import_module(mod_name)
         defaults_obj = getattr(mod, defaults_fn)()
         text = getattr(mod, to_json_fn)(defaults_obj)
@@ -202,9 +275,11 @@ def list_instances(settings: QSettings | None = None) -> list[WidgetInstance]:
 def save_instances(instances: list[WidgetInstance], settings: QSettings | None = None) -> None:
     s = _settings_obj(settings)
     text = json.dumps(
-        {"schema_version": SCHEMA_VERSION,
-         "instances": [x.to_dict() for x in instances]},
-        ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        {"schema_version": SCHEMA_VERSION, "instances": [x.to_dict() for x in instances]},
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
     s.setValue(INSTANCES_QSETTINGS_KEY, text)
     s.setValue(_INSTANCES_BACKUP_KEY, text)
     s.sync()
@@ -217,13 +292,21 @@ def get_instance(instance_id: str, settings: QSettings | None = None) -> WidgetI
     return None
 
 
-def find_legacy_instance(type_id: str, legacy: str = "main",
-                         settings: QSettings | None = None) -> WidgetInstance | None:
-    found = [x for x in list_instances(settings)
-             if x.type_id == type_id and (x.legacy_key or "") == legacy]
+def find_legacy_instance(
+    type_id: str, legacy: str = "main", settings: QSettings | None = None
+) -> WidgetInstance | None:
+    found = [
+        x
+        for x in list_instances(settings)
+        if x.type_id == type_id and (x.legacy_key or "") == legacy
+    ]
     if len(found) > 1:
-        _LOG.warning("multiple legacy instances for type=%r legacy=%r; using %r",
-                     type_id, legacy, found[0].id[:12])
+        _LOG.warning(
+            "multiple legacy instances for type=%r legacy=%r; using %r",
+            type_id,
+            legacy,
+            found[0].id[:12],
+        )
     return found[0] if found else None
 
 
@@ -234,24 +317,31 @@ def merged_settings(inst: WidgetInstance) -> dict[str, Any]:
     return merged
 
 
-def create_instance(type_id: str, name: str,
-                    settings_override: dict[str, Any] | None = None,
-                    settings: QSettings | None = None) -> WidgetInstance:
+def create_instance(
+    type_id: str,
+    name: str,
+    settings_override: dict[str, Any] | None = None,
+    settings: QSettings | None = None,
+) -> WidgetInstance:
     s = _settings_obj(settings)
     instances = list_instances(s)
     cfg = default_settings_for(type_id)
     if settings_override:
         cfg.update(copy.deepcopy(settings_override))
-    inst = WidgetInstance(id=_new_id(), type_id=type_id,
-                          name=(name or "").strip() or widget_type_name(type_id),
-                          settings=cfg)
+    inst = WidgetInstance(
+        id=_new_id(),
+        type_id=type_id,
+        name=(name or "").strip() or widget_type_name(type_id),
+        settings=cfg,
+    )
     instances.append(inst)
     save_instances(instances, s)
     return inst
 
 
-def update_instance_settings(instance_id: str, new_settings: dict[str, Any],
-                             settings: QSettings | None = None) -> WidgetInstance | None:
+def update_instance_settings(
+    instance_id: str, new_settings: dict[str, Any], settings: QSettings | None = None
+) -> WidgetInstance | None:
     s = _settings_obj(settings)
     instances = list_instances(s)
     for inst in instances:
@@ -263,8 +353,9 @@ def update_instance_settings(instance_id: str, new_settings: dict[str, Any],
     return None
 
 
-def set_instance_enabled(instance_id: str, enabled: bool,
-                         settings: QSettings | None = None) -> WidgetInstance | None:
+def set_instance_enabled(
+    instance_id: str, enabled: bool, settings: QSettings | None = None
+) -> WidgetInstance | None:
     s = _settings_obj(settings)
     instances = list_instances(s)
     for inst in instances:
@@ -276,8 +367,9 @@ def set_instance_enabled(instance_id: str, enabled: bool,
     return None
 
 
-def rename_instance(instance_id: str, name: str,
-                    settings: QSettings | None = None) -> WidgetInstance | None:
+def rename_instance(
+    instance_id: str, name: str, settings: QSettings | None = None
+) -> WidgetInstance | None:
     s = _settings_obj(settings)
     instances = list_instances(s)
     for inst in instances:
@@ -302,16 +394,21 @@ def _duplicate_name(base: str, taken: list[str]) -> str:
     return f"{clean} {n}"
 
 
-def duplicate_instance(instance_id: str, settings: QSettings | None = None) -> WidgetInstance | None:
+def duplicate_instance(
+    instance_id: str, settings: QSettings | None = None
+) -> WidgetInstance | None:
     s = _settings_obj(settings)
     instances = list_instances(s)
     for inst in instances:
         if inst.id == instance_id:
             dup = WidgetInstance(
-                id=_new_id(), type_id=inst.type_id,
+                id=_new_id(),
+                type_id=inst.type_id,
                 name=_duplicate_name(inst.name, [x.name for x in instances]),
                 settings=copy.deepcopy(inst.settings),
-                enabled=inst.enabled, legacy_key=None)
+                enabled=inst.enabled,
+                legacy_key=None,
+            )
             instances.append(dup)
             save_instances(instances, s)
             return dup
@@ -328,8 +425,7 @@ def delete_instance(instance_id: str, settings: QSettings | None = None) -> bool
     return True
 
 
-def sync_store_from_legacy_singleton(type_id: str,
-                                     settings: QSettings | None = None) -> bool:
+def sync_store_from_legacy_singleton(type_id: str, settings: QSettings | None = None) -> bool:
     """Copy the raw legacy singleton blob into the legacy instance store.
 
     Used after repair paths that rewrite the singleton directly
@@ -390,8 +486,7 @@ def reconcile_legacy_singletons(settings: QSettings | None = None) -> list[str]:
             pass  # missing singleton: restore from store below
         elif not isinstance(singleton, dict):
             continue
-        text = json.dumps(merged, ensure_ascii=False, separators=(",", ":"),
-                          sort_keys=True)
+        text = json.dumps(merged, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
         s.setValue(legacy_qkey, text)
         s.setValue(legacy_qkey + "_backup", text)
         synced.append(type_id)
@@ -421,10 +516,13 @@ def migrate_legacy_to_instances(settings: QSettings | None = None) -> list[Widge
         except (ValueError, TypeError, json.JSONDecodeError):
             continue
         inst = WidgetInstance(
-            id=_stable_legacy_id(type_id), type_id=type_id,
+            id=_stable_legacy_id(type_id),
+            type_id=type_id,
             name=widget_type_name(type_id),
             settings=copy.deepcopy(saved_dict),
-            enabled=True, legacy_key="main")
+            enabled=True,
+            legacy_key="main",
+        )
         instances.append(inst)
         created.append(inst)
     if created:
@@ -434,8 +532,9 @@ def migrate_legacy_to_instances(settings: QSettings | None = None) -> list[Widge
     return created
 
 
-def resolve_legacy_params(type_id: str, instance: str,
-                          settings: QSettings | None = None) -> dict[str, Any] | None:
+def resolve_legacy_params(
+    type_id: str, instance: str, settings: QSettings | None = None
+) -> dict[str, Any] | None:
     """Legacy URL compat: (type, 'main'|'default') -> merged settings dict, or None."""
     if instance not in ("main", "default"):
         return None
@@ -458,8 +557,9 @@ def ws_token_for(inst: WidgetInstance) -> str:
     return inst.id
 
 
-def find_by_ws_token(type_id: str, token: str,
-                     settings: QSettings | None = None) -> WidgetInstance | None:
+def find_by_ws_token(
+    type_id: str, token: str, settings: QSettings | None = None
+) -> WidgetInstance | None:
     """Resolve a WS subscribe token to its instance (legacy or by-id)."""
     token = (token or "").strip()
     if not token:
@@ -472,15 +572,15 @@ def find_by_ws_token(type_id: str, token: str,
             return inst
     # Backward compat with pages rendered while the token was id[:24].
     if len(token) >= 8:
-        cands = [x for x in list_instances(s)
-                 if x.type_id == type_id and x.id.startswith(token)]
+        cands = [x for x in list_instances(s) if x.type_id == type_id and x.id.startswith(token)]
         if len(cands) == 1:
             return cands[0]
     return None
 
 
-def resolve_ws_params(type_id: str, instance: str,
-                      settings: QSettings | None = None) -> dict[str, Any] | None:
+def resolve_ws_params(
+    type_id: str, instance: str, settings: QSettings | None = None
+) -> dict[str, Any] | None:
     """Settings dict for a WS subscription (legacy token or by-id token)."""
     inst = find_by_ws_token(type_id, instance, settings)
     if inst is None:
@@ -488,9 +588,12 @@ def resolve_ws_params(type_id: str, instance: str,
     return merged_settings(inst)
 
 
-def typed_config_for_type(type_id: str, params: dict[str, Any],
-                           legacy_loader: Callable[[], Any],
-                           legacy_from_json_text: Callable[[str], Any]) -> Any:
+def typed_config_for_type(
+    type_id: str,
+    params: dict[str, Any],
+    legacy_loader: Callable[[], Any],
+    legacy_from_json_text: Callable[[str], Any],
+) -> Any:
     """Renderer helper returning the typed config object.
 
     Prefers instance settings injected by the server (merged over defaults,
@@ -509,9 +612,12 @@ def typed_config_for_type(type_id: str, params: dict[str, Any],
     return legacy_loader()
 
 
-def config_for_type(type_id: str, params: dict[str, Any],
-                    legacy_loader: Callable[[], Any],
-                    legacy_to_json: Callable[[Any], str]) -> dict[str, Any]:
+def config_for_type(
+    type_id: str,
+    params: dict[str, Any],
+    legacy_loader: Callable[[], Any],
+    legacy_to_json: Callable[[Any], str],
+) -> dict[str, Any]:
     """Renderer helper: prefers instance settings injected by server, else legacy singleton."""
     injected = params.get("instance_settings")
     if isinstance(injected, dict) and injected:

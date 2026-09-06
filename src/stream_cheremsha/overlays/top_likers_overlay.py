@@ -986,6 +986,9 @@ class TopLikersOverlayType:
         from stream_cheremsha.overlays.widget_instances import config_for_type
 
         cfg_dict = config_for_type(
-            "top_likers", params,
-            load_top_likers_overlay_config, top_likers_overlay_config_to_json_text)
+            "top_likers",
+            params,
+            load_top_likers_overlay_config,
+            top_likers_overlay_config_to_json_text,
+        )
         return {"config": cfg_dict, "leaders": []}

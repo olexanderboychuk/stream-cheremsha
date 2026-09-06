@@ -776,5 +776,6 @@ class ActionsOverlayType:
         from stream_cheremsha.overlays.widget_instances import typed_config_for_type
 
         cfg = typed_config_for_type(
-            "actions", params, load_actions_config, actions_config_from_json_text)
+            "actions", params, load_actions_config, actions_config_from_json_text
+        )
         return {"config": json.loads(actions_config_to_json_text(cfg)), "items": []}

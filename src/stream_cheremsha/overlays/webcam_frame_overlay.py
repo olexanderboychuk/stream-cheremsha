@@ -47,9 +47,11 @@ class WebcamFrameOverlayType:
         from stream_cheremsha.overlays.widget_instances import typed_config_for_type
 
         cfg = typed_config_for_type(
-            "webcam_frame", params,
+            "webcam_frame",
+            params,
             load_webcam_frame_overlay_config,
-            webcam_frame_overlay_config_from_json_text)
+            webcam_frame_overlay_config_from_json_text,
+        )
         locale = load_ui_locale()
         initial = {
             "config": webcam_frame_overlay_config_to_public_dict(cfg),
@@ -76,9 +78,11 @@ class WebcamFrameOverlayType:
         from stream_cheremsha.overlays.widget_instances import typed_config_for_type as _typed_cfg
 
         cfg = _typed_cfg(
-            "webcam_frame", params,
+            "webcam_frame",
+            params,
             load_webcam_frame_overlay_config,
-            webcam_frame_overlay_config_from_json_text)
+            webcam_frame_overlay_config_from_json_text,
+        )
         return {
             "config": webcam_frame_overlay_config_to_public_dict(cfg),
             "locale": load_ui_locale(),

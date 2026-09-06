@@ -644,9 +644,11 @@ class StreamPetOverlayType:
         from stream_cheremsha.overlays.widget_instances import typed_config_for_type
 
         cfg = typed_config_for_type(
-            "stream_pet", params,
+            "stream_pet",
+            params,
             load_stream_pet_overlay_config,
-            stream_pet_overlay_config_from_json_text)
+            stream_pet_overlay_config_from_json_text,
+        )
         return {
             "config": stream_pet_overlay_config_to_public_dict(cfg),
             "energy": float(cfg.initial_energy),

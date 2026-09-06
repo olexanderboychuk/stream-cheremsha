@@ -657,9 +657,11 @@ class CommunityWorldOverlayType:
         from stream_cheremsha.overlays.widget_instances import typed_config_for_type
 
         cfg = typed_config_for_type(
-            "community_world", params,
+            "community_world",
+            params,
             load_community_world_overlay_config,
-            community_world_overlay_config_from_json_text)
+            community_world_overlay_config_from_json_text,
+        )
         session = CommunityWorldSession.fresh(cfg)
         state = session.to_overlay_dict()
         state["config"] = community_world_overlay_config_to_public_dict(cfg)

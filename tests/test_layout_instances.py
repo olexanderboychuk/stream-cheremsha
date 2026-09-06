@@ -64,8 +64,9 @@ def test_upsert_preserves_siblings() -> None:
     L.ensure_layouts(s)
     a = L.create_layout("A", settings=s)
     b = L.create_layout("B", settings=s)
-    renamed_b = L.StreamLayout(id=b.id, name="B2", width=b.width,
-                               height=b.height, widgets=b.widgets)
+    renamed_b = L.StreamLayout(
+        id=b.id, name="B2", width=b.width, height=b.height, widgets=b.widgets
+    )
     L.upsert_layout(renamed_b, s)
     assert L.get_layout(a.id, s).name == "A"
     assert L.get_layout(b.id, s).name == "B2"
@@ -76,8 +77,9 @@ def test_widget_instance_binding_roundtrip() -> None:
     L.ensure_layouts(s)
     a = L.create_layout("Bound", settings=s)
     w = L.LayoutWidget("w1", "chat", "main", 0, 0, 100, 100, widget_instance_id="abc123")
-    L.upsert_layout(L.StreamLayout(id=a.id, name=a.name, width=a.width,
-                                   height=a.height, widgets=(w,)), s)
+    L.upsert_layout(
+        L.StreamLayout(id=a.id, name=a.name, width=a.width, height=a.height, widgets=(w,)), s
+    )
     text = L.layouts_to_json_text(L.load_layouts(s))
     restored = L.layouts_from_json_text(text)
     bound = next(x for x in restored if x.id == a.id).widgets[0]
@@ -90,19 +92,17 @@ def test_layout_overlay_renders_by_id_when_bound(monkeypatch) -> None:
     import stream_cheremsha.overlays.widget_instances as wimod
     from stream_cheremsha.overlays.layout_overlay import LayoutOverlayType
 
-    monkeypatch.setattr(
-        lmod, "QSettings", lambda *a, **k: QSettings("t-org-lay", "t-app-lay"))
-    monkeypatch.setattr(
-        wimod, "QSettings", lambda *a, **k: QSettings("t-org-lay", "t-app-lay"))
+    monkeypatch.setattr(lmod, "QSettings", lambda *a, **k: QSettings("t-org-lay", "t-app-lay"))
+    monkeypatch.setattr(wimod, "QSettings", lambda *a, **k: QSettings("t-org-lay", "t-app-lay"))
     QSettings("t-org-lay", "t-app-lay").clear()
 
     inst = wi.create_instance("chat", "Bound Chat", None)
     base = L.default_layout()
     legacy_w = L.LayoutWidget("w1", "chat", "main", 0, 0, 100, 100)
-    bound_w = L.LayoutWidget("w2", "chat", "main", 0, 0, 100, 100,
-                             widget_instance_id=inst.id)
-    lay = L.StreamLayout(id="default", name="X", width=1920, height=1080,
-                         widgets=(legacy_w, bound_w))
+    bound_w = L.LayoutWidget("w2", "chat", "main", 0, 0, 100, 100, widget_instance_id=inst.id)
+    lay = L.StreamLayout(
+        id="default", name="X", width=1920, height=1080, widgets=(legacy_w, bound_w)
+    )
     L.save_layouts([lay])
 
     html = LayoutOverlayType().render_html({"instance": "main", "layout": "default"})
@@ -110,10 +110,8 @@ def test_layout_overlay_renders_by_id_when_bound(monkeypatch) -> None:
     assert f"/overlay/by-id/{inst.id}" in html  # bound instance URL
 
     # unknown instance id falls back to legacy URL, never breaks render
-    ghost = L.LayoutWidget("w3", "chat", "main", 0, 0, 100, 100,
-                           widget_instance_id="nope")
-    lay2 = L.StreamLayout(id="default", name="X", width=1920, height=1080,
-                          widgets=(ghost,))
+    ghost = L.LayoutWidget("w3", "chat", "main", 0, 0, 100, 100, widget_instance_id="nope")
+    lay2 = L.StreamLayout(id="default", name="X", width=1920, height=1080, widgets=(ghost,))
     L.save_layouts([lay2])
     html2 = LayoutOverlayType().render_html({"instance": "main", "layout": "default"})
     assert "/overlay/chat?instance=main" in html2

@@ -116,9 +116,11 @@ class SignalSystemOverlayType:
         from stream_cheremsha.overlays.widget_instances import typed_config_for_type
 
         cfg = typed_config_for_type(
-            "signal_system", params,
+            "signal_system",
+            params,
             load_signal_system_overlay_config,
-            signal_system_overlay_config_from_json_text)
+            signal_system_overlay_config_from_json_text,
+        )
         i18n = _overlay_i18n_bundle()
         return self._render_template(
             params,
@@ -134,9 +136,11 @@ class SignalSystemOverlayType:
         from stream_cheremsha.overlays.widget_instances import typed_config_for_type as _typed_cfg
 
         cfg = _typed_cfg(
-            "signal_system", params,
+            "signal_system",
+            params,
             load_signal_system_overlay_config,
-            signal_system_overlay_config_from_json_text)
+            signal_system_overlay_config_from_json_text,
+        )
         return {
             "config": signal_system_overlay_config_to_public_dict(cfg),
             "current_event": None,
