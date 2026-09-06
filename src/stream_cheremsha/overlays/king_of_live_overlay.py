@@ -5,6 +5,7 @@ import json
 from typing import Any
 
 from stream_cheremsha.overlays.king_of_live_overlay_config import (
+    king_of_live_overlay_config_from_json_text,
     king_of_live_overlay_config_to_json_text,
     load_king_of_live_overlay_config,
 )
@@ -650,7 +651,12 @@ class KingOfLiveOverlayType:
 
     def initial_state(self, params: dict[str, Any]) -> dict[str, Any]:
         _ = normalize_instance_id(str(params.get("instance") or ""))
-        cfg = load_king_of_live_overlay_config()
+        from stream_cheremsha.overlays.widget_instances import typed_config_for_type
+
+        cfg = typed_config_for_type(
+            "king_of_live", params,
+            load_king_of_live_overlay_config,
+            king_of_live_overlay_config_from_json_text)
         anchor = str(params.get("anchor") or "").strip().lstrip("@").strip()
         tops = fetch_all_time_gifter_totals(
             limit=3,

@@ -216,6 +216,7 @@ class WidgetsQmlApi(QObject):
         self._community_world_instance = str(online_instance or "main").strip() or "main"
         self._webcam_frame_instance = str(online_instance or "main").strip() or "main"
         self._signal_system_instance = str(online_instance or "main").strip() or "main"
+        self._music_instance = str(online_instance or "main").strip() or "main"
         self._battle_host: Any | None = None
         self._stream_goal_controller: Any | None = None
         self._live_leaderboard_controller: Any | None = None
@@ -223,6 +224,7 @@ class WidgetsQmlApi(QObject):
         self._webcam_frame_controller: Any | None = None
         self._signal_system_controller: Any | None = None
         self._system_font_families: list[str] | None = None
+        self._editing_instance_id = ""
 
     def set_battle_host(self, host: Any) -> None:
         self._battle_host = host
@@ -331,6 +333,83 @@ class WidgetsQmlApi(QObject):
             patch={"action": "reload", "timestamp": time.time()},
         )
 
+    def _notify_layouts_changed(self) -> None:
+        self.layoutsChanged.emit()
+        self._publish_patch(
+            topic="overlay:layout:main",
+            patch={"action": "reload", "timestamp": time.time()},
+        )
+
+    @Slot(result=str)
+    def layoutsListJson(self) -> str:
+        from stream_cheremsha.overlays.layout import ensure_layouts, get_active_layout_id
+
+        layouts = ensure_layouts()
+        active = get_active_layout_id()
+        items = [
+            {"id": x.id, "name": x.name, "width": x.width, "height": x.height,
+             "widget_count": len(x.widgets), "active": x.id == active}
+            for x in layouts
+        ]
+        return json.dumps(items, ensure_ascii=False)
+
+    @Slot(result=str)
+    def activeLayoutId(self) -> str:
+        from stream_cheremsha.overlays.layout import get_active_layout_id, resolve_active_layout
+
+        try:
+            return resolve_active_layout().id
+        except (ValueError, TypeError):
+            return get_active_layout_id()
+
+    @Slot(str, result=bool)
+    def setActiveLayoutId(self, layout_id: str) -> bool:
+        from stream_cheremsha.overlays.layout import get_layout, set_active_layout_id
+
+        if get_layout(str(layout_id or "")) is None:
+            return False
+        set_active_layout_id(str(layout_id or ""))
+        self._notify_layouts_changed()
+        return True
+
+    @Slot(str, result=str)
+    def createLayout(self, name: str) -> str:
+        from stream_cheremsha.overlays.layout import create_layout, set_active_layout_id
+
+        layout = create_layout(str(name or ""))
+        set_active_layout_id(layout.id)
+        self._notify_layouts_changed()
+        return layout.id
+
+    @Slot(str, str, result=bool)
+    def renameLayout(self, layout_id: str, name: str) -> bool:
+        from stream_cheremsha.overlays.layout import rename_layout
+
+        ok = rename_layout(str(layout_id or ""), str(name or "")) is not None
+        if ok:
+            self._notify_layouts_changed()
+        return ok
+
+    @Slot(str, result=str)
+    def duplicateLayout(self, layout_id: str) -> str:
+        from stream_cheremsha.overlays.layout import duplicate_layout, set_active_layout_id
+
+        dup = duplicate_layout(str(layout_id or ""))
+        if dup is None:
+            return ""
+        set_active_layout_id(dup.id)
+        self._notify_layouts_changed()
+        return dup.id
+
+    @Slot(str, result=bool)
+    def deleteLayout(self, layout_id: str) -> bool:
+        from stream_cheremsha.overlays.layout import delete_layout
+
+        ok = delete_layout(str(layout_id or ""))
+        if ok:
+            self._notify_layouts_changed()
+        return ok
+
     @Slot(str, result=str)
     def layoutOverlayUrl(self, layout_id: str) -> str:
         if not self._base:
@@ -372,39 +451,41 @@ class WidgetsQmlApi(QObject):
                 },
             )
         elif typ == "actions":
-            self.previewActionsOverlay()
+            self.previewActionsOverlay(inst)
         elif typ == "online":
             self._publish_patch(
                 topic=f"overlay:online:{inst}",
                 patch={"online": True, "viewers": 1234},
             )
         elif typ == "stream_pet":
-            self.previewStreamPetOverlay()
+            self.previewStreamPetOverlay(inst)
         elif typ == "community_world":
-            self.previewCommunityWorldOverlay()
+            self.previewCommunityWorldOverlay(inst)
         elif typ == "battle_royale":
-            self.previewBattleRoyaleOverlay()
+            self.previewBattleRoyaleOverlay(inst)
         elif typ == "top_likers":
-            self.previewTopLikersOverlay()
+            self.previewTopLikersOverlay(inst)
         elif typ == "top_gifters":
-            self.previewTopGiftersOverlay()
+            self.previewTopGiftersOverlay(inst)
         elif typ == "king_of_live":
-            self.previewKingOfLiveOverlay()
+            self.previewKingOfLiveOverlay(inst)
         elif typ == "stream_goal":
-            self.previewStreamGoalOverlay()
+            self.previewStreamGoalOverlay(inst)
         elif typ == "live_leaderboard":
-            self.previewLiveLeaderboardOverlay()
+            self.previewLiveLeaderboardOverlay(inst)
         elif typ == "social_rotator":
-            self.previewSocialRotatorOverlay()
+            self.previewSocialRotatorOverlay(inst)
         elif typ == "webcam_frame":
-            self.previewWebcamFrameOverlay()
+            self.previewWebcamFrameOverlay(inst)
         elif typ == "activity":
             self._publish_patch(
-                topic="overlay:activity:main",
+                topic=f"overlay:activity:{inst}",
                 patch={"score": 75.0, "state": "hyped"},
             )
         elif typ == "signal_system":
-            self.previewSignalSystemOverlay()
+            self.previewSignalSystemOverlay(inst)
+        elif typ == "music":
+            self.previewMusicOverlay(inst)
 
     @Slot(str)
     @Slot()
@@ -579,9 +660,10 @@ class WidgetsQmlApi(QObject):
             return
         clip.setText(url)
 
+    @Slot(str)
     @Slot()
-    def previewStreamPetOverlay(self) -> None:
-        topic = f"overlay:stream_pet:{self._stream_pet_instance}"
+    def previewStreamPetOverlay(self, instance: str | None = None) -> None:
+        topic = f"overlay:stream_pet:{instance or self._stream_pet_instance}"
         cfg = load_stream_pet_overlay_config()
         patch: dict[str, Any] = {
             "config": stream_pet_overlay_config_to_public_dict(cfg),
@@ -621,9 +703,10 @@ class WidgetsQmlApi(QObject):
             return
         clip.setText(url)
 
+    @Slot(str)
     @Slot()
-    def previewStreamGoalOverlay(self) -> None:
-        topic = f"overlay:stream_goal:{self._stream_goal_instance}"
+    def previewStreamGoalOverlay(self, instance: str | None = None) -> None:
+        topic = f"overlay:stream_goal:{instance or self._stream_goal_instance}"
         cfg = load_stream_goal_overlay_config()
         patch = {
             "config": json.loads(stream_goal_overlay_config_to_json_text(cfg)),
@@ -690,9 +773,10 @@ class WidgetsQmlApi(QObject):
             return
         clip.setText(url)
 
+    @Slot(str)
     @Slot()
-    def previewLiveLeaderboardOverlay(self) -> None:
-        topic = f"overlay:live_leaderboard:{self._live_leaderboard_instance}"
+    def previewLiveLeaderboardOverlay(self, instance: str | None = None) -> None:
+        topic = f"overlay:live_leaderboard:{instance or self._live_leaderboard_instance}"
         cfg = load_live_leaderboard_overlay_config()
         demo = [
             {
@@ -784,9 +868,10 @@ class WidgetsQmlApi(QObject):
             return
         clip.setText(url)
 
+    @Slot(str)
     @Slot()
-    def previewSocialRotatorOverlay(self) -> None:
-        topic = f"overlay:social_rotator:{self._social_rotator_instance}"
+    def previewSocialRotatorOverlay(self, instance: str | None = None) -> None:
+        topic = f"overlay:social_rotator:{instance or self._social_rotator_instance}"
         if self._social_rotator_controller is not None:
             try:
                 patch = self._social_rotator_controller.initial_state()
@@ -831,9 +916,10 @@ class WidgetsQmlApi(QObject):
             return
         clip.setText(url)
 
+    @Slot(str)
     @Slot()
-    def previewWebcamFrameOverlay(self) -> None:
-        topic = f"overlay:webcam_frame:{self._webcam_frame_instance}"
+    def previewWebcamFrameOverlay(self, instance: str | None = None) -> None:
+        topic = f"overlay:webcam_frame:{instance or self._webcam_frame_instance}"
         if self._webcam_frame_controller is not None:
             try:
                 patch = self._webcam_frame_controller.initial_state()
@@ -870,15 +956,16 @@ class WidgetsQmlApi(QObject):
             return
         clip.setText(url)
 
+    @Slot(str)
     @Slot()
-    def previewSignalSystemOverlay(self) -> None:
+    def previewSignalSystemOverlay(self, instance: str | None = None) -> None:
         if self._signal_system_controller is not None:
             try:
                 self._signal_system_controller.trigger_test_event("big_gift")
                 return
             except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
                 _LOG.warning("previewSignalSystemOverlay trigger failed: %s", exc)
-        topic = f"overlay:signal_system:{self._signal_system_instance}"
+        topic = f"overlay:signal_system:{instance or self._signal_system_instance}"
         cfg = load_signal_system_overlay_config()
         try:
             from stream_cheremsha.actions.tiktok_gifts import (
@@ -941,9 +1028,10 @@ class WidgetsQmlApi(QObject):
             return
         clip.setText(url)
 
+    @Slot(str)
     @Slot()
-    def previewCommunityWorldOverlay(self) -> None:
-        topic = f"overlay:community_world:{self._community_world_instance}"
+    def previewCommunityWorldOverlay(self, instance: str | None = None) -> None:
+        topic = f"overlay:community_world:{instance or self._community_world_instance}"
         cfg = load_community_world_overlay_config()
         buildings = [
             {"id": "house", "unlocked": True, "new": True},
@@ -1007,9 +1095,10 @@ class WidgetsQmlApi(QObject):
         }
         self._publish_patch(topic=topic, patch=patch)
 
+    @Slot(str)
     @Slot()
-    def previewBattleRoyaleOverlay(self) -> None:
-        topic = f"overlay:battle_royale:{self._battle_royale_instance}"
+    def previewBattleRoyaleOverlay(self, instance: str | None = None) -> None:
+        topic = f"overlay:battle_royale:{instance or self._battle_royale_instance}"
         cfg = load_battle_royale_overlay_config()
         patch: dict[str, Any] = {
             "config": json.loads(battle_royale_overlay_config_to_json_text(cfg)),
@@ -1108,9 +1197,10 @@ class WidgetsQmlApi(QObject):
             return
         ps.publish_sync(topic, patch)
 
+    @Slot(str)
     @Slot()
-    def previewActionsOverlay(self) -> None:
-        topic = f"overlay:actions:{self._actions_instance}"
+    def previewActionsOverlay(self, instance: str | None = None) -> None:
+        topic = f"overlay:actions:{instance or self._actions_instance}"
         patch = {
             "append": {
                 "username": "username",
@@ -1124,9 +1214,28 @@ class WidgetsQmlApi(QObject):
         }
         self._publish_patch(topic=topic, patch=patch)
 
+    @Slot(str)
     @Slot()
-    def previewTopLikersOverlay(self) -> None:
-        topic = f"overlay:top_likers:{self._top_likers_instance}"
+    def previewMusicOverlay(self, instance: str | None = None) -> None:
+        """Preview the music overlay with a demo track (YouTube API demo video)."""
+        topic = f"overlay:music:{instance or self._music_instance}"
+        patch = {
+            "set_state": {
+                "current": {
+                    "id": "preview",
+                    "video_id": "M7lc1UVf-VE",
+                    "title": "Preview track",
+                },
+                "queue": [],
+                "config": {"autoplay_muted": True, "max_queue_items": 20},
+            }
+        }
+        self._publish_patch(topic=topic, patch=patch)
+
+    @Slot(str)
+    @Slot()
+    def previewTopLikersOverlay(self, instance: str | None = None) -> None:
+        topic = f"overlay:top_likers:{instance or self._top_likers_instance}"
         cfg = load_top_likers_overlay_config()
         lim = max(1, min(10, int(cfg.top_count)))
         leaders: list[dict[str, str | int]] = []
@@ -1145,9 +1254,10 @@ class WidgetsQmlApi(QObject):
         }
         self._publish_patch(topic=topic, patch=patch)
 
+    @Slot(str)
     @Slot()
-    def previewTopGiftersOverlay(self) -> None:
-        topic = f"overlay:top_gifters:{self._top_gifters_instance}"
+    def previewTopGiftersOverlay(self, instance: str | None = None) -> None:
+        topic = f"overlay:top_gifters:{instance or self._top_gifters_instance}"
         cfg = load_top_gifters_overlay_config()
         lim = max(1, min(10, int(cfg.top_count)))
         leaders: list[dict[str, str | int]] = []
@@ -1166,9 +1276,10 @@ class WidgetsQmlApi(QObject):
         }
         self._publish_patch(topic=topic, patch=patch)
 
+    @Slot(str)
     @Slot()
-    def previewKingOfLiveOverlay(self) -> None:
-        topic = f"overlay:king_of_live:{self._king_of_live_instance}"
+    def previewKingOfLiveOverlay(self, instance: str | None = None) -> None:
+        topic = f"overlay:king_of_live:{instance or self._king_of_live_instance}"
         cfg = load_king_of_live_overlay_config()
         patch: dict[str, Any] = {
             "config": json.loads(king_of_live_overlay_config_to_json_text(cfg)),
@@ -1196,11 +1307,17 @@ class WidgetsQmlApi(QObject):
     @Slot(result="QVariantMap")
     def loadChatConfigMap(self) -> dict[str, Any]:
         """Plain dict for QML (avoids JSON.parse failures wiping UI → disk)."""
+        routed = self._load_cfg_or_instance("chat")
+        if routed is not None:
+            return routed
         cfg = load_chat_config()
         return json.loads(chat_config_to_json_text(cfg))
 
     @Slot(result="QVariantMap")
     def loadActionsConfigMap(self) -> dict[str, Any]:
+        routed = self._load_cfg_or_instance("actions")
+        if routed is not None:
+            return routed
         cfg = load_actions_config()
         return json.loads(actions_config_to_json_text(cfg))
 
@@ -1221,6 +1338,8 @@ class WidgetsQmlApi(QObject):
             _LOG.warning(
                 "saveChatConfigJson: rejected payload (%s): %s", exc.__class__.__name__, exc
             )
+            return
+        if self._save_cfg_to_instance("chat", json.loads(chat_config_to_json_text(cfg))):
             return
         save_chat_config(cfg)
         if self._pubsub is not None:
@@ -1260,6 +1379,8 @@ class WidgetsQmlApi(QObject):
                 "saveActionsConfigJson: rejected payload (%s): %s", exc.__class__.__name__, exc
             )
             return
+        if self._save_cfg_to_instance("actions", json.loads(actions_config_to_json_text(cfg))):
+            return
         save_actions_config(cfg)
         if self._pubsub is not None:
             topic = f"overlay:actions:{self._actions_instance}"
@@ -1282,6 +1403,9 @@ class WidgetsQmlApi(QObject):
 
     @Slot(result="QVariantMap")
     def loadOnlineOverlayConfigMap(self) -> dict[str, Any]:
+        routed = self._load_cfg_or_instance("online")
+        if routed is not None:
+            return routed
         cfg = load_online_overlay_config()
         return json.loads(online_overlay_config_to_json_text(cfg))
 
@@ -1303,6 +1427,8 @@ class WidgetsQmlApi(QObject):
                 exc.__class__.__name__,
                 exc,
             )
+            return
+        if self._save_cfg_to_instance("online", json.loads(online_overlay_config_to_json_text(cfg))):
             return
         save_online_overlay_config(cfg)
         if self._pubsub is not None:
@@ -1326,6 +1452,9 @@ class WidgetsQmlApi(QObject):
 
     @Slot(result="QVariantMap")
     def loadTopLikersOverlayConfigMap(self) -> dict[str, Any]:
+        routed = self._load_cfg_or_instance("top_likers")
+        if routed is not None:
+            return routed
         cfg = load_top_likers_overlay_config()
         return json.loads(top_likers_overlay_config_to_json_text(cfg))
 
@@ -1347,6 +1476,8 @@ class WidgetsQmlApi(QObject):
                 exc.__class__.__name__,
                 exc,
             )
+            return
+        if self._save_cfg_to_instance("top_likers", json.loads(top_likers_overlay_config_to_json_text(cfg))):
             return
         save_top_likers_overlay_config(cfg)
         _LOG.info("widgets overlay persisted: top_likers")
@@ -1371,6 +1502,9 @@ class WidgetsQmlApi(QObject):
 
     @Slot(result="QVariantMap")
     def loadTopGiftersOverlayConfigMap(self) -> dict[str, Any]:
+        routed = self._load_cfg_or_instance("top_gifters")
+        if routed is not None:
+            return routed
         cfg = load_top_gifters_overlay_config()
         return json.loads(top_gifters_overlay_config_to_json_text(cfg))
 
@@ -1392,6 +1526,8 @@ class WidgetsQmlApi(QObject):
                 exc.__class__.__name__,
                 exc,
             )
+            return
+        if self._save_cfg_to_instance("top_gifters", json.loads(top_gifters_overlay_config_to_json_text(cfg))):
             return
         save_top_gifters_overlay_config(cfg)
         _LOG.info("widgets overlay persisted: top_gifters")
@@ -1416,6 +1552,9 @@ class WidgetsQmlApi(QObject):
 
     @Slot(result="QVariantMap")
     def loadKingOfLiveOverlayConfigMap(self) -> dict[str, Any]:
+        routed = self._load_cfg_or_instance("king_of_live")
+        if routed is not None:
+            return routed
         cfg = load_king_of_live_overlay_config()
         return json.loads(king_of_live_overlay_config_to_json_text(cfg))
 
@@ -1437,6 +1576,8 @@ class WidgetsQmlApi(QObject):
                 exc.__class__.__name__,
                 exc,
             )
+            return
+        if self._save_cfg_to_instance("king_of_live", json.loads(king_of_live_overlay_config_to_json_text(cfg))):
             return
         save_king_of_live_overlay_config(cfg)
         _LOG.info("widgets overlay persisted: king_of_live")
@@ -1461,6 +1602,9 @@ class WidgetsQmlApi(QObject):
 
     @Slot(result="QVariantMap")
     def loadBattleRoyaleOverlayConfigMap(self) -> dict[str, Any]:
+        routed = self._load_cfg_or_instance("battle_royale")
+        if routed is not None:
+            return routed
         cfg = load_battle_royale_overlay_config()
         return json.loads(battle_royale_overlay_config_to_json_text(cfg))
 
@@ -1482,6 +1626,8 @@ class WidgetsQmlApi(QObject):
                 exc.__class__.__name__,
                 exc,
             )
+            return
+        if self._save_cfg_to_instance("battle_royale", json.loads(battle_royale_overlay_config_to_json_text(cfg))):
             return
         save_battle_royale_overlay_config(cfg)
         _LOG.info("widgets overlay persisted: battle_royale")
@@ -1511,6 +1657,9 @@ class WidgetsQmlApi(QObject):
 
     @Slot(result="QVariantMap")
     def loadStreamPetOverlayConfigMap(self) -> dict[str, Any]:
+        routed = self._load_cfg_or_instance("stream_pet")
+        if routed is not None:
+            return routed
         cfg = load_stream_pet_overlay_config()
         return stream_pet_overlay_config_to_public_dict(cfg)
 
@@ -1532,6 +1681,8 @@ class WidgetsQmlApi(QObject):
                 exc.__class__.__name__,
                 exc,
             )
+            return
+        if self._save_cfg_to_instance("stream_pet", json.loads(stream_pet_overlay_config_to_json_text(cfg))):
             return
         save_stream_pet_overlay_config(cfg)
         _LOG.info("widgets overlay persisted: stream_pet")
@@ -1556,6 +1707,9 @@ class WidgetsQmlApi(QObject):
 
     @Slot(result="QVariantMap")
     def loadCommunityWorldOverlayConfigMap(self) -> dict[str, Any]:
+        routed = self._load_cfg_or_instance("community_world")
+        if routed is not None:
+            return routed
         cfg = load_community_world_overlay_config()
         return json.loads(community_world_overlay_config_to_json_text(cfg))
 
@@ -1577,6 +1731,8 @@ class WidgetsQmlApi(QObject):
                 exc.__class__.__name__,
                 exc,
             )
+            return
+        if self._save_cfg_to_instance("community_world", json.loads(community_world_overlay_config_to_json_text(cfg))):
             return
         save_community_world_overlay_config(cfg)
         _LOG.info("widgets overlay persisted: community_world")
@@ -1603,6 +1759,9 @@ class WidgetsQmlApi(QObject):
 
     @Slot(result="QVariant")
     def loadStreamGoalOverlayConfigMap(self) -> dict[str, Any]:
+        routed = self._load_cfg_or_instance("stream_goal")
+        if routed is not None:
+            return routed
         cfg = load_stream_goal_overlay_config()
         return json.loads(stream_goal_overlay_config_to_json_text(cfg))
 
@@ -1624,6 +1783,8 @@ class WidgetsQmlApi(QObject):
                 exc.__class__.__name__,
                 exc,
             )
+            return
+        if self._save_cfg_to_instance("stream_goal", json.loads(stream_goal_overlay_config_to_json_text(cfg))):
             return
         save_stream_goal_overlay_config(cfg)
         _LOG.info("widgets overlay persisted: stream_goal")
@@ -1673,6 +1834,9 @@ class WidgetsQmlApi(QObject):
 
     @Slot(result="QVariant")
     def loadLiveLeaderboardOverlayConfigMap(self) -> dict[str, Any]:
+        routed = self._load_cfg_or_instance("live_leaderboard")
+        if routed is not None:
+            return routed
         cfg = load_live_leaderboard_overlay_config()
         return json.loads(live_leaderboard_overlay_config_to_json_text(cfg))
 
@@ -1694,6 +1858,8 @@ class WidgetsQmlApi(QObject):
                 exc.__class__.__name__,
                 exc,
             )
+            return
+        if self._save_cfg_to_instance("live_leaderboard", json.loads(live_leaderboard_overlay_config_to_json_text(cfg))):
             return
         save_live_leaderboard_overlay_config(cfg)
         _LOG.info("widgets overlay persisted: live_leaderboard")
@@ -1733,6 +1899,9 @@ class WidgetsQmlApi(QObject):
 
     @Slot(result="QVariant")
     def loadSocialRotatorOverlayConfigMap(self) -> dict[str, Any]:
+        routed = self._load_cfg_or_instance("social_rotator")
+        if routed is not None:
+            return routed
         cfg = load_social_rotator_overlay_config()
         return json.loads(social_rotator_overlay_config_to_json_text(cfg))
 
@@ -1754,6 +1923,8 @@ class WidgetsQmlApi(QObject):
                 exc.__class__.__name__,
                 exc,
             )
+            return
+        if self._save_cfg_to_instance("social_rotator", json.loads(social_rotator_overlay_config_to_json_text(cfg))):
             return
         save_social_rotator_overlay_config(cfg)
         _LOG.info("widgets overlay persisted: social_rotator")
@@ -1791,6 +1962,9 @@ class WidgetsQmlApi(QObject):
 
     @Slot(result="QVariant")
     def loadWebcamFrameOverlayConfigMap(self) -> dict[str, Any]:
+        routed = self._load_cfg_or_instance("webcam_frame")
+        if routed is not None:
+            return routed
         cfg = load_webcam_frame_overlay_config()
         return json.loads(webcam_frame_overlay_config_to_json_text(cfg))
 
@@ -1812,6 +1986,8 @@ class WidgetsQmlApi(QObject):
                 exc.__class__.__name__,
                 exc,
             )
+            return
+        if self._save_cfg_to_instance("webcam_frame", json.loads(webcam_frame_overlay_config_to_json_text(cfg))):
             return
         save_webcam_frame_overlay_config(cfg)
         _LOG.info("widgets overlay persisted: webcam_frame")
@@ -1856,6 +2032,9 @@ class WidgetsQmlApi(QObject):
 
     @Slot(result="QVariant")
     def loadSignalSystemOverlayConfigMap(self) -> dict[str, Any]:
+        routed = self._load_cfg_or_instance("signal_system")
+        if routed is not None:
+            return routed
         cfg = load_signal_system_overlay_config()
         return json.loads(signal_system_overlay_config_to_json_text(cfg))
 
@@ -1877,6 +2056,8 @@ class WidgetsQmlApi(QObject):
                 exc.__class__.__name__,
                 exc,
             )
+            return
+        if self._save_cfg_to_instance("signal_system", json.loads(signal_system_overlay_config_to_json_text(cfg))):
             return
         save_signal_system_overlay_config(cfg)
         _LOG.info("widgets overlay persisted: signal_system")
@@ -1909,6 +2090,211 @@ class WidgetsQmlApi(QObject):
             return
         _LOG.info("widgets ConfigMap save: signal_system ok json_len=%d", len(txt))
         self.saveSignalSystemOverlayConfigJson(txt)
+
+
+    # ---- Widget instances (Type -> Instances) ----
+    widgetInstancesChanged = Signal()
+
+    def _editing_instance_for(self, type_id: str) -> Any | None:
+        """Instance currently opened in a type editor, if it matches type_id."""
+        from stream_cheremsha.overlays.widget_instances import get_instance
+
+        iid = (self._editing_instance_id or "").strip()
+        if not iid:
+            return None
+        inst = get_instance(iid)
+        if inst is None:
+            _LOG.warning("editing instance %r not found (type=%s)", iid[:12], type_id)
+            return None
+        if inst.type_id != type_id:
+            return None
+        return inst
+
+    def _load_cfg_or_instance(self, type_id: str) -> dict[str, Any] | None:
+        """Legacy load*ConfigMap hook: instance merged settings when editing one."""
+        from stream_cheremsha.overlays.widget_instances import merged_settings
+
+        inst = self._editing_instance_for(type_id)
+        if inst is None:
+            return None
+        return merged_settings(inst)
+
+    def _save_cfg_to_instance(self, type_id: str, cfg_dict: dict[str, Any]) -> bool:
+        """Legacy save*ConfigJson hook.
+
+        New (non-legacy) instances persist only into the instance store and
+        skip the singleton. Legacy (migrated ``main``) instances update the
+        store AND fall through to the legacy path (``return False``) so the
+        singleton, controllers (reload_config) and legacy topics stay in sync
+        — otherwise controllers would keep publishing the stale singleton and
+        the overlay would visibly revert seconds after saving.
+        """
+        from stream_cheremsha.overlays.widget_instances import (
+            update_instance_settings,
+            ws_token_for,
+        )
+
+        inst = self._editing_instance_for(type_id)
+        if inst is None:
+            return False
+        _LOG.info("saving type=%s into instance %r (%r)",
+                  type_id, inst.id[:12], inst.name)
+        update_instance_settings(inst.id, dict(cfg_dict))
+        self.widgetInstancesChanged.emit()
+        if (inst.legacy_key or "") == "main":
+            return False
+        self._publish_patch(
+            topic=f"overlay:{type_id}:{ws_token_for(inst)}",
+            patch={"config": dict(cfg_dict), "timestamp": time.time()},
+        )
+        self.widgetInstancesChanged.emit()
+        return True
+
+    @Slot(str)
+    def setEditingInstanceId(self, instance_id: str) -> None:
+        self._editing_instance_id = str(instance_id or "").strip()
+
+    @Slot(result=str)
+    def editingInstanceId(self) -> str:
+        return self._editing_instance_id
+
+    @Slot()
+    def clearEditingInstance(self) -> None:
+        self._editing_instance_id = ""
+
+    @Slot(result=str)
+    def widgetTypesJson(self) -> str:
+        from stream_cheremsha.overlays.widget_instances import (
+            WIDGET_TYPES,
+            widget_type_desc,
+            widget_type_name,
+        )
+
+        items = [
+            {"type_id": tid, "name": widget_type_name(tid),
+             "description": widget_type_desc(tid), "icon": m.get("icon", "📦"),
+             "platforms": list(m.get("platforms", ["all"]))}
+            for tid, m in sorted(WIDGET_TYPES.items())
+        ]
+        return json.dumps(items, ensure_ascii=False)
+
+    @Slot(result=str)
+    def widgetInstancesJson(self) -> str:
+        from stream_cheremsha.overlays.widget_instances import list_instances, migrate_legacy_to_instances
+
+        migrate_legacy_to_instances()
+        items = [
+            {"id": x.id, "type_id": x.type_id, "name": x.name,
+             "settings": dict(x.settings), "enabled": bool(x.enabled),
+             "created_at": x.created_at, "updated_at": x.updated_at,
+             "legacy_key": x.legacy_key}
+            for x in list_instances()
+        ]
+        return json.dumps(items, ensure_ascii=False)
+
+    @Slot(str, str, result=str)
+    def createWidgetInstance(self, type_id: str, name: str) -> str:
+        from stream_cheremsha.overlays.widget_instances import create_instance
+
+        inst = create_instance(str(type_id or "").strip(), str(name or "").strip())
+        self.widgetInstancesChanged.emit()
+        return inst.id
+
+    @Slot(str, str, result=bool)
+    def renameWidgetInstance(self, instance_id: str, name: str) -> bool:
+        from stream_cheremsha.overlays import widget_instances as _wi
+
+        ok = _wi.rename_instance(str(instance_id or ""), str(name or "")) is not None
+        if ok:
+            self.widgetInstancesChanged.emit()
+        return ok
+
+    @Slot(str, bool, result=bool)
+    def setWidgetInstanceEnabled(self, instance_id: str, enabled: bool) -> bool:
+        from stream_cheremsha.overlays import widget_instances as _wi
+
+        ok = _wi.set_instance_enabled(str(instance_id or ""), bool(enabled)) is not None
+        if ok:
+            self.widgetInstancesChanged.emit()
+        return ok
+
+    @Slot(str, result=str)
+    def duplicateWidgetInstance(self, instance_id: str) -> str:
+        from stream_cheremsha.overlays import widget_instances as _wi
+
+        dup = _wi.duplicate_instance(str(instance_id or ""))
+        if dup is None:
+            return ""
+        self.widgetInstancesChanged.emit()
+        return dup.id
+
+    @Slot(str, result=bool)
+    def deleteWidgetInstance(self, instance_id: str) -> bool:
+        from stream_cheremsha.overlays import widget_instances as _wi
+
+        ok = _wi.delete_instance(str(instance_id or ""))
+        if ok:
+            self.widgetInstancesChanged.emit()
+        return ok
+
+    @Slot(str, result=str)
+    def widgetInstanceUrl(self, instance_id: str) -> str:
+        if not self._base:
+            return ""
+        return f"{self._base}/overlay/by-id/{str(instance_id or '').strip()}"
+
+    @Slot(str)
+    def copyWidgetInstanceUrl(self, instance_id: str) -> None:
+        url = self.widgetInstanceUrl(instance_id)
+        if not url:
+            return
+        clip = QGuiApplication.clipboard()
+        if clip is None:
+            return
+        clip.setText(url)
+
+    @Slot(str)
+    def previewWidgetInstance(self, instance_id: str) -> None:
+        """Send a representative preview event for the given widget instance."""
+        from stream_cheremsha.overlays.widget_instances import get_instance
+
+        inst = get_instance(str(instance_id or ""))
+        if inst is None:
+            return
+        self.previewLayoutWidget(inst.type_id, inst.id)
+
+    @Slot(str, result=str)
+    def loadWidgetInstanceSettingsJson(self, instance_id: str) -> str:
+        from stream_cheremsha.overlays.widget_instances import get_instance, merged_settings
+
+        inst = get_instance(str(instance_id or ""))
+        if inst is None:
+            return "{}"
+        return json.dumps(merged_settings(inst), ensure_ascii=False)
+
+    @Slot(str, str, result=bool)
+    def saveWidgetInstanceSettingsJson(self, instance_id: str, settings_json: str) -> bool:
+        from stream_cheremsha.overlays import widget_instances as _wi
+
+        inst = _wi.get_instance(str(instance_id or ""))
+        if inst is None:
+            return False
+        try:
+            new_settings = json.loads(str(settings_json or "{}"))
+            if not isinstance(new_settings, dict):
+                return False
+        except (ValueError, TypeError, json.JSONDecodeError):
+            return False
+        ok = _wi.update_instance_settings(inst.id, new_settings) is not None
+        if ok:
+            # Live-reload legacy topic so existing OBS sources update.
+            if (inst.legacy_key or "") == "main":
+                self._publish_patch(
+                    topic=f"overlay:{inst.type_id}:main",
+                    patch={"config": dict(new_settings), "timestamp": time.time()},
+                )
+            self.widgetInstancesChanged.emit()
+        return ok
 
 
 class WidgetsWindowQmlApi(QObject):

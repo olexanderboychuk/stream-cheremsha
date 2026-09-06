@@ -9,6 +9,7 @@ from stream_cheremsha.overlays.social_platforms import PLATFORM_DEFINITIONS
 from stream_cheremsha.overlays.social_rotator_overlay_config import (
     load_social_rotator_overlay_config,
     parse_platforms,
+    social_rotator_overlay_config_from_json_text,
     social_rotator_overlay_config_to_public_dict,
 )
 from stream_cheremsha.overlays.social_rotator_rotation import (
@@ -1100,7 +1101,12 @@ class SocialRotatorOverlayType:
 </html>"""
 
     def initial_state(self, params: dict[str, Any]) -> dict[str, Any]:
-        cfg = load_social_rotator_overlay_config()
+        from stream_cheremsha.overlays.widget_instances import typed_config_for_type
+
+        cfg = typed_config_for_type(
+            "social_rotator", params,
+            load_social_rotator_overlay_config,
+            social_rotator_overlay_config_from_json_text)
         entries = enabled_rotation_entries(parse_platforms(cfg))
         rotation = SocialRotatorRotationEngine.from_entries(
             entries, interval_ms=cfg.rotation_interval_ms

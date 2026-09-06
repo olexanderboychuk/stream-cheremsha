@@ -1241,6 +1241,16 @@ class MainWindow(FramelessWindow):
         self._qml_donations.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._qml_donations.setClearColor(QColor(10, 11, 14))
         self._widgets_qml_api = WidgetsQmlApi(pubsub=self._overlay_server.pubsub())
+        try:
+            from stream_cheremsha.overlays.widget_instances import (
+                migrate_legacy_to_instances,
+                reconcile_legacy_singletons,
+            )
+
+            migrate_legacy_to_instances()
+            reconcile_legacy_singletons()
+        except Exception:
+            pass
         self._widgets_qml_api.set_stream_goal_controller(self._stream_goal)
         self._widgets_qml_api.set_live_leaderboard_controller(self._live_leaderboard)
         self._widgets_qml_api.set_social_rotator_controller(self._social_rotator)
@@ -6149,6 +6159,16 @@ class MainWindow(FramelessWindow):
             overlay_base_url=base_url,
             pubsub=self._overlay_server.pubsub(),
         )
+        try:
+            from stream_cheremsha.overlays.widget_instances import (
+                migrate_legacy_to_instances,
+                reconcile_legacy_singletons,
+            )
+
+            migrate_legacy_to_instances()
+            reconcile_legacy_singletons()
+        except Exception:
+            pass
         self._widgets_qml_api.set_battle_host(self)
         self._widgets_qml_api.set_signal_system_controller(self._signal_system)
         self._widgets_window_qml_api = WidgetsWindowQmlApi(view=view)

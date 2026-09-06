@@ -7,6 +7,7 @@ from typing import Any
 from stream_cheremsha.overlays.models import normalize_instance_id
 from stream_cheremsha.overlays.stream_pet_overlay_config import (
     load_stream_pet_overlay_config,
+    stream_pet_overlay_config_from_json_text,
     stream_pet_overlay_config_to_public_dict,
 )
 from stream_cheremsha.overlays.ui_locale import load_ui_locale
@@ -640,7 +641,12 @@ class StreamPetOverlayType:
 </html>"""
 
     def initial_state(self, params: dict[str, Any]) -> dict[str, Any]:
-        cfg = load_stream_pet_overlay_config()
+        from stream_cheremsha.overlays.widget_instances import typed_config_for_type
+
+        cfg = typed_config_for_type(
+            "stream_pet", params,
+            load_stream_pet_overlay_config,
+            stream_pet_overlay_config_from_json_text)
         return {
             "config": stream_pet_overlay_config_to_public_dict(cfg),
             "energy": float(cfg.initial_energy),

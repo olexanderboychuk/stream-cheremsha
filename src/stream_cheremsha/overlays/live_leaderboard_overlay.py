@@ -6,6 +6,7 @@ from typing import Any
 
 from stream_cheremsha import l10n
 from stream_cheremsha.overlays.live_leaderboard_overlay_config import (
+    live_leaderboard_overlay_config_from_json_text,
     live_leaderboard_overlay_config_to_public_dict,
     load_live_leaderboard_overlay_config,
 )
@@ -1373,7 +1374,12 @@ class LiveLeaderboardOverlayType:
 </html>"""
 
     def initial_state(self, params: dict[str, Any]) -> dict[str, Any]:
-        cfg = load_live_leaderboard_overlay_config()
+        from stream_cheremsha.overlays.widget_instances import typed_config_for_type
+
+        cfg = typed_config_for_type(
+            "live_leaderboard", params,
+            load_live_leaderboard_overlay_config,
+            live_leaderboard_overlay_config_from_json_text)
         return {
             "config": live_leaderboard_overlay_config_to_public_dict(cfg),
             "rankings": LiveLeaderboardRankingEngine().all_rankings(limit=cfg.top_n),

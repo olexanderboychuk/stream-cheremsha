@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from stream_cheremsha.overlays.actions_config import (
+    actions_config_from_json_text,
     actions_config_to_json_text,
     load_actions_config,
 )
@@ -772,5 +773,8 @@ class ActionsOverlayType:
 
     def initial_state(self, params: dict[str, Any]) -> dict[str, Any]:
         _ = normalize_instance_id(str(params.get("instance") or ""))
-        cfg = load_actions_config()
+        from stream_cheremsha.overlays.widget_instances import typed_config_for_type
+
+        cfg = typed_config_for_type(
+            "actions", params, load_actions_config, actions_config_from_json_text)
         return {"config": json.loads(actions_config_to_json_text(cfg)), "items": []}

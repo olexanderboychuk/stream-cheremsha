@@ -405,6 +405,14 @@ def load_live_leaderboard_overlay_config(
     repaired = live_leaderboard_overlay_config_to_json_text(cfg)
     if repaired.strip() != raw:
         save_live_leaderboard_overlay_config(cfg, s)
+        try:
+            from stream_cheremsha.overlays.widget_instances import (
+                sync_store_from_legacy_singleton,
+            )
+
+            sync_store_from_legacy_singleton("live_leaderboard", s)
+        except Exception:
+            pass
     return cfg
 
 

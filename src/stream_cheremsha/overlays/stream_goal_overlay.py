@@ -7,6 +7,7 @@ from stream_cheremsha import l10n
 from stream_cheremsha.overlays.models import normalize_instance_id
 from stream_cheremsha.overlays.stream_goal_overlay_config import (
     load_stream_goal_overlay_config,
+    stream_goal_overlay_config_from_json_text,
     stream_goal_overlay_config_to_public_dict,
 )
 from stream_cheremsha.overlays.ui_locale import load_ui_locale
@@ -153,7 +154,12 @@ class StreamGoalOverlayType:
 
     def initial_state(self, params: dict[str, Any]) -> dict[str, Any]:
         _ = normalize_instance_id(str(params.get("instance") or ""))
-        cfg = load_stream_goal_overlay_config()
+        from stream_cheremsha.overlays.widget_instances import typed_config_for_type
+
+        cfg = typed_config_for_type(
+            "stream_goal", params,
+            load_stream_goal_overlay_config,
+            stream_goal_overlay_config_from_json_text)
         return {
             "config": stream_goal_overlay_config_to_public_dict(cfg),
             "goal_type": cfg.goal_type,

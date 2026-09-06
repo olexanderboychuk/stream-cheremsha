@@ -8,6 +8,7 @@ from stream_cheremsha.overlays.models import normalize_instance_id
 from stream_cheremsha.overlays.ui_locale import load_ui_locale
 from stream_cheremsha.overlays.webcam_frame_overlay_config import (
     load_webcam_frame_overlay_config,
+    webcam_frame_overlay_config_from_json_text,
     webcam_frame_overlay_config_to_public_dict,
 )
 
@@ -43,7 +44,12 @@ class WebcamFrameOverlayType:
         except ValueError:
             instance = "default"
 
-        cfg = load_webcam_frame_overlay_config()
+        from stream_cheremsha.overlays.widget_instances import typed_config_for_type
+
+        cfg = typed_config_for_type(
+            "webcam_frame", params,
+            load_webcam_frame_overlay_config,
+            webcam_frame_overlay_config_from_json_text)
         locale = load_ui_locale()
         initial = {
             "config": webcam_frame_overlay_config_to_public_dict(cfg),
@@ -67,7 +73,12 @@ class WebcamFrameOverlayType:
 
     def initial_state(self, params: dict[str, Any]) -> dict[str, Any]:
         _ = normalize_instance_id(str(params.get("instance") or ""))
-        cfg = load_webcam_frame_overlay_config()
+        from stream_cheremsha.overlays.widget_instances import typed_config_for_type as _typed_cfg
+
+        cfg = _typed_cfg(
+            "webcam_frame", params,
+            load_webcam_frame_overlay_config,
+            webcam_frame_overlay_config_from_json_text)
         return {
             "config": webcam_frame_overlay_config_to_public_dict(cfg),
             "locale": load_ui_locale(),

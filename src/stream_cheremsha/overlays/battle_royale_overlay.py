@@ -5,6 +5,7 @@ import json
 from typing import Any
 
 from stream_cheremsha.overlays.battle_royale_overlay_config import (
+    battle_royale_overlay_config_from_json_text,
     battle_royale_overlay_config_to_json_text,
     load_battle_royale_overlay_config,
 )
@@ -685,7 +686,12 @@ class BattleRoyaleOverlayType:
 
     def initial_state(self, params: dict[str, Any]) -> dict[str, Any]:
         _ = normalize_instance_id(str(params.get("instance") or ""))
-        cfg = load_battle_royale_overlay_config()
+        from stream_cheremsha.overlays.widget_instances import typed_config_for_type
+
+        cfg = typed_config_for_type(
+            "battle_royale", params,
+            load_battle_royale_overlay_config,
+            battle_royale_overlay_config_from_json_text)
         cfg_payload = json.loads(battle_royale_overlay_config_to_json_text(cfg))
         cfg_payload["ui_locale"] = load_ui_locale()
         return {

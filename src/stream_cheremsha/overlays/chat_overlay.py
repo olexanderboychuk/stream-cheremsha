@@ -412,6 +412,7 @@ class ChatOverlayType:
 </html>"""
 
     def initial_state(self, params: dict[str, Any]) -> dict[str, Any]:
-        _ = params
-        cfg = load_chat_config()
-        return {"config": json.loads(chat_config_to_json_text(cfg)), "items": []}
+        from stream_cheremsha.overlays.widget_instances import config_for_type
+
+        cfg_dict = config_for_type("chat", params, load_chat_config, chat_config_to_json_text)
+        return {"config": cfg_dict, "items": []}

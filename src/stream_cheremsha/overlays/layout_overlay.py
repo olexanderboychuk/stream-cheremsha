@@ -16,13 +16,22 @@ class LayoutOverlayType:
         requested = normalize_layout_id(str(params.get("layout") or "default"))
         layouts = load_layouts()
         layout = next((x for x in layouts if x.id == requested), None) or layouts[0]
+        try:
+            from stream_cheremsha.overlays.widget_instances import get_instance as _get_inst
+        except Exception:
+            _get_inst = None  # type: ignore[assignment]
+
         frames: list[str] = []
         signal_system_instances: list[str] = []
         for widget in sorted(layout.widgets, key=lambda x: x.z_index):
             if not widget.visible:
                 continue
             widget_instance = quote(widget.instance or instance, safe="")
-            src = f"/overlay/{quote(widget.type, safe='')}?instance={widget_instance}"
+            bound = _get_inst(widget.widget_instance_id) if (_get_inst and widget.widget_instance_id) else None
+            if bound is not None:
+                src = f"/overlay/by-id/{quote(bound.id, safe='')}"
+            else:
+                src = f"/overlay/{quote(widget.type, safe='')}?instance={widget_instance}"
             frames.append(
                 f'<iframe class="widget" title="{html.escape(widget.id)}" '
                 f'style="left:{widget.x}px;top:{widget.y}px;width:{widget.width}px;'

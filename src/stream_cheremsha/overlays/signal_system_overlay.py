@@ -8,6 +8,7 @@ from stream_cheremsha import l10n
 from stream_cheremsha.overlays.models import normalize_instance_id
 from stream_cheremsha.overlays.signal_system_overlay_config import (
     load_signal_system_overlay_config,
+    signal_system_overlay_config_from_json_text,
     signal_system_overlay_config_to_public_dict,
 )
 from stream_cheremsha.overlays.ui_locale import load_ui_locale
@@ -112,7 +113,12 @@ class SignalSystemOverlayType:
         }
 
         locale = load_ui_locale()
-        cfg = load_signal_system_overlay_config()
+        from stream_cheremsha.overlays.widget_instances import typed_config_for_type
+
+        cfg = typed_config_for_type(
+            "signal_system", params,
+            load_signal_system_overlay_config,
+            signal_system_overlay_config_from_json_text)
         i18n = _overlay_i18n_bundle()
         return self._render_template(
             params,
@@ -125,7 +131,12 @@ class SignalSystemOverlayType:
 
     def initial_state(self, params: dict[str, Any]) -> dict[str, Any]:
         _ = normalize_instance_id(str(params.get("instance") or ""))
-        cfg = load_signal_system_overlay_config()
+        from stream_cheremsha.overlays.widget_instances import typed_config_for_type as _typed_cfg
+
+        cfg = _typed_cfg(
+            "signal_system", params,
+            load_signal_system_overlay_config,
+            signal_system_overlay_config_from_json_text)
         return {
             "config": signal_system_overlay_config_to_public_dict(cfg),
             "current_event": None,

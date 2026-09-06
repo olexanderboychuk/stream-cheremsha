@@ -983,9 +983,9 @@ class TopLikersOverlayType:
 </html>"""
 
     def initial_state(self, params: dict[str, Any]) -> dict[str, Any]:
-        _ = normalize_instance_id(str(params.get("instance") or ""))
-        cfg = load_top_likers_overlay_config()
-        return {
-            "config": json.loads(top_likers_overlay_config_to_json_text(cfg)),
-            "leaders": [],
-        }
+        from stream_cheremsha.overlays.widget_instances import config_for_type
+
+        cfg_dict = config_for_type(
+            "top_likers", params,
+            load_top_likers_overlay_config, top_likers_overlay_config_to_json_text)
+        return {"config": cfg_dict, "leaders": []}

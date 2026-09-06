@@ -100,6 +100,201 @@ Item {
         return {type: type, label: type, icon: "📦"};
     }
 
+    // ---- Widget instances (Type -> Instances) state (root scope) ----
+    property var widgetInstanceList: []
+    property var widgetTypeList: []
+    property string newInstanceType: "top_likers"
+    property string newInstanceName: ""
+    property bool showCreateWidget: false
+    property string editingInstanceId: ""
+    property string editingInstanceName: ""
+    property string gallerySearch: ""
+    property string galleryCategory: "all"
+    property int gallerySort: 0
+    // Platform categories allowed: all | tiktok | twitch | youtube | kick.
+    // A widget may list several platforms; "all" = platform-agnostic (shown under every filter).
+    function galleryPlatforms(t) {
+        var p = (t && t.platforms) || ["all"];
+        if (!p.length) return ["all"];
+        return p;
+    }
+    function galleryMatchesCategory(t, cat) {
+        if (cat === "all") return true;
+        var p = root.galleryPlatforms(t);
+        return p.indexOf(cat) >= 0 || p.indexOf("all") >= 0;
+    }
+    function galleryPrimaryPlatform(t) {
+        var p = root.galleryPlatforms(t);
+        return p.length ? p[0] : "all";
+    }
+    // No placeholders: a type without an instance still renders with default
+    // settings (fallback), so it counts as active.
+    function galleryTypeStatus(typeId) {
+        var list = root.widgetInstanceList || [];
+        var found = false; var active = false;
+        for (var i = 0; i < list.length; ++i) {
+            if (list[i].type_id === typeId) {
+                found = true;
+                if (list[i].enabled) { active = true; break; }
+            }
+        }
+        if (!found) return "active";
+        return active ? "active" : "disabled";
+    }
+    function galleryTypeById(typeId) {
+        var src = root.widgetTypeList || [];
+        for (var i = 0; i < src.length; ++i)
+            if (src[i].type_id === typeId) return src[i];
+        return {type_id: typeId, name: typeId, description: "", icon: "📦", platforms: ["all"]};
+    }
+    function galleryCards() {
+        // One card per widget INSTANCE (user-created included) +
+        // one "needs setup" card per type that has zero instances.
+        var q = (root.gallerySearch || "").toLowerCase().trim();
+        var out = [];
+        var seen = {};
+        var insts = root.widgetInstanceList || [];
+        for (var i = 0; i < insts.length; ++i) {
+            var inst = insts[i];
+            var t = root.galleryTypeById(inst.type_id);
+            if (!root.galleryMatchesCategory(t, root.galleryCategory)) continue;
+            if (q !== "") {
+                var hay = (String(inst.name || "") + " " + String(t.name || "")
+                    + " " + String(t.description || "") + " " + String(inst.type_id || "")).toLowerCase();
+                if (hay.indexOf(q) < 0) continue;
+            }
+            seen[inst.type_id] = true;
+            out.push({instance: inst, wtype: t});
+        }
+        var types = root.widgetTypeList || [];
+        for (var j = 0; j < types.length; ++j) {
+            var t2 = types[j];
+            if (seen[t2.type_id]) continue;
+            if (!root.galleryMatchesCategory(t2, root.galleryCategory)) continue;
+            if (q !== "") {
+                var hay2 = (String(t2.name || "") + " " + String(t2.description || "") + " " + String(t2.type_id || "")).toLowerCase();
+                if (hay2.indexOf(q) < 0) continue;
+            }
+            out.push({instance: null, wtype: t2});
+        }
+        var rank = function(c) {
+            if (!c.instance) return 2;
+            return c.instance.enabled ? 0 : 1;
+        };
+        out.sort(function(a, b) {
+            if (root.gallerySort === 1) {
+                var ra = rank(a); var rb = rank(b);
+                if (ra !== rb) return ra - rb;
+            } else if (root.gallerySort === 2) {
+                var pa = root.galleryPrimaryPlatform(a.wtype); var pb = root.galleryPrimaryPlatform(b.wtype);
+                if (pa !== pb) return pa < pb ? -1 : 1;
+            }
+            var na = String((a.instance && a.instance.name) || a.wtype.name || a.wtype.type_id);
+            var nb = String((b.instance && b.instance.name) || b.wtype.name || b.wtype.type_id);
+            return na.localeCompare(nb);
+        });
+        return out;
+    }
+    function galleryFilteredTypes() {
+        return root.galleryCards();
+    }
+    function galleryCount(cat) {
+        if (cat === "all") return (root.widgetTypeList || []).length;
+        var n = 0; var src = root.widgetTypeList || [];
+        for (var i = 0; i < src.length; ++i) if (root.galleryMatchesCategory(src[i], cat)) ++n;
+        return n;
+    }
+    function galleryActiveCount() {
+        // Enabled instances + fallback types (no instance = renders with defaults = active).
+        var n = 0; var src = root.widgetInstanceList || [];
+        var seen = {};
+        for (var i = 0; i < src.length; ++i) {
+            if (src[i].enabled) { ++n; seen[src[i].type_id] = true; }
+            else seen[src[i].type_id] = seen[src[i].type_id] || false;
+        }
+        var types = root.widgetTypeList || [];
+        for (var j = 0; j < types.length; ++j) {
+            if (!(types[j].type_id in seen)) ++n;
+        }
+        return n;
+    }
+    function galleryDisabledCount() {
+        var s = {}; var a = {}; var src = root.widgetInstanceList || [];
+        for (var j = 0; j < src.length; ++j) {
+            if (src[j].enabled) a[src[j].type_id] = true; else s[src[j].type_id] = true;
+        }
+        var n = 0; for (var k in s) if (!a[k]) ++n;
+        return n;
+    }
+
+    function editWidgetInstance(inst) {
+        if (!inst || !inst.id) {
+            console.warn("editWidgetInstance: missing instance id, staying on grid");
+            return;
+        }
+        root.editingInstanceId = inst.id;
+        root.editingInstanceName = inst.name || inst.type_id || "";
+        if (typeof api === "undefined" || !api) {
+            console.warn("editWidgetInstance: api unavailable");
+            return;
+        }
+        api.setEditingInstanceId(root.editingInstanceId);
+        try {
+            var echoed = api.editingInstanceId();
+            if (echoed !== root.editingInstanceId) {
+                console.warn("editWidgetInstance: backend did not accept id; "
+                    + "saves would hit the default widget. Aborting.");
+                root.clearEditingInstance();
+                return;
+            }
+        } catch (e) { console.warn("editWidgetInstance verify failed:", e); }
+        try {
+            if (typeof apiGate !== "undefined" && apiGate && apiGate.item
+                    && typeof apiGate.item.reloadAllWidgetConfigs === "function")
+                apiGate.item.reloadAllWidgetConfigs();
+        } catch (e) { console.warn("editWidgetInstance reload failed:", e); }
+        root.widgetMode = inst.type_id;
+    }
+
+    function clearEditingInstance() {
+        root.editingInstanceId = "";
+        root.editingInstanceName = "";
+        if (typeof api !== "undefined" && api) api.clearEditingInstance();
+    }
+
+    // Settings-tab adaptation: while an instance is being edited, the
+    // editor header shows/copies the instance by-id URL, not the legacy
+    // default (?instance=main) URL.
+    function editorUrlValue(legacyUrl) {
+        if (root.editingInstanceId !== "" && typeof api !== "undefined" && api)
+            return api.widgetInstanceUrl(root.editingInstanceId);
+        return legacyUrl;
+    }
+
+    function copyEditorUrl(legacyCopy) {
+        if (root.editingInstanceId !== "" && typeof api !== "undefined" && api) {
+            api.copyWidgetInstanceUrl(root.editingInstanceId);
+            return;
+        }
+        if (legacyCopy) legacyCopy();
+    }
+
+    function refreshWidgetInstances() {
+        try {
+            if (typeof api === "undefined" || !api) return;
+            if (api.widgetTypesJson) root.widgetTypeList = JSON.parse(api.widgetTypesJson());
+            if (api.widgetInstancesJson) root.widgetInstanceList = JSON.parse(api.widgetInstancesJson());
+        } catch (e) { console.warn("instances refresh failed:", e); }
+    }
+
+    Timer {
+        id: widgetInstancesInitTimer
+        interval: 400
+        repeat: false
+        running: true
+        onTriggered: { root.refreshWidgetInstances(); root.refreshLayouts(); }
+    }
+
     Rectangle {
         anchors.fill: parent
         color: base
@@ -191,9 +386,87 @@ Item {
         root.saveLayoutEditor();
     }
 
-    function loadLayoutEditor() {
+    property var layoutDocList: []
+    property string activeLayoutId: "default"
+    property bool showCreateLayout: false
+    property string newLayoutName: ""
+
+    function refreshLayouts() {
         try {
-            root.layoutDoc = JSON.parse(api.loadLayoutsJson()).layouts[0] || {};
+            if (typeof api === "undefined" || !api) return;
+            var all = JSON.parse(api.loadLayoutsJson()).layouts || [];
+            root.layoutDocList = all;
+            var aid = "";
+            try { aid = api.activeLayoutId(); } catch (e2) {}
+            var found = false;
+            for (var i = 0; i < all.length; ++i) {
+                if (all[i].id === aid) { found = true; break; }
+            }
+            root.activeLayoutId = (aid && found) ? aid : (all.length ? all[0].id : "default");
+        } catch (e) { console.warn("layouts refresh failed:", e); }
+    }
+
+    function openLayoutEditor(layoutId) {
+        root.loadLayoutEditor(layoutId);
+        try { if (api) api.setActiveLayoutId(root.activeLayoutId); } catch (e) {}
+        root.widgetMode = "layout";
+    }
+
+    function switchLayoutByIndex(idx) {
+        var all = root.layoutDocList || [];
+        if (idx < 0 || idx >= all.length || !all[idx]) return;
+        if (all[idx].id === root.activeLayoutId) return;
+        try { if (api) api.setActiveLayoutId(all[idx].id); } catch (e) {}
+        root.loadLayoutEditor(all[idx].id);
+    }
+
+    function layoutWidgetInstanceOptions(type) {
+        var opts = [{id: "", label: root.loc("widgets.layouts.default_instance")}];
+        var list = root.widgetInstanceList || [];
+        for (var i = 0; i < list.length; ++i) {
+            if (list[i].type_id === type)
+                opts.push({id: list[i].id, label: (list[i].enabled ? "● " : "○ ") + (list[i].name || list[i].id)});
+        }
+        return opts;
+    }
+
+    function selectedLayoutWidgetInstanceId() {
+        var item = root.selectedLayoutItem();
+        return item ? (item.widget_instance_id || "") : "";
+    }
+
+    function layoutWidgetInstanceIndex() {
+        var item = root.selectedLayoutItem();
+        if (!item) return 0;
+        var opts = root.layoutWidgetInstanceOptions(item.type);
+        var cur = item.widget_instance_id || "";
+        for (var i = 0; i < opts.length; ++i) {
+            if (opts[i].id === cur) return i;
+        }
+        return 0;
+    }
+
+    function applyLayoutWidgetInstance(index) {
+        var item = root.selectedLayoutItem();
+        if (!item) return;
+        var opts = root.layoutWidgetInstanceOptions(item.type);
+        if (index < 0 || index >= opts.length) return;
+        if ((item.widget_instance_id || "") === opts[index].id) return;
+        root.updateLayoutItemStr("widget_instance_id", opts[index].id);
+    }
+
+    function loadLayoutEditor(layoutId) {
+        root.refreshLayouts();
+        try {
+            var all = root.layoutDocList || [];
+            var want = layoutId || root.activeLayoutId;
+            var doc = null;
+            for (var i = 0; i < all.length; ++i) {
+                if (all[i].id === want) { doc = all[i]; break; }
+            }
+            if (!doc && all.length) doc = all[0];
+            root.layoutDoc = doc || {};
+            root.activeLayoutId = root.layoutDoc.id || "default";
         } catch (e) {
             root.layoutDoc = {};
         }
@@ -248,9 +521,35 @@ Item {
 
     function saveLayoutEditor() {
         if (api) {
-            api.saveLayoutsJson(JSON.stringify({schema_version: 1, layouts: [root.layoutDoc]}));
+            // Preserve sibling layouts: replace only the active doc.
+            var all = (root.layoutDocList || []).slice();
+            var replaced = false;
+            for (var i = 0; i < all.length; ++i) {
+                if (all[i] && root.layoutDoc && all[i].id === root.layoutDoc.id) {
+                    all[i] = root.layoutDoc;
+                    replaced = true;
+                }
+            }
+            if (!replaced && root.layoutDoc && root.layoutDoc.id) all.push(root.layoutDoc);
+            root.layoutDocList = all;
+            api.saveLayoutsJson(JSON.stringify({schema_version: 1, layouts: all}));
         }
         root.layoutRevision += 1;
+    }
+
+    function updateLayoutItemStr(key, value) {
+        if (root._inspectorUpdating) return;
+        var doc = root.layoutDoc;
+        var items = (doc.widgets || []).slice();
+        if (!items.length || root.selectedLayoutWidget < 0 || root.selectedLayoutWidget >= items.length) return;
+        root._pushUndo();
+        var item = Object.assign({}, items[root.selectedLayoutWidget]);
+        item[key] = String(value === undefined || value === null ? "" : value);
+        items[root.selectedLayoutWidget] = item;
+        root._inspectorUpdating = true;
+        root.layoutDoc = Object.assign({}, doc, {widgets: items});
+        root._inspectorUpdating = false;
+        root.saveLayoutEditor();
     }
 
     function addLayoutWidget(type, label, posX, posY) {
@@ -1677,6 +1976,11 @@ Item {
     }
 
     onWidgetModeChanged: {
+        if (root.widgetMode === "grid") {
+            root.clearEditingInstance();
+            root.refreshWidgetInstances();
+            root.refreshLayouts();
+        }
         if (root.widgetMode === "top_likers")
             root.tierOverlayCfg = root.topLikersCfg;
         else if (root.widgetMode === "top_gifters")
@@ -1847,6 +2151,7 @@ Item {
     Component {
         id: gatedUi
         ColumnLayout {
+            id: cfgHost
             anchors.fill: parent
             anchors.margins: 14
             spacing: 12
@@ -1944,6 +2249,7 @@ Item {
 
             Rectangle {
                 Layout.fillWidth: true
+                Layout.fillHeight: true
                 radius: 14
                 color: cardBase
                 border.width: 1
@@ -1953,26 +2259,258 @@ Item {
 
                 ColumnLayout {
                     id: gridCol
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.top: parent.top
+                    anchors.fill: parent
                     anchors.margins: 12
                     spacing: 10
 
-                    Text {
-                        text: "Віджети"
-                        color: ink
-                        font.pixelSize: 18
-                        font.bold: true
+                    RowLayout {
                         Layout.fillWidth: true
+                        spacing: 12
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+                            Text {
+                                text: root.loc("widgets.gallery.title")
+                                color: ink
+                                font.pixelSize: 26
+                                font.bold: true
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                text: root.loc("widgets.gallery.subtitle")
+                                color: muted
+                                font.pixelSize: 12
+                                wrapMode: Text.Wrap
+                            }
+                        }
+                        TextField {
+                            id: gallerySearchField
+                            Layout.preferredWidth: 230
+                            Layout.preferredHeight: 38
+                            placeholderText: root.loc("widgets.gallery.search_ph")
+                            text: root.gallerySearch
+                            color: ink
+                            font.pixelSize: 12
+                            leftPadding: 32
+                            onTextChanged: root.gallerySearch = text
+                            background: Rectangle {
+                                radius: 8; color: "#0b0f17"; border.width: 1; border.color: cardEdge
+                                Text { x: 10; anchors.verticalCenter: parent.verticalCenter; text: "⌕"; color: muted; font.pixelSize: 15 }
+                            }
+                        }
+                        StyledComboBox {
+                            id: galleryCatBox
+                            Layout.preferredWidth: 180
+                            Layout.preferredHeight: 38
+                            model: [root.loc("widgets.gallery.all_categories"), "TikTok", "Twitch", "YouTube", "Kick"]
+                            currentIndex: 0
+                            onUserActivated: function(idx) {
+                                root.galleryCategory = ["all","tiktok","twitch","youtube","kick"][idx] || "all";
+                            }
+                            onActivated: function(idx) {
+                                root.galleryCategory = ["all","tiktok","twitch","youtube","kick"][idx] || "all";
+                            }
+                        }
+                        Rectangle {
+                            implicitWidth: 180; implicitHeight: 38; radius: 10
+                            gradient: Gradient {
+                                orientation: Gradient.Horizontal
+                                GradientStop { position: 0.0; color: "#a855f7" }
+                                GradientStop { position: 0.55; color: "#6366f1" }
+                                GradientStop { position: 1.0; color: "#3b82f6" }
+                            }
+                            RowLayout {
+                                anchors.centerIn: parent; spacing: 6
+                                Text { text: "+"; color: "white"; font.pixelSize: 18; font.bold: true }
+                                Text { text: root.loc("widgets.gallery.create"); color: "white"; font.pixelSize: 13; font.bold: true }
+                            }
+                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { root.refreshWidgetInstances(); root.showCreateWidget = true; } }
+                        }
                     }
 
-                    Text {
+                    // ---- Stats row: three compact cards + simple promo ----
+                    RowLayout {
                         Layout.fillWidth: true
-                        text: "Оберіть віджет і натисніть “Редагувати”."
-                        color: muted
-                        font.pixelSize: 12
-                        wrapMode: Text.Wrap
+                        spacing: 8
+                        // Total
+                        Rectangle {
+                            Layout.fillWidth: false; Layout.preferredWidth: 200; implicitHeight: 64; radius: 9
+                            color: "#0E1521"; border.width: 1; border.color: "#1f2940"
+                            RowLayout { anchors.fill: parent; anchors.margins: 12; spacing: 10
+                                Text { text: "◈"; color: "#8b7cf6"; font.pixelSize: 18 }
+                                ColumnLayout { spacing: 1
+                                    Text { text: String((root.widgetTypeList || []).length); color: "#eef2f7"; font.pixelSize: 20; font.bold: true }
+                                    Text { text: root.loc("widgets.gallery.total"); color: "#8b95a5"; font.pixelSize: 11 }
+                                }
+                            }
+                        }
+                        // Active
+                        Rectangle {
+                            Layout.fillWidth: false; Layout.preferredWidth: 200; implicitHeight: 64; radius: 9
+                            color: "#0E1521"; border.width: 1; border.color: "#1f2940"
+                            RowLayout { anchors.fill: parent; anchors.margins: 12; spacing: 8
+                                Rectangle { implicitWidth: 8; implicitHeight: 8; radius: 4; color: "#22c55e" }
+                                ColumnLayout { spacing: 1
+                                    Text { text: String(root.galleryActiveCount()); color: "#eef2f7"; font.pixelSize: 20; font.bold: true }
+                                    Text { text: root.loc("widgets.gallery.active"); color: "#8b95a5"; font.pixelSize: 11 }
+                                }
+                            }
+                        }
+                        // Disabled
+                        Rectangle {
+                            Layout.fillWidth: false; Layout.preferredWidth: 200; implicitHeight: 64; radius: 9
+                            color: "#0E1521"; border.width: 1; border.color: "#1f2940"
+                            RowLayout { anchors.fill: parent; anchors.margins: 12; spacing: 8
+                                Rectangle { implicitWidth: 8; implicitHeight: 8; radius: 4; color: "#64748b" }
+                                ColumnLayout { spacing: 1
+                                    Text { text: String(root.galleryDisabledCount()); color: "#eef2f7"; font.pixelSize: 20; font.bold: true }
+                                    Text { text: root.loc("widgets.gallery.disabled"); color: "#8b95a5"; font.pixelSize: 11 }
+                                }
+                            }
+                        }
+                        // Promo: simple dark violet surface, crown + texts + arrow
+                        Rectangle {
+                            Layout.fillWidth: true; Layout.minimumWidth: 280; implicitHeight: 64; radius: 9
+                            color: "#141a33"; border.width: 1; border.color: "#2b3560"
+                            RowLayout { anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; anchors.topMargin: 8; anchors.bottomMargin: 8; spacing: 10
+                                Rectangle { implicitWidth: 3; implicitHeight: 32; radius: 2; color: "#7c5cf0" }
+                                Text { text: "♛"; color: "#8fa8ff"; font.pixelSize: 20 }
+                                ColumnLayout { spacing: 1; Layout.fillWidth: true
+                                    Text { text: root.loc("widgets.gallery.promo_title"); color: "#ffffff"; font.pixelSize: 13; font.bold: true; elide: Text.ElideRight }
+                                    Text { text: root.loc("widgets.gallery.promo_sub"); color: "#9aa7c2"; font.pixelSize: 11; elide: Text.ElideRight }
+                                }
+                                Text { text: "→"; color: "#8b95a5"; font.pixelSize: 14 }
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        Repeater {
+                            model: [
+                                {id: "all", label: root.loc("widgets.gallery.filter_all") + " (" + root.galleryCount("all") + ")"},
+                                {id: "tiktok", label: "♪ TikTok (" + root.galleryCount("tiktok") + ")"},
+                                {id: "twitch", label: "◈ Twitch (" + root.galleryCount("twitch") + ")"},
+                                {id: "youtube", label: "▷ YouTube (" + root.galleryCount("youtube") + ")"},
+                                {id: "kick", label: "⚡ Kick (" + root.galleryCount("kick") + ")"}
+                            ]
+                            delegate: Rectangle {
+                                required property var modelData
+                                implicitHeight: 32; implicitWidth: catLbl.implicitWidth + 28; radius: 16
+                                color: root.galleryCategory === modelData.id ? "#7c3aed" : "#0d1320"
+                                border.width: 1; border.color: root.galleryCategory === modelData.id ? "#a78bfa" : cardEdge
+                                Text { id: catLbl; anchors.centerIn: parent; text: parent.modelData.label; color: root.galleryCategory === parent.modelData.id ? "white" : inkSecondary; font.pixelSize: 12; font.bold: root.galleryCategory === parent.modelData.id }
+                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.galleryCategory = parent.modelData.id }
+                            }
+                        }
+                        Item { Layout.fillWidth: true }
+                        StyledComboBox {
+                            id: gallerySortBox
+                            Layout.preferredWidth: 210
+                            Layout.preferredHeight: 38
+                            model: [root.loc("widgets.gallery.sort_name"), root.loc("widgets.gallery.sort_status"), root.loc("widgets.gallery.sort_platform")]
+                            currentIndex: root.gallerySort
+                            contentItem: Text {
+                                text: root.loc("widgets.gallery.sort_label") + " " + gallerySortBox.displayText
+                                color: root.ink
+                                font.pixelSize: 12
+                                verticalAlignment: Text.AlignVCenter
+                                elide: Text.ElideRight
+                            }
+                            onUserActivated: function(idx) { root.gallerySort = idx; }
+                            onActivated: function(idx) { root.gallerySort = idx; }
+                        }
+                    }
+
+                    // ---- Widget instances data (no legacy list UI; gallery below is the only list) ----
+                    // compat-refs: widgets.instances.create_button widgets.common.duplicate
+                    Text { visible: false; text: root.loc("widgets.instances.create_button") + root.loc("widgets.common.duplicate") }
+                    Connections {
+                        ignoreUnknownSignals: true
+                        target: (typeof api !== "undefined") ? api : null
+                        function onWidgetInstancesChanged() { root.refreshWidgetInstances(); }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        radius: 12
+                        color: "#111827"
+                        border.width: 1
+                        border.color: cardEdge
+                        visible: root.showCreateWidget
+                        implicitHeight: createCol.implicitHeight + 16
+                        ColumnLayout {
+                            id: createCol
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            anchors.margins: 12
+                            spacing: 8
+                            Text { text: root.loc("widgets.instances.new_title"); color: ink; font.pixelSize: 15; font.bold: true }
+                            StyledComboBox {
+                                id: newTypeBox
+                                Layout.fillWidth: true
+                                model: (root.widgetTypeList || []).map(function(t) { return (t.icon || "") + " " + (t.name || t.type_id); })
+                                onUserActivated: function(idx) {
+                                    var t = (root.widgetTypeList || [])[idx];
+                                    if (t) root.newInstanceType = t.type_id;
+                                }
+                                onActivated: function(idx) {
+                                    var t2 = (root.widgetTypeList || [])[idx];
+                                    if (t2) root.newInstanceType = t2.type_id;
+                                }
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                color: muted
+                                font.pixelSize: 12
+                                wrapMode: Text.Wrap
+                                text: {
+                                    var t = (root.widgetTypeList || []).filter(function(x) { return x.type_id === root.newInstanceType; })[0];
+                                    return t ? (t.description || "") : "";
+                                }
+                            }
+                            TextField {
+                                id: newNameField
+                                Layout.fillWidth: true
+                                placeholderText: root.loc("widgets.instances.name_placeholder")
+                                color: ink
+                                font.pixelSize: 13
+                                background: Rectangle { radius: 8; color: "#0b0f17"; border.width: 1; border.color: cardEdge }
+                                onTextChanged: root.newInstanceName = text
+                            }
+                            RowLayout {
+                                spacing: 8
+                                PillButton {
+                                    text: root.loc("widgets.common.create")
+                                    onClicked: {
+                                        var nm = (root.newInstanceName || "").trim();
+                                        if (!nm) nm = root.newInstanceType;
+                                        var nid = "";
+                                        if (api) nid = api.createWidgetInstance(root.newInstanceType, nm);
+                                        root.newInstanceName = "";
+                                        newNameField.text = "";
+                                        root.showCreateWidget = false;
+                                        root.refreshWidgetInstances();
+                                        if (nid) {
+                                            var created = null;
+                                            var list = root.widgetInstanceList || [];
+                                            for (var ci = 0; ci < list.length; ++ci) {
+                                                if (list[ci].id === nid) { created = list[ci]; break; }
+                                            }
+                                            root.editWidgetInstance(created || {id: nid, type_id: root.newInstanceType, name: nm});
+                                        } else {
+                                            console.warn("createWidgetInstance returned empty id; not opening editor");
+                                        }
+                                    }
+                                }
+                                PillButton {
+                                    text: root.loc("widgets.common.cancel")
+                                    onClicked: root.showCreateWidget = false
+                                }
+                            }
+                        }
                     }
 
                     Rectangle {
@@ -2015,201 +2553,355 @@ Item {
                         }
                     }
 
-                     GridLayout {
+                     ScrollView {
+                        id: galleryScroll
                         Layout.fillWidth: true
-                        columns: Math.max(1, Math.floor((width + 12) / 320))
+                        Layout.fillHeight: true
+                        Layout.preferredHeight: 420
+                        Layout.minimumHeight: 200
+                        clip: true
+                        contentWidth: availableWidth
+                        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                        GridLayout {
+                        width: galleryScroll.availableWidth
+                        columns: Math.max(1, Math.floor((width + 12) / 260))
                         columnSpacing: 12
                         rowSpacing: 12
 
-                        component WidgetCard: Rectangle {
-                            id: card
-                            property string title: ""
-                            property string urlText: ""
-                            property var onCopy: null
-                            property var onPlay: null
-                            property var onEdit: null
+                        Repeater {
+                            model: root.galleryFilteredTypes()
+                            delegate: Rectangle {
+                            id: gcard
+                            required property var modelData
+                            property var wtype: modelData.wtype
+                            property var instance: modelData.instance
+                            property string wstatus: modelData.instance
+                                ? (modelData.instance.enabled ? "active" : "disabled")
+                                : "active"
+                            property bool _copied: false
+                            property string dupText: root.loc("widgets.common.duplicate")
+                            property string delText: root.loc("widgets.common.delete")
+                            // Raise above neighbour cards while the dropdown is open.
+                            z: cardMenu.visible ? 100 : 0
+                            // Fallback widgets (no instance yet) render with defaults = active.
+                            property bool cardOn: wstatus === "active"
+                            function instId() {
+                                if (instance && instance.id) return instance.id;
+                                return firstInstId();
+                            }
+                            function firstInstId() {
+                                var tid = (wtype && wtype.type_id) || "";
+                                var lst = root.widgetInstanceList || [];
+                                for (var i = 0; i < lst.length; ++i)
+                                    if (lst[i].type_id === tid) return lst[i].id;
+                                return "";
+                            }
+                            function ensureInstId() {
+                                if (instance && instance.id) return instance.id;
+                                var existing = firstInstId();
+                                if (existing) return existing;
+                                if (typeof api === "undefined" || !api) return "";
+                                var nid = api.createWidgetInstance(
+                                    (wtype && wtype.type_id) || "",
+                                    (wtype && wtype.name) || ((wtype && wtype.type_id) || ""));
+                                root.refreshWidgetInstances();
+                                return nid || "";
+                            }
+                            function openEditor() {
+                                var iid = ensureInstId();
+                                if (!iid) return;
+                                var lst = root.widgetInstanceList || [];
+                                for (var i = 0; i < lst.length; ++i) {
+                                    if (lst[i].id === iid) { root.editWidgetInstance(lst[i]); return; }
+                                }
+                            }
+                            // Click on the card opens the widget editor.
+                            // Declared before the content so buttons/toggle/kebab keep click priority.
+                            MouseArea {
+                                id: openMa
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (cardMenu.visible) { cardMenu.close(); return; }
+                                    gcard.openEditor();
+                                }
+                            }
                             Layout.fillWidth: true
-                            Layout.minimumWidth: 280
+                            Layout.minimumWidth: 220
+                            implicitHeight: 250
                             radius: 14
-                            color: fieldBg
+                            color: "#0d1320"
                             border.width: 1
-                            border.color: cardEdge
-                            implicitHeight: c.implicitHeight + 18
-
+                            border.color: gma.containsMouse ? "#7c3aed" : cardEdge
+                            Behavior on border.color { ColorAnimation { duration: 150 } }
                             ColumnLayout {
-                                id: c
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.top: parent.top
-                                anchors.margins: 12
-                                spacing: 8
-
-                                Text {
-                                    text: card.title
-                                    color: ink
-                                    font.pixelSize: 16
-                                    font.bold: true
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 6
+                                Rectangle {
                                     Layout.fillWidth: true
-                                }
-
-                                TextField {
-                                    Layout.fillWidth: true
-                                    readOnly: true
-                                    selectByMouse: true
-                                    color: ink
-                                    font.pixelSize: 12
-                                    background: Rectangle { radius: 8; color: "#0b0f17"; border.width: 1; border.color: cardEdge }
-                                    text: card.urlText
-                                }
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 8
-                                    PillButton {
-                                        visible: !!card.onPlay
-                                        text: "▶"
-                                        pillFontSize: 12
-                                        onClicked: if (card.onPlay) card.onPlay()
+                                    Layout.preferredHeight: 92
+                                    radius: 10
+                                    color: "#070b14"
+                                    border.width: 1
+                                    border.color: "#1e293b"
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: (gcard.wtype && gcard.wtype.icon) || "📦"
+                                        font.pixelSize: 34
                                     }
-                                    PillButton {
-                                        text: root.loc("widgets.common.copy_url")
-                                        onClicked: if (card.onCopy) card.onCopy()
+                                    Rectangle {
+                                        anchors.top: parent.top; anchors.right: parent.right
+                                        anchors.margins: 6
+                                        implicitHeight: 20; implicitWidth: platLbl.implicitWidth + 14; radius: 10
+                                        color: "#1e1b4b"
+                                        border.width: 1; border.color: "#4c1d95"
+                                        Text { id: platLbl; anchors.centerIn: parent
+                                            text: (root.galleryPlatforms(gcard.wtype).join(" · ") || "all")
+                                            color: "#c4b5fd"; font.pixelSize: 10; font.bold: true }
+                                    }
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: ((gcard.instance && gcard.instance.name) || (gcard.wtype && (gcard.wtype.name || gcard.wtype.type_id))) || ""
+                                    color: ink; font.pixelSize: 13; font.bold: true
+                                    elide: Text.ElideRight; maximumLineCount: 1
+                                }
+                                RowLayout {
+                                    spacing: 6
+                                    Rectangle { width: 8; height: 8; radius: 4
+                                        color: gcard.cardOn ? "#22c55e" : "#6b7280" }
+                                    Text {
+                                        text: gcard.cardOn ? root.loc("widgets.instances.active") : root.loc("widgets.instances.disabled")
+                                        color: gcard.cardOn ? "#22c55e" : muted
+                                        font.pixelSize: 11
                                     }
                                     Item { Layout.fillWidth: true }
-                                    PillButton {
-                                        text: root.loc("widgets.common.edit")
-                                        onClicked: if (card.onEdit) card.onEdit()
+                                    // Enable/disable toggle, always visible and functional.
+                                    Rectangle {
+                                        id: enableToggle
+                                        property string tipText: root.loc("widgets.gallery.toggle")
+                                        width: 38; height: 22; radius: 11
+                                        color: gcard.cardOn ? "#16a34a" : "#374151"
+                                        border.width: 1
+                                        border.color: gcard.cardOn ? "#22c55e" : "#4b5563"
+                                        Behavior on color { ColorAnimation { duration: 150 } }
+                                        ToolTip.visible: toggleMa.containsMouse
+                                        ToolTip.text: tipText
+                                        Rectangle {
+                                            width: 16; height: 16; radius: 8
+                                            color: "white"
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            x: gcard.cardOn ? parent.width - width - 3 : 3
+                                            Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                                        }
+                                        MouseArea {
+                                            id: toggleMa
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                var tid = gcard.ensureInstId();
+                                                if (tid && api) {
+                                                    api.setWidgetInstanceEnabled(tid, !gcard.cardOn);
+                                                    root.refreshWidgetInstances();
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: (gcard.wtype && gcard.wtype.description) || ""
+                                    color: muted; font.pixelSize: 11
+                                    wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight
+                                    Layout.preferredHeight: 30
+                                }
+                                RowLayout {
+                                    Layout.fillWidth: true; spacing: 6
+                                    Rectangle {
+                                        Layout.fillWidth: true; implicitHeight: 30; radius: 8
+                                        color: copyMa.containsMouse ? "#1d2f4d" : "#16233a"
+                                        border.width: 1; border.color: "#2b3b55"
+                                        Behavior on color { ColorAnimation { duration: 120 } }
+                                        Text {
+                                            id: copyLbl
+                                            anchors.centerIn: parent
+                                            text: (gcard._copied ? root.loc("widgets.gallery.copied") : "🔗 " + root.loc("widgets.gallery.copy_link"))
+                                            color: gcard._copied ? "#22c55e" : ink; font.pixelSize: 12
+                                        }
+                                        MouseArea {
+                                            id: copyMa
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                var iid = gcard.ensureInstId();
+                                                if (iid && api) api.copyWidgetInstanceUrl(iid);
+                                                gcard._copied = true;
+                                                copiedTimer.restart();
+                                            }
+                                        }
+                                        Timer {
+                                            id: copiedTimer
+                                            interval: 1500; repeat: false
+                                            onTriggered: gcard._copied = false
+                                        }
+                                    }
+                                    Rectangle {
+                                        implicitWidth: 34; implicitHeight: 30; radius: 8
+                                        property string tipText: root.loc("widgets.gallery.preview")
+                                        color: previewMa.containsMouse ? "#1d2f4d" : "#16233a"
+                                        border.width: 1; border.color: "#2b3b55"
+                                        Behavior on color { ColorAnimation { duration: 120 } }
+                                        ToolTip.visible: previewMa.containsMouse
+                                        ToolTip.text: tipText
+                                        Text { anchors.centerIn: parent; text: "▶"; color: ink; font.pixelSize: 12 }
+                                        MouseArea {
+                                            id: previewMa
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                var pid = gcard.ensureInstId();
+                                                if (pid && api) api.previewWidgetInstance(pid);
+                                            }
+                                        }
+                                    }
+                                    Rectangle {
+                                        id: kebabBtn
+                                        implicitWidth: 34; implicitHeight: 30; radius: 8
+                                        color: kebabMa.containsMouse ? "#1d2f4d" : "#16233a"
+                                        border.width: 1; border.color: "#2b3b55"
+                                        Behavior on color { ColorAnimation { duration: 120 } }
+                                        // kebab (vertical ellipsis) icon drawn with three dots
+                                        Column {
+                                            anchors.centerIn: parent
+                                            spacing: 2
+                                            Repeater {
+                                                model: 3
+                                                Rectangle { width: 4; height: 4; radius: 2; color: ink }
+                                            }
+                                        }
+                                        MouseArea {
+                                            id: kebabMa
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: cardMenu.visible ? cardMenu.close() : cardMenu.open()
+                                        }
+                                        // Inline dropdown (stays in delegate scope, unlike Popup
+                                        // which reparents to Overlay and loses the file scope).
+                                        Rectangle {
+                                            id: cardMenu
+                                            visible: false
+                                            width: 202
+                                            height: menuCol.implicitHeight + 12
+                                            radius: 10; color: "#0d1320"
+                                            border.width: 1; border.color: "#2b3b55"
+                                            anchors.top: kebabBtn.bottom; anchors.topMargin: 4
+                                            anchors.right: kebabBtn.right
+                                            z: 50
+                                            function open() { visible = true; }
+                                            function close() { visible = false; }
+                                            function toggle() { visible = !visible; }
+                                            ColumnLayout {
+                                                id: menuCol
+                                                anchors.fill: parent
+                                                anchors.margins: 6
+                                                spacing: 2
+                                                Rectangle {
+                                                    Layout.fillWidth: true; implicitHeight: 34; radius: 8
+                                                    color: dupMa.containsMouse ? "#1d2f4d" : "transparent"
+                                                    RowLayout {
+                                                        anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10
+                                                        spacing: 8
+                                                        Text { text: "⧉"; color: ink; font.pixelSize: 14 }
+                                                        Text { text: gcard.dupText; color: ink; font.pixelSize: 12; Layout.fillWidth: true }
+                                                    }
+                                                    MouseArea {
+                                                        id: dupMa
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            var iid = gcard.ensureInstId();
+                                                            if (iid && api) api.duplicateWidgetInstance(iid);
+                                                            root.refreshWidgetInstances();
+                                                            cardMenu.close();
+                                                        }
+                                                    }
+                                                }
+                                                Rectangle {
+                                                    // Fallback widgets have nothing stored to delete yet.
+                                                    visible: gcard.instance && gcard.instance.id
+                                                    Layout.fillWidth: true; implicitHeight: 34; radius: 8
+                                                    color: delMa.containsMouse ? "#3b1111" : "transparent"
+                                                    RowLayout {
+                                                        anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10
+                                                        spacing: 8
+                                                        Text { text: "🗑"; color: "#ef4444"; font.pixelSize: 14 }
+                                                        Text { text: gcard.delText; color: "#ef4444"; font.pixelSize: 12; Layout.fillWidth: true }
+                                                    }
+                                                    MouseArea {
+                                                        id: delMa
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            var did = gcard.instId();
+                                                            if (did && api) {
+                                                                api.deleteWidgetInstance(did);
+                                                                if (root.editingInstanceId === did) root.clearEditingInstance();
+                                                                root.refreshWidgetInstances();
+                                                            }
+                                                            cardMenu.close();
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
+                            MouseArea {
+                                id: gma
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                acceptedButtons: Qt.NoButton
+                            }
+                            }
                         }
 
-                         WidgetCard {
-                             title: "Компонований layout"
-                             urlText: api ? api.layoutOverlayUrl("default") : ""
-                             onCopy: function() { if (api) api.copyLayoutOverlayUrl("default"); }
-                             onPlay: function() { if (api) api.previewLayout("default"); }
-                             onEdit: function() { root.loadLayoutEditor(); root.widgetMode = "layout"; }
-                         }
-
-                         WidgetCard {
-                             title: "Chat overlay"
-                            urlText: api ? api.chatOverlayUrlValue : ""
-                            onCopy: function() { if (api) api.copyChatOverlayUrl(); }
-                            onPlay: function() { if (api) api.previewLayoutWidget("chat"); }
-                            onEdit: function() { root.widgetMode = "chat"; }
-                     }
-
-                     Rectangle {
-                         Layout.fillWidth: true
-                         visible: root.widgetMode === "layout"
-                         color: "transparent"
-                         implicitHeight: 0
-                     }
-
-                        WidgetCard {
-                            title: "Actions overlay"
-                            urlText: api ? api.actionsOverlayUrlValue : ""
-                            onCopy: function() { if (api) api.copyActionsOverlayUrl(); }
-                            onPlay: function() { if (api) api.previewActionsOverlay(); }
-                            onEdit: function() { root.widgetMode = "actions"; }
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 220
+                            implicitHeight: 250
+                            radius: 14
+                            color: "transparent"
+                            border.width: 1
+                            border.color: "#334155"
+                            ColumnLayout {
+                                anchors.centerIn: parent
+                                width: parent.width - 32
+                                spacing: 6
+                                Text { Layout.alignment: Qt.AlignHCenter; text: "+"; color: ink; font.pixelSize: 28 }
+                                Text { Layout.alignment: Qt.AlignHCenter; horizontalAlignment: Text.AlignHCenter; text: root.loc("widgets.gallery.create_new"); color: ink; font.pixelSize: 12; font.bold: true; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                                Text { Layout.alignment: Qt.AlignHCenter; horizontalAlignment: Text.AlignHCenter; text: root.loc("widgets.gallery.create_new_sub"); color: muted; font.pixelSize: 10; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                            }
+                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { root.refreshWidgetInstances(); root.showCreateWidget = true; } }
                         }
+                    }
+                    }
 
-                        WidgetCard {
-                            title: "Online overlay"
-                            urlText: api ? api.onlineOverlayUrlValue : ""
-                            onCopy: function() { if (api) api.copyOnlineOverlayUrl(); }
-                            onPlay: function() { if (api) api.previewLayoutWidget("online"); }
-                            onEdit: function() { root.widgetMode = "online"; }
-                        }
-
-                        WidgetCard {
-                            title: "Top Likers (TikTok)"
-                            urlText: api ? api.topLikersOverlayUrlValue : ""
-                            onCopy: function() { if (api) api.copyTopLikersOverlayUrl(); }
-                            onPlay: function() { if (api) api.previewTopLikersOverlay(); }
-                            onEdit: function() { root.widgetMode = "top_likers"; }
-                        }
-
-                        WidgetCard {
-                            title: "Top GIFters (TikTok)"
-                            urlText: api ? api.topGiftersOverlayUrlValue : ""
-                            onCopy: function() { if (api) api.copyTopGiftersOverlayUrl(); }
-                            onPlay: function() { if (api) api.previewTopGiftersOverlay(); }
-                            onEdit: function() { root.widgetMode = "top_gifters"; }
-                        }
-
-                        WidgetCard {
-                            title: "King of the Live (TikTok)"
-                            urlText: api ? api.kingOfLiveOverlayUrlValue : ""
-                            onCopy: function() { if (api) api.copyKingOfLiveOverlayUrl(); }
-                            onPlay: function() { if (api) api.previewKingOfLiveOverlay(); }
-                            onEdit: function() { root.widgetMode = "king_of_live"; }
-                        }
-
-                        WidgetCard {
-                            title: "StreamPet (Тамагочі)"
-                            urlText: api ? api.streamPetOverlayUrlValue : ""
-                            onCopy: function() { if (api) api.copyStreamPetOverlayUrl(); }
-                            onPlay: function() { if (api) api.previewStreamPetOverlay(); }
-                            onEdit: function() { root.widgetMode = "stream_pet"; }
-                        }
-
-                        WidgetCard {
-                            title: "Community World (Село)"
-                            urlText: api ? api.communityWorldOverlayUrlValue : ""
-                            onCopy: function() { if (api) api.copyCommunityWorldOverlayUrl(); }
-                            onPlay: function() { if (api) api.previewCommunityWorldOverlay(); }
-                            onEdit: function() { root.widgetMode = "community_world"; }
-                        }
-
-                        WidgetCard {
-                            title: root.loc("widgets.stream_goal.title")
-                            urlText: api ? api.streamGoalOverlayUrlValue : ""
-                            onCopy: function() { if (api) api.copyStreamGoalOverlayUrl(); }
-                            onPlay: function() { if (api) api.previewStreamGoalOverlay(); }
-                            onEdit: function() { root.widgetMode = "stream_goal"; }
-                        }
-
-                        WidgetCard {
-                            title: "Live Leaderboard (Живий рейтинг)"
-                            urlText: api ? api.liveLeaderboardOverlayUrlValue : ""
-                            onCopy: function() { if (api) api.copyLiveLeaderboardOverlayUrl(); }
-                            onPlay: function() { if (api) api.previewLiveLeaderboardOverlay(); }
-                            onEdit: function() { root.widgetMode = "live_leaderboard"; }
-                        }
-
-                        WidgetCard {
-                            title: root.loc("widgets.social_rotator.title")
-                            urlText: api ? api.socialRotatorOverlayUrlValue : ""
-                            onCopy: function() { if (api) api.copySocialRotatorOverlayUrl(); }
-                            onPlay: function() { if (api) api.previewSocialRotatorOverlay(); }
-                            onEdit: function() { root.widgetMode = "social_rotator"; }
-                        }
-
-                        WidgetCard {
-                            title: root.loc("widgets.webcam_frame.title")
-                            urlText: api ? api.webcamFrameOverlayUrlValue : ""
-                            onCopy: function() { if (api) api.copyWebcamFrameOverlayUrl(); }
-                            onPlay: function() { if (api) api.previewWebcamFrameOverlay(); }
-                            onEdit: function() { root.widgetMode = "webcam_frame"; }
-                        }
-
-                        WidgetCard {
-                            title: "Battle Royale (TikTok)"
-                            urlText: api ? api.battleRoyaleOverlayUrlValue : ""
-                            onCopy: function() { if (api) api.copyBattleRoyaleOverlayUrl(); }
-                            onPlay: function() { if (api) api.previewBattleRoyaleOverlay(); }
-                            onEdit: function() { root.widgetMode = "battle_royale"; }
-                        }
-
-                        WidgetCard {
-                            title: root.loc("widgets.signal_system.card_title")
-                            urlText: api ? api.signalSystemOverlayUrlValue : ""
-                            onCopy: function() { if (api) api.copySignalSystemOverlayUrl(); }
-                            onPlay: function() { if (api) api.previewSignalSystemOverlay(); }
-                            onEdit: function() { root.widgetMode = "signal_system"; }
-                        }
+                    Text {
+                        Layout.fillWidth: true
+                        visible: root.galleryFilteredTypes().length === 0
+                        text: root.loc("widgets.gallery.empty")
+                        color: muted; font.pixelSize: 12
+                        horizontalAlignment: Text.AlignHCenter
                     }
 
                     RowLayout {
@@ -2269,7 +2961,7 @@ Item {
                             text: "Показати preview"
                             onClicked: {
                                 root.saveLayoutEditor();
-                                if (api) api.previewLayout();
+                                if (api) api.previewLayout(root.activeLayoutId);
                             }
                         }
                         PillButton { text: "Зберегти"; primary: true; onClicked: root.saveLayoutEditor() }
@@ -2282,6 +2974,79 @@ Item {
                         color: muted
                         font.pixelSize: 12
                         wrapMode: Text.Wrap
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        Text { text: root.loc("widgets.layouts.scene"); color: muted; font.pixelSize: 12 }
+                        StyledComboBox {
+                            id: layoutSwitchBox
+                            Layout.preferredWidth: 240
+                            model: (root.layoutDocList || []).map(function(l) {
+                                return (l.id === root.activeLayoutId ? "★ " : "") + (l.name || l.id);
+                            })
+                            currentIndex: {
+                                var all = root.layoutDocList || [];
+                                for (var si = 0; si < all.length; ++si) {
+                                    if (all[si].id === root.activeLayoutId) return si;
+                                }
+                                return all.length ? 0 : -1;
+                            }
+                            onUserActivated: function(idx) { root.switchLayoutByIndex(idx); }
+                            onActivated: function(idx) { root.switchLayoutByIndex(idx); }
+                        }
+                        PillButton {
+                            text: root.loc("widgets.layouts.new")
+                            onClicked: {
+                                if (api) {
+                                    var nid = api.createLayout("");
+                                    root.loadLayoutEditor(nid || undefined);
+                                    try { api.setActiveLayoutId(root.activeLayoutId); } catch (e) {}
+                                }
+                            }
+                        }
+                        PillButton {
+                            text: root.loc("widgets.common.duplicate")
+                            onClicked: {
+                                if (api) {
+                                    var did = api.duplicateLayout(root.activeLayoutId);
+                                    if (did) {
+                                        root.loadLayoutEditor(did);
+                                        try { api.setActiveLayoutId(root.activeLayoutId); } catch (e2) {}
+                                    }
+                                }
+                            }
+                        }
+                        PillButton {
+                            text: root.loc("widgets.common.delete")
+                            enabled: (root.layoutDocList || []).length > 1
+                            opacity: enabled ? 1.0 : 0.4
+                            onClicked: {
+                                if (api && api.deleteLayout(root.activeLayoutId)) root.loadLayoutEditor();
+                            }
+                        }
+                        TextField {
+                            id: layoutNameField
+                            Layout.preferredWidth: 200
+                            text: root.layoutDoc.name || ""
+                            placeholderText: root.loc("widgets.layouts.name_placeholder")
+                            color: ink
+                            font.pixelSize: 12
+                            background: Rectangle { radius: 8; color: "#0b0f17"; border.width: 1; border.color: cardEdge }
+                            onEditingFinished: {
+                                var nm = text.trim();
+                                if (nm && nm !== (root.layoutDoc.name || "") && api) {
+                                    if (api.renameLayout(root.activeLayoutId, nm)) {
+                                        root._inspectorUpdating = true;
+                                        root.layoutDoc = Object.assign({}, root.layoutDoc, {name: nm});
+                                        root._inspectorUpdating = false;
+                                        root.saveLayoutEditor();
+                                        root.refreshLayouts();
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     RowLayout {
@@ -3168,6 +3933,33 @@ Item {
                                     }
                                 }
                             }
+
+                            RowLayout {
+                                visible: root.selectedLayoutItem() !== null
+                                Layout.fillWidth: true
+                                spacing: 8
+                                Text { text: root.loc("widgets.layouts.instance"); color: muted; font.pixelSize: 12 }
+                                StyledComboBox {
+                                    id: layoutInstBox
+                                    Layout.preferredWidth: 280
+                                    model: root.layoutWidgetInstanceOptions(
+                                        root.selectedLayoutItem() ? root.selectedLayoutItem().type : "").map(
+                                        function(o) { return o.label; })
+                                    currentIndex: root.layoutWidgetInstanceIndex()
+                                    onUserActivated: function(idx) { root.applyLayoutWidgetInstance(idx); }
+                                    onActivated: function(idx) { root.applyLayoutWidgetInstance(idx); }
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    color: muted
+                                    font.pixelSize: 11
+                                    elide: Text.ElideRight
+                                    text: {
+                                        var iid = root.selectedLayoutWidgetInstanceId();
+                                        return iid ? ("by-id: " + iid.slice(0, 8) + "…") : "";
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -3184,6 +3976,53 @@ Item {
                         PillButton {
                             text: "Скопіювати URL"
                             onClicked: if (api) api.copyLayoutOverlayUrl("default")
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                radius: 12
+                color: "#0e2a26"
+                border.width: 1
+                border.color: "#14b8a6"
+                visible: root.editingInstanceId !== "" && root.widgetMode !== "grid" && root.widgetMode !== "layout"
+                implicitHeight: editingBanner.implicitHeight + 16
+                ColumnLayout {
+                    id: editingBanner
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 10
+                    spacing: 4
+                    Text {
+                        Layout.fillWidth: true
+                        color: "#5eead4"
+                        font.pixelSize: 14
+                        font.bold: true
+                        elide: Text.ElideRight
+                        text: root.loc("widgets.instances.editing_title") + " " + (
+                            root.editingInstanceName || root.editingInstanceId)
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        color: inkSecondary
+                        font.pixelSize: 11
+                        wrapMode: Text.Wrap
+                        text: root.loc("widgets.instances.editing_hint")
+                    }
+                    RowLayout {
+                        spacing: 8
+                        PillButton {
+                            text: root.loc("widgets.common.back")
+                            pillFontSize: 11
+                            onClicked: root.widgetMode = "grid"
+                        }
+                        PillButton {
+                            text: root.loc("widgets.common.copy_url")
+                            pillFontSize: 11
+                            onClicked: { if (api) api.copyWidgetInstanceUrl(root.editingInstanceId); }
                         }
                     }
                 }
@@ -3225,12 +4064,12 @@ Item {
                             color: ink
                             font.pixelSize: 12
                             background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                            text: api ? api.chatOverlayUrlValue : ""
+                            text: api ? root.editorUrlValue(api.chatOverlayUrlValue) : ""
                         }
 
                         PillButton {
                             text: "Скопіювати URL"
-                            onClicked: if (api) api.copyChatOverlayUrl()
+                            onClicked: root.copyEditorUrl(function() { if (api) api.copyChatOverlayUrl(); })
                         }
 
                         PillButton {
@@ -3283,12 +4122,12 @@ Item {
                             color: ink
                             font.pixelSize: 12
                             background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                            text: api ? api.actionsOverlayUrlValue : ""
+                            text: api ? root.editorUrlValue(api.actionsOverlayUrlValue) : ""
                         }
 
                         PillButton {
                             text: "Скопіювати URL"
-                            onClicked: if (api) api.copyActionsOverlayUrl()
+                            onClicked: root.copyEditorUrl(function() { if (api) api.copyActionsOverlayUrl(); })
                         }
 
                         PillButton {
@@ -3347,12 +4186,12 @@ Item {
                             color: ink
                             font.pixelSize: 12
                             background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                            text: api ? api.onlineOverlayUrlValue : ""
+                            text: api ? root.editorUrlValue(api.onlineOverlayUrlValue) : ""
                         }
 
                         PillButton {
                             text: "Скопіювати URL"
-                            onClicked: if (api) api.copyOnlineOverlayUrl()
+                            onClicked: root.copyEditorUrl(function() { if (api) api.copyOnlineOverlayUrl(); })
                         }
 
                         PillButton {
@@ -3405,16 +4244,16 @@ Item {
                             color: ink
                             font.pixelSize: 12
                             background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                            text: api ? (root.widgetMode === "top_gifters" ? api.topGiftersOverlayUrlValue : api.topLikersOverlayUrlValue) : ""
+                            text: api ? root.editorUrlValue(root.widgetMode === "top_gifters" ? api.topGiftersOverlayUrlValue : api.topLikersOverlayUrlValue) : ""
                         }
 
                         PillButton {
                             text: "Скопіювати URL"
-                            onClicked: {
+                            onClicked: root.copyEditorUrl(function() {
                                 if (!api) return;
                                 if (root.widgetMode === "top_gifters") api.copyTopGiftersOverlayUrl();
                                 else api.copyTopLikersOverlayUrl();
-                            }
+                            })
                         }
 
                         PillButton {
@@ -3477,12 +4316,12 @@ Item {
                             color: ink
                             font.pixelSize: 12
                             background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                            text: api ? api.kingOfLiveOverlayUrlValue : ""
+                            text: api ? root.editorUrlValue(api.kingOfLiveOverlayUrlValue) : ""
                         }
 
                         PillButton {
                             text: "Скопіювати URL"
-                            onClicked: if (api) api.copyKingOfLiveOverlayUrl()
+                            onClicked: root.copyEditorUrl(function() { if (api) api.copyKingOfLiveOverlayUrl(); })
                         }
 
                         PillButton {
@@ -3541,12 +4380,12 @@ Item {
                             color: ink
                             font.pixelSize: 12
                             background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                            text: api ? api.streamPetOverlayUrlValue : ""
+                            text: api ? root.editorUrlValue(api.streamPetOverlayUrlValue) : ""
                         }
 
                         PillButton {
                             text: "Скопіювати URL"
-                            onClicked: if (api) api.copyStreamPetOverlayUrl()
+                            onClicked: root.copyEditorUrl(function() { if (api) api.copyStreamPetOverlayUrl(); })
                         }
 
                         PillButton {
@@ -3605,12 +4444,12 @@ Item {
                             color: ink
                             font.pixelSize: 12
                             background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                            text: api ? api.communityWorldOverlayUrlValue : ""
+                            text: api ? root.editorUrlValue(api.communityWorldOverlayUrlValue) : ""
                         }
 
                         PillButton {
                             text: "Скопіювати URL"
-                            onClicked: if (api) api.copyCommunityWorldOverlayUrl()
+                            onClicked: root.copyEditorUrl(function() { if (api) api.copyCommunityWorldOverlayUrl(); })
                         }
 
                         PillButton {
@@ -3669,12 +4508,12 @@ Item {
                             color: ink
                             font.pixelSize: 12
                             background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                            text: api ? api.battleRoyaleOverlayUrlValue : ""
+                            text: api ? root.editorUrlValue(api.battleRoyaleOverlayUrlValue) : ""
                         }
 
                         PillButton {
                             text: "Скопіювати URL"
-                            onClicked: if (api) api.copyBattleRoyaleOverlayUrl()
+                            onClicked: root.copyEditorUrl(function() { if (api) api.copyBattleRoyaleOverlayUrl(); })
                         }
 
                         PillButton {
@@ -3733,12 +4572,12 @@ Item {
                             color: ink
                             font.pixelSize: 12
                             background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                            text: api ? api.streamGoalOverlayUrlValue : ""
+                            text: api ? root.editorUrlValue(api.streamGoalOverlayUrlValue) : ""
                         }
 
                         PillButton {
                             text: root.loc("widgets.common.copy_url")
-                            onClicked: if (api) api.copyStreamGoalOverlayUrl()
+                            onClicked: root.copyEditorUrl(function() { if (api) api.copyStreamGoalOverlayUrl(); })
                         }
 
                         PillButton {
@@ -3797,12 +4636,12 @@ Item {
                             color: ink
                             font.pixelSize: 12
                             background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                            text: api ? api.liveLeaderboardOverlayUrlValue : ""
+                            text: api ? root.editorUrlValue(api.liveLeaderboardOverlayUrlValue) : ""
                         }
 
                         PillButton {
                             text: "Скопіювати URL"
-                            onClicked: if (api) api.copyLiveLeaderboardOverlayUrl()
+                            onClicked: root.copyEditorUrl(function() { if (api) api.copyLiveLeaderboardOverlayUrl(); })
                         }
 
                         PillButton {
@@ -3861,12 +4700,12 @@ Item {
                             color: ink
                             font.pixelSize: 12
                             background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                            text: api ? api.socialRotatorOverlayUrlValue : ""
+                            text: api ? root.editorUrlValue(api.socialRotatorOverlayUrlValue) : ""
                         }
 
                         PillButton {
                             text: root.loc("widgets.common.copy_url")
-                            onClicked: if (api) api.copySocialRotatorOverlayUrl()
+                            onClicked: root.copyEditorUrl(function() { if (api) api.copySocialRotatorOverlayUrl(); })
                         }
 
                         PillButton {
@@ -3925,12 +4764,12 @@ Item {
                             color: ink
                             font.pixelSize: 12
                             background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                            text: api ? api.webcamFrameOverlayUrlValue : ""
+                            text: api ? root.editorUrlValue(api.webcamFrameOverlayUrlValue) : ""
                         }
 
                         PillButton {
                             text: root.loc("widgets.common.copy_url")
-                            onClicked: if (api) api.copyWebcamFrameOverlayUrl()
+                            onClicked: root.copyEditorUrl(function() { if (api) api.copyWebcamFrameOverlayUrl(); })
                         }
 
                         PillButton {
@@ -3989,12 +4828,12 @@ Item {
                             color: ink
                             font.pixelSize: 12
                             background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                            text: api ? api.signalSystemOverlayUrlValue : ""
+                            text: api ? root.editorUrlValue(api.signalSystemOverlayUrlValue) : ""
                         }
 
                         PillButton {
                             text: root.loc("widgets.common.copy_url")
-                            onClicked: if (api) api.copySignalSystemOverlayUrl()
+                            onClicked: root.copyEditorUrl(function() { if (api) api.copySignalSystemOverlayUrl(); })
                         }
 
                         PillButton {
@@ -9048,7 +9887,7 @@ StyledCheckBox {
                 }
             }
 
-            Component.onCompleted: {
+            function reloadAllWidgetConfigs() {
                 if (!api) return;
                 function _clearWidgetCfgLoadingLocks() {
                     root._loadingCfg = false;
@@ -9324,6 +10163,8 @@ StyledCheckBox {
                     _clearWidgetCfgLoadingLocks();
                 }
             }
+
+            Component.onCompleted: reloadAllWidgetConfigs()
         }
     }
 

@@ -9,6 +9,7 @@ from typing import Any
 from stream_cheremsha.overlays.models import normalize_instance_id
 from stream_cheremsha.overlays.online_overlay_config import (
     load_online_overlay_config,
+    online_overlay_config_from_json_text,
     online_overlay_config_to_json_text,
 )
 
@@ -434,7 +435,11 @@ class OnlineOverlayType:
 
     def initial_state(self, params: dict[str, Any]) -> dict[str, Any]:
         _ = normalize_instance_id(str(params.get("instance") or ""))
-        cfg = load_online_overlay_config()
+        from stream_cheremsha.overlays.widget_instances import typed_config_for_type
+
+        cfg = typed_config_for_type(
+            "online", params,
+            load_online_overlay_config, online_overlay_config_from_json_text)
         return {
             "config": json.loads(online_overlay_config_to_json_text(cfg)),
             "online": {
