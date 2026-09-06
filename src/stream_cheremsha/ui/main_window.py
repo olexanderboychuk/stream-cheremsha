@@ -22,8 +22,10 @@ import httpx
 import shiboken6
 from PySide6.QtCore import (
     QByteArray,
+    QEasingCurve,
     QEvent,
     QObject,
+    QPropertyAnimation,
     QSettings,
     QSize,
     Qt,
@@ -55,6 +57,8 @@ from PySide6.QtWidgets import (
     QFontComboBox,
     QFormLayout,
     QFrame,
+    QGraphicsDropShadowEffect,
+    QGraphicsOpacityEffect,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -609,6 +613,75 @@ class _CheremshaTitleBar(StandardTitleBar):
         super().paintEvent(e)
 
 
+def _sidebar_motion_allowed() -> bool:
+    """Honor reduced-motion: env opt-out or Windows 'turn off animations' setting."""
+    import os as _os
+
+    if _os.environ.get("CHEREMSHA_NO_ANIM", "").strip() in {"1", "true", "yes"}:
+        return False
+    if sys.platform == "win32":
+        try:
+            import ctypes as _ctypes
+
+            enabled = _ctypes.c_bool(True)
+            SPI_GETCLIENTAREAANIMATION = 0x1042
+            if _ctypes.windll.user32.SystemParametersInfoW(
+                SPI_GETCLIENTAREAANIMATION, 0, _ctypes.byref(enabled), 0
+            ):
+                return bool(enabled.value)
+        except (AttributeError, OSError, ValueError):
+            pass
+    return True
+
+
+class _SideNavHoverFilter(QObject):
+    """Subtle hover polish: neon edge glow + 19px→20px icon swell (GPU-cheap)."""
+
+    def __init__(self, glow: QColor, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._glow = glow
+        self._anims: list[QPropertyAnimation] = []
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if not isinstance(watched, QToolButton):
+            return False
+        if event.type() == QEvent.Type.Enter and watched.isEnabled():
+            self._set_glow(watched, True)
+            self._swell_icon(watched, QSize(20, 20))
+        elif event.type() == QEvent.Type.Leave:
+            if watched.property("activeNav") != "on":
+                self._set_glow(watched, False)
+            self._swell_icon(watched, QSize(19, 19))
+        return False
+
+    def _set_glow(self, btn: QToolButton, on: bool) -> None:
+        if not _sidebar_motion_allowed():
+            on = False
+        if not on:
+            if not btn.property("activeNav") == "on":
+                btn.setGraphicsEffect(None)
+            return
+        eff = QGraphicsDropShadowEffect(btn)
+        eff.setColor(self._glow)
+        eff.setBlurRadius(10)
+        eff.setOffset(0, 0)
+        btn.setGraphicsEffect(eff)
+
+    def _swell_icon(self, btn: QToolButton, size: QSize) -> None:
+        if not _sidebar_motion_allowed():
+            btn.setIconSize(size if size.width() == 19 else QSize(19, 19))
+            return
+        anim = QPropertyAnimation(btn, b"iconSize", btn)
+        anim.setDuration(170)
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        anim.setStartValue(btn.iconSize())
+        anim.setEndValue(size)
+        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+        self._anims.append(anim)
+        if len(self._anims) > 24:
+            self._anims = self._anims[-24:]
+
+
 class _RiskyPendingTrack(NamedTuple):
     video_id: str
     requested_by: str
@@ -1012,6 +1085,13 @@ class MainWindow(FramelessWindow):
     def _tr(self, key: str, **kwargs: object) -> str:
         return l10n.tr(self._locale, key, **kwargs)
 
+    # Fixed icon→text gap for sidebar QToolButtons (QSS can't set it).
+    # Non-breaking spaces: identical width for every item, so labels stay X-aligned.
+    _NAV_GAP = "\u00a0\u00a0"
+
+    def _nav_text(self, key: str) -> str:
+        return f"{self._NAV_GAP}{self._tr(key)}"
+
     def _tts_whitelist_text(self) -> str:
         edit = getattr(self, "_edit_tts_whitelist", None)
         if edit is not None:
@@ -1194,29 +1274,26 @@ class MainWindow(FramelessWindow):
 
         self._sidebar_frame = QFrame()
         self._sidebar_frame.setObjectName("appSidebar")
-        # Design artboard sidebar content width is 212px (plus 1px divider).
-        self._sidebar_frame.setFixedWidth(212)
+        self._sidebar_frame.setFixedWidth(220)
         side_lay = QVBoxLayout(self._sidebar_frame)
-        # Measured from design: left 12 / top 19 / right 13 / bottom 16; item gap 25.
-        side_lay.setContentsMargins(12, 19, 13, 16)
-        side_lay.setSpacing(25)
+        side_lay.setContentsMargins(10, 20, 10, 12)
+        side_lay.setSpacing(0)
 
         brand = QWidget()
         brand.setObjectName("sidebarBrand")
         brand_lay = QHBoxLayout(brand)
-        # Logo sits at x=20 in the design → +8px inside the 12px sidebar inset.
-        brand_lay.setContentsMargins(8, 0, 0, 0)
+        brand_lay.setContentsMargins(10, 0, 0, 0)
         brand_lay.setSpacing(10)
         logo = QLabel()
         logo.setObjectName("sidebarLogo")
-        logo.setFixedSize(34, 34)
+        logo.setFixedSize(38, 38)
         logo_path = _asset_path("icon.png")
         if logo_path.is_file():
             pm = QPixmap(str(logo_path))
             logo.setPixmap(
                 pm.scaled(
-                    34,
-                    34,
+                    38,
+                    38,
                     Qt.AspectRatioMode.KeepAspectRatio,
                     Qt.TransformationMode.SmoothTransformation,
                 ),
@@ -1234,6 +1311,7 @@ class MainWindow(FramelessWindow):
         brand_lay.addWidget(logo, 0, Qt.AlignmentFlag.AlignVCenter)
         brand_lay.addWidget(brand_text, 1, Qt.AlignmentFlag.AlignVCenter)
         side_lay.addWidget(brand)
+        side_lay.addSpacing(20)
 
         def _nav_icon(asset_name: str, fallback: QStyle.StandardPixmap) -> QIcon:
             p = _asset_path(asset_name)
@@ -1252,82 +1330,116 @@ class MainWindow(FramelessWindow):
             b.setObjectName("sideNav")
             b.setProperty("navId", nav_id)
             b.setIcon(_nav_icon(asset_name, fallback))
-            b.setIconSize(QSize(22, 22))
+            b.setIconSize(QSize(19, 19))
             b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
             b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.setFixedHeight(46)
             b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             b.clicked.connect(on_click)
             return b
 
+        def _group_label(text: str) -> QLabel:
+            lab = QLabel(text)
+            lab.setObjectName("sideNavGroup")
+            lab.setContentsMargins(12, 0, 0, 0)
+            return lab
+
+        def _add_group(title: str, buttons: list[QToolButton], *, first: bool = False) -> None:
+            if not first:
+                side_lay.addSpacing(16)
+            side_lay.addWidget(_group_label(title))
+            side_lay.addSpacing(7)
+            for i, btn in enumerate(buttons):
+                if i > 0:
+                    side_lay.addSpacing(6)
+                side_lay.addWidget(btn)
+
         self._btn_footer_home = _make_nav_btn(
             nav_id="navHome",
-            asset_name="home.png",
+            asset_name="nav/home.svg",
             fallback=QStyle.StandardPixmap.SP_DirHomeIcon,
             on_click=lambda: self._set_main_page(self._IX_CONN),
         )
         self._btn_footer_donations = _make_nav_btn(
             nav_id="navDonations",
-            asset_name="donate.png",
+            asset_name="nav/donations.svg",
             fallback=QStyle.StandardPixmap.SP_DialogApplyButton,
             on_click=lambda: self._set_main_page(self._IX_DONATIONS),
         )
         self._btn_footer_actions = _make_nav_btn(
             nav_id="navActions",
-            asset_name="actions.png",
+            asset_name="nav/actions.svg",
             fallback=QStyle.StandardPixmap.SP_FileDialogContentsView,
             on_click=self.open_actions,
         )
         self._btn_footer_widgets = _make_nav_btn(
             nav_id="navWidgets",
-            asset_name="widgets.png",
+            asset_name="nav/widgets.svg",
             fallback=QStyle.StandardPixmap.SP_DesktopIcon,
             on_click=lambda: self._set_main_page(self._IX_WIDGETS),
         )
         self._btn_footer_docks = _make_nav_btn(
             nav_id="navDocks",
-            asset_name="docks.png",
+            asset_name="nav/docks.svg",
             fallback=QStyle.StandardPixmap.SP_TitleBarUnshadeButton,
             on_click=lambda: self._set_main_page(self._IX_DOCKS),
         )
         self._btn_footer_music = _make_nav_btn(
             nav_id="navMusic",
-            asset_name="music.png",
+            asset_name="nav/music.svg",
             fallback=QStyle.StandardPixmap.SP_MediaPlay,
             on_click=lambda: self._set_main_page(self._IX_MUSIC),
         )
         self._btn_footer_logs = _make_nav_btn(
             nav_id="navLogs",
-            asset_name="logs.png",
+            asset_name="nav/logs.svg",
             fallback=QStyle.StandardPixmap.SP_FileDialogDetailedView,
             on_click=lambda: self._set_main_page(self._IX_LOGS),
         )
         self._btn_footer_chat = _make_nav_btn(
             nav_id="navChat",
-            asset_name="chat.png",
+            asset_name="nav/chat.svg",
             fallback=QStyle.StandardPixmap.SP_MessageBoxInformation,
             on_click=lambda: self._set_main_page(self._IX_CHAT),
         )
         self._btn_footer_tts = _make_nav_btn(
             nav_id="navTts",
-            asset_name="tts.png",
+            asset_name="nav/tts.svg",
             fallback=QStyle.StandardPixmap.SP_MediaVolume,
             on_click=lambda: self._set_main_page(self._IX_AUDIO),
         )
 
-        for btn in (
-            self._btn_footer_home,
-            self._btn_footer_donations,
-            self._btn_footer_actions,
-            self._btn_footer_widgets,
-            self._btn_footer_docks,
-            self._btn_footer_music,
-            self._btn_footer_logs,
-            self._btn_footer_chat,
-            self._btn_footer_tts,
-        ):
-            side_lay.addWidget(btn)
+        _add_group(
+            "STREAM",
+            [self._btn_footer_home, self._btn_footer_donations, self._btn_footer_actions],
+            first=True,
+        )
+        _add_group(
+            "CONTENT",
+            [self._btn_footer_widgets, self._btn_footer_docks, self._btn_footer_music],
+        )
+        _add_group(
+            "TOOLS",
+            [self._btn_footer_logs, self._btn_footer_chat, self._btn_footer_tts],
+        )
         side_lay.addStretch(1)
+
+        self._btn_side_settings = _make_nav_btn(
+            nav_id="navSettings",
+            asset_name="settings.png",
+            fallback=QStyle.StandardPixmap.SP_FileDialogInfoView,
+            on_click=lambda: self._set_main_page(self._IX_SETTINGS),
+        )
+        self._btn_side_settings.setFixedHeight(38)
+        self._btn_side_settings.setObjectName("sideUtil")
+        side_lay.addWidget(self._btn_side_settings)
+        side_lay.addSpacing(8)
+        self._lbl_side_version = QLabel(f"Cheremsha v{self._app_version()}")
+        self._lbl_side_version.setObjectName("sideVersion")
+        self._lbl_side_version.setContentsMargins(12, 0, 0, 0)
+        side_lay.addWidget(self._lbl_side_version)
+        self._install_sidebar_polish(brand)
         body.addWidget(self._sidebar_frame, 0)
 
         right = QVBoxLayout()
@@ -1358,13 +1470,121 @@ class MainWindow(FramelessWindow):
         self._footer_frame = QFrame()
         self._footer_frame.setObjectName("appFooter")
         _foot = QHBoxLayout(self._footer_frame)
-        _foot.setContentsMargins(14, 8, 14, 8)
+        _foot.setContentsMargins(10, 6, 10, 6)
         _foot.setSpacing(8)
+
+        def _foot_card() -> QFrame:
+            card = QFrame()
+            card.setObjectName("footCard")
+            return card
+
+        def _plat_logo(asset: str, px: int = 20) -> QLabel:
+            lab = QLabel()
+            lab.setObjectName("footLogo")
+            lab.setFixedSize(px, px)
+            lab.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            p = _asset_path(asset)
+            if p.is_file():
+                pm = QPixmap(str(p)).scaled(
+                    px,
+                    px,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+                lab.setPixmap(pm)
+            return lab
+
+        # --- system status card ---
+        sys_card = _foot_card()
+        sys_lay = QHBoxLayout(sys_card)
+        sys_lay.setContentsMargins(12, 8, 14, 8)
+        sys_lay.setSpacing(10)
+        self._foot_sys_dot = QLabel("●")
+        self._foot_sys_dot.setObjectName("footSysDot")
+        sys_lay.addWidget(self._foot_sys_dot, 0, Qt.AlignmentFlag.AlignVCenter)
+        sys_txt = QVBoxLayout()
+        sys_txt.setContentsMargins(0, 0, 0, 0)
+        sys_txt.setSpacing(1)
+        self._foot_sys_title = QLabel()
+        self._foot_sys_title.setObjectName("footSysTitle")
+        self._foot_sys_sub = QLabel()
+        self._foot_sys_sub.setObjectName("footSysSub")
+        sys_txt.addWidget(self._foot_sys_title)
+        sys_txt.addWidget(self._foot_sys_sub)
+        sys_lay.addLayout(sys_txt)
+        _foot.addWidget(sys_card, 0)
+
+        # --- platform cards ---
+        self._foot_plats: dict[str, tuple[QLabel, QWidget]] = {}
+        self._foot_plat_cards: list[QWidget] = []
+        for key, asset, pname in (
+            ("twitch", "twitch.svg", "Twitch"),
+            ("youtube", "youtube.svg", "YouTube"),
+            ("tiktok", "tiktok.svg", "TikTok"),
+            ("kick", "kick.svg", "Kick"),
+        ):
+            card = _foot_card()
+            lay = QHBoxLayout(card)
+            lay.setContentsMargins(12, 8, 14, 8)
+            lay.setSpacing(9)
+            lay.addWidget(_plat_logo(asset), 0, Qt.AlignmentFlag.AlignVCenter)
+            col = QVBoxLayout()
+            col.setContentsMargins(0, 0, 0, 0)
+            col.setSpacing(1)
+            name = QLabel(pname)
+            name.setObjectName("footPlatName")
+            st = QLabel()
+            st.setObjectName("footPlatSt")
+            col.addWidget(name)
+            col.addWidget(st)
+            lay.addLayout(col)
+            _foot.addWidget(card, 0)
+            self._foot_plats[key] = (st, card)
+            self._foot_plat_cards.append(card)
+
+        # --- counters card ---
+        self._foot_counters_card = _foot_card()
+        cnt_lay = QHBoxLayout(self._foot_counters_card)
+        cnt_lay.setContentsMargins(12, 8, 14, 8)
+        cnt_lay.setSpacing(0)
+        self._foot_counters: dict[str, tuple[QLabel, QLabel]] = {}
+        for i, (key, asset) in enumerate(
+            (("chat", "nav/chat.svg"), ("tts", "nav/tts.svg"), ("queues", None))
+        ):
+            cell = QHBoxLayout()
+            cell.setContentsMargins(0, 0, 0, 0)
+            cell.setSpacing(7)
+            if asset is not None:
+                cell.addWidget(_plat_logo(asset, 16), 0, Qt.AlignmentFlag.AlignVCenter)
+            elif i > 0:
+                sep = QLabel("☰")
+                sep.setObjectName("footCntIco")
+                cell.addWidget(sep, 0, Qt.AlignmentFlag.AlignVCenter)
+            col = QVBoxLayout()
+            col.setContentsMargins(0, 0, 0, 0)
+            col.setSpacing(1)
+            nm = QLabel()
+            nm.setObjectName("footCntName")
+            nm.setProperty("cntKey", key)
+            vl = QLabel("0")
+            vl.setObjectName("footCntVal")
+            col.addWidget(nm)
+            col.addWidget(vl)
+            cell.addLayout(col)
+            wrap = QWidget()
+            wrap.setLayout(cell)
+            cnt_lay.addWidget(wrap, 0, Qt.AlignmentFlag.AlignVCenter)
+            if i < 2:
+                cnt_lay.addSpacing(18)
+            self._foot_counters[key] = (nm, vl)
+        _foot.addWidget(self._foot_counters_card, 0)
+
+        _foot.addStretch(1)
+        # Legacy single-label status (kept hidden for compat); cards are the UI now.
         self._status_label = QLabel()
-        self._status_label.setWordWrap(True)
-        self._status_label.setTextFormat(Qt.TextFormat.RichText)
         self._status_label.setObjectName("footerStatus")
-        _foot.addWidget(self._status_label, stretch=1, alignment=Qt.AlignmentFlag.AlignTop)
+        self._status_label.hide()
+        _foot.addWidget(self._status_label)
         right.addWidget(self._footer_frame, 0)
 
         self._qml_api.refresh()
@@ -1694,6 +1914,100 @@ class MainWindow(FramelessWindow):
             return
         self._sync_qml_stack_visibility(index)
         self._stack.setCurrentIndex(index)
+        self._fade_stack_page(index)
+
+    def _fade_stack_page(self, index: int) -> None:
+        """Subtle content transition: opacity 0.96→1, ~150ms. Sidebar stays stable."""
+        if not _sidebar_motion_allowed():
+            return
+        try:
+            page = self._stack.widget(index)
+            if page is None:
+                return
+            eff = QGraphicsOpacityEffect(page)
+            eff.setOpacity(0.96)
+            page.setGraphicsEffect(eff)
+            anim = QPropertyAnimation(eff, b"opacity", self)
+            anim.setDuration(150)
+            anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+            anim.setStartValue(0.96)
+            anim.setEndValue(1.0)
+            anim.finished.connect(lambda: page.setGraphicsEffect(None))
+            anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+            self._page_fade_anim = anim
+        except (RuntimeError, AttributeError, TypeError):
+            pass
+
+    _NAV_GLOW = {
+        "_btn_footer_home": "#22d3ee",
+        "_btn_footer_donations": "#f9a8d4",
+        "_btn_footer_actions": "#e879f9",
+        "_btn_footer_widgets": "#a78bfa",
+        "_btn_footer_docks": "#c084fc",
+        "_btn_footer_music": "#93c5fd",
+        "_btn_footer_logs": "#fdba74",
+        "_btn_footer_chat": "#5eead4",
+        "_btn_footer_tts": "#e879f9",
+    }
+
+    def _install_sidebar_polish(self, brand: QWidget) -> None:
+        """Hover glow filters, logo glow, live status-dot pulse. Layout untouched."""
+        self._nav_hover_filters: list[_SideNavHoverFilter] = []
+        for attr, color in self._NAV_GLOW.items():
+            btn = getattr(self, attr, None)
+            if isinstance(btn, QToolButton):
+                filt = _SideNavHoverFilter(QColor(color), self)
+                btn.installEventFilter(filt)
+                btn.setMouseTracking(True)
+                self._nav_hover_filters.append(filt)
+        for attr in ("_btn_side_settings",):
+            btn = getattr(self, attr, None)
+            if isinstance(btn, QToolButton):
+                filt = _SideNavHoverFilter(QColor("#67e8f9"), self)
+                btn.installEventFilter(filt)
+                self._nav_hover_filters.append(filt)
+        # Logo hover: faint cyan→violet glow, no scale/rotation.
+        try:
+            brand.setMouseTracking(True)
+            logo_eff = QGraphicsDropShadowEffect(brand)
+            logo_eff.setColor(QColor(103, 232, 249, 0))
+            logo_eff.setBlurRadius(14)
+            logo_eff.setOffset(0, 0)
+            brand.setGraphicsEffect(logo_eff)
+            self._logo_glow = logo_eff
+            brand.installEventFilter(self._logo_hover_proxy(logo_eff))
+        except (RuntimeError, AttributeError, TypeError):
+            pass
+
+    def _logo_hover_proxy(self, eff: QGraphicsDropShadowEffect) -> QObject:
+        outer = self
+
+        class _LogoFilter(QObject):
+            def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+                if event.type() == QEvent.Type.Enter and _sidebar_motion_allowed():
+                    eff.setColor(QColor(139, 92, 246, 90))
+                elif event.type() == QEvent.Type.Leave:
+                    eff.setColor(QColor(103, 232, 249, 0))
+                return False
+
+        filt = _LogoFilter(outer)
+        outer._logo_hover_filter = filt
+        return filt
+
+    def _apply_active_nav_glow(self, btn: QToolButton, attr: str) -> None:
+        """Restrained active lighting: faint neon edge glow, near-imperceptible."""
+        if not _sidebar_motion_allowed():
+            return
+        try:
+            color = QColor(self._NAV_GLOW.get(attr, "#8b5cf6"))
+            color.setAlpha(70)
+            eff = QGraphicsDropShadowEffect(btn)
+            eff.setColor(color)
+            eff.setBlurRadius(14)
+            eff.setOffset(0, 0)
+            btn.setGraphicsEffect(eff)
+        except (RuntimeError, AttributeError, TypeError, ValueError):
+            pass
 
     def _sync_footer_nav(self, _index: int = 0) -> None:
         """Subtle active state for side nav buttons when the stacked page matches."""
@@ -1724,6 +2038,13 @@ class MainWindow(FramelessWindow):
                 b.style().unpolish(b)
                 b.style().polish(b)
                 b.update()
+                if active:
+                    for attr, color in self._NAV_GLOW.items():
+                        if getattr(self, attr, None) is b:
+                            self._apply_active_nav_glow(b, attr)
+                            break
+                elif b.graphicsEffect() is not None and not b.underMouse():
+                    b.setGraphicsEffect(None)
         music_timer = getattr(self, "_music_refresh_timer", None)
         if music_timer is not None:
             if on_music:
@@ -1759,43 +2080,46 @@ class MainWindow(FramelessWindow):
             self._lbl_brand_tagline.setText(self._tr("ui.brand_tagline"))
         if hasattr(self, "_btn_footer_home"):
             th = self._tr("ui.nav_home")
-            self._btn_footer_home.setText(th)
+            self._btn_footer_home.setText(self._nav_text("ui.nav_home"))
             self._btn_footer_home.setToolTip(self._tr("ui.nav_home_hint"))
             self._btn_footer_home.setAccessibleName(th)
         if hasattr(self, "_btn_footer_chat"):
-            self._btn_footer_chat.setText(self._tr("ui.nav_chat"))
-            self._btn_footer_tts.setText(self._tr("ui.nav_tts"))
+            self._btn_footer_chat.setText(self._nav_text("ui.nav_chat"))
+            self._btn_footer_tts.setText(self._nav_text("ui.nav_tts"))
             self._btn_footer_chat.setToolTip(self._tr("ui.nav_chat_hint"))
             self._btn_footer_tts.setToolTip(self._tr("ui.nav_tts_hint"))
         if hasattr(self, "_btn_footer_logs"):
             tl = self._tr("ui.nav_logs")
-            self._btn_footer_logs.setText(tl)
+            self._btn_footer_logs.setText(self._nav_text("ui.nav_logs"))
             self._btn_footer_logs.setToolTip(self._tr("ui.nav_logs_hint"))
             self._btn_footer_logs.setAccessibleName(tl)
         if hasattr(self, "_btn_footer_donations"):
             td = self._tr("ui.nav_donations")
-            self._btn_footer_donations.setText(td)
+            self._btn_footer_donations.setText(self._nav_text("ui.nav_donations"))
             self._btn_footer_donations.setToolTip(self._tr("ui.nav_donations_hint"))
             self._btn_footer_donations.setAccessibleName(td)
         if hasattr(self, "_btn_footer_actions"):
             ta = self._tr("ui.nav_actions")
-            self._btn_footer_actions.setText(ta)
+            self._btn_footer_actions.setText(self._nav_text("ui.nav_actions"))
             self._btn_footer_actions.setToolTip(self._tr("ui.nav_actions_hint"))
             self._btn_footer_actions.setAccessibleName(ta)
         if hasattr(self, "_btn_footer_widgets"):
             tw = self._tr("ui.nav_widgets")
-            self._btn_footer_widgets.setText(tw)
+            self._btn_footer_widgets.setText(self._nav_text("ui.nav_widgets"))
             self._btn_footer_widgets.setToolTip(self._tr("ui.nav_widgets_hint"))
             self._btn_footer_widgets.setAccessibleName(tw)
         if hasattr(self, "_btn_footer_docks"):
             td = self._tr("ui.nav_docks")
-            self._btn_footer_docks.setText(td)
+            self._btn_footer_docks.setText(self._nav_text("ui.nav_docks"))
             self._btn_footer_docks.setToolTip(self._tr("ui.nav_docks_hint"))
             self._btn_footer_docks.setAccessibleName(td)
         if hasattr(self, "_btn_footer_music"):
-            self._btn_footer_music.setText(self._tr("ui.nav_music"))
+            self._btn_footer_music.setText(self._nav_text("ui.nav_music"))
             self._btn_footer_music.setToolTip(self._tr("ui.nav_music_hint"))
             self._btn_footer_music.setAccessibleName(self._tr("ui.nav_music"))
+        if hasattr(self, "_btn_side_settings"):
+            self._btn_side_settings.setText(self._nav_text("ui.open_settings"))
+            self._btn_side_settings.setToolTip(self._tr("ui.open_settings_hint"))
 
     def _apply_dark_chrome(self) -> None:
         self.setStyleSheet(
@@ -1818,23 +2142,54 @@ class MainWindow(FramelessWindow):
             "background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
             "stop:0 #0f172a, stop:0.55 #0b1220, stop:1 #070910); }"
             "QWidget#settingsScrollBody { background-color: transparent; }"
-            "QFrame#appSidebar { background-color: #080a0e; border: none; "
+            "QFrame#appSidebar { background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+            "stop:0 #0a0e18, stop:0.5 #080a0e, stop:1 #0b0912); border: none; "
             "border-right: 1px solid #1a2030; }"
-            "QLabel#sidebarBrandName { color: #f3f4f6; font-size: 15px; font-weight: 800; "
+            "QWidget#sidebarBrand:hover { background: rgba(20, 26, 40, 0.6); border-radius: 10px; }"
+            "QLabel#sidebarBrandName { color: #f3f4f6; font-size: 16px; font-weight: 800; "
             "letter-spacing: 1.2px; }"
-            "QLabel#sidebarBrandTagline { color: #8b95a5; font-size: 10px; font-weight: 600; "
-            "letter-spacing: 1.6px; }"
-            "QToolButton#sideNav { background: transparent; color: #d7deea; "
-            "border: none; border-radius: 14px; font-weight: 500; font-size: 15px; "
-            "text-align: left; padding: 9px 14px; min-height: 40px; }"
-            "QToolButton#sideNav:hover { background: #1a2233; color: #eef2f6; }"
+            "QLabel#sidebarBrandTagline { color: #8b95a5; font-size: 9px; font-weight: 600; "
+            "letter-spacing: 2px; }"
+            "QLabel#sideNavGroup { color: #5b6474; font-size: 10px; font-weight: 700; "
+            "letter-spacing: 1.6px; background: transparent; }"
+            "QLabel#sideNavGroup:hover { color: #8b95a5; }"
+            "QToolButton#sideNav { background: transparent; color: #c3cad7; "
+            "border: 1px solid transparent; border-radius: 10px; font-weight: 600; font-size: 14px; "
+            "text-align: left; padding: 0px 10px; min-height: 44px; max-height: 46px; }"
+            "QToolButton#sideNav:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
+            "stop:0 rgba(34, 211, 238, 0.10), stop:1 rgba(20, 26, 40, 1)); "
+            "color: #eef2f6; border-color: #232c42; }"
             'QToolButton#sideNav[activeNav="on"] { '
-            "background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1, "
-            "stop:0 #5b3cc8, stop:0.45 #3f3a9a, stop:1 #2f55c8); "
-            "color: #ffffff; font-weight: 700; border-radius: 16px; "
-            "padding: 18px 14px; min-height: 56px; }"
+            "background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
+            "stop:0 rgba(34, 211, 238, 0.16), stop:0.12 rgba(76, 53, 171, 0.28), "
+            "stop:1 rgba(76, 53, 171, 0.22)); "
+            "border: 1px solid rgba(139, 92, 246, 0.55); "
+            "border-left: 2px solid qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+            "stop:0 #22d3ee, stop:1 #a78bfa); "
+            "color: #ffffff; font-weight: 700; "
+            "border-radius: 10px; padding: 0px 10px; min-height: 44px; max-height: 46px; }"
+            "QToolButton#sideUtil { background: transparent; color: #8b95a5; "
+            "border: 1px solid transparent; border-radius: 8px; font-weight: 600; font-size: 12px; "
+            "text-align: left; padding: 0px 10px; }"
+            "QToolButton#sideUtil:hover { background: rgba(20, 26, 40, 0.9); color: #d7deea; "
+            "border-color: #232c42; }"
+            "QLabel#sideVersion { color: #4b5563; font-size: 11px; }"
             "QFrame#appFooter { background-color: #080a0e; border: none; "
-            "border-top: 1px solid #1e2430; }"
+            "border-top: 1px solid #1a2030; padding: 2px 4px; }"
+            "QFrame#footCard { background-color: #10141d; border: 1px solid #1e2534; "
+            "border-radius: 10px; }"
+            "QLabel#footSysDot { color: #22c55e; font-size: 16px; background: transparent; }"
+            "QLabel#footSysTitle { color: #4ade80; font-size: 12px; font-weight: 700; "
+            "background: transparent; }"
+            "QLabel#footSysSub { color: #8b95a5; font-size: 10px; background: transparent; }"
+            "QLabel#footLogo { background: transparent; }"
+            "QLabel#footPlatName { color: #e8eaed; font-size: 11px; font-weight: 600; "
+            "background: transparent; }"
+            "QLabel#footPlatSt { font-size: 10px; background: transparent; }"
+            "QLabel#footCntIco { color: #8b95a5; font-size: 13px; background: transparent; }"
+            "QLabel#footCntName { color: #c3cad7; font-size: 10px; background: transparent; }"
+            "QLabel#footCntVal { color: #e8eaed; font-size: 13px; font-weight: 700; "
+            "background: transparent; }"
             "QLabel#footerStatus { color: #b8c0ce; font-size: 11px; }"
             "QGroupBox { border: 1px solid #2a3142; border-radius: 12px; margin-top: 16px; "
             "padding-top: 10px; padding-bottom: 12px; padding-left: 14px; padding-right: 14px; "
@@ -2430,6 +2785,13 @@ class MainWindow(FramelessWindow):
                 QMessageBox.information(self, title, self._tr("updates.redirect_releases"))
 
     def _app_version(self) -> str:
+        try:
+            from stream_cheremsha import __version__
+
+            if isinstance(__version__, str) and __version__.strip():
+                return __version__.strip()
+        except ImportError:
+            pass
         try:
             import importlib.metadata
 
@@ -4218,53 +4580,51 @@ class MainWindow(FramelessWindow):
     def _refresh_footer(self) -> None:
         cq = self._coordinator.chat_in.qsize()
         tq = self._coordinator.tts_jobs.qsize()
-        e = html.escape
-        tw_on = self._tr("footer.on") if self._twitch.running else self._tr("footer.off")
-        yt_on = self._tr("footer.on") if self._youtube.running else self._tr("footer.off")
-        tk_on = self._tr("footer.on") if self._tiktok.running else self._tr("footer.off")
-        kk_on = self._tr("footer.on") if self._kick.running else self._tr("footer.off")
-        tw_c = "#34d399" if self._twitch.running else "#fb923c"
-        yt_c = "#34d399" if self._youtube.running else "#fb923c"
-        tk_c = "#34d399" if self._tiktok.running else "#fb923c"
-        kk_c = "#34d399" if self._kick.running else "#fb923c"
-        pl = e(self._tr("footer.pipeline"))
-        ftw = e(self._tr("footer.twitch"))
-        fyt = e(self._tr("footer.youtube"))
-        ftk = e(self._tr("footer.tiktok"))
-        fkk = e(self._tr("footer.kick"))
-        fq = e(self._tr("footer.queues"))
-        fchat = e(self._tr("footer.chat"))
-        ftts = e(self._tr("footer.tts"))
-        h1 = (
-            f'<span style="color:#4ade80">●</span> <span style="color:#cbd5e1;">{pl}:'
-            f'</span> <span style="color:#f1f5f9;">{e(self._status_app)}</span>'
-        )
-        tw_ico = _footer_richtext_img("twitch.svg", 15)
-        yt_ico = _footer_richtext_img("youtube.svg", 15)
-        tk_ico = _footer_richtext_img("tiktok.svg", 15)
-        kk_ico = _footer_richtext_img("kick.svg", 15)
-        h2 = (
-            f'{tw_ico}<span style="color:{tw_c}">●</span> <span style="color:#cbd5e1;">{ftw}'
-            f'</span> <span style="color:#94a3b8;">({e(tw_on)}):</span> '
-            f'<span style="color:#e2e8f0;">{e(self._status_twitch)}</span>'
-        )
-        h3 = (
-            f'{yt_ico}<span style="color:{yt_c}">●</span> <span style="color:#cbd5e1;">{fyt}'
-            f'</span> <span style="color:#94a3b8;">({e(yt_on)}):</span> '
-            f'<span style="color:#e2e8f0;">{e(self._status_youtube)}</span>'
-        )
-        h4 = (
-            f'{tk_ico}<span style="color:{tk_c}">●</span> <span style="color:#cbd5e1;">{ftk}'
-            f'</span> <span style="color:#94a3b8;">({e(tk_on)}):</span> '
-            f'<span style="color:#e2e8f0;">{e(self._status_tiktok)}</span>'
-        )
-        h5 = (
-            f'{kk_ico}<span style="color:{kk_c}">●</span> <span style="color:#cbd5e1;">{fkk}'
-            f'</span> <span style="color:#94a3b8;">({e(kk_on)}):</span> '
-            f'<span style="color:#e2e8f0;">{e(self._status_kick)}</span>'
-        )
-        h6 = f'<span style="color:#94a3b8;">{fq}: {fchat}={cq} &nbsp; {ftts}={tq}</span>'
-        self._status_label.setText(f"{h1}<br/>{h2}<br/>{h3}<br/>{h4}<br/>{h5}<br/>{h6}")
+        tip_bits = [
+            f"{self._tr('footer.twitch')}: {self._status_twitch}",
+            f"{self._tr('footer.youtube')}: {self._status_youtube}",
+            f"{self._tr('footer.tiktok')}: {self._status_tiktok}",
+            f"{self._tr('footer.kick')}: {self._status_kick}",
+            f"{self._tr('footer.pipeline')}: {self._status_app}",
+        ]
+        tip = "\n".join(tip_bits)
+        self._footer_frame.setToolTip(tip)
+        self._status_label.setToolTip(tip)
+        # System card.
+        sys_ok = self._tr("connections.system_ok")
+        idle = self._tr("status.app_idle")
+        sys_line = sys_ok if self._status_app == idle else self._status_app
+        if hasattr(self, "_foot_sys_title"):
+            self._foot_sys_title.setText(sys_line)
+            self._foot_sys_sub.setText(self._tr("footer.all_services_ok"))
+        # Platform cards.
+        states = {
+            "twitch": self._twitch.running,
+            "youtube": self._youtube.running,
+            "tiktok": self._tiktok.running,
+            "kick": self._kick.running,
+        }
+        for key, on in states.items():
+            pair = getattr(self, "_foot_plats", {}).get(key)
+            if not pair:
+                continue
+            st, _card = pair
+            if on:
+                st.setText(f"● {self._tr('footer.connected')}")
+                st.setStyleSheet("color: #22c55e; background: transparent;")
+            else:
+                st.setText(f"● {self._tr('footer.disabled')}")
+                st.setStyleSheet("color: #64748b; background: transparent;")
+        # Counter cards.
+        vals = {"chat": cq, "tts": tq, "queues": cq + tq}
+        names = {
+            "chat": self._tr("footer.chat"),
+            "tts": self._tr("footer.tts"),
+            "queues": self._tr("footer.queues"),
+        }
+        for key, (nm, vl) in getattr(self, "_foot_counters", {}).items():
+            nm.setText(names.get(key, key))
+            vl.setText(str(vals.get(key, 0)))
         tw_btn = "tw.transport_stop" if self._twitch.running else "tw.transport_start"
         yt_btn = "yt.transport_stop" if self._youtube.running else "yt.transport_start"
         self._btn_twitch_transport.setText(self._tr(tw_btn))

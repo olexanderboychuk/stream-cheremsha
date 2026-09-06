@@ -8863,6 +8863,7 @@ StyledCheckBox {
                             visible: root.actionsCfgEpoch >= 0 && root.actionsCfg && root.actionsCfg.bubble_bg_enabled
                             Text { text: "Bubble opacity"; color: muted; Layout.preferredWidth: 220 }
                             StyledSlider {
+                                id: bubbleOpacitySlider
                                 Layout.fillWidth: true
                                 from: 0.0
                                 to: 1.0
@@ -8880,7 +8881,7 @@ StyledCheckBox {
                                         if (!root.actionsCfg) return;
                                         var a = root.actionsCfg.bubble_bg_alpha;
                                         if (a === undefined || a === null) return;
-                                        parent.value = a;
+                                        bubbleOpacitySlider.value = a;
                                     }
                                 }
                             }

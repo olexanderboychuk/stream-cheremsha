@@ -636,3 +636,52 @@ class StreamCheremshaQmlApi(QObject):
         w = self._win()
         if w is not None:
             w._set_main_page(w._IX_CONN)  # noqa: SLF001
+
+    # ---- Platform card collapsed state (persisted in QSettings) ----
+    @staticmethod
+    def _card_key(name: str) -> str:
+        return f"ui/connections_card_{name}_collapsed"
+
+    @Slot(str, result=bool)
+    def platformCardCollapsedGet(self, name: str) -> bool:
+        defaults = {"twitch": False, "youtube": True, "tiktok": True, "kick": True}
+        w = self._win()
+        dflt = defaults.get((name or "").lower(), True)
+        if w is None:
+            return bool(dflt)
+        try:
+            st = w._settings  # noqa: SLF001
+        except AttributeError:
+            return bool(dflt)
+        v = st.value(self._card_key((name or "").lower()), dflt, bool)
+        return bool(v)
+
+    @Slot(str, bool)
+    def platformCardCollapsedSet(self, name: str, collapsed: bool) -> None:
+        w = self._win()
+        if w is None:
+            return
+        try:
+            w._settings.setValue(self._card_key((name or "").lower()), bool(collapsed))  # noqa: SLF001
+        except (AttributeError, RuntimeError):
+            return
+
+    @Slot(result=bool)
+    def platformCardsHiddenGet(self) -> bool:
+        w = self._win()
+        if w is None:
+            return False
+        try:
+            return bool(w._settings.value("ui/connections_platform_cards_hidden", False, bool))  # noqa: SLF001
+        except (AttributeError, RuntimeError):
+            return False
+
+    @Slot(bool)
+    def platformCardsHiddenSet(self, hidden: bool) -> None:
+        w = self._win()
+        if w is None:
+            return
+        try:
+            w._settings.setValue("ui/connections_platform_cards_hidden", bool(hidden))  # noqa: SLF001
+        except (AttributeError, RuntimeError):
+            return

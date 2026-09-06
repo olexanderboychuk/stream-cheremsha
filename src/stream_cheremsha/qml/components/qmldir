@@ -6,6 +6,7 @@ ConnPillButton 1.0 ConnPillButton.qml
 ConnLinkButton 1.0 ConnLinkButton.qml
 ConnMainSwitch 1.0 ConnMainSwitch.qml
 ConnPrefSwitch 1.0 ConnPrefSwitch.qml
+ConnStatusBadge 1.0 ConnStatusBadge.qml
 PlatformCardsPanel 1.0 PlatformCardsPanel.qml
 AnalyticsPanel 1.0 AnalyticsPanel.qml
 BpSection 1.0 BpSection.qml

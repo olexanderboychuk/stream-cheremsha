@@ -121,6 +121,69 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "ui.kick_head": {"uk": "Kick", "en": "Kick"},
     "connections.tts_chat": {"uk": "Озвучувати чат (TTS)", "en": "Speak chat (TTS)"},
     "connections.platform_enabled": {"uk": "Платформа увімкнена", "en": "Platform enabled"},
+    "connections.page_title": {"uk": "Платформи", "en": "Platforms"},
+    "connections.page_subtitle": {
+        "uk": "Керуйте підключеннями та контролюйте активність стріму",
+        "en": "Manage connections and monitor stream activity",
+    },
+    "connections.section_platforms": {
+        "uk": "Підключення платформ",
+        "en": "Platform connections",
+    },
+    "connections.section_analytics": {
+        "uk": "Аналітика в реальному часі",
+        "en": "Realtime analytics",
+    },
+    "connections.status_connected": {"uk": "Налаштовано", "en": "Configured"},
+    "connections.status_disabled": {"uk": "Вимкнено", "en": "Disabled"},
+    "connections.status_attention": {"uk": "Потребує уваги", "en": "Needs attention"},
+    "connections.status_error": {"uk": "Помилка", "en": "Error"},
+    "connections.status_live": {"uk": "LIVE", "en": "LIVE"},
+    "connections.system_ok": {
+        "uk": "Система працює стабільно",
+        "en": "System running stably",
+    },
+    "connections.events_empty": {"uk": "Немає нових подій", "en": "No new events"},
+    "connections.events_waiting": {
+        "uk": "Очікуємо активність стріму",
+        "en": "Waiting for stream activity",
+    },
+    "connections.events_recent": {"uk": "Події (останні)", "en": "Events (recent)"},
+    "connections.hint_twitch_client": {
+        "uk": "Не налаштований Client ID",
+        "en": "Client ID is not configured",
+    },
+    "connections.hint_kick_client": {
+        "uk": "Не налаштовані облікові дані Kick",
+        "en": "Kick credentials are not configured",
+    },
+    "connections.hint_kick_redirect": {
+        "uk": "Перевірте Redirect URI в кабінеті Kick",
+        "en": "Verify Redirect URI in the Kick dashboard",
+    },
+    "connections.hint_kick_disabled": {
+        "uk": "Акаунт підключено, але платформа вимкнена",
+        "en": "Account linked, but platform is disabled",
+    },
+    "connections.hint_tiktok_disabled": {
+        "uk": "Вкажіть username і увімкніть платформу",
+        "en": "Set a username and enable the platform",
+    },
+    "connections.hint_login": {
+        "uk": "Увійдіть через браузер",
+        "en": "Sign in via browser",
+    },
+    "connections.configure": {"uk": "Налаштувати →", "en": "Configure →"},
+    "connections.details": {"uk": "Деталі", "en": "Details"},
+    "connections.hide": {"uk": "Сховати", "en": "Hide"},
+    "connections.show_uri": {"uk": "Показати URI", "en": "Show URI"},
+    "connections.hide_uri": {"uk": "Сховати URI", "en": "Hide URI"},
+    "connections.live": {"uk": "LIVE", "en": "LIVE"},
+    "connections.analytics_online_pill": {"uk": "Онлайн", "en": "Online"},
+    "connections.analytics_empty": {
+        "uk": "Увімкніть платформу зліва, щоб бачити аналітику в реальному часі.",
+        "en": "Enable a platform on the left to see realtime analytics.",
+    },
     "connections.analytics_soon_title": {
         "uk": "Аналітика — скоро",
         "en": "Analytics — coming soon",
@@ -777,7 +840,7 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "Back to connections (home)",
     },
     "ui.brand_name": {"uk": "CHEREMSHA", "en": "CHEREMSHA"},
-    "ui.brand_tagline": {"uk": "STREAM TOGETHER", "en": "STREAM TOGETHER"},
+    "ui.brand_tagline": {"uk": "STREAM BEAUTIFULLY", "en": "STREAM BEAUTIFULLY"},
     "ui.nav_home": {"uk": "Головна", "en": "Home"},
     "ui.nav_home_hint": {
         "uk": "Повернутися на екран підключення Twitch / YouTube",
@@ -1258,8 +1321,14 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "footer.queues": {"uk": "Черги", "en": "Queues"},
     "footer.on": {"uk": "увімк", "en": "on"},
     "footer.off": {"uk": "вимк", "en": "off"},
-    "footer.chat": {"uk": "чат", "en": "chat"},
-    "footer.tts": {"uk": "tts", "en": "tts"},
+    "footer.chat": {"uk": "Чат", "en": "Chat"},
+    "footer.tts": {"uk": "TTS", "en": "TTS"},
+    "footer.connected": {"uk": "Підключено", "en": "Connected"},
+    "footer.disabled": {"uk": "Вимкнено", "en": "Disabled"},
+    "footer.all_services_ok": {
+        "uk": "Усі сервіси працюють нормально",
+        "en": "All services running normally",
+    },
     # Main-window status messages (exact match routing uses all locales)
     "status.logout_twitch": {"uk": "Вийшли з Twitch.", "en": "Signed out of Twitch."},
     "status.logout_youtube": {

@@ -9,8 +9,8 @@ Item {
     property color accent: ConnTheme.twBar
     signal toggled()
 
-    implicitWidth: 30
-    implicitHeight: 30
+    implicitWidth: 26
+    implicitHeight: 26
 
     readonly property color _bgRest: "#151b27"
     readonly property color _bgHover: "#1a2232"

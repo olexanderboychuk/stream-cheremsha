@@ -111,69 +111,129 @@ Item {
             var share = Math.max(220, Math.floor((fh - Math.max(0, r - 1) * _gap) / Math.max(1, r)))
             return Math.min(share, 340)
         }
-        if (fillHeight && r <= 1)
-            return Math.max(180, Math.floor(fh))
-        if (r <= 1)
-            return Math.max(180, Math.floor(fh))
-        return Math.max(160, Math.floor((fh - Math.max(0, r - 1) * _gap) / r))
+        // Content-sized cards — do not stretch empty event areas to fill the viewport.
+        return -1
     }
     readonly property bool _needsVScroll: {
-        if (!bigPictureMode)
-            return false
         var total = analyticsGrid.implicitHeight
         return total > analyticsFlick.height + 1
     }
     readonly property bool _compact: bigPictureMode || _cardW <= 380
     readonly property int _bpEventsH: 96
+    readonly property int _eventsH: bigPictureMode ? _bpEventsH : 280
+
+    function _fmtNum(n) {
+        var v = Math.floor(Number(n) || 0)
+        var s = String(v)
+        var out = ""
+        while (s.length > 3) {
+            out = " " + s.slice(-3) + out
+            s = s.slice(0, -3)
+        }
+        return s + out
+    }
 
     component StatMini: Rectangle {
         id: st
         property string cap: ""
         property int val: 0
-        property int capPx: 11
-        property int valPx: 18
-        implicitHeight: capCol.implicitHeight + 16
+        property int capPx: 10
+        property int valPx: 22
+        implicitHeight: 56
         radius: 10
         color: ConnTheme.fieldBg
         border.width: 1
         border.color: ConnTheme.cardEdge
         Column {
-            id: capCol
-            anchors.centerIn: parent
-            width: parent.width - 12
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: 10
+            anchors.rightMargin: 10
             spacing: 2
             Text {
                 width: parent.width
                 text: st.cap
                 color: ConnTheme.muted
                 font.pixelSize: st.capPx
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.Wrap
+                font.weight: Font.Medium
+                font.letterSpacing: 0.3
+                elide: Text.ElideRight
             }
             Text {
                 width: parent.width
-                text: String(st.val)
+                text: analyticsSlot._fmtNum(st.val)
                 color: ConnTheme.ink
                 font.pixelSize: st.valPx
                 font.bold: true
-                horizontalAlignment: Text.AlignHCenter
+                font.letterSpacing: -0.3
+            }
+        }
+    }
+
+    component OnlinePill: Rectangle {
+        property bool online: false
+        implicitWidth: pillTxt.implicitWidth + 16
+        implicitHeight: 20
+        radius: 999
+        color: online ? "#0f2a1c" : "#161b24"
+        border.width: 1
+        border.color: online ? "#1a3d2a" : "#252b38"
+        Row {
+            anchors.centerIn: parent
+            spacing: 5
+            Rectangle {
+                width: 6
+                height: 6
+                radius: 3
+                color: online ? "#22c55e" : "#64748b"
+                anchors.verticalCenter: parent.verticalCenter
+            }
+            Text {
+                id: pillTxt
+                text: {
+                    if (!api) return ""
+                    api.refreshCounter
+                    return online
+                        ? api.loc("connections.analytics_online_pill")
+                        : api.loc("connections.status_disabled")
+                }
+                color: online ? "#86efac" : "#94a3b8"
+                font.pixelSize: 10
+                font.weight: Font.DemiBold
+                anchors.verticalCenter: parent.verticalCenter
             }
         }
     }
 
     component AnalyticsCard: Rectangle {
         id: card
-        property color topLine: "#334155"
-        radius: 16
+        property color accent: ConnTheme.tkBar
+        radius: ConnTheme.cardRadius
         color: ConnTheme.cardBase
         border.width: 1
-        border.color: ConnTheme.cardEdge
+        border.color: cardHover.containsMouse ? Qt.lighter(ConnTheme.cardEdge, 1.25) : ConnTheme.cardEdge
         clip: true
+        Behavior on border.color { ColorAnimation { duration: 140 } }
+
+        MouseArea {
+            id: cardHover
+            anchors.fill: parent
+            hoverEnabled: true
+            acceptedButtons: Qt.NoButton
+            z: 0
+        }
+
         Rectangle {
-            anchors { left: parent.left; right: parent.right; top: parent.top; margins: 1 }
-            height: 1
-            color: card.topLine
-            opacity: 0.35
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.margins: 1
+            width: 3
+            radius: 1
+            color: card.accent
+            opacity: 0.9
+            z: 1
         }
     }
 
@@ -181,62 +241,113 @@ Item {
         id: rowRoot
         property string timeText: ""
         property string bodyText: ""
-        property string iconGlyph: "→"
+        property string iconGlyph: "●"
         property string iconUrl: ""
         property color iconColor: ConnTheme.tkHi
+        property string platformIcon: ""
 
-        implicitHeight: 30
+        implicitHeight: 28
         height: implicitHeight
 
-        Row {
-            id: row
+        RowLayout {
             anchors.fill: parent
             spacing: 8
 
-            Text {
-                width: 54
-                height: rowRoot.height
-                verticalAlignment: Text.AlignVCenter
-                text: rowRoot.timeText
-                color: ConnTheme.muted
-                font.pixelSize: 11
-                font.family: "Consolas, Cascadia Mono, monospace"
-                elide: Text.ElideRight
+            Rectangle {
+                width: 5
+                height: 5
+                radius: 3
+                color: rowRoot.iconColor
+                opacity: 0.9
+                Layout.alignment: Qt.AlignVCenter
+                visible: rowRoot.iconUrl.length === 0
             }
 
-            Item {
-                width: 20
-                height: rowRoot.height
-
-                Image {
-                    anchors.centerIn: parent
-                    visible: rowRoot.iconUrl.length > 0
-                    width: 18
-                    height: 18
-                    source: rowRoot.iconUrl
-                    fillMode: Image.PreserveAspectFit
-                    smooth: true
-                    asynchronous: true
-                }
-
-                Text {
-                    anchors.centerIn: parent
-                    visible: rowRoot.iconUrl.length === 0
-                    text: rowRoot.iconGlyph
-                    font.pixelSize: 13
-                    color: rowRoot.iconColor
-                }
+            Image {
+                visible: rowRoot.iconUrl.length > 0
+                Layout.preferredWidth: 14
+                Layout.preferredHeight: 14
+                Layout.alignment: Qt.AlignVCenter
+                source: rowRoot.iconUrl
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+                asynchronous: true
             }
 
             Text {
-                width: Math.max(0, rowRoot.width - 54 - 8 - 20 - 8)
-                height: rowRoot.height
-                verticalAlignment: Text.AlignVCenter
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignVCenter
                 text: rowRoot.bodyText
                 color: ConnTheme.ink
                 font.pixelSize: 12
                 elide: Text.ElideRight
                 maximumLineCount: 1
+            }
+
+            Text {
+                Layout.alignment: Qt.AlignVCenter
+                text: rowRoot.timeText
+                color: ConnTheme.muted
+                font.pixelSize: 10
+                font.family: "Consolas, Cascadia Mono, monospace"
+            }
+
+            Image {
+                visible: rowRoot.platformIcon.length > 0
+                Layout.preferredWidth: 12
+                Layout.preferredHeight: 12
+                Layout.alignment: Qt.AlignVCenter
+                source: rowRoot.platformIcon
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+                asynchronous: true
+                opacity: 0.7
+            }
+        }
+    }
+
+    component EventsEmpty: Item {
+        Column {
+            anchors.centerIn: parent
+            spacing: 6
+            Rectangle {
+                width: 28
+                height: 28
+                radius: 14
+                anchors.horizontalCenter: parent.horizontalCenter
+                color: "#141a24"
+                border.width: 1
+                border.color: ConnTheme.cardEdge
+                Text {
+                    anchors.centerIn: parent
+                    text: "⌁"
+                    color: ConnTheme.muted
+                    font.pixelSize: 14
+                    opacity: 0.65
+                }
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: {
+                    if (!api) return ""
+                    api.refreshCounter
+                    return api.loc("connections.events_empty")
+                }
+                color: ConnTheme.muted
+                font.pixelSize: 12
+                font.weight: Font.DemiBold
+                opacity: 0.85
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: {
+                    if (!api) return ""
+                    api.refreshCounter
+                    return api.loc("connections.events_waiting")
+                }
+                color: ConnTheme.muted
+                font.pixelSize: 10
+                opacity: 0.55
             }
         }
     }
@@ -244,25 +355,27 @@ Item {
     Flickable {
         id: analyticsFlick
         anchors.fill: parent
-        anchors.margins: bigPictureMode ? 8 : 14
+        anchors.margins: bigPictureMode ? 8 : 0
         anchors.bottomMargin: footerReserve
         clip: true
-        interactive: analyticsSlot.bigPictureMode
-            ? analyticsSlot._needsVScroll
-            : analyticsSlot._needsHScroll
-        flickableDirection: analyticsSlot.bigPictureMode
-            ? Flickable.VerticalFlick
-            : Flickable.HorizontalFlick
+        interactive: analyticsSlot._needsVScroll || analyticsSlot._needsHScroll
+        flickableDirection: {
+            if (analyticsSlot._needsVScroll && analyticsSlot._needsHScroll)
+                return Flickable.HorizontalAndVerticalFlick
+            if (analyticsSlot._needsVScroll)
+                return Flickable.VerticalFlick
+            return Flickable.HorizontalFlick
+        }
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.horizontal: ScrollBar {
-            policy: analyticsSlot.bigPictureMode ? ScrollBar.AlwaysOff : ScrollBar.AsNeeded
+            policy: analyticsSlot._needsHScroll ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
         }
         ScrollBar.vertical: ScrollBar {
-            policy: analyticsSlot.bigPictureMode ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+            policy: analyticsSlot._needsVScroll ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
         }
 
         contentWidth: analyticsSlot.bigPictureMode ? width : contentRoot.implicitWidth
-        contentHeight: analyticsSlot.bigPictureMode ? contentRoot.implicitHeight : height
+        contentHeight: Math.max(height, contentRoot.implicitHeight)
 
         function _snapToNearestCard() {
             if (analyticsSlot.bigPictureMode || !analyticsSlot._needsHScroll)
@@ -287,16 +400,14 @@ Item {
         Item {
             id: contentRoot
             width: analyticsSlot.bigPictureMode ? analyticsFlick.width : implicitWidth
-            height: analyticsSlot.bigPictureMode ? implicitHeight : parent.height
+            height: implicitHeight
             implicitWidth: analyticsSlot.bigPictureMode
                 ? analyticsFlick.width
                 : Math.max(
                     analyticsFlick.width,
                     analyticsSlot._gridCols * analyticsSlot._minCardW
                     + Math.max(0, analyticsSlot._gridCols - 1) * analyticsSlot._gap)
-            implicitHeight: analyticsSlot.bigPictureMode
-                ? analyticsGrid.implicitHeight
-                : parent.height
+            implicitHeight: analyticsGrid.implicitHeight
 
             GridLayout {
                 id: analyticsGrid
@@ -304,36 +415,36 @@ Item {
                 columns: analyticsSlot._gridCols
                 columnSpacing: analyticsSlot._gap
                 rowSpacing: analyticsSlot._gap
+                Layout.alignment: Qt.AlignTop
 
                 AnalyticsCard {
                     id: tkCard
                     visible: analyticsSlot._tkShow
                     Layout.fillWidth: true
                     Layout.minimumWidth: analyticsSlot._minCardW
-                    readonly property int _contentH: tkCardBody.implicitHeight + 28
-                    implicitHeight: analyticsSlot.bigPictureMode ? _contentH : analyticsSlot._cellCardH
-                    Layout.preferredHeight: analyticsSlot.bigPictureMode ? _contentH : analyticsSlot._cellCardH
-                    Layout.maximumHeight: analyticsSlot.bigPictureMode ? _contentH : analyticsSlot._cellCardH
-                    topLine: "#103044"
+                    readonly property int _contentH: tkCardBody.implicitHeight + 24
+                    implicitHeight: _contentH
+                    Layout.preferredHeight: _contentH
+                    Layout.alignment: Qt.AlignTop
+                    accent: ConnTheme.tkBar
 
                     ColumnLayout {
                         id: tkCardBody
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.top: parent.top
-                        anchors.margins: 14
-                        height: analyticsSlot.bigPictureMode ? implicitHeight : (parent.height - 28)
-                        spacing: 10
+                        anchors.margins: 12
+                        height: implicitHeight
+                        spacing: 8
 
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Rectangle { width: 3; height: 24; radius: 1; color: ConnTheme.tkBar; Layout.alignment: Qt.AlignVCenter }
                             Image {
                                 source: Qt.resolvedUrl("../../assets/tiktok.svg")
                                 sourceSize: Qt.size(64, 64)
-                                width: 26
-                                height: 26
+                                width: 22
+                                height: 22
                                 fillMode: Image.PreserveAspectFit
                                 smooth: true
                                 asynchronous: true
@@ -342,10 +453,14 @@ Item {
                             Text {
                                 text: { if (!api) return ""; api.refreshCounter; return api.loc("connections.tiktok_analytics_title") }
                                 color: ConnTheme.tkHi
-                                font.pixelSize: 17
+                                font.pixelSize: 15
                                 font.bold: true
                                 Layout.fillWidth: true
                                 elide: Text.ElideRight
+                            }
+                            OnlinePill {
+                                online: { if (!api) return false; api.refreshCounter; return api.tiktokEnabled() }
+                                Layout.alignment: Qt.AlignVCenter
                             }
                         }
 
@@ -367,29 +482,29 @@ Item {
 
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: analyticsSlot._compact ? 10 : 11
-                                valPx: analyticsSlot._compact ? 16 : 18
+                                capPx: 10
+                                valPx: analyticsSlot._compact ? 20 : 22
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.tiktok_analytics_online") }
                                 val: tiktokAnalytics ? tiktokAnalytics.onlineViewersCurrent : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: analyticsSlot._compact ? 10 : 11
-                                valPx: analyticsSlot._compact ? 16 : 18
+                                capPx: 10
+                                valPx: analyticsSlot._compact ? 20 : 22
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.tiktok_analytics_total") }
                                 val: tiktokAnalytics ? tiktokAnalytics.onlineViewersTotal : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: analyticsSlot._compact ? 10 : 11
-                                valPx: analyticsSlot._compact ? 16 : 18
+                                capPx: 10
+                                valPx: analyticsSlot._compact ? 20 : 22
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.tiktok_analytics_gifts") }
                                 val: tiktokAnalytics ? tiktokAnalytics.giftUnitsTotal : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: analyticsSlot._compact ? 10 : 11
-                                valPx: analyticsSlot._compact ? 16 : 18
+                                capPx: 10
+                                valPx: analyticsSlot._compact ? 20 : 22
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.tiktok_analytics_diamonds") }
                                 val: tiktokAnalytics ? tiktokAnalytics.diamondsTotal : 0
                             }
@@ -398,7 +513,7 @@ Item {
                         Text {
                             Layout.fillWidth: true
                             visible: { if (!api) return false; api.refreshCounter; return api.tiktokEnabled() }
-                            text: { if (!api) return ""; api.refreshCounter; return api.loc("connections.tiktok_analytics_activity") }
+                            text: { if (!api) return ""; api.refreshCounter; return api.loc("connections.events_recent") }
                             color: ConnTheme.muted
                             font.pixelSize: 12
                             font.weight: Font.DemiBold
@@ -407,30 +522,36 @@ Item {
                         Rectangle {
                             Layout.fillWidth: true
                             visible: { if (!api) return false; api.refreshCounter; return api.tiktokEnabled() }
-                            Layout.fillHeight: !analyticsSlot.bigPictureMode
-                            Layout.preferredHeight: analyticsSlot.bigPictureMode ? analyticsSlot._bpEventsH : 0
-                            Layout.minimumHeight: analyticsSlot.bigPictureMode ? analyticsSlot._bpEventsH : 120
+                            Layout.fillHeight: false
+                            Layout.preferredHeight: analyticsSlot._eventsH
+                            Layout.maximumHeight: analyticsSlot._eventsH
                             radius: 10
                             color: ConnTheme.fieldBg
                             border.width: 1
                             border.color: ConnTheme.cardEdge
                             clip: true
 
+                            EventsEmpty {
+                                anchors.fill: parent
+                                visible: !tkEvList.count
+                            }
+
                             ListView {
+                                id: tkEvList
                                 anchors.fill: parent
                                 anchors.margins: 8
-                                spacing: 4
+                                spacing: 2
                                 clip: true
                                 boundsBehavior: Flickable.StopAtBounds
-                                visible: { if (!api) return false; api.refreshCounter; return api.tiktokEnabled() }
+                                visible: count > 0
                                 model: tiktokAnalytics ? tiktokAnalytics.feedModel : null
 
                                 delegate: EventFeedRow {
                                     width: ListView.view ? ListView.view.width : implicitWidth
                                     timeText: model.timeText || ""
                                     iconUrl: (model.iconUrl && model.iconUrl.length) ? model.iconUrl : ""
-                                    iconGlyph: (model.eventKind === "gift") ? "🎁" : (model.eventKind === "follow" ? "＋" : "→")
                                     iconColor: ConnTheme.tkHi
+                                    platformIcon: Qt.resolvedUrl("../../assets/tiktok.svg")
                                     bodyText: {
                                         var u = model.userName || ""
                                         var verb = analyticsSlot._tkEvVerb(model.eventKind)
@@ -452,30 +573,29 @@ Item {
                     visible: analyticsSlot._ytShow
                     Layout.fillWidth: true
                     Layout.minimumWidth: analyticsSlot._minCardW
-                    readonly property int _contentH: ytCardBody.implicitHeight + 28
-                    implicitHeight: analyticsSlot.bigPictureMode ? _contentH : analyticsSlot._cellCardH
-                    Layout.preferredHeight: analyticsSlot.bigPictureMode ? _contentH : analyticsSlot._cellCardH
-                    Layout.maximumHeight: analyticsSlot.bigPictureMode ? _contentH : analyticsSlot._cellCardH
-                    topLine: "#4a1d1d"
+                    readonly property int _contentH: ytCardBody.implicitHeight + 24
+                    implicitHeight: _contentH
+                    Layout.preferredHeight: _contentH
+                    Layout.alignment: Qt.AlignTop
+                    accent: ConnTheme.ytBar
 
                     ColumnLayout {
                         id: ytCardBody
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.top: parent.top
-                        anchors.margins: 14
-                        height: analyticsSlot.bigPictureMode ? implicitHeight : (parent.height - 28)
-                        spacing: 10
+                        anchors.margins: 12
+                        height: implicitHeight
+                        spacing: 8
 
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Rectangle { width: 3; height: 24; radius: 1; color: ConnTheme.ytBar; Layout.alignment: Qt.AlignVCenter }
                             Image {
                                 source: Qt.resolvedUrl("../../assets/youtube.svg")
                                 sourceSize: Qt.size(64, 64)
-                                width: 26
-                                height: 26
+                                width: 22
+                                height: 22
                                 fillMode: Image.PreserveAspectFit
                                 smooth: true
                                 asynchronous: true
@@ -484,10 +604,14 @@ Item {
                             Text {
                                 text: { if (!api) return ""; api.refreshCounter; return api.loc("connections.youtube_analytics_title") }
                                 color: ConnTheme.ytHi
-                                font.pixelSize: 17
+                                font.pixelSize: 15
                                 font.bold: true
                                 Layout.fillWidth: true
                                 elide: Text.ElideRight
+                            }
+                            OnlinePill {
+                                online: { if (!api) return false; api.refreshCounter; return api.youtubeRunning() }
+                                Layout.alignment: Qt.AlignVCenter
                             }
                         }
 
@@ -509,43 +633,43 @@ Item {
 
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: analyticsSlot._compact ? 10 : 11
-                                valPx: analyticsSlot._compact ? 16 : 18
+                                capPx: 10
+                                valPx: analyticsSlot._compact ? 20 : 22
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.youtube_analytics_viewers") }
                                 val: youtubeAnalytics ? youtubeAnalytics.viewersCurrent : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: analyticsSlot._compact ? 10 : 11
-                                valPx: analyticsSlot._compact ? 16 : 18
+                                capPx: 10
+                                valPx: analyticsSlot._compact ? 20 : 22
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.youtube_analytics_peak") }
                                 val: youtubeAnalytics ? youtubeAnalytics.viewersPeak : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: analyticsSlot._compact ? 10 : 11
-                                valPx: analyticsSlot._compact ? 16 : 18
+                                capPx: 10
+                                valPx: analyticsSlot._compact ? 20 : 22
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.youtube_analytics_messages") }
                                 val: youtubeAnalytics ? youtubeAnalytics.messagesSession : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: analyticsSlot._compact ? 10 : 11
-                                valPx: analyticsSlot._compact ? 16 : 18
+                                capPx: 10
+                                valPx: analyticsSlot._compact ? 20 : 22
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.youtube_analytics_unique") }
                                 val: youtubeAnalytics ? youtubeAnalytics.uniqueChattersSession : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: analyticsSlot._compact ? 10 : 11
-                                valPx: analyticsSlot._compact ? 16 : 18
+                                capPx: 10
+                                valPx: analyticsSlot._compact ? 20 : 22
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.youtube_analytics_superchats") }
                                 val: youtubeAnalytics ? youtubeAnalytics.superChatsSession : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: analyticsSlot._compact ? 10 : 11
-                                valPx: analyticsSlot._compact ? 16 : 18
+                                capPx: 10
+                                valPx: analyticsSlot._compact ? 20 : 22
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.youtube_analytics_memberships") }
                                 val: youtubeAnalytics ? youtubeAnalytics.membershipsSession : 0
                             }
@@ -554,7 +678,7 @@ Item {
                         Text {
                             Layout.fillWidth: true
                             visible: { if (!api) return false; api.refreshCounter; return api.youtubeRunning() }
-                            text: { if (!api) return ""; api.refreshCounter; return api.loc("connections.youtube_analytics_activity") }
+                            text: { if (!api) return ""; api.refreshCounter; return api.loc("connections.events_recent") }
                             color: ConnTheme.muted
                             font.pixelSize: 12
                             font.weight: Font.DemiBold
@@ -563,29 +687,35 @@ Item {
                         Rectangle {
                             Layout.fillWidth: true
                             visible: { if (!api) return false; api.refreshCounter; return api.youtubeRunning() }
-                            Layout.fillHeight: !analyticsSlot.bigPictureMode
-                            Layout.preferredHeight: analyticsSlot.bigPictureMode ? analyticsSlot._bpEventsH : 0
-                            Layout.minimumHeight: analyticsSlot.bigPictureMode ? analyticsSlot._bpEventsH : 120
+                            Layout.fillHeight: false
+                            Layout.preferredHeight: analyticsSlot._eventsH
+                            Layout.maximumHeight: analyticsSlot._eventsH
                             radius: 10
                             color: ConnTheme.fieldBg
                             border.width: 1
                             border.color: ConnTheme.cardEdge
                             clip: true
 
+                            EventsEmpty {
+                                anchors.fill: parent
+                                visible: !ytEvList.count
+                            }
+
                             ListView {
+                                id: ytEvList
                                 anchors.fill: parent
                                 anchors.margins: 8
-                                spacing: 4
+                                spacing: 2
                                 clip: true
                                 boundsBehavior: Flickable.StopAtBounds
-                                visible: { if (!api) return false; api.refreshCounter; return api.youtubeRunning() }
+                                visible: count > 0
                                 model: youtubeAnalytics ? youtubeAnalytics.feedModel : null
 
                                 delegate: EventFeedRow {
                                     width: ListView.view ? ListView.view.width : implicitWidth
                                     timeText: model.timeText || ""
-                                    iconGlyph: (model.eventKind === "superchat" || model.eventKind === "supersticker") ? "💬" : ((model.eventKind === "member") ? "⭐" : "▶")
                                     iconColor: ConnTheme.ytHi
+                                    platformIcon: Qt.resolvedUrl("../../assets/youtube.svg")
                                     bodyText: {
                                         var u = model.userName || ""
                                         var kind = model.eventKind || ""
@@ -606,30 +736,29 @@ Item {
                     visible: analyticsSlot._twShow
                     Layout.fillWidth: true
                     Layout.minimumWidth: analyticsSlot._minCardW
-                    readonly property int _contentH: twCardBody.implicitHeight + 28
-                    implicitHeight: analyticsSlot.bigPictureMode ? _contentH : analyticsSlot._cellCardH
-                    Layout.preferredHeight: analyticsSlot.bigPictureMode ? _contentH : analyticsSlot._cellCardH
-                    Layout.maximumHeight: analyticsSlot.bigPictureMode ? _contentH : analyticsSlot._cellCardH
-                    topLine: "#4c1d95"
+                    readonly property int _contentH: twCardBody.implicitHeight + 24
+                    implicitHeight: _contentH
+                    Layout.preferredHeight: _contentH
+                    Layout.alignment: Qt.AlignTop
+                    accent: ConnTheme.twBar
 
                     ColumnLayout {
                         id: twCardBody
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.top: parent.top
-                        anchors.margins: 14
-                        height: analyticsSlot.bigPictureMode ? implicitHeight : (parent.height - 28)
-                        spacing: 10
+                        anchors.margins: 12
+                        height: implicitHeight
+                        spacing: 8
 
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Rectangle { width: 3; height: 24; radius: 1; color: ConnTheme.twBar; Layout.alignment: Qt.AlignVCenter }
                             Image {
                                 source: Qt.resolvedUrl("../../assets/twitch.svg")
                                 sourceSize: Qt.size(64, 64)
-                                width: 26
-                                height: 26
+                                width: 22
+                                height: 22
                                 fillMode: Image.PreserveAspectFit
                                 smooth: true
                                 asynchronous: true
@@ -638,10 +767,14 @@ Item {
                             Text {
                                 text: { if (!api) return ""; api.refreshCounter; return api.loc("connections.twitch_analytics_title") }
                                 color: ConnTheme.twHi
-                                font.pixelSize: 17
+                                font.pixelSize: 15
                                 font.bold: true
                                 Layout.fillWidth: true
                                 elide: Text.ElideRight
+                            }
+                            OnlinePill {
+                                online: { if (!api) return false; api.refreshCounter; return api.twitchRunning() }
+                                Layout.alignment: Qt.AlignVCenter
                             }
                         }
 
@@ -663,43 +796,43 @@ Item {
 
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: analyticsSlot._compact ? 10 : 11
-                                valPx: analyticsSlot._compact ? 16 : 18
+                                capPx: 10
+                                valPx: analyticsSlot._compact ? 20 : 22
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.twitch_analytics_viewers") }
                                 val: twitchAnalytics ? twitchAnalytics.viewersCurrent : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: analyticsSlot._compact ? 10 : 11
-                                valPx: analyticsSlot._compact ? 16 : 18
+                                capPx: 10
+                                valPx: analyticsSlot._compact ? 20 : 22
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.twitch_analytics_peak") }
                                 val: twitchAnalytics ? twitchAnalytics.viewersPeak : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: analyticsSlot._compact ? 10 : 11
-                                valPx: analyticsSlot._compact ? 16 : 18
+                                capPx: 10
+                                valPx: analyticsSlot._compact ? 20 : 22
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.twitch_analytics_follows") }
                                 val: twitchAnalytics ? twitchAnalytics.followsSession : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: analyticsSlot._compact ? 10 : 11
-                                valPx: analyticsSlot._compact ? 16 : 18
+                                capPx: 10
+                                valPx: analyticsSlot._compact ? 20 : 22
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.twitch_analytics_subs") }
                                 val: twitchAnalytics ? twitchAnalytics.subsSession : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: analyticsSlot._compact ? 10 : 11
-                                valPx: analyticsSlot._compact ? 16 : 18
+                                capPx: 10
+                                valPx: analyticsSlot._compact ? 20 : 22
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.twitch_analytics_bits") }
                                 val: twitchAnalytics ? twitchAnalytics.bitsSession : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: analyticsSlot._compact ? 10 : 11
-                                valPx: analyticsSlot._compact ? 16 : 18
+                                capPx: 10
+                                valPx: analyticsSlot._compact ? 20 : 22
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.twitch_analytics_raids") }
                                 val: twitchAnalytics ? twitchAnalytics.raidsSession : 0
                             }
@@ -708,7 +841,7 @@ Item {
                         Text {
                             Layout.fillWidth: true
                             visible: { if (!api) return false; api.refreshCounter; return api.twitchRunning() }
-                            text: { if (!api) return ""; api.refreshCounter; return api.loc("connections.twitch_analytics_activity") }
+                            text: { if (!api) return ""; api.refreshCounter; return api.loc("connections.events_recent") }
                             color: ConnTheme.muted
                             font.pixelSize: 12
                             font.weight: Font.DemiBold
@@ -717,29 +850,35 @@ Item {
                         Rectangle {
                             Layout.fillWidth: true
                             visible: { if (!api) return false; api.refreshCounter; return api.twitchRunning() }
-                            Layout.fillHeight: !analyticsSlot.bigPictureMode
-                            Layout.preferredHeight: analyticsSlot.bigPictureMode ? analyticsSlot._bpEventsH : 0
-                            Layout.minimumHeight: analyticsSlot.bigPictureMode ? analyticsSlot._bpEventsH : 120
+                            Layout.fillHeight: false
+                            Layout.preferredHeight: analyticsSlot._eventsH
+                            Layout.maximumHeight: analyticsSlot._eventsH
                             radius: 10
                             color: ConnTheme.fieldBg
                             border.width: 1
                             border.color: ConnTheme.cardEdge
                             clip: true
 
+                            EventsEmpty {
+                                anchors.fill: parent
+                                visible: !twEvList.count
+                            }
+
                             ListView {
+                                id: twEvList
                                 anchors.fill: parent
                                 anchors.margins: 8
-                                spacing: 4
+                                spacing: 2
                                 clip: true
                                 boundsBehavior: Flickable.StopAtBounds
-                                visible: { if (!api) return false; api.refreshCounter; return api.twitchRunning() }
+                                visible: count > 0
                                 model: twitchAnalytics ? twitchAnalytics.feedModel : null
 
                                 delegate: EventFeedRow {
                                     width: ListView.view ? ListView.view.width : implicitWidth
                                     timeText: model.timeText || ""
-                                    iconGlyph: (model.eventKind === "sub") ? "⭐" : ((model.eventKind === "cheer") ? "💠" : ((model.eventKind === "raid") ? "⚡" : "＋"))
                                     iconColor: ConnTheme.twHi
+                                    platformIcon: Qt.resolvedUrl("../../assets/twitch.svg")
                                     bodyText: {
                                         var u = model.userName || ""
                                         var kind = model.eventKind || ""
@@ -762,30 +901,29 @@ Item {
                     visible: analyticsSlot._kkShow
                     Layout.fillWidth: true
                     Layout.minimumWidth: analyticsSlot._minCardW
-                    readonly property int _contentH: kkCardBody.implicitHeight + 28
-                    implicitHeight: analyticsSlot.bigPictureMode ? _contentH : analyticsSlot._cellCardH
-                    Layout.preferredHeight: analyticsSlot.bigPictureMode ? _contentH : analyticsSlot._cellCardH
-                    Layout.maximumHeight: analyticsSlot.bigPictureMode ? _contentH : analyticsSlot._cellCardH
-                    topLine: "#166534"
+                    readonly property int _contentH: kkCardBody.implicitHeight + 24
+                    implicitHeight: _contentH
+                    Layout.preferredHeight: _contentH
+                    Layout.alignment: Qt.AlignTop
+                    accent: ConnTheme.kkBar
 
                     ColumnLayout {
                         id: kkCardBody
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.top: parent.top
-                        anchors.margins: 14
-                        height: analyticsSlot.bigPictureMode ? implicitHeight : (parent.height - 28)
-                        spacing: 10
+                        anchors.margins: 12
+                        height: implicitHeight
+                        spacing: 8
 
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 10
-                            Rectangle { width: 3; height: 24; radius: 1; color: ConnTheme.kkBar; Layout.alignment: Qt.AlignVCenter }
                             Image {
                                 source: Qt.resolvedUrl("../../assets/kick.svg")
                                 sourceSize: Qt.size(64, 64)
-                                width: 26
-                                height: 26
+                                width: 22
+                                height: 22
                                 fillMode: Image.PreserveAspectFit
                                 smooth: true
                                 asynchronous: true
@@ -794,10 +932,14 @@ Item {
                             Text {
                                 text: { if (!api) return ""; api.refreshCounter; return api.loc("connections.kick_analytics_title") }
                                 color: ConnTheme.kkHi
-                                font.pixelSize: 17
+                                font.pixelSize: 15
                                 font.bold: true
                                 Layout.fillWidth: true
                                 elide: Text.ElideRight
+                            }
+                            OnlinePill {
+                                online: { if (!api) return false; api.refreshCounter; return api.kickEnabled() }
+                                Layout.alignment: Qt.AlignVCenter
                             }
                         }
 
@@ -819,50 +961,50 @@ Item {
 
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: analyticsSlot._compact ? 10 : 11
-                                valPx: analyticsSlot._compact ? 16 : 18
+                                capPx: 10
+                                valPx: analyticsSlot._compact ? 20 : 22
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.kick_analytics_viewers") }
                                 val: kickAnalytics ? kickAnalytics.viewersCurrent : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: analyticsSlot._compact ? 10 : 11
-                                valPx: analyticsSlot._compact ? 16 : 18
+                                capPx: 10
+                                valPx: analyticsSlot._compact ? 20 : 22
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.kick_analytics_peak") }
                                 val: kickAnalytics ? kickAnalytics.viewersPeak : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: analyticsSlot._compact ? 10 : 11
-                                valPx: analyticsSlot._compact ? 16 : 18
+                                capPx: 10
+                                valPx: analyticsSlot._compact ? 20 : 22
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.kick_analytics_messages") }
                                 val: kickAnalytics ? kickAnalytics.messagesSession : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: analyticsSlot._compact ? 10 : 11
-                                valPx: analyticsSlot._compact ? 16 : 18
+                                capPx: 10
+                                valPx: analyticsSlot._compact ? 20 : 22
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.kick_analytics_follows") }
                                 val: kickAnalytics ? kickAnalytics.followsSession : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: analyticsSlot._compact ? 10 : 11
-                                valPx: analyticsSlot._compact ? 16 : 18
+                                capPx: 10
+                                valPx: analyticsSlot._compact ? 20 : 22
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.kick_analytics_subs") }
                                 val: kickAnalytics ? kickAnalytics.subscriptionsSession : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: analyticsSlot._compact ? 10 : 11
-                                valPx: analyticsSlot._compact ? 16 : 18
+                                capPx: 10
+                                valPx: analyticsSlot._compact ? 20 : 22
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.kick_analytics_gift_subs") }
                                 val: kickAnalytics ? kickAnalytics.giftSubsSession : 0
                             }
                             StatMini {
                                 Layout.fillWidth: true
-                                capPx: analyticsSlot._compact ? 10 : 11
-                                valPx: analyticsSlot._compact ? 16 : 18
+                                capPx: 10
+                                valPx: analyticsSlot._compact ? 20 : 22
                                 cap: { if (!api) return ""; api.refreshCounter; return api.loc("connections.kick_analytics_kicks") }
                                 val: kickAnalytics ? kickAnalytics.kicksSession : 0
                             }
@@ -871,7 +1013,7 @@ Item {
                         Text {
                             Layout.fillWidth: true
                             visible: { if (!api) return false; api.refreshCounter; return api.kickEnabled() }
-                            text: { if (!api) return ""; api.refreshCounter; return api.loc("connections.kick_analytics_activity") }
+                            text: { if (!api) return ""; api.refreshCounter; return api.loc("connections.events_recent") }
                             color: ConnTheme.muted
                             font.pixelSize: 12
                             font.weight: Font.DemiBold
@@ -880,29 +1022,35 @@ Item {
                         Rectangle {
                             Layout.fillWidth: true
                             visible: { if (!api) return false; api.refreshCounter; return api.kickEnabled() }
-                            Layout.fillHeight: !analyticsSlot.bigPictureMode
-                            Layout.preferredHeight: analyticsSlot.bigPictureMode ? analyticsSlot._bpEventsH : 0
-                            Layout.minimumHeight: analyticsSlot.bigPictureMode ? analyticsSlot._bpEventsH : 120
+                            Layout.fillHeight: false
+                            Layout.preferredHeight: analyticsSlot._eventsH
+                            Layout.maximumHeight: analyticsSlot._eventsH
                             radius: 10
                             color: ConnTheme.fieldBg
                             border.width: 1
                             border.color: ConnTheme.cardEdge
                             clip: true
 
+                            EventsEmpty {
+                                anchors.fill: parent
+                                visible: !kkEvList.count
+                            }
+
                             ListView {
+                                id: kkEvList
                                 anchors.fill: parent
                                 anchors.margins: 8
-                                spacing: 4
+                                spacing: 2
                                 clip: true
                                 boundsBehavior: Flickable.StopAtBounds
-                                visible: { if (!api) return false; api.refreshCounter; return api.kickEnabled() }
+                                visible: count > 0
                                 model: kickAnalytics ? kickAnalytics.feedModel : null
 
                                 delegate: EventFeedRow {
                                     width: ListView.view ? ListView.view.width : implicitWidth
                                     timeText: model.timeText || ""
-                                    iconGlyph: (model.eventKind === "subscription") ? "⭐" : ((model.eventKind === "kick_gift") ? "💰" : ((model.eventKind === "gift") ? "🎁" : "＋"))
                                     iconColor: ConnTheme.kkHi
+                                    platformIcon: Qt.resolvedUrl("../../assets/kick.svg")
                                     bodyText: {
                                         var u = model.userName || ""
                                         var kind = model.eventKind || ""
