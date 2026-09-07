@@ -10,6 +10,10 @@ Rectangle {
     radius: 18
     clip: true
 
+    // Real startup status set by MainWindow warm-up ("Завантаження віджетів…", …).
+    // Never a fake progress bar — only the current phase, or the default text.
+    property string statusText: "Loading…"
+
     Rectangle {
         anchors.fill: parent
         anchors.margins: 1
@@ -70,7 +74,7 @@ Rectangle {
                 }
 
                 Text {
-                    text: "Loading…"
+                    text: root.statusText
                     color: "#f1f5f9"
                     font.pixelSize: 13
                     font.weight: Font.DemiBold

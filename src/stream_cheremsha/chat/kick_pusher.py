@@ -18,13 +18,36 @@ import logging
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any
-
-import aiohttp
+from typing import TYPE_CHECKING, Any
 
 from stream_cheremsha import l10n
 
+if TYPE_CHECKING:
+    # Static name for linters/type-checkers; the real import is lazy (below).
+    import aiohttp
+
 logger = logging.getLogger(__name__)
+
+# --- Lazy aiohttp import -------------------------------------------------------
+# aiohttp costs ~65ms and is only used when Kick chat actually runs — never at
+# application startup. The name is bound by _ensure_aiohttp(), called at the
+# top of every function that needs it (and via module __getattr__ for external
+# access). Binding never overwrites existing globals.
+
+
+def _ensure_aiohttp() -> None:
+    """Import aiohttp; bind only if not already present (never at startup)."""
+    if "aiohttp" not in globals():
+        import aiohttp as _aiohttp
+
+        globals()["aiohttp"] = _aiohttp
+
+
+def __getattr__(name: str):  # noqa: ANN001
+    if name == "aiohttp":
+        _ensure_aiohttp()
+        return globals()["aiohttp"]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 # Pusher endpoint for Kick chat (from the Kick web client). No auth required.
 PUSHER_URL = (
@@ -67,6 +90,7 @@ async def resolve_chatroom_id(
     protection may reject plain HTTP clients, so a browser-like User-Agent is
     sent; callers may retry after a short delay on failure.
     """
+    _ensure_aiohttp()
     url = CHANNEL_INFO_URL.format(slug=str(slug or "").strip().lstrip("@").strip())
     owns_session = session is None
     s = session or aiohttp.ClientSession()
@@ -212,6 +236,7 @@ class KickPusherClient:
     async def start(self) -> None:
         if self.running:
             return
+        _ensure_aiohttp()
         self._running = True
         self._session = aiohttp.ClientSession()
         self._task = asyncio.create_task(self._run(), name="kick-pusher")
@@ -227,6 +252,7 @@ class KickPusherClient:
             await session.close()
 
     async def _run(self) -> None:
+        _ensure_aiohttp()
         backoff = KICK_RECONNECT_SEC
         while self._running:
             try:
@@ -246,6 +272,7 @@ class KickPusherClient:
             backoff = min(backoff * 1.5, 30.0)
 
     async def _connect_once(self) -> None:
+        _ensure_aiohttp()
         session = self._session
         if session is None:
             session = self._session = aiohttp.ClientSession()

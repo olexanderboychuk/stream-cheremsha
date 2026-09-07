@@ -6,15 +6,52 @@ import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-
-import yt_dlp
-from yt_dlp.cookies import CookieLoadError
-from yt_dlp.utils import DownloadError
+from typing import TYPE_CHECKING
 
 from stream_cheremsha.chat.video_id import extract_youtube_video_id
 from stream_cheremsha.config import constants
 
+if TYPE_CHECKING:
+    # Static names for linters/type-checkers; the real import is lazy (below).
+    import yt_dlp
+    from yt_dlp.cookies import CookieLoadError
+    from yt_dlp.utils import DownloadError
+
 logger = logging.getLogger(__name__)
+
+# --- Lazy yt_dlp import ------------------------------------------------------
+# yt_dlp costs ~36ms and is only used when resolving/fetching YouTube music —
+# never at application startup. Names are bound by _ensure_yt_dlp(), called at
+# the top of every function that needs them (and via module __getattr__ for
+# external access). Binding never overwrites existing globals.
+_LAZY_YTDLP_NAMES = frozenset({"yt_dlp", "CookieLoadError", "DownloadError"})
+
+
+def _ensure_yt_dlp() -> None:
+    """Import yt_dlp; bind only names not already present (never at startup)."""
+    g = globals()
+    if all(n in g for n in _LAZY_YTDLP_NAMES):
+        return
+    import yt_dlp as _yt_dlp
+    from yt_dlp.cookies import CookieLoadError as _CookieLoadError
+    from yt_dlp.utils import DownloadError as _DownloadError
+
+    for _k, _v in (
+        ("yt_dlp", _yt_dlp),
+        ("CookieLoadError", _CookieLoadError),
+        ("DownloadError", _DownloadError),
+    ):
+        g.setdefault(_k, _v)
+
+
+def __getattr__(name: str):  # noqa: ANN001
+    if name in _LAZY_YTDLP_NAMES:
+        _ensure_yt_dlp()
+        try:
+            return globals()[name]
+        except KeyError:
+            pass
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 # Same shape as yt-dlp CLI `--cookies-from-browser` (see yt_dlp/__init__.py).
 _BROWSER_COOKIE_RE = re.compile(
@@ -129,6 +166,7 @@ def _merge_ytdlp_opts(base: dict[str, object]) -> dict[str, object]:
 
 
 def _extract_info(url: str, ydl_opts: dict[str, object], *, download: bool) -> dict:
+    _ensure_yt_dlp()
     opts = _merge_ytdlp_opts(ydl_opts)
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:

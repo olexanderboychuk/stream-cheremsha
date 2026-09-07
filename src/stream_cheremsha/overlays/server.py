@@ -7,9 +7,7 @@ import ssl
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
-
-from aiohttp import WSCloseCode, web
+from typing import TYPE_CHECKING, Any
 
 from stream_cheremsha.docks.activity_dock import render_activity_dock_html
 from stream_cheremsha.docks.multichat_dock import render_multichat_dock_html
@@ -22,6 +20,40 @@ from stream_cheremsha.overlays.models import (
 )
 from stream_cheremsha.overlays.pubsub import OverlayPubSub
 from stream_cheremsha.overlays.registry import OverlayRegistry, UnknownOverlayTypeError
+
+if TYPE_CHECKING:
+    # Static names for linters/type-checkers; the real import is lazy (below).
+    from aiohttp import WSCloseCode, web
+
+# --- Lazy aiohttp import -------------------------------------------------------
+# aiohttp costs ~65ms and is only used when the overlay server actually starts
+# (post-show) — never at application startup. Names are bound by
+# _ensure_aiohttp(), called at the top of every function that needs them (and
+# via module __getattr__ for external access). Binding never overwrites
+# existing globals.
+_LAZY_AIOHTTP_NAMES = frozenset({"WSCloseCode", "web"})
+
+
+def _ensure_aiohttp() -> None:
+    """Import aiohttp symbols; bind only names not already present (never at startup)."""
+    g = globals()
+    if all(n in g for n in _LAZY_AIOHTTP_NAMES):
+        return
+    from aiohttp import WSCloseCode as _WSCloseCode
+    from aiohttp import web as _web
+
+    g.setdefault("WSCloseCode", _WSCloseCode)
+    g.setdefault("web", _web)
+
+
+def __getattr__(name: str):  # noqa: ANN001
+    if name in _LAZY_AIOHTTP_NAMES:
+        _ensure_aiohttp()
+        try:
+            return globals()[name]
+        except KeyError:
+            pass
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 @dataclass(slots=True, frozen=True)
@@ -73,6 +105,7 @@ class OverlayServer:
     async def start(self) -> None:
         if self._running is not None:
             return
+        _ensure_aiohttp()
 
         @web.middleware
         async def _security_headers_mw(
@@ -140,9 +173,11 @@ class OverlayServer:
             self._tls_dir = None
 
     async def _health(self, _req: web.Request) -> web.Response:
+        _ensure_aiohttp()
         return web.Response(text="ok", content_type="text/plain")
 
     async def _assets(self, _req: web.Request) -> web.Response:
+        _ensure_aiohttp()
         rel = str(_req.match_info.get("path") or "").lstrip("/")
         if not rel:
             raise web.HTTPNotFound(text="asset not found")
@@ -166,6 +201,7 @@ class OverlayServer:
         )
 
     async def _overlay_page(self, req: web.Request) -> web.Response:
+        _ensure_aiohttp()
         overlay_type = str(req.match_info.get("overlay_type") or "").strip()
         try:
             t = self._registry.get(overlay_type)
@@ -195,6 +231,7 @@ class OverlayServer:
         return web.Response(text=html, content_type="text/html", charset="utf-8")
 
     async def _overlay_by_id(self, req: web.Request) -> web.Response:
+        _ensure_aiohttp()
         from stream_cheremsha.overlays.widget_instances import (
             get_instance,
             merged_settings,
@@ -221,18 +258,22 @@ class OverlayServer:
         return web.Response(text=html, content_type="text/html", charset="utf-8")
 
     async def _dock_multichat(self, _req: web.Request) -> web.Response:
+        _ensure_aiohttp()
         html = render_multichat_dock_html()
         return web.Response(text=html, content_type="text/html", charset="utf-8")
 
     async def _dock_activity(self, _req: web.Request) -> web.Response:
+        _ensure_aiohttp()
         html = render_activity_dock_html()
         return web.Response(text=html, content_type="text/html", charset="utf-8")
 
     async def _dock_online(self, _req: web.Request) -> web.Response:
+        _ensure_aiohttp()
         html = render_online_dock_html()
         return web.Response(text=html, content_type="text/html", charset="utf-8")
 
     async def _ws(self, req: web.Request) -> web.WebSocketResponse:
+        _ensure_aiohttp()
         ws = web.WebSocketResponse()
         await ws.prepare(req)
         patch_task: asyncio.Task[None] | None = None

@@ -6,11 +6,34 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
-
-import aiohttp
+from typing import TYPE_CHECKING, Any
 
 from stream_cheremsha.chat.twitch_helix import TwitchHelixClient
+
+if TYPE_CHECKING:
+    # Static name for linters/type-checkers; the real import is lazy (below).
+    import aiohttp
+
+# --- Lazy aiohttp import -------------------------------------------------------
+# aiohttp costs ~65ms and is only used when Twitch EventSub actually runs —
+# never at application startup. The name is bound by _ensure_aiohttp(), called
+# at the top of every function that needs it (and via module __getattr__ for
+# external access). Binding never overwrites existing globals.
+
+
+def _ensure_aiohttp() -> None:
+    """Import aiohttp; bind only if not already present (never at startup)."""
+    if "aiohttp" not in globals():
+        import aiohttp as _aiohttp
+
+        globals()["aiohttp"] = _aiohttp
+
+
+def __getattr__(name: str):  # noqa: ANN001
+    if name == "aiohttp":
+        _ensure_aiohttp()
+        return globals()["aiohttp"]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +71,7 @@ class TwitchEventSubClient:
         callbacks: TwitchEventSubCallbacks,
         session: aiohttp.ClientSession | None = None,
     ) -> None:
+        _ensure_aiohttp()
         self._helix = helix
         self._broadcaster_id = broadcaster_id.strip()
         self._cb = callbacks
@@ -82,6 +106,7 @@ class TwitchEventSubClient:
             cb(msg)
 
     async def _run(self) -> None:
+        _ensure_aiohttp()
         backoff = 2.0
         while self._running:
             try:
@@ -98,6 +123,7 @@ class TwitchEventSubClient:
             backoff = min(backoff * 1.6, 20.0)
 
     async def _connect_once(self) -> None:
+        _ensure_aiohttp()
         async with self._session.ws_connect(_EVENTSUB_WS, heartbeat=25) as ws:
             self._status("Twitch EventSub: connected")
             session_id: str | None = None

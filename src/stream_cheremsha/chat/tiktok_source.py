@@ -8,20 +8,138 @@ import time
 import traceback
 from collections.abc import Callable
 from datetime import UTC, datetime
-
-from TikTokLive import TikTokLiveClient
-from TikTokLive.client.errors import (
-    AgeRestrictedError,
-    SignatureRateLimitError,
-    TikTokLiveError,
-    UserNotFoundError,
-    UserOfflineError,
-)
-from TikTokLive.events import CommentEvent, ConnectEvent, DisconnectEvent, LiveEndEvent
+from typing import TYPE_CHECKING
 
 from stream_cheremsha import l10n
 from stream_cheremsha.domain.models import ChatMessage, ChatPlatform
 from stream_cheremsha.pipeline.coordinator import StreamCoordinator
+
+if TYPE_CHECKING:
+    # Static names for linters/type-checkers; the real import is lazy (below).
+    from TikTokLive import TikTokLiveClient
+    from TikTokLive.client.errors import (
+        AgeRestrictedError,
+        SignatureRateLimitError,
+        TikTokLiveError,
+        UserNotFoundError,
+        UserOfflineError,
+    )
+    from TikTokLive.events import (
+        ColdStartEvent,
+        CommentEvent,
+        ConnectEvent,
+        DisconnectEvent,
+        FollowEvent,
+        GiftEvent,
+        JoinEvent,
+        LikeEvent,
+        LiveEndEvent,
+        RoomUserSeqEvent,
+        ShareEvent,
+        SubscribeEvent,
+    )
+
+# --- Lazy TikTokLive import -------------------------------------------------
+# TikTokLive costs ~0.9s to import (protobuf + signing stack) and is only used
+# when TikTok chat actually runs — never at application startup. Names are
+# bound by _ensure_tiktoklive(), called at the top of every method that needs
+# them (and via module __getattr__ for external access). Binding never
+# overwrites existing globals so test stubs (monkeypatch) keep working.
+_TIKTOKLIVE_CLIENT_AND_ERRORS = frozenset(
+    {
+        "TikTokLiveClient",
+        "AgeRestrictedError",
+        "SignatureRateLimitError",
+        "TikTokLiveError",
+        "UserNotFoundError",
+        "UserOfflineError",
+        "CommentEvent",
+        "ConnectEvent",
+        "DisconnectEvent",
+        "LiveEndEvent",
+    }
+)
+_TIKTOKLIVE_EVENT_NAMES = frozenset(
+    {
+        "ColdStartEvent",
+        "FollowEvent",
+        "GiftEvent",
+        "JoinEvent",
+        "LikeEvent",
+        "RoomUserSeqEvent",
+        "ShareEvent",
+        "SubscribeEvent",
+    }
+)
+
+
+def _ensure_tiktoklive() -> None:
+    """Import TikTokLive once; bind only names not already present (never at startup)."""
+    g = globals()
+    if all(n in g for n in _TIKTOKLIVE_CLIENT_AND_ERRORS) and all(
+        n in g for n in _TIKTOKLIVE_EVENT_NAMES
+    ):
+        return
+    from TikTokLive import TikTokLiveClient as _Client
+    from TikTokLive.client.errors import (
+        AgeRestrictedError as _AgeRestricted,
+    )
+    from TikTokLive.client.errors import (
+        SignatureRateLimitError as _RateLimit,
+    )
+    from TikTokLive.client.errors import (
+        TikTokLiveError as _LiveError,
+    )
+    from TikTokLive.client.errors import (
+        UserNotFoundError as _NotFound,
+    )
+    from TikTokLive.client.errors import (
+        UserOfflineError as _Offline,
+    )
+    from TikTokLive.events import (
+        CommentEvent as _Comment,
+    )
+    from TikTokLive.events import (
+        ConnectEvent as _Connect,
+    )
+    from TikTokLive.events import (
+        DisconnectEvent as _Disconnect,
+    )
+    from TikTokLive.events import (
+        LiveEndEvent as _LiveEnd,
+    )
+
+    for _k, _v in (
+        ("TikTokLiveClient", _Client),
+        ("AgeRestrictedError", _AgeRestricted),
+        ("SignatureRateLimitError", _RateLimit),
+        ("TikTokLiveError", _LiveError),
+        ("UserNotFoundError", _NotFound),
+        ("UserOfflineError", _Offline),
+        ("CommentEvent", _Comment),
+        ("ConnectEvent", _Connect),
+        ("DisconnectEvent", _Disconnect),
+        ("LiveEndEvent", _LiveEnd),
+    ):
+        g.setdefault(_k, _v)
+    for _name in _TIKTOKLIVE_EVENT_NAMES:
+        if _name == "SubscribeEvent":
+            if "SubscribeEvent" not in g:
+                g["SubscribeEvent"] = _optional_event("SubscribeEvent") or _optional_event(
+                    "SubNotifyEvent"
+                )
+        else:
+            g.setdefault(_name, _optional_event(_name))
+
+
+def __getattr__(name: str):  # noqa: ANN001
+    if name in _TIKTOKLIVE_CLIENT_AND_ERRORS or name in _TIKTOKLIVE_EVENT_NAMES:
+        _ensure_tiktoklive()
+        try:
+            return globals()[name]
+        except KeyError:
+            pass
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 logger = logging.getLogger(__name__)
 
@@ -298,15 +416,9 @@ def _optional_event(name: str):  # noqa: ANN001
         return None
 
 
-# Import individually so e.g. missing SubNotifyEvent never clears JoinEvent/RoomUserSeqEvent.
-ColdStartEvent = _optional_event("ColdStartEvent")
-FollowEvent = _optional_event("FollowEvent")
-GiftEvent = _optional_event("GiftEvent")
-JoinEvent = _optional_event("JoinEvent")
-LikeEvent = _optional_event("LikeEvent")
-RoomUserSeqEvent = _optional_event("RoomUserSeqEvent")
-ShareEvent = _optional_event("ShareEvent")
-SubscribeEvent = _optional_event("SubscribeEvent") or _optional_event("SubNotifyEvent")
+# Resolved by _ensure_tiktoklive() on first use (see module header): binding
+# never overwrites existing globals so test stubs keep working, and the ~0.9s
+# TikTokLive import never runs at application startup.
 
 
 def _normalize_unique_id(v: str) -> str:
@@ -907,6 +1019,7 @@ class TikTokChatSource:
 
     async def _poll_live_viewers_http(self, client: TikTokLiveClient) -> None:
         """Fill gaps when websocket `m_total` stays 0 (TikTok payload differences)."""
+        _ensure_tiktoklive()
         cb_cur = self._on_room_viewers_current or self._on_room_viewers
         if cb_cur is None:
             return
@@ -951,6 +1064,9 @@ class TikTokChatSource:
         self._unique_id = uid
         self._running = True
         logger.debug("TikTok supervisor start @%s", uid)
+        # Import the heavy TikTokLive chain (~0.9s) off the event loop so the
+        # UI never freezes when TikTok starts (click or autostart).
+        await asyncio.to_thread(_ensure_tiktoklive)
         self._task = asyncio.create_task(self._supervisor(), name="tiktok-live")
 
     async def stop(self) -> None:
@@ -984,6 +1100,7 @@ class TikTokChatSource:
 
     async def _supervisor(self) -> None:
         assert self._unique_id is not None
+        _ensure_tiktoklive()
         backoff = TIKTOK_RECONNECT_SEC
         attempt = 0
         while self._running:

@@ -13,6 +13,20 @@ Item {
     Component.onCompleted: if (api) platformCardsHidden = api.platformCardsHiddenGet()
     onPlatformCardsHiddenChanged: if (api) api.platformCardsHiddenSet(platformCardsHidden)
 
+    // Micro entrance transition, retriggered by MainWindow (enterPulse toggle)
+    // on every cached navigation. GPU-cheap root opacity only, 120ms.
+    property bool enterPulse: false
+    onEnterPulseChanged: enterFade.restart()
+    NumberAnimation {
+        id: enterFade
+        target: root
+        property: "opacity"
+        from: 0.97
+        to: 1.0
+        duration: 120
+        easing.type: Easing.OutCubic
+    }
+
     Rectangle {
         anchors.fill: parent
         color: ConnTheme.base
@@ -223,7 +237,8 @@ Item {
                     id: splitter
                     Layout.preferredWidth: 24
                     Layout.fillHeight: true
-                    visible: analyticsSlot._anyPanelEnabled || !root.platformCardsHidden
+                    // Keep the expand handle available after collapsing the platform cards.
+                    visible: true
 
                     Rectangle {
                         id: splitLine

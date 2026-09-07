@@ -8,8 +8,6 @@ import random
 import time
 from typing import Any
 
-import numpy as np
-
 from stream_cheremsha.domain.protocols import TextToSpeech
 
 logger = logging.getLogger(__name__)
@@ -157,6 +155,8 @@ class ReSpeecherTts:
 
     async def _synthesize_single(self, text: str) -> bytes:
         """Synthesize a single chunk via the ReSpeecher WebSocket."""
+        import numpy as np  # noqa: PLC0415 — ~43ms; runtime only, never at startup.
+
         # Rate-limit: enforce minimum interval since last request
         now = time.monotonic()
         wait = self._min_interval_sec - (now - self._last_request_time)

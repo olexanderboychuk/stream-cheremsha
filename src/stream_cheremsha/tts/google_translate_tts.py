@@ -31,13 +31,22 @@ class GoogleTranslateTts:
         self._min_interval = min_interval_sec
         # 100 = normal speed; Google has no native rate control, so speed is applied via ffmpeg.
         self._rate_percent = max(50, min(200, int(rate_percent)))
-        self._client = httpx.AsyncClient(
-            headers={"User-Agent": _UA},
-            follow_redirects=True,
-            timeout=httpx.Timeout(30.0),
-        )
+        # httpx.AsyncClient pulls httpcore/anyio/h11 (~100ms) on construction;
+        # create it on first synthesis (runtime), never at startup.
+        self._client: httpx.AsyncClient | None = None
         self._lock = asyncio.Lock()
         self._last_end = 0.0
+
+    def _client_or_create(self) -> httpx.AsyncClient:
+        client = self._client
+        if client is None:
+            client = httpx.AsyncClient(
+                headers={"User-Agent": _UA},
+                follow_redirects=True,
+                timeout=httpx.Timeout(30.0),
+            )
+            self._client = client
+        return client
 
     @property
     def language(self) -> str:
@@ -48,7 +57,9 @@ class GoogleTranslateTts:
         return self._rate_percent
 
     async def aclose(self) -> None:
-        await self._client.aclose()
+        client, self._client = self._client, None
+        if client is not None:
+            await client.aclose()
 
     async def synthesize(self, text: str) -> bytes:
         stripped = text.strip()
@@ -66,7 +77,7 @@ class GoogleTranslateTts:
                 "client": "tw-ob",
                 "q": stripped,
             }
-            response = await self._client.get(_TRANSLATE_TTS_URL, params=params)
+            response = await self._client_or_create().get(_TRANSLATE_TTS_URL, params=params)
             self._last_end = time.monotonic()
 
         if response.status_code != 200:

@@ -132,18 +132,34 @@ class QtAudioSink(QObject):
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self._player = QMediaPlayer(self)
-        self._audio = QAudioOutput(self)
-        self._player.setAudioOutput(self._audio)
+        # QtMultimedia backends (QMediaPlayer/QAudioOutput) cost ~130ms
+        # (FFmpeg plugin load + audio device query) and are created lazily via
+        # ensure_ready() — never during MainWindow construction. All runtime
+        # entry points ensure them; pure setters work without backends.
+        self._player: QMediaPlayer | None = None
+        self._audio: QAudioOutput | None = None
         self._play_lock = asyncio.Lock()
         self._sound_dedupe_lock = asyncio.Lock()
         self._sound_dedupe_keys: set[str] = set()
         self._pending_fut: asyncio.Future[None] | None = None
         self._parallel_tasks: set[asyncio.Task[None]] = set()
-
-        self._player.errorOccurred.connect(self._on_player_error)
-        self._player.mediaStatusChanged.connect(self._on_media_status)
         self._tts_gain_db = _DEFAULT_TTS_GAIN_DB
+        self._pending_volume: float | None = None
+
+    def ensure_ready(self) -> None:
+        """Create QtMultimedia backends if needed. Idempotent; post-show only."""
+        if self._player is not None and self._audio is not None:
+            return
+        player = QMediaPlayer(self)
+        audio = QAudioOutput(self)
+        player.setAudioOutput(audio)
+        player.errorOccurred.connect(self._on_player_error)
+        player.mediaStatusChanged.connect(self._on_media_status)
+        self._player = player
+        self._audio = audio
+        if self._pending_volume is not None:
+            audio.setVolume(self._pending_volume)
+            self._pending_volume = None
 
     def set_tts_gain_db(self, db: int) -> None:
         """Base dB boost for ffmpeg TTS chain (0–36)."""
@@ -153,6 +169,8 @@ class QtAudioSink(QObject):
         """Match QAudioDevice.description(); None or empty keeps default."""
         if not description:
             return
+        self.ensure_ready()
+        assert self._audio is not None
         for dev in QMediaDevices.audioOutputs():
             if dev.description() == description:
                 self._audio.setDevice(dev)
@@ -160,9 +178,15 @@ class QtAudioSink(QObject):
         logger.warning("Audio device %r not found, using default", description)
 
     def set_volume(self, linear: float) -> None:
-        self._audio.setVolume(max(0.0, min(1.0, linear)))
+        v = max(0.0, min(1.0, float(linear)))
+        if self._audio is None:
+            self._pending_volume = v
+            return
+        self._audio.setVolume(v)
 
     def get_volume(self) -> float:
+        if self._audio is None:
+            return float(self._pending_volume) if self._pending_volume is not None else 1.0
         return float(self._audio.volume())
 
     def _on_player_error(self, error: QMediaPlayer.Error, error_string: str) -> None:
@@ -179,6 +203,8 @@ class QtAudioSink(QObject):
 
     def pause(self) -> None:
         """Pause current playback (best-effort)."""
+        if self._player is None:
+            return
         try:
             self._player.pause()
         except RuntimeError:
@@ -186,12 +212,16 @@ class QtAudioSink(QObject):
 
     def resume(self) -> None:
         """Resume current playback (best-effort)."""
+        if self._player is None:
+            return
         try:
             self._player.play()
         except RuntimeError:
             return
 
     async def _play_mp3_locked(self, data: bytes) -> None:
+        self.ensure_ready()
+        assert self._player is not None
         loop = asyncio.get_running_loop()
         fut: asyncio.Future[None] = loop.create_future()
         self._pending_fut = fut
@@ -254,6 +284,8 @@ class QtAudioSink(QObject):
             if k in self._sound_dedupe_keys:
                 return False
             self._sound_dedupe_keys.add(k)
+        self.ensure_ready()
+        assert self._audio is not None
         try:
             async with self._play_lock:
                 prev = float(self._audio.volume())
@@ -269,6 +301,8 @@ class QtAudioSink(QObject):
 
     async def play_mp3_with_volume(self, data: bytes, linear: float) -> None:
         """Play one clip at the given volume (atomic with playback lock)."""
+        self.ensure_ready()
+        assert self._audio is not None
         async with self._play_lock:
             prev = float(self._audio.volume())
             self._audio.setVolume(max(0.0, min(1.0, float(linear))))
@@ -351,5 +385,8 @@ class QtAudioSink(QObject):
                 self._sound_dedupe_keys.discard(k)
 
     def shutdown(self) -> None:
+        if self._player is None:
+            self._pending_fut = None
+            return
         self._player.stop()
         self._player.setSource(QUrl())

@@ -23,7 +23,12 @@ from qasync import QEventLoop
 
 from stream_cheremsha.diagnostics.runtime import install_runtime_diagnostics
 from stream_cheremsha.paths import stream_cheremsha_root
-from stream_cheremsha.ui.main_window import MainWindow
+
+logger = logging.getLogger(__name__)
+
+# NOTE: MainWindow (and its heavy dependency chain: chat sources, TTS, music,
+# telegram, httpx, ...) is imported lazily inside _start_main_window so the
+# splash screen can appear before ~1.5s of Python imports block the main thread.
 
 
 def _configure_logging() -> None:
@@ -116,9 +121,54 @@ def main() -> None:
     app.aboutToQuit.connect(loop.stop)
 
     def _start_main_window() -> None:
+        # Heavy import happens here, while the splash is already visible.
+        from stream_cheremsha.ui.main_window import MainWindow
+
         window = MainWindow()
-        window.startup_finished.connect(splash.close)
+        # The first page (Connections QML) is loaded synchronously inside
+        # MainWindow.__init__, so by this point the window is coherent:
+        # sidebar rendered, first page ready. Show it behind the splash so it
+        # can paint/composite while secondary pages warm up.
         window.show()
+        app.processEvents()
+        asyncio.ensure_future(_warm_and_reveal(window))
+
+    async def _warm_and_reveal(window) -> None:  # noqa: ANN001
+        """Splash-phase warm-up, then reveal: staged preload with live status.
+
+        Uses already-hidden splash time to compile heavy QML pages once into
+        the navigation cache (kept alive, never unloaded). Yields between
+        pages so the splash keeps rendering. The splash closes only after the
+        MainWindow is fully ready; all remaining startup work (overlay server,
+        music player, TTS backend, workers, telegram, autostart, updates) runs
+        deferred in run_startup() afterwards.
+        """
+
+        def _set_splash_status(text: str) -> None:
+            try:
+                root = splash.rootObject()
+                if root is not None:
+                    root.setProperty("statusText", text)
+            except RuntimeError:
+                pass
+
+        try:
+            await window.warm_secondary_pages(status_cb=_set_splash_status)
+        except Exception:
+            logger.exception("QML warm-up failed; continuing with lazy loading")
+        # Show the fully-ready window underneath BEFORE closing the splash so
+        # the user never sees a half-constructed UI or a desktop flash. The
+        # yield lets the shown window paint through the normal event loop
+        # (never app.processEvents() here — this runs inside a task).
+        try:
+            window.show()
+        except RuntimeError:
+            pass
+        await asyncio.sleep(0)
+        try:
+            splash.close()
+        except RuntimeError:
+            pass
         asyncio.ensure_future(window.run_startup())
 
     # Start heavy QWidget init after the Qt loop begins,

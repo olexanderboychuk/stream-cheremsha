@@ -13,19 +13,25 @@ import sys
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 from xml.sax.saxutils import quoteattr
 
 import httpx
 import shiboken6
 from PySide6.QtCore import (
+    Property,
     QByteArray,
+    QAbstractAnimation,
     QEasingCurve,
     QEvent,
     QObject,
+    QPoint,
     QPropertyAnimation,
+    QRect,
+    QRectF,
     QSettings,
     QSize,
     Qt,
@@ -41,6 +47,7 @@ from PySide6.QtGui import (
     QFont,
     QIcon,
     QKeySequence,
+    QLinearGradient,
     QPainter,
     QPen,
     QPixmap,
@@ -57,7 +64,6 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QFrame,
     QGraphicsDropShadowEffect,
-    QGraphicsOpacityEffect,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -207,13 +213,6 @@ from stream_cheremsha.pipeline.coordinator import StreamCoordinator
 from stream_cheremsha.pipeline.filters import message_allowed_by_tts_whitelist
 from stream_cheremsha.pipeline.tts_sanitize import strip_non_alphabetic_for_tts
 from stream_cheremsha.ssl_manager import ensure_valid_ssl
-from stream_cheremsha.telegram.bot_service import RiskyDecisionResult, TelegramBotService
-from stream_cheremsha.telegram.tiktok_song_filter import (
-    TikTokLyricsCheckError,
-    analyze_lyrics_with_groq,
-    fetch_lyrics_for_youtube_title,
-    format_tiktok_reject_reason,
-)
 from stream_cheremsha.tts.edge_tts import (
     EdgeTts,
     filter_edge_voices_for_locale,
@@ -250,6 +249,17 @@ from stream_cheremsha.ui.window_geometry import (
 )
 from stream_cheremsha.ui.youtube_analytics_api import YouTubeAnalyticsApi
 
+if TYPE_CHECKING:
+    # Static names for linters/type-checkers; the real imports run post-show
+    # via _ensure_telegram_libs() (never at application startup).
+    from stream_cheremsha.telegram.bot_service import RiskyDecisionResult, TelegramBotService
+    from stream_cheremsha.telegram.tiktok_song_filter import (
+        TikTokLyricsCheckError,
+        analyze_lyrics_with_groq,
+        fetch_lyrics_for_youtube_title,
+        format_tiktok_reject_reason,
+    )
+
 logger = logging.getLogger(__name__)
 
 _STREAM_ROOT = stream_cheremsha_root()
@@ -261,6 +271,45 @@ def _qml_path(name: str) -> Path:
 
 def _setup_qml_import_path(widget: QQuickWidget) -> None:
     widget.engine().addImportPath(str(_STREAM_ROOT / "qml"))
+
+
+_TELEGRAM_LAZY_NAMES = frozenset(
+    {
+        "RiskyDecisionResult",
+        "TelegramBotService",
+        "TikTokLyricsCheckError",
+        "analyze_lyrics_with_groq",
+        "fetch_lyrics_for_youtube_title",
+        "format_tiktok_reject_reason",
+    }
+)
+
+
+def _ensure_telegram_libs() -> None:
+    """Import telegram/lyrics libs once, post-show; never overwrite existing globals."""
+    g = globals()
+    if all(n in g for n in _TELEGRAM_LAZY_NAMES):
+        return
+    from stream_cheremsha.telegram.bot_service import RiskyDecisionResult as _Risky
+    from stream_cheremsha.telegram.bot_service import TelegramBotService as _BotService
+    from stream_cheremsha.telegram.tiktok_song_filter import TikTokLyricsCheckError as _LyricsErr
+    from stream_cheremsha.telegram.tiktok_song_filter import analyze_lyrics_with_groq as _analyze
+    from stream_cheremsha.telegram.tiktok_song_filter import (
+        fetch_lyrics_for_youtube_title as _fetch_lyrics,
+    )
+    from stream_cheremsha.telegram.tiktok_song_filter import (
+        format_tiktok_reject_reason as _format_reason,
+    )
+
+    for _k, _v in (
+        ("RiskyDecisionResult", _Risky),
+        ("TelegramBotService", _BotService),
+        ("TikTokLyricsCheckError", _LyricsErr),
+        ("analyze_lyrics_with_groq", _analyze),
+        ("fetch_lyrics_for_youtube_title", _fetch_lyrics),
+        ("format_tiktok_reject_reason", _format_reason),
+    ):
+        g.setdefault(_k, _v)
 
 
 def _asset_path(name: str) -> Path:
@@ -287,6 +336,11 @@ def _footer_richtext_img(name: str, px: int) -> str:
 
 _MAX_LOG_DOCUMENT_BLOCKS = 3500
 _MAX_CHAT_DOCUMENT_BLOCKS = 450
+
+# Splash-phase QML warm-up budget: stop preloading lower-priority pages once
+# the hidden time spent compiling exceeds this. Measured first-open costs:
+# Widgets ~0.8s, Actions ~0.2s, Donations ~0.05s, Docks ~0.02s.
+_QML_WARMUP_BUDGET_SEC = 1.5
 _SETTINGS_CHAT_FONT_PT = "ui/chat_font_pt"
 _SETTINGS_CHAT_FONT_FAMILY = "ui/chat_font_family"
 
@@ -550,52 +604,311 @@ def _sidebar_motion_allowed() -> bool:
     return True
 
 
-class _SideNavHoverFilter(QObject):
-    """Subtle hover polish: neon edge glow + 19px→20px icon swell (GPU-cheap)."""
+class _HoverPillModel(QObject):
+    """Animatable state for the single shared hover pill."""
 
-    def __init__(self, glow: QColor, parent: QObject | None = None) -> None:
+    pillXChanged = Signal(float)
+    pillYChanged = Signal(float)
+    pillWChanged = Signal(float)
+    pillHChanged = Signal(float)
+    opacityChanged = Signal(float)
+    growChanged = Signal(float)
+
+    def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
+        self._x = 0.0
+        self._y = 0.0
+        self._w = 0.0
+        self._h = 0.0
+        self._opacity = 0.0
+        self._grow = 2.5
+        self._radius = 10.0
+        self._glow = QColor(139, 92, 246, 110)
+
+    @Property(float, notify=pillXChanged)
+    def pillX(self) -> float:
+        return self._x
+
+    @pillX.setter
+    def pillX(self, value: float) -> None:
+        value = float(value)
+        if value != self._x:
+            self._x = value
+            self.pillXChanged.emit(value)
+
+    @Property(float, notify=pillYChanged)
+    def pillY(self) -> float:
+        return self._y
+
+    @pillY.setter
+    def pillY(self, value: float) -> None:
+        value = float(value)
+        if value != self._y:
+            self._y = value
+            self.pillYChanged.emit(value)
+
+    @Property(float, notify=pillWChanged)
+    def pillW(self) -> float:
+        return self._w
+
+    @pillW.setter
+    def pillW(self, value: float) -> None:
+        value = float(value)
+        if value != self._w:
+            self._w = value
+            self.pillWChanged.emit(value)
+
+    @Property(float, notify=pillHChanged)
+    def pillH(self) -> float:
+        return self._h
+
+    @pillH.setter
+    def pillH(self, value: float) -> None:
+        value = float(value)
+        if value != self._h:
+            self._h = value
+            self.pillHChanged.emit(value)
+
+    @Property(float, notify=opacityChanged)
+    def opacity(self) -> float:
+        return self._opacity
+
+    @opacity.setter
+    def opacity(self, value: float) -> None:
+        value = float(value)
+        if value != self._opacity:
+            self._opacity = value
+            self.opacityChanged.emit(value)
+
+    @Property(float, notify=growChanged)
+    def grow(self) -> float:
+        return self._grow
+
+    @grow.setter
+    def grow(self, value: float) -> None:
+        value = float(value)
+        if value != self._grow:
+            self._grow = value
+            self.growChanged.emit(value)
+
+
+class _HoverCapsuleView(QWidget):
+    """Paints the hover pill behind nav buttons."""
+
+    def __init__(self, model: _HoverPillModel, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._model = model
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoMousePropagation, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.setEnabled(False)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        model.opacityChanged.connect(self._on_tick)
+        model.growChanged.connect(self._on_tick)
+
+    def _on_tick(self, *_args) -> None:
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: ANN001
+        w = self.width()
+        h = self.height()
+        if w <= 1 or h <= 1:
+            return
+        m = self._model
+        op = m._opacity
+        if op <= 0.01:
+            return
+        p = QPainter(self)
+        try:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            grow = m._grow
+            r = m._radius
+            rc = QRectF(grow, grow, w - 2.0 * grow, h - 2.0 * grow)
+            # outer glow stroke
+            glow = QColor(m._glow)
+            glow.setAlpha(int(round(glow.alpha() * op * 0.42)))
+            gp = QPen(glow, 4.5)
+            gp.setCosmetic(True)
+            p.setPen(gp)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(rc, r, r)
+            # body fill
+            g = QLinearGradient(0.0, 0.0, rc.width(), 0.0)
+            c0 = QColor(34, 211, 238)
+            c0.setAlpha(int(round(10 * op)))
+            c1 = QColor(20, 26, 40)
+            c1.setAlpha(int(round(255 * op)))
+            g.setColorAt(0.0, c0)
+            g.setColorAt(1.0, c1)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(g)
+            p.drawRoundedRect(rc, r, r)
+            # inner border
+            border = QColor("#232c42")
+            border.setAlpha(int(round(255 * op)))
+            bp = QPen(border, 1.0)
+            bp.setCosmetic(True)
+            p.setPen(bp)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(QRectF(rc.x() + 0.5, rc.y() + 0.5, rc.width() - 1.0, rc.height() - 1.0), r, r)
+        finally:
+            p.end()
+
+
+class _SidebarHoverController(QObject):
+    """Single shared hover pill that smoothly chases the hovered sidebar item."""
+
+    _CHASE_MS = 240
+    _FADE_MS = 200
+    _SETTLE_MS = 170
+
+    def __init__(self, frame: QFrame, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._frame = frame
+        self._model = _HoverPillModel(self)
+        self._capsule = _HoverCapsuleView(self._model, frame)
+        self._capsule.lower()
+        self._capsule.hide()
+        self._target_item: QToolButton | None = None
+        self._target_geometry = QRect()
+        self._fading = False
+        self._geometry_anim = QPropertyAnimation(self._capsule, b"geometry", self)
+        self._geometry_anim.setDuration(220)
+        self._geometry_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._opacity_anim = QPropertyAnimation(self._model, b"opacity", self)
+        self._opacity_anim.setDuration(180)
+        self._opacity_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._opacity_anim.finished.connect(self._on_opacity_finished)
+
+    @staticmethod
+    def _is_motion_allowed() -> bool:
+        """Return True if UI animations are permitted (honor reduced-motion settings)."""
+        return _sidebar_motion_allowed()
+
+    def on_enter(self, widget: QWidget, glow: QColor | None) -> None:
+        if isinstance(widget, QToolButton):
+            self._track_button(widget, glow)
+        elif self._capsule.isVisible():
+            self._settle()
+
+    def on_layout_changed(self, widget: QWidget) -> None:
+        if widget is self._target_item:
+            self._move_to(self._target_rect(widget), animate=self._capsule.isVisible())
+
+    def on_leave(self, widget: QWidget) -> None:
+        if self._capsule.isVisible():
+            self._fade_out()
+
+    def reset(self) -> None:
+        self._geometry_anim.stop()
+        self._opacity_anim.stop()
+        self._capsule.hide()
+        self._fading = False
+
+    @staticmethod
+    def _safe_stop(anim: QPropertyAnimation | None) -> None:
+        """Stop an animation that may already be deleted by DeleteWhenStopped."""
+        if anim is None:
+            return
+        try:
+            if not shiboken6.isValid(anim):
+                return
+            anim.stop()
+        except RuntimeError:
+            pass
+
+    def _track_button(self, btn: QToolButton, glow: QColor | None) -> None:
+        target = self._target_rect(btn)
+        if btn is self._target_item and target == self._target_geometry:
+            self._settle()
+            return
+        self._target_item = btn
+        self._target_geometry = QRect(target)
+        if glow is not None:
+            self._model._glow = QColor(glow)
+        self._model._radius = 8.0 if target.height() <= 40 else 10.0
+        self._move_to(target, animate=self._capsule.isVisible())
+        if not self._capsule.isVisible():
+            self._capsule.show()
+        self._model.grow = 0.0
+        self._settle()
+
+    def _target_rect(self, item: QToolButton) -> QRect:
+        return QRect(item.mapTo(self._frame, QPoint(0, 0)), item.size())
+
+    def _move_to(self, rect: QRect, *, animate: bool) -> None:
+        if rect == self._target_geometry and self._capsule.geometry() == rect:
+            return
+        self._target_geometry = QRect(rect)
+        if not animate or not self._is_motion_allowed():
+            self._geometry_anim.stop()
+            self._capsule.setGeometry(rect)
+            return
+
+        if self._geometry_anim.state() == QAbstractAnimation.State.Running:
+            # Retarget the one live animation without resetting its current
+            # visual geometry. For normal rows width and height are unchanged,
+            # so this is effectively a native Y-only animation.
+            self._geometry_anim.setEndValue(rect)
+            return
+        self._geometry_anim.stop()
+        self._geometry_anim.setStartValue(self._capsule.geometry())
+        self._geometry_anim.setEndValue(rect)
+        self._geometry_anim.start()
+
+    def _settle(self) -> None:
+        m = self._model
+        if not self._is_motion_allowed() or m._opacity >= 0.999:
+            self._opacity_anim.stop()
+            m.opacity = 1.0
+            self._fading = False
+            return
+        self._fading = False
+        self._opacity_anim.stop()
+        self._opacity_anim.setStartValue(m.opacity)
+        self._opacity_anim.setEndValue(1.0)
+        self._opacity_anim.setDuration(self._SETTLE_MS)
+        self._opacity_anim.start()
+
+    def _fade_out(self) -> None:
+        if not self._capsule.isVisible():
+            return
+        if not self._is_motion_allowed():
+            self._opacity_anim.stop()
+            self._model.opacity = 0.0
+            self._capsule.hide()
+            return
+        self._fading = True
+        self._opacity_anim.stop()
+        self._opacity_anim.setStartValue(self._model.opacity)
+        self._opacity_anim.setEndValue(0.0)
+        self._opacity_anim.setDuration(self._FADE_MS)
+        self._opacity_anim.start()
+
+    def _on_opacity_finished(self) -> None:
+        if self._fading and self._model.opacity <= 0.01:
+            self._fading = False
+            self._capsule.hide()
+
+
+class _SidebarHoverWatcher(QObject):
+    """Forwards Enter/Leave of any sidebar surface to the shared pill controller."""
+
+    def __init__(self, controller: _SidebarHoverController, glow: QColor | None, *, swell: bool = False, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._ctl = controller
         self._glow = glow
-        self._anims: list[QPropertyAnimation] = []
+        self._swell = swell
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        if not isinstance(watched, QToolButton):
-            return False
         if event.type() == QEvent.Type.Enter and watched.isEnabled():
-            self._set_glow(watched, True)
-            self._swell_icon(watched, QSize(20, 20))
+            self._ctl.on_enter(watched, self._glow)
         elif event.type() == QEvent.Type.Leave:
-            if watched.property("activeNav") != "on":
-                self._set_glow(watched, False)
-            self._swell_icon(watched, QSize(19, 19))
+            self._ctl.on_leave(watched)
+        elif event.type() in (QEvent.Type.Resize, QEvent.Type.LayoutRequest):
+            self._ctl.on_layout_changed(watched)
         return False
-
-    def _set_glow(self, btn: QToolButton, on: bool) -> None:
-        if not _sidebar_motion_allowed():
-            on = False
-        if not on:
-            if not btn.property("activeNav") == "on":
-                btn.setGraphicsEffect(None)
-            return
-        eff = QGraphicsDropShadowEffect(btn)
-        eff.setColor(self._glow)
-        eff.setBlurRadius(10)
-        eff.setOffset(0, 0)
-        btn.setGraphicsEffect(eff)
-
-    def _swell_icon(self, btn: QToolButton, size: QSize) -> None:
-        if not _sidebar_motion_allowed():
-            btn.setIconSize(size if size.width() == 19 else QSize(19, 19))
-            return
-        anim = QPropertyAnimation(btn, b"iconSize", btn)
-        anim.setDuration(170)
-        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-        anim.setStartValue(btn.iconSize())
-        anim.setEndValue(size)
-        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
-        self._anims.append(anim)
-        if len(self._anims) > 24:
-            self._anims = self._anims[-24:]
 
 
 class _RiskyPendingTrack(NamedTuple):
@@ -889,6 +1202,11 @@ class MainWindow(FramelessWindow):
         )
         self._qml_pages_loaded: set[int] = set()
         self._active_qml_stack_index: int | None = None
+        self._last_synced_nav_index: int | None = None
+        self._widget_instances_migrated = False
+        self._bp_qml_ready = False
+        self._audio_devices_ready = False
+        self._pending_qml_token = 0
         self._tiktok_username = QLineEdit()
         self._kick_channel = QLineEdit()
         self._obs_ws_host = QLineEdit()
@@ -947,9 +1265,16 @@ class MainWindow(FramelessWindow):
         self._warm_chat_icons()
         self._bridge.append_log.connect(self._append_log_line)
         self._install_log_handler()
-        self._load_settings_fields()
-        self._refresh_audio_devices()
-        self._refresh_connection_panels()
+        # Settings fields (~10 keyring reads) populate a secondary page that
+        # is invisible at startup — fill them after the window is interactive.
+        # Audio device enumeration (QMediaDevices + QtMultimedia import) waits
+        # for the first open of the TTS/audio tab; the saved device is applied
+        # post-show in run_startup() without needing the combo populated.
+        # Keyring IPC + Google session file checks can block for hundreds of
+        # ms. The Connections QML view was already refreshed in _build_ui, so
+        # the legacy panels + extra QML refresh wait until the window is shown
+        # instead of delaying first paint.
+        QTimer.singleShot(0, self._post_show_startup_ui)
 
         self._queue_timer = QTimer(self)
         self._queue_timer.timeout.connect(self._refresh_footer)
@@ -1132,6 +1457,7 @@ class MainWindow(FramelessWindow):
         )
 
     def _build_ui(self) -> None:
+        self._nav_hover_filters: list[QObject] = []
         self._connections_root = self._build_connections_tab()
         self._connections_root.setParent(self)
         self._connections_root.hide()
@@ -1156,16 +1482,8 @@ class MainWindow(FramelessWindow):
         self._qml_donations.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._qml_donations.setClearColor(QColor(10, 11, 14))
         self._widgets_qml_api = WidgetsQmlApi(pubsub=self._overlay_server.pubsub())
-        try:
-            from stream_cheremsha.overlays.widget_instances import (
-                migrate_legacy_to_instances,
-                reconcile_legacy_singletons,
-            )
-
-            migrate_legacy_to_instances()
-            reconcile_legacy_singletons()
-        except Exception:
-            pass
+        # NOTE: legacy widget-instance DB migration runs lazily on the first
+        # open of the Widgets page (see _load_qml_page), not at startup.
         self._widgets_qml_api.set_battle_host(self)
         self._widgets_qml_api.set_stream_goal_controller(self._stream_goal)
         self._widgets_qml_api.set_live_leaderboard_controller(self._live_leaderboard)
@@ -1389,6 +1707,21 @@ class MainWindow(FramelessWindow):
         self._stack.addWidget(self._build_music_tab())
         self._stack.addWidget(self._build_big_picture_tab())
 
+        # Lightweight first-open placeholder for heavy QML pages: a static
+        # centered label (no spinner, no animation, no CPU use). Shown only
+        # while a never-loaded page compiles on the next loop iteration.
+        self._qml_loading_veil = QLabel("Завантаження…", self._stack)
+        self._qml_loading_veil.setObjectName("qmlLoadingVeil")
+        self._qml_loading_veil.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._qml_loading_veil.setStyleSheet(
+            "QLabel#qmlLoadingVeil {"
+            " color: #8b95a5; font-size: 13px;"
+            " background-color: rgba(10, 11, 14, 230);"
+            "}",
+        )
+        self._qml_loading_veil.hide()
+        self._stack.installEventFilter(self)
+
         self._bp_esc_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         self._bp_esc_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
         self._bp_esc_shortcut.activated.connect(self._on_big_picture_esc)
@@ -1526,18 +1859,38 @@ class MainWindow(FramelessWindow):
         ctx.setContextProperty("youtubeAnalytics", self._youtube_analytics)
         ctx.setContextProperty("kickAnalytics", self._kick_analytics)
 
-    def _create_bp_qml_widget(self, qml_name: str) -> QQuickWidget:
+    def _create_bp_qml_shell(self) -> QQuickWidget:
+        """Create a Big Picture QQuickWidget without loading its scene.
+
+        The QML source is set on first open via _ensure_bp_qml_loaded, saving
+        ~200ms of synchronous scene creation at startup.
+        """
         widget = QQuickWidget(self)
         widget.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
         widget.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         widget.setClearColor(QColor(10, 11, 14))
         _setup_qml_import_path(widget)
         self._bind_big_picture_qml_context(widget.rootContext())
-        qml_p = _qml_path(qml_name)
-        if not qml_p.is_file():
-            logger.error("QML not found: %s", qml_p)
-        widget.setSource(QUrl.fromLocalFile(str(qml_p)))
         return widget
+
+    def _ensure_bp_qml_loaded(self) -> None:
+        """Load Big Picture QML scenes once, on first open (then keep alive)."""
+        if self._bp_qml_ready:
+            return
+        self._bp_qml_ready = True
+        for widget, qml_name in (
+            (self._qml_bp_platforms, "BigPicturePlatformsPanel.qml"),
+            (self._qml_bp_analytics, "BigPictureAnalyticsPanel.qml"),
+        ):
+            try:
+                if widget is not None and widget.source().isEmpty():
+                    qml_p = _qml_path(qml_name)
+                    if qml_p.is_file():
+                        widget.setSource(QUrl.fromLocalFile(str(qml_p)))
+                    else:
+                        logger.error("QML not found: %s", qml_p)
+            except RuntimeError:
+                pass
 
     def _build_big_picture_tab(self) -> QWidget:
         w = QWidget()
@@ -1547,7 +1900,7 @@ class MainWindow(FramelessWindow):
         lay.setSpacing(0)
         lay.setContentsMargins(0, 0, 0, 0)
 
-        self._qml_bp_platforms = self._create_bp_qml_widget("BigPicturePlatformsPanel.qml")
+        self._qml_bp_platforms = self._create_bp_qml_shell()
         self._qml_bp_platforms.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Expanding,
@@ -1621,7 +1974,7 @@ class MainWindow(FramelessWindow):
         self._bp_chat_body_layout.setContentsMargins(0, 0, 0, 0)
         self._bp_chat_host_layout.addWidget(chat_body, stretch=1)
 
-        self._qml_bp_analytics = self._create_bp_qml_widget("BigPictureAnalyticsPanel.qml")
+        self._qml_bp_analytics = self._create_bp_qml_shell()
         self._qml_bp_analytics.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Expanding,
@@ -1645,6 +1998,7 @@ class MainWindow(FramelessWindow):
     def _enter_big_picture(self) -> None:
         if self._big_picture_active:
             return
+        self._ensure_bp_qml_loaded()
         self._bp_return_index = self._stack.currentIndex()
         self._bp_saved_geometry = self.saveGeometry()
         self._bp_was_maximized = self.isMaximized()
@@ -1652,6 +2006,9 @@ class MainWindow(FramelessWindow):
         self._reparent_chat_to_big_picture()
         self._sidebar_frame.hide()
         self._footer_frame.hide()
+        ctl = getattr(self, "_hover_ctl", None)
+        if ctl is not None:
+            ctl.reset()
         self._set_main_page(self._IX_BIG_PICTURE)
         self._big_picture_active = True
         if hasattr(self, "titleBar") and hasattr(self.titleBar, "bigPictureBtn"):
@@ -1755,7 +2112,13 @@ class MainWindow(FramelessWindow):
             ctx.setContextProperty("navApi", self._qml_api)
 
     def _load_qml_page(self, index: int) -> None:
-        """Instantiate one QML tab (each QQuickWidget has its own QQmlEngine/context)."""
+        """Instantiate one QML tab once (each QQuickWidget has its own QQmlEngine/context).
+
+        Loaded pages are kept alive for the lifetime of the window: the first
+        open pays the compile/create cost, subsequent opens only switch the
+        visible widget. Hidden QQuickWidgets do not render, so caching costs
+        memory but no per-frame work and no recreate latency.
+        """
         if index in self._qml_pages_loaded:
             return
         widget = self._qml_widget_for_stack_index(index)
@@ -1766,6 +2129,18 @@ class MainWindow(FramelessWindow):
         elif index == self._IX_DONATIONS:
             qml_path = _qml_path("DonationsView.qml")
         elif index == self._IX_WIDGETS:
+            if not self._widget_instances_migrated:
+                self._widget_instances_migrated = True
+                try:
+                    from stream_cheremsha.overlays.widget_instances import (
+                        migrate_legacy_to_instances,
+                        reconcile_legacy_singletons,
+                    )
+
+                    migrate_legacy_to_instances()
+                    reconcile_legacy_singletons()
+                except Exception:
+                    pass
             qml_path = _qml_path("WidgetsView.qml")
         elif index == self._IX_DOCKS:
             qml_path = _qml_path("DocksView.qml")
@@ -1791,77 +2166,136 @@ class MainWindow(FramelessWindow):
             self._apply_overlay_urls_to_qml(local_url=local_url)
         self._qml_pages_loaded.add(index)
 
-    def _unload_qml_page(self, index: int) -> None:
-        """Drop the QML scene for a tab; Python APIs keep working while the tab is away."""
-        if index not in self._qml_pages_loaded:
-            return
-        widget = self._qml_widget_for_stack_index(index)
-        if widget is None:
-            return
-        widget.setSource(QUrl())
-        self._qml_pages_loaded.discard(index)
-
-    def _sync_qml_stack_visibility(self, stack_index: int) -> None:
-        """Keep a single QQuickWidget scene alive — hidden tabs must not run in parallel."""
-        qml_index = stack_index if stack_index in self._QML_STACK_INDICES else None
-        prev = self._active_qml_stack_index
-        if prev == qml_index:
-            if qml_index is not None:
-                self._load_qml_page(qml_index)
-            return
-        if prev is not None:
-            self._unload_qml_page(prev)
-        self._active_qml_stack_index = qml_index
-        if qml_index is not None:
-            self._load_qml_page(qml_index)
-
-    async def _warm_qml_page_cache(self) -> None:
-        """Compile every QML tab once after startup, then leave only the visible scene loaded."""
-        for index in (
-            self._IX_DONATIONS,
-            self._IX_WIDGETS,
-            self._IX_DOCKS,
-            self._IX_ACTIONS,
-        ):
-            if self._closing:
-                return
-            self._load_qml_page(index)
-            await asyncio.sleep(0)
-        current = self._stack.currentIndex()
-        for index in list(self._qml_pages_loaded):
-            if index != current:
-                self._unload_qml_page(index)
-        self._active_qml_stack_index = current if current in self._QML_STACK_INDICES else None
-        if self._active_qml_stack_index is not None:
-            self._load_qml_page(self._active_qml_stack_index)
-
     def _set_main_page(self, index: int) -> None:
         if not hasattr(self, "_stack") or not (0 <= index < self._stack.count()):
             return
-        self._sync_qml_stack_visibility(index)
-        self._stack.setCurrentIndex(index)
-        self._fade_stack_page(index)
+        # 1. Navigation state first: the sidebar active highlight updates via
+        #    currentChanged immediately, even when the target QML page still
+        #    needs its one-time lazy load below.
+        if self._stack.currentIndex() != index:
+            self._stack.setCurrentIndex(index)
+        # 2. Audio devices enumerate on first open of the TTS/audio tab only
+        #    (QMediaDevices + QtMultimedia import stay off the startup path).
+        if index == self._IX_AUDIO and not self._audio_devices_ready:
+            self._audio_devices_ready = True
+            try:
+                self._refresh_audio_devices()
+            except (RuntimeError, AttributeError, OSError):
+                logger.debug("Lazy audio device refresh failed", exc_info=True)
+        # 3. Cached QML page: only visibility changes. First open: loading
+        #    veil first, blocking load deferred so the veil can paint.
+        #    No backend/network/database work happens here.
+        self._ensure_qml_page_visible(index)
 
-    def _fade_stack_page(self, index: int) -> None:
-        """Subtle content transition: opacity 0.96→1, ~150ms. Sidebar stays stable."""
-        if not _sidebar_motion_allowed():
+    def _ensure_qml_page_visible(self, stack_index: int) -> None:
+        """Show a QML tab: instant when cached, veiled one-time load otherwise."""
+        qml_index = stack_index if stack_index in self._QML_STACK_INDICES else None
+        self._active_qml_stack_index = qml_index
+        if qml_index is None:
+            return
+        if qml_index in self._qml_pages_loaded:
+            self._hide_qml_loading_veil()
+            self._play_enter_pulse(qml_index)
+            return
+        self._pending_qml_token += 1
+        token = self._pending_qml_token
+        self._show_qml_loading_veil()
+        QTimer.singleShot(0, lambda: self._finish_first_qml_open(token, stack_index, qml_index))
+
+    def _finish_first_qml_open(self, token: int, stack_index: int, qml_index: int) -> None:
+        """Run the deferred one-time load for a never-opened page (newest wins)."""
+        if self._closing or token != self._pending_qml_token:
+            return
+        if not hasattr(self, "_stack") or self._stack.currentIndex() != stack_index:
+            return
+        self._load_qml_page(qml_index)
+        if self._closing or self._stack.currentIndex() != stack_index:
+            self._hide_qml_loading_veil()
+            return
+        self._hide_qml_loading_veil()
+        self._play_enter_pulse(qml_index)
+
+    async def warm_secondary_pages(
+        self,
+        status_cb: Callable[[str], None] | None = None,
+    ) -> None:
+        """Staged splash-phase preload of heavy QML pages into the navigation cache.
+
+        Priority order follows measured first-open cost (Widgets ~0.8s,
+        Actions ~0.2s, Donations ~0.05s, Docks ~0.02s). Each load is the same
+        _load_qml_page() navigation uses — exactly one instance per page, kept
+        alive, never unloaded afterwards. Yields to the event loop around every
+        load so the splash keeps rendering; stops early if the hidden-time
+        budget is exceeded (lower-priority pages then load lazily on first
+        open as before). No network, no WebEngine, no Big Picture scenes.
+        """
+        order = (
+            (self._IX_WIDGETS, "Завантаження віджетів…"),
+            (self._IX_ACTIONS, "Завантаження дій…"),
+            (self._IX_DONATIONS, "Завантаження донатів…"),
+            (self._IX_DOCKS, "Завантаження доків…"),
+        )
+        spent = 0.0
+        for qml_index, label in order:
+            if self._closing:
+                return
+            if qml_index in self._qml_pages_loaded:
+                continue
+            if spent >= _QML_WARMUP_BUDGET_SEC:
+                logger.info(
+                    "QML warm-up budget exhausted (%.2fs); remaining pages load lazily",
+                    spent,
+                )
+                return
+            if status_cb is not None:
+                try:
+                    status_cb(label)
+                except RuntimeError:
+                    pass
+            # Let the splash paint the status (and settle the previous page)
+            # before the blocking compile below — no arbitrary delays.
+            await asyncio.sleep(0)
+            if self._closing:
+                return
+            started = time.perf_counter()
+            self._load_qml_page(qml_index)
+            spent += time.perf_counter() - started
+            # Let the splash repaint and the fresh page run its init timers.
+            await asyncio.sleep(0)
+
+    def _play_enter_pulse(self, qml_index: int) -> None:
+        """Retrigger the QML-side micro fade (120ms root opacity, GPU-cheap).
+
+        Rapid clicks just retoggle the property and restart the animation, so
+        transitions always move toward the newest page — nothing is queued.
+        """
+        try:
+            widget = self._qml_widget_for_stack_index(qml_index)
+            ro = widget.rootObject() if widget is not None else None
+            if ro is None or ro.property("enterPulse") is None:
+                return
+            ro.setProperty("enterPulse", not bool(ro.property("enterPulse")))
+        except RuntimeError:
+            pass
+
+    def _show_qml_loading_veil(self) -> None:
+        veil = getattr(self, "_qml_loading_veil", None)
+        if veil is None:
             return
         try:
-            page = self._stack.widget(index)
-            if page is None:
-                return
-            eff = QGraphicsOpacityEffect(page)
-            eff.setOpacity(0.96)
-            page.setGraphicsEffect(eff)
-            anim = QPropertyAnimation(eff, b"opacity", self)
-            anim.setDuration(150)
-            anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-            anim.setStartValue(0.96)
-            anim.setEndValue(1.0)
-            anim.finished.connect(lambda: page.setGraphicsEffect(None))
-            anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
-            self._page_fade_anim = anim
-        except (RuntimeError, AttributeError, TypeError):
+            veil.setGeometry(self._stack.rect())
+            veil.raise_()
+            veil.show()
+        except RuntimeError:
+            pass
+
+    def _hide_qml_loading_veil(self) -> None:
+        veil = getattr(self, "_qml_loading_veil", None)
+        if veil is None:
+            return
+        try:
+            veil.hide()
+        except RuntimeError:
             pass
 
     _NAV_GLOW = {
@@ -1877,21 +2311,38 @@ class MainWindow(FramelessWindow):
     }
 
     def _install_sidebar_polish(self, brand: QWidget) -> None:
-        """Hover glow filters, logo glow, live status-dot pulse. Layout untouched."""
-        self._nav_hover_filters: list[_SideNavHoverFilter] = []
+        """Shared hover pill, logo glow, live status-dot pulse. Layout untouched."""
+        self._hover_ctl = _SidebarHoverController(self._sidebar_frame, self)
+        ctl = self._hover_ctl
+
+        # Nav buttons with per-item glow and icon swell
         for attr, color in self._NAV_GLOW.items():
             btn = getattr(self, attr, None)
             if isinstance(btn, QToolButton):
-                filt = _SideNavHoverFilter(QColor(color), self)
-                btn.installEventFilter(filt)
+                watcher = _SidebarHoverWatcher(ctl, QColor(color), swell=True, parent=self)
+                btn.installEventFilter(watcher)
                 btn.setMouseTracking(True)
-                self._nav_hover_filters.append(filt)
-        for attr in ("_btn_side_settings",):
-            btn = getattr(self, attr, None)
-            if isinstance(btn, QToolButton):
-                filt = _SideNavHoverFilter(QColor("#67e8f9"), self)
-                btn.installEventFilter(filt)
-                self._nav_hover_filters.append(filt)
+                self._nav_hover_filters.append(watcher)
+
+        # Settings button
+        btn = getattr(self, "_btn_side_settings", None)
+        if isinstance(btn, QToolButton):
+            watcher = _SidebarHoverWatcher(ctl, QColor("#67e8f9"), swell=False, parent=self)
+            btn.installEventFilter(watcher)
+            btn.setMouseTracking(True)
+            self._nav_hover_filters.append(watcher)
+
+        # All sidebar surfaces that should cancel the fade-out when entered
+        surfaces: list[QWidget] = [self._sidebar_frame, brand]
+        surfaces.extend(self._sidebar_frame.findChildren(QLabel, "sideNavGroup"))
+        version_lbl = getattr(self, "_lbl_side_version", None)
+        if isinstance(version_lbl, QLabel):
+            surfaces.append(version_lbl)
+
+        for surf in surfaces:
+            watcher = _SidebarHoverWatcher(ctl, None, swell=False, parent=self)
+            surf.installEventFilter(watcher)
+
         # Logo hover: faint cyan→violet glow, no scale/rotation.
         try:
             brand.setMouseTracking(True)
@@ -1925,6 +2376,10 @@ class MainWindow(FramelessWindow):
         if not _sidebar_motion_allowed():
             return
         try:
+            # Reuse the existing effect: recreating a QGraphicsDropShadowEffect
+            # on every navigation forces a full repaint of the button.
+            if btn.graphicsEffect() is not None:
+                return
             color = QColor(self._NAV_GLOW.get(attr, "#8b5cf6"))
             color.setAlpha(70)
             eff = QGraphicsDropShadowEffect(btn)
@@ -1939,6 +2394,13 @@ class MainWindow(FramelessWindow):
         """Subtle active state for side nav buttons when the stacked page matches."""
         if not hasattr(self, "_stack") or not hasattr(self, "_btn_footer_chat"):
             return
+        current = self._stack.currentIndex()
+        # currentChanged can fire without an actual page change (e.g. re-set of
+        # the same index); style unpolish/polish + update on every button is
+        # wasted work, so skip when the page did not change.
+        if current == self._last_synced_nav_index:
+            return
+        self._last_synced_nav_index = current
         on_conn = self._stack.currentIndex() == self._IX_CONN
         on_chat = self._stack.currentIndex() == self._IX_CHAT
         on_tts = self._stack.currentIndex() == self._IX_AUDIO
@@ -2082,9 +2544,7 @@ class MainWindow(FramelessWindow):
             "QToolButton#sideNav { background: transparent; color: #c3cad7; "
             "border: 1px solid transparent; border-radius: 10px; font-weight: 600; font-size: 14px; "
             "text-align: left; padding: 0px 10px; min-height: 44px; max-height: 46px; }"
-            "QToolButton#sideNav:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
-            "stop:0 rgba(34, 211, 238, 0.10), stop:1 rgba(20, 26, 40, 1)); "
-            "color: #eef2f6; border-color: #232c42; }"
+            "QToolButton#sideNav:hover { color: #eef2f6; }"
             'QToolButton#sideNav[activeNav="on"] { '
             "background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
             "stop:0 rgba(34, 211, 238, 0.16), stop:0.12 rgba(76, 53, 171, 0.28), "
@@ -2097,8 +2557,7 @@ class MainWindow(FramelessWindow):
             "QToolButton#sideUtil { background: transparent; color: #8b95a5; "
             "border: 1px solid transparent; border-radius: 8px; font-weight: 600; font-size: 12px; "
             "text-align: left; padding: 0px 10px; }"
-            "QToolButton#sideUtil:hover { background: rgba(20, 26, 40, 0.9); color: #d7deea; "
-            "border-color: #232c42; }"
+            "QToolButton#sideUtil:hover { color: #d7deea; }"
             "QLabel#sideVersion { color: #4b5563; font-size: 11px; }"
             "QFrame#appFooter { background-color: #080a0e; border: none; "
             "border-top: 1px solid #1a2030; padding: 2px 4px; }"
@@ -3280,6 +3739,25 @@ class MainWindow(FramelessWindow):
         if hasattr(self, "_qml_api"):
             self._qml_api.refresh()
 
+    def _post_show_startup_ui(self) -> None:
+        """Deferred post-show UI work (secondary pages; never blocks first paint)."""
+        if self._closing:
+            return
+        try:
+            self._load_settings_fields()
+        except (RuntimeError, AttributeError, OSError):
+            logger.debug("Deferred settings fields load failed", exc_info=True)
+        self._refresh_connection_panels_after_show()
+
+    def _refresh_connection_panels_after_show(self) -> None:
+        """Deferred post-show part of startup (keyring IPC + file checks)."""
+        if self._closing:
+            return
+        try:
+            self._refresh_connection_panels()
+        except (RuntimeError, AttributeError, OSError):
+            logger.debug("Deferred connection panel refresh failed", exc_info=True)
+
     @Slot()
     def _logout_twitch(self) -> None:
         asyncio.ensure_future(self._async_logout_twitch())
@@ -4063,6 +4541,14 @@ class MainWindow(FramelessWindow):
             asyncio.ensure_future(self._swap_tts_backend())
 
     def eventFilter(self, watched: QObject, event: QEvent | None) -> bool:  # noqa: N802
+        if (
+            watched is getattr(self, "_stack", None)
+            and event is not None
+            and event.type() == QEvent.Type.Resize
+        ):
+            veil = getattr(self, "_qml_loading_veil", None)
+            if veil is not None and veil.isVisible():
+                veil.setGeometry(self._stack.rect())
         return super().eventFilter(watched, event)
 
     async def _swap_tts_backend(self) -> None:
@@ -6855,6 +7341,9 @@ class MainWindow(FramelessWindow):
                 )
             await self._swap_tts_backend()
             await self._coordinator.start_workers()
+            # Warm QtMultimedia backends post-show (FFmpeg plugin + device
+            # query, ~130ms) so the first TTS/music playback never hitches.
+            self._sink.ensure_ready()
             vol = int(self._settings.value("audio/volume", 100))
             self._sink.set_volume(vol / 100.0)
             self._apply_audio_device_selection()
@@ -6867,13 +7356,16 @@ class MainWindow(FramelessWindow):
                     self._check_for_updates(interactive=False),
                     name="updates-startup-check",
                 )
-            await self._warm_qml_page_cache()
         finally:
             self.startup_finished.emit()
 
     async def _apply_telegram_from_settings(self) -> None:
         if self._closing:
             return
+        # Heavy telegram/lyrics imports (~120ms: python-telegram-bot, lyricsgenius)
+        # load here — this runs post-show, never at application startup.
+        _ensure_telegram_libs()
+
         enabled = bool(self._settings.value(_SETTINGS_TELEGRAM_ENABLED, False, bool))
         songs_enabled = bool(
             self._settings.value(_SETTINGS_TELEGRAM_SONG_REQUESTS_ENABLED, True, bool),

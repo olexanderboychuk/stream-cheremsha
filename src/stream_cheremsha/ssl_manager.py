@@ -8,12 +8,37 @@ import ssl
 import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import requests
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 
+if TYPE_CHECKING:
+    # Static name for linters/type-checkers; the real import is lazy (below).
+    import requests
+
 logger = logging.getLogger(__name__)
+
+# --- Lazy requests import -------------------------------------------------------
+# requests costs ~29ms and is only used when downloading fresh certificates —
+# never at application startup. The name is bound by _ensure_requests(), called
+# at the top of every function that needs it (and via module __getattr__ for
+# external access). Binding never overwrites existing globals.
+
+
+def _ensure_requests() -> None:
+    """Import requests; bind only if not already present (never at startup)."""
+    if "requests" not in globals():
+        import requests as _requests
+
+        globals()["requests"] = _requests
+
+
+def __getattr__(name: str):  # noqa: ANN001
+    if name == "requests":
+        _ensure_requests()
+        return globals()["requests"]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 CERTS_DIR = Path("certs")
 CERT_PATH = CERTS_DIR / "cert.pem"
@@ -39,6 +64,7 @@ def is_cert_expiring_soon(cert_path: str, days_threshold: int = 14) -> bool:
 
 
 def _download(url: str, destination: Path) -> None:
+    _ensure_requests()
     response = requests.get(url, timeout=_REQUEST_TIMEOUT_SECONDS)
     response.raise_for_status()
     destination.write_bytes(response.content)
@@ -77,6 +103,7 @@ def ensure_valid_ssl() -> tuple[Path, Path] | None:
         or not _ssl_pair_is_valid(CERT_PATH, KEY_PATH)
     )
     if needs_refresh:
+        _ensure_requests()
         try:
             download_fresh_certs()
             logger.info("Downloaded fresh overlay TLS certificates")

@@ -8,36 +8,131 @@ from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 try:
     import certifi
 except ImportError:
     certifi = None  # type: ignore[assignment]
 
-import httplib2
 import httpx
-from google.auth.exceptions import RefreshError
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 
 from stream_cheremsha import l10n
 from stream_cheremsha.chat.video_id import extract_youtube_video_id
-from stream_cheremsha.chat.youtube_chat_downloader import (
-    ChatDownloaderMessage,
-    iter_youtube_live_chat,
-    normalize_chat_downloader_item,
-)
 from stream_cheremsha.chat.youtube_rss import extract_video_ids_from_rss_xml
 from stream_cheremsha.config import keyring_store
 from stream_cheremsha.config.constants import KEY_YOUTUBE_OAUTH, YOUTUBE_READONLY_SCOPE
 from stream_cheremsha.domain.models import ChatMessage, ChatPlatform
 from stream_cheremsha.pipeline.coordinator import StreamCoordinator
 
+if TYPE_CHECKING:
+    # Static names for linters/type-checkers; the real imports are lazy (below).
+    import httplib2
+    from google.auth.exceptions import RefreshError
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+
+    from stream_cheremsha.chat.youtube_chat_downloader import (
+        ChatDownloaderMessage,
+        iter_youtube_live_chat,
+        normalize_chat_downloader_item,
+    )
+
 logger = logging.getLogger(__name__)
+
+# --- Lazy google API imports ------------------------------------------------
+# googleapiclient + google-auth (+httplib2) cost ~0.12s and are only used when
+# YouTube chat/auth actually runs — never at application startup. Names are
+# bound by _ensure_google(), called at the top of every function that needs
+# them (and via module __getattr__ for external access). Binding never
+# overwrites existing globals so test stubs keep working.
+_LAZY_GOOGLE_NAMES = frozenset(
+    {
+        "httplib2",
+        "RefreshError",
+        "Request",
+        "Credentials",
+        "InstalledAppFlow",
+        "build",
+        "HttpError",
+    }
+)
+
+
+def _ensure_google() -> None:
+    """Import google API symbols; bind only names not already present (never at startup)."""
+    g = globals()
+    if all(n in g for n in _LAZY_GOOGLE_NAMES):
+        return
+    import httplib2 as _httplib2
+    from google.auth.exceptions import RefreshError as _RefreshError
+    from google.auth.transport.requests import Request as _Request
+    from google.oauth2.credentials import Credentials as _Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow as _Flow
+    from googleapiclient.discovery import build as _build
+    from googleapiclient.errors import HttpError as _HttpError
+
+    for _k, _v in (
+        ("httplib2", _httplib2),
+        ("RefreshError", _RefreshError),
+        ("Request", _Request),
+        ("Credentials", _Credentials),
+        ("InstalledAppFlow", _Flow),
+        ("build", _build),
+        ("HttpError", _HttpError),
+    ):
+        g.setdefault(_k, _v)
+
+
+def __getattr__(name: str):  # noqa: ANN001
+    if name in _LAZY_GOOGLE_NAMES:
+        _ensure_google()
+    elif name in _LAZY_YT_HELPERS:
+        _ensure_yt_helpers()
+    else:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    try:
+        return globals()[name]
+    except KeyError:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
+
+
+# --- Lazy chat_downloader import ----------------------------------------------
+# chat_downloader (+sites) costs ~35ms and is only used while YouTube chat
+# actually runs — never at application startup.
+_LAZY_YT_HELPERS = frozenset(
+    {
+        "ChatDownloaderMessage",
+        "iter_youtube_live_chat",
+        "normalize_chat_downloader_item",
+    }
+)
+
+
+def _ensure_yt_helpers() -> None:
+    """Import chat_downloader wrappers; bind only names not already present."""
+    g = globals()
+    if all(n in g for n in _LAZY_YT_HELPERS):
+        return
+    from stream_cheremsha.chat.youtube_chat_downloader import (
+        ChatDownloaderMessage as _Msg,
+    )
+    from stream_cheremsha.chat.youtube_chat_downloader import (
+        iter_youtube_live_chat as _iter,
+    )
+    from stream_cheremsha.chat.youtube_chat_downloader import (
+        normalize_chat_downloader_item as _normalize,
+    )
+
+    for _k, _v in (
+        ("ChatDownloaderMessage", _Msg),
+        ("iter_youtube_live_chat", _iter),
+        ("normalize_chat_downloader_item", _normalize),
+    ):
+        g.setdefault(_k, _v)
 
 T = TypeVar("T")
 
@@ -51,6 +146,7 @@ def _youtube_ca_bundle() -> str | None:
 
 def _build_youtube_http() -> httplib2.Http:
     """Build httplib2 with an explicit CA bundle (required in Nuitka standalone)."""
+    _ensure_google()
     ca = _youtube_ca_bundle()
     if ca:
         return httplib2.Http(ca_certs=ca)
@@ -58,6 +154,7 @@ def _build_youtube_http() -> httplib2.Http:
 
 
 def _build_youtube_service(creds: Credentials) -> object:
+    _ensure_google()
     return build(
         "youtube",
         "v3",
@@ -424,6 +521,7 @@ def parse_google_desktop_client_json(raw: str) -> dict[str, Any]:
 
 
 def _load_credentials() -> Credentials | None:
+    _ensure_google()
     raw = keyring_store.get_password(KEY_YOUTUBE_OAUTH)
     if not raw:
         return None
@@ -436,6 +534,7 @@ def _load_credentials() -> Credentials | None:
 
 
 def run_oauth_browser_with_client_config(client_config: dict[str, Any]) -> Credentials:
+    _ensure_google()
     flow = InstalledAppFlow.from_client_config(client_config, _SCOPES)
     return flow.run_local_server(port=0, open_browser=True)
 
@@ -469,6 +568,7 @@ class YouTubeChatSource:
         Returns False when the refresh token is revoked or unusable; stored
         session is cleared and the user must sign in again (no automatic fix).
         """
+        _ensure_google()
 
         def do_refresh() -> None:
             creds.refresh(Request())
@@ -561,6 +661,7 @@ class YouTubeChatSource:
         self._on_status(l10n.tr(self._get_locale(), "yt.stopped"))
 
     async def _supervisor(self, video_url_or_id: str | None) -> None:
+        _ensure_google()
         manual = (video_url_or_id or "").strip()
         video_id: str | None = None
         if manual:
@@ -690,6 +791,7 @@ class YouTubeChatSource:
             continue
 
     async def _run_fallback_for_watch_url(self, watch_url: str) -> None:
+        _ensure_yt_helpers()
         self._on_status(l10n.tr(self._get_locale(), "yt.fallback_polling"))
         loop = asyncio.get_running_loop()
         q: asyncio.Queue[ChatDownloaderMessage | None] = asyncio.Queue()
@@ -787,6 +889,7 @@ class YouTubeChatSource:
         rr: int,
         fallback_watch_url: str | None,
     ) -> None:
+        _ensure_google()
         while self._running:
             lcid = order[rr % len(order)]
             rr += 1
@@ -858,6 +961,7 @@ class YouTubeChatSource:
         Failures (HTTP, transport, parse) are logged and the loop continues so a transient
         viewers-API hiccup never tears down the chat polling.
         """
+        _ensure_google()
         cb = self._on_viewers_current
         if cb is None or not video_ids:
             return

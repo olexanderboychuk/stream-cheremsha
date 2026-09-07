@@ -7,6 +7,20 @@ Item {
     implicitWidth: 720
     implicitHeight: 520
 
+    // Micro entrance transition, retriggered by MainWindow (enterPulse toggle)
+    // on every cached navigation. GPU-cheap root opacity only, 120ms.
+    property bool enterPulse: false
+    onEnterPulseChanged: enterFade.restart()
+    NumberAnimation {
+        id: enterFade
+        target: root
+        property: "opacity"
+        from: 0.97
+        to: 1.0
+        duration: 120
+        easing.type: Easing.OutCubic
+    }
+
     readonly property color base: "#0a0b0e"
     readonly property color cardBase: "#121620"
     readonly property color cardEdge: "#2a3142"

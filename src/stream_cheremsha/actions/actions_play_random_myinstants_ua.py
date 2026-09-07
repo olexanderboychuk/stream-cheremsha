@@ -11,13 +11,46 @@ import subprocess
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
-
-from curl_cffi import requests as curl_requests
-from curl_cffi.requests.exceptions import RequestException
 
 from stream_cheremsha.actions.actions_play_sound import play_sound_from_file
 from stream_cheremsha.domain.protocols import AudioSink
+
+if TYPE_CHECKING:
+    # Static names for linters/type-checkers; the real import is lazy (below).
+    from curl_cffi import requests as curl_requests
+    from curl_cffi.requests.exceptions import RequestException
+
+# --- Lazy curl_cffi import ----------------------------------------------------
+# curl_cffi costs ~23ms and is only used when fetching MyInstant sounds —
+# never at application startup. Names are bound by _ensure_curl_cffi(), called
+# at the top of every function that needs them (and via module __getattr__
+# for external access). Binding never overwrites existing globals.
+_LAZY_CURL_NAMES = frozenset({"curl_requests", "RequestException"})
+
+
+def _ensure_curl_cffi() -> None:
+    """Import curl_cffi; bind only names not already present (never at startup)."""
+    g = globals()
+    if all(n in g for n in _LAZY_CURL_NAMES):
+        return
+    from curl_cffi import requests as _curl_requests
+    from curl_cffi.requests.exceptions import RequestException as _RequestException
+
+    g.setdefault("curl_requests", _curl_requests)
+    g.setdefault("RequestException", _RequestException)
+
+
+def __getattr__(name: str):  # noqa: ANN001
+    if name in _LAZY_CURL_NAMES:
+        _ensure_curl_cffi()
+        try:
+            return globals()[name]
+        except KeyError:
+            pass
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 _INSTANT_ANCHOR_RE = re.compile(
     r'<a[^>]+href\s*=\s*(?:"|\')(?P<path>/en/instant/[^"\']+)(?:"|\')[^>]*>(?P<title>.*?)</a>',
@@ -181,6 +214,7 @@ async def play_random_myinstants_ua(
     skip_words: object,
     status: Callable[[str], None],
 ) -> None:
+    _ensure_curl_cffi()
     try:
         max_s = float(max_duration_seconds)
         if max_s < 0:
@@ -223,6 +257,7 @@ async def play_random_myinstants_ua(
 
 
 def _myinstants_session() -> curl_requests.Session:
+    _ensure_curl_cffi()
     # impersonate sets a matching User-Agent + TLS/HTTP2 fingerprint.
     return curl_requests.Session(
         impersonate=_BROWSER_IMPERSONATE,

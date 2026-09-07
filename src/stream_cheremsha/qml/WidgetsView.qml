@@ -8,6 +8,20 @@ Item {
     implicitWidth: 720
     implicitHeight: 520
 
+    // Micro entrance transition, retriggered by MainWindow (enterPulse toggle)
+    // on every cached navigation. GPU-cheap root opacity only, 120ms.
+    property bool enterPulse: false
+    onEnterPulseChanged: enterFade.restart()
+    NumberAnimation {
+        id: enterFade
+        target: root
+        property: "opacity"
+        from: 0.97
+        to: 1.0
+        duration: 120
+        easing.type: Easing.OutCubic
+    }
+
     readonly property color base: "#090a0d"
     readonly property color cardBase: "#10141a"
     readonly property color cardEdge: "#242b36"
@@ -3244,19 +3258,7 @@ Item {
                         horizontalAlignment: Text.AlignHCenter
                     }
 
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 10
-                        Item { Layout.fillWidth: true }
-                        PillButton {
-                            text: "Закрити"
-                            onClicked: {
-                                if (typeof navApi !== "undefined" && navApi) navApi.goHome();
-                                else if (winApi) winApi.close();
-                            }
-                        }
                     }
-                }
             }
 
             Rectangle {
