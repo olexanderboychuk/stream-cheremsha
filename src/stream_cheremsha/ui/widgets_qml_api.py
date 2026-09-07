@@ -6,10 +6,9 @@ import time
 from typing import Any
 from urllib.parse import quote
 
-from PySide6.QtCore import Property, QObject, Qt, QUrl, Signal, Slot
+from PySide6.QtCore import Property, QObject, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices, QFontDatabase, QGuiApplication
 from PySide6.QtQml import QJSValue
-from PySide6.QtQuick import QQuickView
 
 from stream_cheremsha.overlays.actions_config import (
     actions_config_from_json_text,
@@ -225,6 +224,7 @@ class WidgetsQmlApi(QObject):
         self._signal_system_controller: Any | None = None
         self._system_font_families: list[str] | None = None
         self._editing_instance_id = ""
+        self._preview_instance_id = ""
 
     def set_battle_host(self, host: Any) -> None:
         self._battle_host = host
@@ -669,8 +669,14 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     @Slot()
     def previewStreamPetOverlay(self, instance: str | None = None) -> None:
-        topic = f"overlay:stream_pet:{instance or self._stream_pet_instance}"
-        cfg = load_stream_pet_overlay_config()
+        token = instance or self._stream_pet_instance
+        topic = f"overlay:stream_pet:{token}"
+        cfg = self._preview_config(
+            "stream_pet",
+            token,
+            load_stream_pet_overlay_config,
+            stream_pet_overlay_config_from_json_text,
+        )
         patch: dict[str, Any] = {
             "config": stream_pet_overlay_config_to_public_dict(cfg),
             "energy": 88,
@@ -712,8 +718,14 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     @Slot()
     def previewStreamGoalOverlay(self, instance: str | None = None) -> None:
-        topic = f"overlay:stream_goal:{instance or self._stream_goal_instance}"
-        cfg = load_stream_goal_overlay_config()
+        token = instance or self._stream_goal_instance
+        topic = f"overlay:stream_goal:{token}"
+        cfg = self._preview_config(
+            "stream_goal",
+            token,
+            load_stream_goal_overlay_config,
+            stream_goal_overlay_config_from_json_text,
+        )
         patch = {
             "config": json.loads(stream_goal_overlay_config_to_json_text(cfg)),
             "goal_type": cfg.goal_type,
@@ -782,8 +794,14 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     @Slot()
     def previewLiveLeaderboardOverlay(self, instance: str | None = None) -> None:
-        topic = f"overlay:live_leaderboard:{instance or self._live_leaderboard_instance}"
-        cfg = load_live_leaderboard_overlay_config()
+        token = instance or self._live_leaderboard_instance
+        topic = f"overlay:live_leaderboard:{token}"
+        cfg = self._preview_config(
+            "live_leaderboard",
+            token,
+            load_live_leaderboard_overlay_config,
+            live_leaderboard_overlay_config_from_json_text,
+        )
         demo = [
             {
                 "key": "1",
@@ -877,15 +895,22 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     @Slot()
     def previewSocialRotatorOverlay(self, instance: str | None = None) -> None:
-        topic = f"overlay:social_rotator:{instance or self._social_rotator_instance}"
+        token = instance or self._social_rotator_instance
+        topic = f"overlay:social_rotator:{token}"
+        cfg = self._preview_config(
+            "social_rotator",
+            token,
+            load_social_rotator_overlay_config,
+            social_rotator_overlay_config_from_json_text,
+        )
         if self._social_rotator_controller is not None:
             try:
                 patch = self._social_rotator_controller.initial_state()
+                patch["config"] = json.loads(social_rotator_overlay_config_to_json_text(cfg))
                 self._publish_patch(topic=topic, patch=patch)
                 return
             except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
                 _LOG.warning("previewSocialRotatorOverlay controller state failed: %s", exc)
-        cfg = load_social_rotator_overlay_config()
         patch = {
             "config": json.loads(social_rotator_overlay_config_to_json_text(cfg)),
             "locale": _ui_locale(),
@@ -925,15 +950,22 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     @Slot()
     def previewWebcamFrameOverlay(self, instance: str | None = None) -> None:
-        topic = f"overlay:webcam_frame:{instance or self._webcam_frame_instance}"
+        token = instance or self._webcam_frame_instance
+        topic = f"overlay:webcam_frame:{token}"
+        cfg = self._preview_config(
+            "webcam_frame",
+            token,
+            load_webcam_frame_overlay_config,
+            webcam_frame_overlay_config_from_json_text,
+        )
         if self._webcam_frame_controller is not None:
             try:
                 patch = self._webcam_frame_controller.initial_state()
+                patch["config"] = json.loads(webcam_frame_overlay_config_to_json_text(cfg))
                 self._publish_patch(topic=topic, patch=patch)
                 return
             except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
                 _LOG.warning("previewWebcamFrameOverlay controller state failed: %s", exc)
-        cfg = load_webcam_frame_overlay_config()
         patch = {
             "config": json.loads(webcam_frame_overlay_config_to_json_text(cfg)),
             "locale": _ui_locale(),
@@ -965,14 +997,14 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     @Slot()
     def previewSignalSystemOverlay(self, instance: str | None = None) -> None:
-        if self._signal_system_controller is not None:
-            try:
-                self._signal_system_controller.trigger_test_event("big_gift")
-                return
-            except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
-                _LOG.warning("previewSignalSystemOverlay trigger failed: %s", exc)
-        topic = f"overlay:signal_system:{instance or self._signal_system_instance}"
-        cfg = load_signal_system_overlay_config()
+        token = instance or self._signal_system_instance
+        topic = f"overlay:signal_system:{token}"
+        cfg = self._preview_config(
+            "signal_system",
+            token,
+            load_signal_system_overlay_config,
+            signal_system_overlay_config_from_json_text,
+        )
         try:
             from stream_cheremsha.actions.tiktok_gifts import (
                 tiktok_catalog_gift_image_url as _catalog_url,
@@ -1037,8 +1069,14 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     @Slot()
     def previewCommunityWorldOverlay(self, instance: str | None = None) -> None:
-        topic = f"overlay:community_world:{instance or self._community_world_instance}"
-        cfg = load_community_world_overlay_config()
+        token = instance or self._community_world_instance
+        topic = f"overlay:community_world:{token}"
+        cfg = self._preview_config(
+            "community_world",
+            token,
+            load_community_world_overlay_config,
+            community_world_overlay_config_from_json_text,
+        )
         buildings = [
             {"id": "house", "unlocked": True, "new": True},
             {"id": "tree", "unlocked": True, "new": True},
@@ -1104,8 +1142,14 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     @Slot()
     def previewBattleRoyaleOverlay(self, instance: str | None = None) -> None:
-        topic = f"overlay:battle_royale:{instance or self._battle_royale_instance}"
-        cfg = load_battle_royale_overlay_config()
+        token = instance or self._battle_royale_instance
+        topic = f"overlay:battle_royale:{token}"
+        cfg = self._preview_config(
+            "battle_royale",
+            token,
+            load_battle_royale_overlay_config,
+            battle_royale_overlay_config_from_json_text,
+        )
         patch: dict[str, Any] = {
             "config": json.loads(battle_royale_overlay_config_to_json_text(cfg)),
             "phase": "active",
@@ -1197,6 +1241,24 @@ class WidgetsQmlApi(QObject):
             return
         clip.setText(url)
 
+    @staticmethod
+    def _preview_config(
+        type_id: str,
+        instance: str,
+        fallback_loader: Any,
+        parser: Any,
+    ) -> Any:
+        """Build preview payload config from the persisted instance, not a singleton."""
+        from stream_cheremsha.overlays.widget_instances import find_by_ws_token, merged_settings
+
+        inst = find_by_ws_token(type_id, str(instance or ""))
+        if inst is not None:
+            try:
+                return parser(json.dumps(merged_settings(inst), ensure_ascii=False))
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                _LOG.warning("preview config for %s/%s was invalid: %s", type_id, instance, exc)
+        return fallback_loader()
+
     def _publish_patch(self, *, topic: str, patch: dict[str, Any]) -> None:
         ps = self._pubsub
         if ps is None:
@@ -1241,8 +1303,14 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     @Slot()
     def previewTopLikersOverlay(self, instance: str | None = None) -> None:
-        topic = f"overlay:top_likers:{instance or self._top_likers_instance}"
-        cfg = load_top_likers_overlay_config()
+        token = instance or self._top_likers_instance
+        topic = f"overlay:top_likers:{token}"
+        cfg = self._preview_config(
+            "top_likers",
+            token,
+            load_top_likers_overlay_config,
+            top_likers_overlay_config_from_json_text,
+        )
         lim = max(1, min(10, int(cfg.top_count)))
         leaders: list[dict[str, str | int]] = []
         for i in range(lim):
@@ -1263,8 +1331,14 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     @Slot()
     def previewTopGiftersOverlay(self, instance: str | None = None) -> None:
-        topic = f"overlay:top_gifters:{instance or self._top_gifters_instance}"
-        cfg = load_top_gifters_overlay_config()
+        token = instance or self._top_gifters_instance
+        topic = f"overlay:top_gifters:{token}"
+        cfg = self._preview_config(
+            "top_gifters",
+            token,
+            load_top_gifters_overlay_config,
+            top_gifters_overlay_config_from_json_text,
+        )
         lim = max(1, min(10, int(cfg.top_count)))
         leaders: list[dict[str, str | int]] = []
         for i in range(lim):
@@ -1285,8 +1359,14 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     @Slot()
     def previewKingOfLiveOverlay(self, instance: str | None = None) -> None:
-        topic = f"overlay:king_of_live:{instance or self._king_of_live_instance}"
-        cfg = load_king_of_live_overlay_config()
+        token = instance or self._king_of_live_instance
+        topic = f"overlay:king_of_live:{token}"
+        cfg = self._preview_config(
+            "king_of_live",
+            token,
+            load_king_of_live_overlay_config,
+            king_of_live_overlay_config_from_json_text,
+        )
         patch: dict[str, Any] = {
             "config": json.loads(king_of_live_overlay_config_to_json_text(cfg)),
             "king": {
@@ -2295,14 +2375,29 @@ class WidgetsQmlApi(QObject):
         clip.setText(url)
 
     @Slot(str)
+    def openWidgetInstanceUrl(self, instance_id: str) -> None:
+        normalized_id = str(instance_id or "").strip()
+        url = self.widgetInstanceUrl(normalized_id)
+        if url:
+            QDesktopServices.openUrl(QUrl(url))
+            self._preview_instance_id = normalized_id
+            self.previewWidgetInstance(normalized_id)
+
+    @Slot(str)
+    def updateWidgetPreview(self, instance_id: str) -> None:
+        normalized_id = str(instance_id or "").strip()
+        if normalized_id and normalized_id == self._preview_instance_id:
+            self.previewWidgetInstance(normalized_id)
+
+    @Slot(str)
     def previewWidgetInstance(self, instance_id: str) -> None:
         """Send a representative preview event for the given widget instance."""
-        from stream_cheremsha.overlays.widget_instances import get_instance
+        from stream_cheremsha.overlays.widget_instances import get_instance, ws_token_for
 
         inst = get_instance(str(instance_id or ""))
         if inst is None:
             return
-        self.previewLayoutWidget(inst.type_id, inst.id)
+        self.previewLayoutWidget(inst.type_id, ws_token_for(inst))
 
     @Slot(str, result=str)
     def loadWidgetInstanceSettingsJson(self, instance_id: str) -> str:
@@ -2336,44 +2431,3 @@ class WidgetsQmlApi(QObject):
                 )
             self.widgetInstancesChanged.emit()
         return ok
-
-
-class WidgetsWindowQmlApi(QObject):
-    def __init__(self, *, view: QQuickView) -> None:
-        super().__init__()
-        self._view = view
-
-    @Slot()
-    def close(self) -> None:
-        self._view.close()
-
-    @Slot()
-    def minimize(self) -> None:
-        self._view.showMinimized()
-
-    @Slot()
-    def toggleMaximize(self) -> None:
-        if self._view.visibility() == QQuickView.Visibility.Maximized:
-            self._view.showNormal()
-        else:
-            self._view.showMaximized()
-
-    @Slot(result=bool)
-    def isMaximized(self) -> bool:
-        return self._view.visibility() == QQuickView.Visibility.Maximized
-
-    @Slot()
-    def startMove(self) -> None:
-        # Best effort: on supported platforms this enables native window dragging.
-        try:
-            self._view.startSystemMove()
-        except (AttributeError, RuntimeError):
-            return
-
-    @Slot(int)
-    def startResize(self, edges: int) -> None:
-        # edges: Qt.Edge bitmask (Qt.LeftEdge | Qt.TopEdge | ...)
-        try:
-            self._view.startSystemResize(Qt.Edges(edges))
-        except (AttributeError, RuntimeError, TypeError):
-            return

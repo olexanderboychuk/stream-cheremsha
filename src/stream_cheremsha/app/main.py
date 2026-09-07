@@ -7,6 +7,13 @@ import os
 import sys
 from pathlib import Path
 
+# Linux/NVIDIA needs the documented ANGLE/native-Vulkan path to avoid the
+# crashing GBM allocation path. Windows and macOS retain Qt WebEngine defaults.
+if sys.platform.startswith("linux"):
+    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
+        "--use-gl=angle --enable-features=Vulkan --use-vulkan=native"
+    )
+
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QIcon
 from PySide6.QtQuick import QQuickView

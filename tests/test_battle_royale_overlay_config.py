@@ -1,3 +1,4 @@
+from stream_cheremsha.overlays.battle_royale_overlay import BattleRoyaleOverlayType
 from stream_cheremsha.overlays.battle_royale_overlay_config import (
     battle_royale_overlay_config_defaults,
     battle_royale_overlay_config_from_json_text,
@@ -9,10 +10,12 @@ def test_battle_royale_config_roundtrip() -> None:
     cfg = battle_royale_overlay_config_defaults()
     txt = battle_royale_overlay_config_to_json_text(cfg)
     cfg2 = battle_royale_overlay_config_from_json_text(txt)
+    assert cfg2 == cfg
     assert cfg2.max_hp == cfg.max_hp
     assert cfg2.crit_threshold_diamonds == cfg.crit_threshold_diamonds
     assert cfg2.auto_arm_enabled is True
     assert cfg2.base_font_size_px == 14
+    assert cfg2.scale_percent == 100
     assert cfg2.hide_when_idle is True
 
 
@@ -24,3 +27,10 @@ def test_battle_royale_base_font_size_clamped() -> None:
 def test_battle_royale_legacy_text_scale_pct_migrates_to_px() -> None:
     cfg = battle_royale_overlay_config_from_json_text('{"schema_version":1,"text_scale_pct":160}')
     assert cfg.base_font_size_px == 22
+
+
+def test_battle_royale_html_seeds_instance_scale() -> None:
+    html = BattleRoyaleOverlayType().render_html(
+        {"instance": "main", "instance_settings": {"scale_percent": 145}}
+    )
+    assert '--br-widget-scale:1.4500' in html

@@ -10,3 +10,5 @@ ConnStatusBadge 1.0 ConnStatusBadge.qml
 PlatformCardsPanel 1.0 PlatformCardsPanel.qml
 AnalyticsPanel 1.0 AnalyticsPanel.qml
 BpSection 1.0 BpSection.qml
+WidgetEditorSection 1.0 WidgetEditorSection.qml
+WidgetEditorControl 1.0 WidgetEditorControl.qml

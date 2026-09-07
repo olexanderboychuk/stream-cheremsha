@@ -17,6 +17,23 @@ def test_battle_royale_overlay_url() -> None:
     )
 
 
+def test_battle_royale_start_is_forwarded_to_host() -> None:
+    class _Host:
+        def __init__(self) -> None:
+            self.started = False
+
+        def battle_royale_start_from_leaders(self) -> bool:
+            self.started = True
+            return True
+
+    host = _Host()
+    api = WidgetsQmlApi(pubsub=OverlayPubSub())
+    api.set_battle_host(host)
+
+    assert api.battleRoyaleStartFromLeaders() is True
+    assert host.started is True
+
+
 def test_save_battle_royale_overlay_config_json_persists(monkeypatch) -> None:
     import stream_cheremsha.ui.widgets_qml_api as wapi
     from stream_cheremsha.overlays.battle_royale_overlay_config import (
@@ -37,6 +54,10 @@ def test_save_battle_royale_overlay_config_json_persists(monkeypatch) -> None:
         "max_hp": 800,
         "auto_threshold_each": 1,
         "auto_arm_enabled": True,
+        "preset": "cyber_arena",
+        "base_font_size_px": 22,
+        "scale_percent": 145,
+        "anim_projectile": False,
     }
     api.saveBattleRoyaleOverlayConfigJson(json.dumps(partial))
     raw = (s.value(BATTLE_ROYALE_OVERLAY_CONFIG_QSETTINGS_KEY, "", str) or "").strip()
@@ -44,4 +65,8 @@ def test_save_battle_royale_overlay_config_json_persists(monkeypatch) -> None:
     cfg = load_battle_royale_overlay_config(s)
     assert cfg.max_hp == 800
     assert cfg.auto_threshold_each == 1
+    assert cfg.preset == "cyber_arena"
+    assert cfg.base_font_size_px == 22
+    assert cfg.scale_percent == 145
+    assert cfg.anim_projectile is False
     s.clear()

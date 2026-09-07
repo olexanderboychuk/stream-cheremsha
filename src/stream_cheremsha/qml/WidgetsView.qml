@@ -198,34 +198,33 @@ Item {
     function galleryFilteredTypes() {
         return root.galleryCards();
     }
-    function galleryCount(cat) {
-        if (cat === "all") return (root.widgetTypeList || []).length;
-        var n = 0; var src = root.widgetTypeList || [];
-        for (var i = 0; i < src.length; ++i) if (root.galleryMatchesCategory(src[i], cat)) ++n;
-        return n;
-    }
-    function galleryActiveCount() {
-        // Enabled instances + fallback types (no instance = renders with defaults = active).
-        var n = 0; var src = root.widgetInstanceList || [];
+    // Counts follow galleryCards(): every stored instance is a card, plus one active
+    // fallback card for each type that has no stored instances.
+    function galleryStats(cat) {
+        var out = {total: 0, active: 0, disabled: 0};
+        var instances = root.widgetInstanceList || [];
         var seen = {};
-        for (var i = 0; i < src.length; ++i) {
-            if (src[i].enabled) { ++n; seen[src[i].type_id] = true; }
-            else seen[src[i].type_id] = seen[src[i].type_id] || false;
+        for (var i = 0; i < instances.length; ++i) {
+            var inst = instances[i];
+            var instType = root.galleryTypeById(inst.type_id);
+            if (!root.galleryMatchesCategory(instType, cat)) continue;
+            ++out.total;
+            seen[inst.type_id] = true;
+            if (inst.enabled) ++out.active;
+            else ++out.disabled;
         }
         var types = root.widgetTypeList || [];
         for (var j = 0; j < types.length; ++j) {
-            if (!(types[j].type_id in seen)) ++n;
+            var type = types[j];
+            if (seen[type.type_id] || !root.galleryMatchesCategory(type, cat)) continue;
+            ++out.total;
+            ++out.active;
         }
-        return n;
+        return out;
     }
-    function galleryDisabledCount() {
-        var s = {}; var a = {}; var src = root.widgetInstanceList || [];
-        for (var j = 0; j < src.length; ++j) {
-            if (src[j].enabled) a[src[j].type_id] = true; else s[src[j].type_id] = true;
-        }
-        var n = 0; for (var k in s) if (!a[k]) ++n;
-        return n;
-    }
+    function galleryCount(cat) { return root.galleryStats(cat).total; }
+    function galleryActiveCount() { return root.galleryStats("all").active; }
+    function galleryDisabledCount() { return root.galleryStats("all").disabled; }
 
     function editWidgetInstance(inst) {
         if (!inst || !inst.id) {
@@ -325,6 +324,265 @@ Item {
 
     readonly property int titleBarH: 44
     property string widgetMode: "grid" // grid | chat | actions | online | top_likers | top_gifters | king_of_live | battle_royale | stream_pet | community_world | stream_goal | live_leaderboard | social_rotator | webcam_frame | signal_system
+    readonly property bool universalEditorActive: root.editingInstanceId !== "" && root.widgetMode !== "grid" && root.widgetMode !== "layout"
+
+    function universalInstance() {
+        var list = root.widgetInstanceList || [];
+        for (var i = 0; i < list.length; ++i)
+            if (list[i].id === root.editingInstanceId) return list[i];
+        return null;
+    }
+
+    function universalSchema(typeId, cfg) {
+        // This is the presentation schema for the legacy editors. Values and keys are
+        // intentionally the same as the old forms and their config dataclasses.
+        var value = function(key, fallback) { return cfg && cfg[key] !== undefined ? cfg[key] : fallback; };
+        var c = function(label, key, type, fallback, more) {
+            var item = {label: label, field: key, type: type, value: value(key, fallback)};
+            if (more) for (var k in more) item[k] = more[k];
+            return item;
+        };
+        var bl = function(key) { return root.loc("widgets.battle_royale." + key); };
+        var s = function(title, description, controls, icon, expanded) {
+            return {title: title, description: description, icon: icon || "", controls: controls, expanded: expanded !== false};
+        };
+        var sections = [];
+        var general = [];
+        var appearance = [];
+        var behavior = [];
+        var animation = [];
+        var advanced = [];
+
+        if (typeId === "chat") {
+            general = [
+                c("Maximum messages", "max_items", "number", 12, {minimum: 1, maximum: 200}),
+                c("Font family", "font_family", "text", "Segoe UI"),
+                c("Font size", "font_size_px", "number", 18, {minimum: 8, maximum: 96}),
+                c("Show platform icons", "show_platform_icon", "toggle", true),
+                c("Fade after (seconds)", "fade_seconds", "number", 0, {minimum: 0, maximum: 600})
+            ];
+            appearance = [
+                c("Widget background", "widget_bg_enabled", "toggle", false),
+                c("Widget background color", "widget_bg_rgba", "color", "rgba(10,12,18,0.45)"),
+                c("Widget corner radius", "widget_bg_radius_px", "number", 14, {minimum: 0, maximum: 60}),
+                c("Widget padding", "widget_bg_padding_px", "number", 10, {minimum: 0, maximum: 48}),
+                c("Message bubbles", "bubble_bg_enabled", "toggle", true),
+                c("Bubble background", "bubble_bg_rgba", "color", "rgba(10,12,18,0.55)"),
+                c("Bubble radius", "bubble_radius_px", "number", 10, {minimum: 0, maximum: 60}),
+                c("Username color mode", "username_color_mode", "select", "auto", {options: ["auto", "platform", "custom"]}),
+                c("Custom username color", "username_color_custom", "color", "#93c5fd"),
+                c("Text color", "text_color", "color", "#e5e7eb")
+            ];
+            animation = [
+                c("Text shadow", "text_shadow_enabled", "toggle", true),
+                c("Shadow color", "text_shadow_rgba", "color", "rgba(0,0,0,0.65)"),
+                c("Shadow blur", "text_shadow_blur_px", "number", 4, {minimum: 0, maximum: 24}),
+                c("Shadow offset X", "text_shadow_offset_x_px", "number", 0, {minimum: -12, maximum: 12}),
+                c("Shadow offset Y", "text_shadow_offset_y_px", "number", 1, {minimum: -12, maximum: 12})
+            ];
+        } else if (typeId === "actions") {
+            general = [
+                c("Font family", "font_family", "text", "Segoe UI"),
+                c("Font size", "font_size_px", "number", 40, {minimum: 8, maximum: 200}),
+                c("Line spacing", "font_line_spacing_px", "number", 0, {minimum: 0, maximum: 200}),
+                c("Letter spacing", "font_letter_spacing_px", "number", 0, {minimum: -200, maximum: 200}),
+                c("Profile picture", "show_profile_picture", "toggle", true),
+                c("Gift picture", "show_gift_picture", "toggle", true),
+                c("Action platform icon", "show_action_platform_icon", "toggle", true),
+                c("Platform icon size", "platform_icon_size_px", "number", 40, {minimum: 16, maximum: 128}),
+                c("Flip platform icon", "platform_icon_flip_enabled", "toggle", false),
+                c("Single text line", "single_text_line", "toggle", false),
+                c("Parallel popups", "parallel_popups_enabled", "toggle", false)
+            ];
+            appearance = [
+                c("Text color", "text_color", "color", "#e5e7eb"),
+                c("Text shadow", "text_shadow_enabled", "toggle", false),
+                c("Shadow color", "text_shadow_color", "color", "#000000"),
+                c("Font border", "font_border_enabled", "toggle", false),
+                c("Border color", "font_border_color", "color", "#242424"),
+                c("Custom username color", "username_custom_color_enabled", "toggle", false),
+                c("Username color", "username_custom_color", "color", "#32c3a6"),
+                c("Username effect", "username_text_effect", "select", "none", {options: ["none", "rainbow", "aurora", "neon", "fire"]}),
+                c("Picture size", "picture_size_px", "number", 65, {minimum: 1, maximum: 512}),
+                c("Username size", "username_size_px", "number", 65, {minimum: 1, maximum: 512}),
+                c("Name/text gap", "name_text_gap_px", "number", 8, {minimum: 0, maximum: 80})
+            ];
+            behavior = [
+                c("Bubble background", "bubble_bg_enabled", "toggle", true),
+                c("Bubble opacity", "bubble_bg_alpha", "slider", 0.55, {minimum: 0, maximum: 1}),
+                c("Bubble radius", "bubble_radius_px", "number", 16, {minimum: 0, maximum: 60}),
+                c("Auto-hide seconds", "auto_hide_seconds", "number", 0, {minimum: 0, maximum: 600}),
+                c("Wave effect", "wave_enabled", "toggle", false),
+                c("Move effect", "move_enabled", "toggle", false),
+                c("3D effect", "effect_3d_enabled", "toggle", false),
+                c("Wiggle effect", "wiggle_enabled", "toggle", false)
+            ];
+        } else if (typeId === "online") {
+            general = [
+                c("Layout mode", "layout_mode", "select", "combined", {options: ["combined", "per_platform"]}),
+                c("Twitch", "platform_twitch_enabled", "toggle", true), c("TikTok", "platform_tiktok_enabled", "toggle", true),
+                c("YouTube", "platform_youtube_enabled", "toggle", true), c("Kick", "platform_kick_enabled", "toggle", true),
+                c("Font family", "font_family", "text", "Segoe UI"), c("Font size", "font_size_px", "number", 36, {minimum: 8, maximum: 200}),
+                c("Line spacing", "font_line_spacing_px", "number", 0, {minimum: 0, maximum: 200}), c("Letter spacing", "font_letter_spacing_px", "number", 0, {minimum: -200, maximum: 200}),
+                c("Icon size", "platform_icon_size_px", "number", 28, {minimum: 16, maximum: 128}), c("Icon/number gap", "icon_number_gap_px", "number", 12, {minimum: 0, maximum: 80})
+            ];
+            appearance = [
+                c("Text color", "text_color", "color", "#e5e7eb"), c("Text shadow", "text_shadow_enabled", "toggle", false),
+                c("Shadow color", "text_shadow_color", "color", "#000000"), c("Font border", "font_border_enabled", "toggle", false),
+                c("Border color", "font_border_color", "color", "#242424"), c("Text effect", "text_effect", "select", "none", {options: ["none", "glow", "neon", "rainbow", "aurora", "fire"]}),
+                c("Block background", "bubble_bg_enabled", "toggle", true), c("Background opacity", "bubble_bg_alpha", "slider", 0.45, {minimum: 0, maximum: 1}),
+                c("Block radius", "bubble_radius_px", "number", 14, {minimum: 0, maximum: 60})
+            ];
+        } else if (typeId === "top_likers" || typeId === "top_gifters") {
+            var gifters = typeId === "top_gifters";
+            general = [
+                c("Font family", "font_family", "text", "Segoe UI"), c("Font size", "font_size_px", "number", 22, {minimum: 8, maximum: 120}),
+                c("Line spacing", "font_line_spacing_px", "number", 4, {minimum: 0, maximum: 80}), c("Letter spacing", "font_letter_spacing_px", "number", 0, {minimum: -20, maximum: 40}),
+                c("Show rank", "show_rank", "toggle", true), c(gifters ? "Show coins" : "Show likes", "show_likes", "toggle", true),
+                c("Right-to-left", "rtl", "toggle", false), c("Top 1 crown", "show_top1_crown", "toggle", true), c("Top 3 medal", "show_top3_medal", "toggle", true)
+            ];
+            appearance = [
+                c("Username color", "color_username", "color", gifters ? "#ff69b4" : "#c4b5fd"), c(gifters ? "Coins color" : "Likes color", "color_points", "color", gifters ? "#ffd700" : "#f4f4f5"), c("Rank color", "color_rank", "color", gifters ? "#f4f4f5" : "#d9d9d9"),
+                c("Show heart", "show_heart", "toggle", true), c("Animated heart", "heart_animated", "toggle", true), c("Heart size", "heart_size_px", "number", 14, {minimum: 8, maximum: 48}),
+                c("Panel shadow", "bg_shadow_enabled", "toggle", false), c("Panel shadow color", "bg_shadow_color", "color", "rgba(33,33,33,0.4)"),
+                c("Font border", "font_border_enabled", "toggle", true), c("Border color", "font_border_color", "color", "#242424"),
+                c("Username shadow", "username_text_shadow_enabled", "toggle", false), c("Username shadow color", "username_text_shadow_color", "color", "#000000"),
+                c(gifters ? "Coins shadow" : "Likes shadow", "likes_text_shadow_enabled", "toggle", false), c(gifters ? "Coins shadow color" : "Likes shadow color", "likes_text_shadow_color", "color", "#000000"),
+                c("Username effect", "text_effect_username", "select", "none", {options: ["none", "rainbow", "aurora", "cyberpunk", "fire", "ice", "cold", "freeze", "strong"]}),
+                c("List background", "list_bg_enabled", "toggle", true), c("List background color", "list_bg_rgba", "color", gifters ? "rgba(26,26,26,0.92)" : "rgba(18,20,28,0.72)"), c("List radius", "list_radius_px", "number", 12, {minimum: 0, maximum: 40})
+            ];
+            behavior = [
+                c("Wave effect", "wave_enabled", "toggle", false), c("Wave speed", "wave_speed", "select", "normal", {options: ["slow", "normal", "fast"]}),
+                c("Sort leaders", "leader_sort", "select", "likes_desc", {options: ["likes_desc", "likes_asc", "name_asc"]}), c("Top count", "top_count", "number", 8, {minimum: 1, maximum: 10}),
+                c("Avatar size", "avatar_size_px", "number", 48, {minimum: 24, maximum: 120}), c("Row gap", "row_gap_px", "number", 10, {minimum: 0, maximum: 40}),
+                c("List scroll interval", "list_scroll_interval_sec", "number", 0, {minimum: 0, maximum: 600})
+            ];
+        } else if (typeId === "king_of_live") {
+            general = [c("Preset", "preset", "select", "imperial_gold", {options: ["imperial_gold", "cyber_king", "dark_overlord", "minimalist"]}), c("Title", "title_text", "text", "KING OF THE LIVE"), c("Danger threshold", "danger_threshold_pct", "number", 90, {minimum: 50, maximum: 99}), c("Show gap strip", "show_gap_strip", "toggle", true), c("Avatar size", "avatar_size_px", "number", 120, {minimum: 64, maximum: 220}), c("Font family", "font_family", "text", "Segoe UI")];
+            appearance = [c("Backdrop blur", "backdrop_blur_px", "number", 0, {minimum: 0, maximum: 48}), c("Bubble blur", "backdrop_bubble_blur_px", "number", 0, {minimum: 0, maximum: 48}), c("Rays intensity", "rays_intensity_pct", "number", 130, {minimum: 40, maximum: 200}), c("Text scale", "text_scale_pct", "number", 100, {minimum: 70, maximum: 160})];
+            animation = [c("Animation intensity", "anim_intensity_pct", "number", 100, {minimum: 25, maximum: 200}), c("Avatar motion", "anim_avatar_motion", "toggle", true), c("Crown float", "anim_crown_float", "toggle", true), c("Rays spin", "anim_rays_spin", "toggle", true), c("Coins fall", "anim_coins_fall", "toggle", true), c("Gem pulse", "anim_gem_pulse", "toggle", true), c("Title shimmer", "anim_title_shimmer", "toggle", true), c("Presence fireworks", "anim_fireworks_on_presence", "toggle", true)];
+        } else if (typeId === "battle_royale") {
+            general = [c(bl("hide_when_idle"), "hide_when_idle", "toggle", true), c(bl("max_hp"), "max_hp", "number", 1000, {minimum: 100, maximum: 10000}), c(bl("round_duration"), "round_duration_s", "number", 120, {minimum: 30, maximum: 600}), c(bl("critical_threshold"), "crit_threshold_diamonds", "number", 500, {minimum: 50, maximum: 50000}), c(bl("gifts_per_fighter"), "gifts_per_fighter", "number", 3, {minimum: 1, maximum: 6}), c(bl("auto_start"), "auto_arm_enabled", "toggle", true)];
+            appearance = [c(bl("base_font_size"), "base_font_size_px", "number", 14, {minimum: 10, maximum: 32}), c(bl("scale_percent"), "scale_percent", "number", 100, {minimum: 40, maximum: 250})];
+            behavior = [c(bl("automatic_threshold"), "auto_threshold_each", "number", 100, {minimum: 1, maximum: 10000}), c(bl("automatic_window"), "auto_window_s", "number", 30, {minimum: 5, maximum: 120})];
+        } else if (typeId === "stream_pet") {
+            general = [c("Preset", "preset", "select", "classic_gold", {options: ["classic_gold", "cyber_purple", "cotton_candy", "forest_fox", "midnight_shadow", "sunset_shiba", "custom"]}), c("Enabled", "enabled", "toggle", true), c("Show energy bar", "show_energy_bar", "toggle", true), c("Evolution enabled", "evolution_enabled", "toggle", true), c("Pet scale", "pet_scale_pct", "number", 100, {minimum: 50, maximum: 200})];
+            appearance = [c("Collar enabled", "collar_enabled", "toggle", true), c("Blush enabled", "blush_enabled", "toggle", true), c("Body color", "pet_body_color", "color", "#fbbf24"), c("Ear color", "pet_ear_color", "color", "#f59e0b"), c("Collar color", "collar_color", "color", "#ef4444"), c("Bubble color", "bubble_bg_color", "color", "#ffffff")];
+            behavior = [c("Bubble max characters", "bubble_max_chars", "number", 110, {minimum: 40, maximum: 200}), c("VIP level 3 interval", "level3_vip_interval_sec", "number", 180, {minimum: 30, maximum: 3600}), c("Post-evolution energy", "post_evolution_energy", "number", 50, {minimum: 31, maximum: 100}), c("Disco duration", "disco_duration_ms", "number", 5000, {minimum: 1000, maximum: 30000}), c("Initial energy", "initial_energy", "number", 70, {minimum: 0, maximum: 100}), c("Decay per 2 minutes", "decay_per_2min", "number", 1, {minimum: 0, maximum: 10}), c("Sleep idle seconds", "sleep_idle_sec", "number", 900, {minimum: 60, maximum: 3600})];
+            advanced = [c("Bubble font", "bubble_font_family", "text", "Press Start 2P"), c("Bubble font size", "bubble_font_size_px", "number", 20, {minimum: 12, maximum: 48}), c("Pet sprite URL", "pet_sprite_url", "url", "")];
+        } else if (typeId === "community_world") {
+            general = [c("Enabled", "enabled", "toggle", true), c("Quiet mode", "quiet_mode", "toggle", false), c("Theme", "theme", "select", "ukrainian", {options: ["pixel", "fantasy", "cyber", "ukrainian"]}), c("Layout", "layout_mode", "select", "full", {options: ["full", "compact"]})];
+            appearance = [c("Scale", "scale_pct", "number", 100, {minimum: 40, maximum: 200}), c("Font size", "font_size_px", "number", 16, {minimum: 8, maximum: 120}), c("Font family", "font_family", "text", "Segoe UI"), c("Show level", "show_level", "toggle", true), c("Show quests", "show_quests", "toggle", true), c("Show recognition", "show_recognition", "toggle", true), c("Show passports", "show_passports", "toggle", true), c("Show buildings", "show_buildings", "toggle", true), c("Show elders", "show_elders", "toggle", true)];
+            behavior = [c("Quest 1 type", "quest1_type", "select", "likes", {options: ["likes", "shares", "gifts", "follows", "none"]}), c("Quest 2 type", "quest2_type", "select", "shares", {options: ["likes", "shares", "gifts", "follows", "none"]}), c("Quest 3 type", "quest3_type", "select", "gifts", {options: ["likes", "shares", "gifts", "follows", "none"]}), c("Quest 4 type", "quest4_type", "select", "follows", {options: ["likes", "shares", "gifts", "follows", "none"]}), c("Likes target", "quest_likes_target", "number", 5000, {minimum: 100, maximum: 100000000}), c("Shares target", "quest_shares_target", "number", 50, {minimum: 100, maximum: 100000}), c("Gifts target", "quest_gifts_target", "number", 1000, {minimum: 50, maximum: 100000000}), c("Follows target", "quest_follows_target", "number", 100, {minimum: 5, maximum: 100000})];
+            advanced = [c("XP follow", "xp_follow", "number", 40, {minimum: 0, maximum: 1000}), c("XP join", "xp_join", "number", 5, {minimum: 0, maximum: 1000}), c("XP chat", "xp_chat", "number", 2, {minimum: 0, maximum: 1000}), c("XP like per 10", "xp_like_per_10", "number", 2, {minimum: 0, maximum: 1000}), c("XP share", "xp_share", "number", 25, {minimum: 0, maximum: 1000}), c("XP gift coins per 10", "xp_gift_coin_per_10", "number", 1, {minimum: 0, maximum: 1000}), c("XP battle win", "xp_battle_win", "number", 150, {minimum: 0, maximum: 10000})];
+        } else if (typeId === "stream_goal") {
+            general = [c("Enabled", "enabled", "toggle", true), c("Goal type", "goal_type", "select", "followers", {options: ["followers", "likes", "gifts", "shares", "comments"]}), c("Title", "title", "text", "FOLLOW GOAL"), c("Subtitle", "subtitle", "text", ""), c("Current value", "current_value", "number", 0, {minimum: 0, maximum: 10000000}), c("Target value", "target_value", "number", 10000, {minimum: 1, maximum: 10000000}), c("Next target", "next_target_value", "number", 25000, {minimum: 1, maximum: 50000000})];
+            appearance = [c("Skin", "skin", "select", "digital_core", {options: ["digital_core", "boss", "reactor", "rocket", "vault", "tower", "creature"]}), c("Accent color", "accent_color", "color", "#00ffff"), c("Scale", "scale_percent", "number", 100, {minimum: 40, maximum: 250})];
+            animation = [c("Animation intensity", "animation_intensity", "select", "medium", {options: ["low", "medium", "high"]}), c("Combo", "enable_combo", "toggle", true), c("Milestones", "enable_milestones", "toggle", true), c("Particles", "enable_particles", "toggle", true), c("Glitch", "enable_glitch", "toggle", true), c("Reset behavior", "reset_behavior", "select", "after_completion", {options: ["after_completion", "manual", "new_stream"]})];
+        } else if (typeId === "live_leaderboard") {
+            general = [c("Enabled", "enabled", "toggle", true), c("Top entries", "top_n", "number", 10, {minimum: 1, maximum: 10}), c("Rotation sequence", "sequence", "list", "")];
+            behavior = [c("Likers", "enable_likers", "toggle", true), c("Gifters", "enable_gifters", "toggle", true), c("Sharers", "enable_sharers", "toggle", true), c("Commenters", "enable_commenters", "toggle", true), c("Contributors", "enable_contributors", "toggle", true), c("Hall of fame", "enable_hall_of_fame", "toggle", true), c("Arena", "enable_arena", "toggle", true), c("Energy network", "enable_energy_network", "toggle", true)];
+            animation = [c("Transition", "transition", "select", "glitch_morph", {options: ["glitch_morph", "digital_dissolve", "scan", "fade"]}), c("Animation intensity", "animation_intensity", "select", "medium", {options: ["low", "medium", "high"]}), c("Scale", "scale_percent", "number", 100, {minimum: 40, maximum: 250}), c("Rank change animation", "enable_rank_change_anim", "toggle", true), c("Particles", "enable_particles", "toggle", true), c("CRT", "enable_crt", "toggle", true)];
+        } else if (typeId === "social_rotator") {
+            general = [c("Enabled", "enabled", "toggle", true), c("Platforms", "platforms", "list", ""), c("Rotation interval", "rotation_interval_ms", "number", 8000, {minimum: 1000, maximum: 120000})];
+            appearance = [c("Transition", "transition", "select", "glitch_morph", {options: ["glitch_morph", "data_stream", "energy_burst", "scan", "pixel_dissolve", "fade"]}), c("Theme", "theme", "select", "neon_cyber", {options: ["neon_cyber", "synthwave", "toxic", "ice", "amber"]}), c("Background opacity", "background_opacity_percent", "slider", 85, {minimum: 0, maximum: 100}), c("Scale", "scale_percent", "number", 100, {minimum: 40, maximum: 250})];
+            behavior = [c("Show URL", "show_url", "toggle", true), c("Secondary platforms", "show_secondary_platforms", "toggle", true), c("Countdown", "show_countdown", "toggle", true), c("Glow", "enable_glow", "toggle", true), c("Particles", "enable_particles", "toggle", true), c("CRT", "enable_crt", "toggle", true), c("Latest follower", "show_latest_follower", "toggle", true), c("Latest donation", "show_latest_donation", "toggle", true), c("Stream time", "show_stream_time", "toggle", true), c("Top donator", "show_top_donator", "toggle", true), c("Online count", "show_online", "toggle", true), c("TikTok coin rate", "tiktok_coin_to_value_rate", "text", 1.0)];
+        } else if (typeId === "webcam_frame") {
+            general = [c("Enabled", "enabled", "toggle", true), c("Theme", "theme", "select", "neon_cyber", {options: ["neon_cyber", "synthwave", "toxic", "ice", "amber", "critical"]}), c("Intensity", "intensity", "select", "medium", {options: ["low", "medium", "high"]}), c("Frame style", "frame_style", "select", "primary", {options: ["primary", "minimal", "tactical", "broadcast", "hologram"]}), c("Camera label", "cam_label", "text", "CAM // 01"), c("Scale", "scale_percent", "number", 100, {minimum: 40, maximum: 250})];
+            animation = [c("Energy flow", "enable_energy_flow", "toggle", true), c("Breathing glow", "enable_breathing_glow", "toggle", true), c("Light sweep", "enable_light_sweep", "toggle", true), c("Micro glitch", "enable_micro_glitch", "toggle", true), c("Sparks", "enable_sparks", "toggle", true), c("CRT", "enable_crt", "toggle", true), c("Status indicator", "enable_status_indicator", "toggle", true), c("Boot animation", "enable_boot_animation", "toggle", true), c("Shutdown animation", "enable_shutdown_animation", "toggle", true)];
+        } else if (typeId === "signal_system") {
+            general = [c("Enabled", "enabled", "toggle", true), c("Theme", "theme", "select", "neon_cyber", {options: ["neon_cyber", "toxic_system", "ice_protocol", "amber_core", "critical"]}), c("Custom title", "custom_title", "text", "SIGNAL // SYSTEM")];
+            appearance = [c("Scale", "scale_percent", "number", 100, {minimum: 40, maximum: 250}), c("Core vertical position", "core_vertical_pct", "number", 50, {minimum: 20, maximum: 80})];
+            behavior = [c("Perimeter", "perimeter_enabled", "toggle", true), c("Particles", "particles_enabled", "toggle", true), c("Glitch", "glitch_enabled", "toggle", true), c("Sound", "sound_enabled", "toggle", false), c("Idle opacity", "idle_opacity_pct", "number", 35, {minimum: 0, maximum: 100}), c("Active opacity", "active_opacity_pct", "number", 100, {minimum: 50, maximum: 100}), c("Minimum gift coins", "min_gift_coins_for_event", "number", 100, {minimum: 1, maximum: 10000}), c("Cooldown", "cooldown_ms", "number", 3000, {minimum: 500, maximum: 15000})];
+            advanced = [c("Milestones", "milestones_enabled", "toggle", true), c("Activity surge", "activity_surge_enabled", "toggle", true), c("AI observations", "ai_observations_enabled", "toggle", true), c("Unknown signals", "unknown_signals_enabled", "toggle", true)];
+        }
+
+        // Keep accepted persisted fields visible too, even where the legacy form exposed
+        // them only through presets or runtime defaults. These are existing schema keys.
+        if (typeId === "chat") advanced = advanced.concat([c("Show platform", "show_platform", "toggle", true)]);
+        if (typeId === "battle_royale") advanced = advanced.concat([
+            c(bl("preset"), "preset", "select", "arcade_royale", {options: ["arcade_royale", "cyber_arena", "dark_fight", "minimal_brawl"], optionLabels: [bl("preset_arcade_royale"), bl("preset_cyber_arena"), bl("preset_dark_fight"), bl("preset_minimal_brawl")]}), c(bl("title"), "title_text", "text", "BATTLE ROYALE"), c(bl("countdown"), "countdown_s", "number", 5, {minimum: 1, maximum: 30}),
+            c(bl("critical_multiplier"), "crit_multiplier", "number", 1.5, {minimum: 1, maximum: 5}),
+            c(bl("max_fighters"), "max_fighters", "number", 4, {minimum: 2, maximum: 4}), c(bl("vip_chat_hours"), "vip_chat_hours", "number", 1, {minimum: 1, maximum: 24}),
+            c(bl("avatar_size"), "avatar_size_px", "number", 110, {minimum: 64, maximum: 200}), c(bl("font_family"), "font_family", "text", "Segoe UI"),
+            c(bl("animation_intensity"), "anim_intensity_pct", "number", 100, {minimum: 25, maximum: 200}), c(bl("sfx_volume"), "sfx_volume_pct", "number", 80, {minimum: 0, maximum: 100}),
+            c(bl("projectile_animation"), "anim_projectile", "toggle", true), c(bl("shake_animation"), "anim_shake", "toggle", true), c(bl("critical_flash"), "anim_crit_flash", "toggle", true), c(bl("fatality_animation"), "anim_fatality", "toggle", true)
+        ]);
+        if (typeId === "stream_pet") advanced = advanced.concat([
+            c("Pet outline", "pet_outline_color", "color", "#111827"), c("Eye color", "pet_eye_color", "color", "#111827"), c("Mouth color", "pet_mouth_color", "color", "#111827"),
+            c("Blanket color", "blanket_color", "color", "#111827"), c("Spark color", "spark_color", "color", "#fef3c7"), c("Hyper glow", "hyper_glow_color", "color", "#a78bfa"),
+            c("Bubble border", "bubble_border_color", "color", "#111827"), c("Bubble text", "bubble_text_color", "color", "#111827")
+        ]);
+        if (typeId === "community_world") {
+            advanced = advanced.concat([c("Feed max items", "feed_max_items", "number", 20, {minimum: 1, maximum: 200}), c("Title color", "color_title", "color", "#ffffff"), c("Progress color", "color_progress", "color", "#14b8a6"), c("Quest background", "color_quest_bg", "color", "#10141a"), c("Text color", "color_text", "color", "#e8eaed"), c("Accent color", "color_accent", "color", "#14b8a6")]);
+        }
+        if (typeId === "stream_goal") advanced = advanced.concat([
+            c("Event animations", "enable_event_animations", "toggle", true), c("Completion animation", "enable_completion_animation", "toggle", true), c("Sound", "enable_sound", "toggle", false),
+            c("Milestones JSON", "milestones_json", "text", "[]"), c("Gift coin progress", "gift_coin_per_progress", "number", 1, {minimum: 0, maximum: 100000}), c("Combo window", "combo_window_sec", "number", 5, {minimum: 0, maximum: 120})
+        ]);
+        if (typeId === "live_leaderboard") advanced = advanced.concat([c("Accent color", "accent_color", "color", "#14b8a6"), c("Like weight", "weight_like", "number", 1, {minimum: 0, maximum: 100}), c("Gift weight", "weight_gift_coin", "number", 1, {minimum: 0, maximum: 100}), c("Share weight", "weight_share", "number", 1, {minimum: 0, maximum: 100}), c("Comment weight", "weight_comment", "number", 1, {minimum: 0, maximum: 100})]);
+        if (typeId === "social_rotator") advanced = advanced.concat([c("Accent color", "accent_color", "color", "#14b8a6")]);
+        if (typeId === "signal_system") advanced = advanced.concat([
+            c("Font family", "font_family", "text", "Segoe UI"), c("Intensity multiplier", "intensity_multiplier", "number", 1, {minimum: 0, maximum: 10}), c("Primary accent", "primary_accent", "color", "#14b8a6"), c("Secondary accent", "secondary_accent", "color", "#a78bfa"),
+            c("Frame detail level", "frame_detail_level", "number", 1, {minimum: 0, maximum: 10}), c("Particle density", "particle_density", "number", 1, {minimum: 0, maximum: 10}), c("Gift icon", "gift_icon_enabled", "toggle", true), c("Gift quantity", "show_gift_quantity", "toggle", true), c("Coin value", "show_coin_value", "toggle", true), c("Gift name", "show_gift_name", "toggle", true), c("Reduced motion", "reduced_motion", "toggle", false),
+            c("Global cooldown", "global_cooldown_ms", "number", 3000, {minimum: 0, maximum: 60000}), c("AI cooldown", "ai_observation_cooldown_ms", "number", 3000, {minimum: 0, maximum: 60000}), c("AI max per hour", "ai_observation_max_per_hour", "number", 10, {minimum: 0, maximum: 1000}), c("Unknown signal cooldown", "unknown_signal_cooldown_ms", "number", 3000, {minimum: 0, maximum: 60000})
+        ]);
+
+        if (general.length) sections.push(s(typeId === "battle_royale" ? bl("section_general") : "General", typeId === "battle_royale" ? bl("desc_general") : "Core settings for this widget instance.", general, "◇"));
+        if (appearance.length) sections.push(s(typeId === "battle_royale" ? bl("section_appearance") : "Appearance", typeId === "battle_royale" ? bl("desc_appearance") : "Visual presentation and display options.", appearance, "✦"));
+        if (behavior.length) sections.push(s(typeId === "battle_royale" ? bl("section_behavior") : "Gameplay / Behavior", typeId === "battle_royale" ? bl("desc_behavior") : "Rules, sources, timing, and widget behavior.", behavior, "≡"));
+        if (animation.length) sections.push(s("Animation", "Motion and visual effect controls.", animation, "⌁"));
+        if (advanced.length) sections.push(s(typeId === "battle_royale" ? bl("section_advanced") : "Advanced", typeId === "battle_royale" ? bl("desc_advanced") : "Technical settings for this widget.", advanced, "⚙", false));
+        return sections;
+    }
+
+    function universalConfig() {
+        if (root.widgetMode === "chat") return root.cfg;
+        if (root.widgetMode === "actions") return root.actionsCfg;
+        if (root.widgetMode === "online") return root.onlineCfg;
+        if (root.widgetMode === "top_likers" || root.widgetMode === "top_gifters") return root.tierOverlayCfg;
+        if (root.widgetMode === "king_of_live") return root.kingCfg;
+        if (root.widgetMode === "battle_royale") return root.battleCfg;
+        if (root.widgetMode === "stream_pet") return root.streamPetCfg;
+        if (root.widgetMode === "community_world") return root.communityWorldCfg;
+        if (root.widgetMode === "stream_goal") return root.streamGoalCfg;
+        if (root.widgetMode === "live_leaderboard") return root.liveLeaderboardCfg;
+        if (root.widgetMode === "social_rotator") return root.socialRotatorCfg;
+        if (root.widgetMode === "webcam_frame") return root.webcamFrameCfg;
+        if (root.widgetMode === "signal_system") return root.signalSystemCfg;
+        return null;
+    }
+
+    function applyUniversalSetting(field, value) {
+        var cfg = root.universalConfig();
+        if (!cfg || field === "instance_id") return;
+        if (root.widgetMode === "stream_pet" && field === "preset") {
+            root._applyStreamPetPreset(value);
+            universalPreviewSaveDebounce.restart();
+            universalPreviewUpdateDebounce.restart();
+            return;
+        }
+        cfg[field] = value;
+        universalPreviewSaveDebounce.restart();
+        universalPreviewUpdateDebounce.restart();
+    }
+
+    Timer {
+        id: universalPreviewSaveDebounce
+        interval: 250
+        repeat: false
+        onTriggered: root._saveAndApplyCurrentWidget()
+    }
+
+    Timer {
+        id: universalPreviewUpdateDebounce
+        interval: 300
+        repeat: false
+        onTriggered: {
+            if (root._canSaveCurrentWidget && api)
+                api.updateWidgetPreview(root.editingInstanceId);
+        }
+    }
 
     function _deepCopy(obj) {
         try {
@@ -2247,6 +2505,38 @@ Item {
                 }
             }
 
+            // Universal editor shell. It deliberately overlays the legacy per-type forms while
+            // their proven configuration/save adapters remain available underneath.
+            Item {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.minimumHeight: 0
+                z: 100
+                visible: root.universalEditorActive
+                Loader {
+                    id: universalEditorLoader
+                    anchors.fill: parent
+                    active: root.universalEditorActive
+                    source: "UniversalWidgetEditor.qml"
+                    asynchronous: true
+
+                    Binding { target: universalEditorLoader.item; property: "instanceName"; value: root.editingInstanceName || "Widget instance"; when: universalEditorLoader.item !== null }
+                    Binding { target: universalEditorLoader.item; property: "instanceId"; value: root.editingInstanceId; when: universalEditorLoader.item !== null }
+                    Binding { target: universalEditorLoader.item; property: "typeName"; value: root.galleryTypeById(root.widgetMode).name || root.widgetMode; when: universalEditorLoader.item !== null }
+                    Binding { target: universalEditorLoader.item; property: "typeId"; value: root.widgetMode; when: universalEditorLoader.item !== null }
+                    Binding { target: universalEditorLoader.item; property: "sections"; value: root.universalSchema(root.widgetMode, root.universalConfig()); when: universalEditorLoader.item !== null }
+
+                    Connections {
+                        target: universalEditorLoader.item
+                        function onBackRequested() { root.clearEditingInstance(); root.widgetMode = "grid" }
+                        function onResetRequested() { cfgHost.reloadAllWidgetConfigs(); if (universalEditorLoader.item) universalEditorLoader.item.saveState = "saved" }
+                        function onSaveRequested() { root._saveAndApplyCurrentWidget() }
+                        function onCopyRequested() { if (api) api.copyWidgetInstanceUrl(root.editingInstanceId) }
+                        function onSettingChanged(field, value) { root.applyUniversalSetting(field, value) }
+                    }
+                }
+            }
+
             Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
@@ -2294,7 +2584,9 @@ Item {
                             leftPadding: 32
                             onTextChanged: root.gallerySearch = text
                             background: Rectangle {
-                                radius: 8; color: "#0b0f17"; border.width: 1; border.color: cardEdge
+                                radius: 8; color: "#0b0f17"; border.width: 1
+                                border.color: gallerySearchField.activeFocus ? "#7c3aed" : (gallerySearchField.hovered ? "#4c1d95" : cardEdge)
+                                Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
                                 Text { x: 10; anchors.verticalCenter: parent.verticalCenter; text: "⌕"; color: muted; font.pixelSize: 15 }
                             }
                         }
@@ -2312,19 +2604,27 @@ Item {
                             }
                         }
                         Rectangle {
+                            id: createWidgetButton
                             implicitWidth: 180; implicitHeight: 38; radius: 10
+                            property bool hovered: createWidgetMa.containsMouse
+                            transformOrigin: Item.Center
+                            scale: createWidgetMa.pressed ? 0.98 : (hovered ? 1.018 : 1.0)
+                            border.width: 1
+                            border.color: hovered ? "#c4b5fd" : "transparent"
                             gradient: Gradient {
                                 orientation: Gradient.Horizontal
-                                GradientStop { position: 0.0; color: "#a855f7" }
-                                GradientStop { position: 0.55; color: "#6366f1" }
-                                GradientStop { position: 1.0; color: "#3b82f6" }
+                                GradientStop { position: 0.0; color: createWidgetMa.pressed ? "#9333ea" : (createWidgetButton.hovered ? "#b76cff" : "#a855f7") }
+                                GradientStop { position: 0.55; color: createWidgetMa.pressed ? "#4f46e5" : (createWidgetButton.hovered ? "#7375ff" : "#6366f1") }
+                                GradientStop { position: 1.0; color: createWidgetMa.pressed ? "#2563eb" : (createWidgetButton.hovered ? "#4f8dff" : "#3b82f6") }
                             }
+                            Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                            Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
                             RowLayout {
                                 anchors.centerIn: parent; spacing: 6
                                 Text { text: "+"; color: "white"; font.pixelSize: 18; font.bold: true }
                                 Text { text: root.loc("widgets.gallery.create"); color: "white"; font.pixelSize: 13; font.bold: true }
                             }
-                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { root.refreshWidgetInstances(); root.showCreateWidget = true; } }
+                            MouseArea { id: createWidgetMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { root.refreshWidgetInstances(); root.showCreateWidget = true; } }
                         }
                     }
 
@@ -2339,7 +2639,7 @@ Item {
                             RowLayout { anchors.fill: parent; anchors.margins: 12; spacing: 10
                                 Text { text: "◈"; color: "#8b7cf6"; font.pixelSize: 18 }
                                 ColumnLayout { spacing: 1
-                                    Text { text: String((root.widgetTypeList || []).length); color: "#eef2f7"; font.pixelSize: 20; font.bold: true }
+                                    Text { text: String(root.galleryCount("all")); color: "#eef2f7"; font.pixelSize: 20; font.bold: true }
                                     Text { text: root.loc("widgets.gallery.total"); color: "#8b95a5"; font.pixelSize: 11 }
                                 }
                             }
@@ -2398,10 +2698,16 @@ Item {
                             delegate: Rectangle {
                                 required property var modelData
                                 implicitHeight: 32; implicitWidth: catLbl.implicitWidth + 28; radius: 16
-                                color: root.galleryCategory === modelData.id ? "#7c3aed" : "#0d1320"
-                                border.width: 1; border.color: root.galleryCategory === modelData.id ? "#a78bfa" : cardEdge
+                                property bool hovered: catMa.containsMouse
+                                transformOrigin: Item.Center
+                                scale: catMa.pressed ? 0.97 : (hovered ? 1.025 : 1.0)
+                                color: catMa.pressed ? "#5b21b6" : (root.galleryCategory === modelData.id ? "#7c3aed" : (hovered ? "#1e1b4b" : "#0d1320"))
+                                border.width: 1; border.color: root.galleryCategory === modelData.id ? "#a78bfa" : (hovered ? "#6d5acb" : cardEdge)
+                                Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                                Behavior on color { ColorAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                                Behavior on border.color { ColorAnimation { duration: 160; easing.type: Easing.OutCubic } }
                                 Text { id: catLbl; anchors.centerIn: parent; text: parent.modelData.label; color: root.galleryCategory === parent.modelData.id ? "white" : inkSecondary; font.pixelSize: 12; font.bold: root.galleryCategory === parent.modelData.id }
-                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.galleryCategory = parent.modelData.id }
+                                MouseArea { id: catMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.galleryCategory = parent.modelData.id }
                             }
                         }
                         Item { Layout.fillWidth: true }
@@ -2491,9 +2797,9 @@ Item {
                                         if (api) nid = api.createWidgetInstance(root.newInstanceType, nm);
                                         root.newInstanceName = "";
                                         newNameField.text = "";
-                                        root.showCreateWidget = false;
-                                        root.refreshWidgetInstances();
-                                        if (nid) {
+                                         root.showCreateWidget = false;
+                                         root.refreshWidgetInstances();
+                                         if (nid) {
                                             var created = null;
                                             var list = root.widgetInstanceList || [];
                                             for (var ci = 0; ci < list.length; ++ci) {
@@ -2576,6 +2882,7 @@ Item {
                             required property var modelData
                             property var wtype: modelData.wtype
                             property var instance: modelData.instance
+                            property var pageRoot: root
                             property string wstatus: modelData.instance
                                 ? (modelData.instance.enabled ? "active" : "disabled")
                                 : "active"
@@ -2583,16 +2890,19 @@ Item {
                             property string dupText: root.loc("widgets.common.duplicate")
                             property string delText: root.loc("widgets.common.delete")
                             // Raise above neighbour cards while the dropdown is open.
-                            z: cardMenu.visible ? 100 : 0
-                            // Fallback widgets (no instance yet) render with defaults = active.
-                            property bool cardOn: wstatus === "active"
+                             z: cardMenu.visible ? 100 : (hovered ? 2 : 0)
+                             // Fallback widgets (no instance yet) render with defaults = active.
+                             property bool cardOn: wstatus === "active"
+                             property bool hovered: gma.containsMouse
+                             transformOrigin: Item.Center
+                             scale: openMa.pressed ? 0.994 : (hovered ? 1.012 : 1.0)
                             function instId() {
                                 if (instance && instance.id) return instance.id;
                                 return firstInstId();
                             }
                             function firstInstId() {
                                 var tid = (wtype && wtype.type_id) || "";
-                                var lst = root.widgetInstanceList || [];
+                                var lst = pageRoot.widgetInstanceList || [];
                                 for (var i = 0; i < lst.length; ++i)
                                     if (lst[i].type_id === tid) return lst[i].id;
                                 return "";
@@ -2605,15 +2915,15 @@ Item {
                                 var nid = api.createWidgetInstance(
                                     (wtype && wtype.type_id) || "",
                                     (wtype && wtype.name) || ((wtype && wtype.type_id) || ""));
-                                root.refreshWidgetInstances();
+                                pageRoot.refreshWidgetInstances();
                                 return nid || "";
                             }
-                            function openEditor() {
+                             function openEditor() {
                                 var iid = ensureInstId();
                                 if (!iid) return;
-                                var lst = root.widgetInstanceList || [];
+                                var lst = pageRoot.widgetInstanceList || [];
                                 for (var i = 0; i < lst.length; ++i) {
-                                    if (lst[i].id === iid) { root.editWidgetInstance(lst[i]); return; }
+                                    if (lst[i].id === iid) { pageRoot.editWidgetInstance(lst[i]); return; }
                                 }
                             }
                             // Click on the card opens the widget editor.
@@ -2634,24 +2944,31 @@ Item {
                             radius: 14
                             color: "#0d1320"
                             border.width: 1
-                            border.color: gma.containsMouse ? "#7c3aed" : cardEdge
-                            Behavior on border.color { ColorAnimation { duration: 150 } }
+                             border.color: hovered ? "#8b5cf6" : cardEdge
+                             Behavior on scale { NumberAnimation { duration: 190; easing.type: Easing.OutCubic } }
+                             Behavior on border.color { ColorAnimation { duration: 190; easing.type: Easing.OutCubic } }
                             ColumnLayout {
                                 anchors.fill: parent
                                 anchors.margins: 10
                                 spacing: 6
-                                Rectangle {
-                                    Layout.fillWidth: true
+                                 Rectangle {
+                                     id: cardPreview
+                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 92
                                     radius: 10
                                     color: "#070b14"
                                     border.width: 1
-                                    border.color: "#1e293b"
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: (gcard.wtype && gcard.wtype.icon) || "📦"
-                                        font.pixelSize: 34
-                                    }
+                                     border.color: gcard.hovered ? "#312e81" : "#1e293b"
+                                     scale: gcard.hovered ? 1.012 : 1.0
+                                     Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                                     Behavior on border.color { ColorAnimation { duration: 190; easing.type: Easing.OutCubic } }
+                                     Text {
+                                         anchors.centerIn: parent
+                                         text: (gcard.wtype && gcard.wtype.icon) || "📦"
+                                         font.pixelSize: 34
+                                         scale: gcard.hovered ? 1.06 : 1.0
+                                         Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                                     }
                                     Rectangle {
                                         anchors.top: parent.top; anchors.right: parent.right
                                         anchors.margins: 6
@@ -2684,10 +3001,13 @@ Item {
                                         id: enableToggle
                                         property string tipText: root.loc("widgets.gallery.toggle")
                                         width: 38; height: 22; radius: 11
-                                        color: gcard.cardOn ? "#16a34a" : "#374151"
-                                        border.width: 1
-                                        border.color: gcard.cardOn ? "#22c55e" : "#4b5563"
-                                        Behavior on color { ColorAnimation { duration: 150 } }
+                                         color: gcard.cardOn ? (toggleMa.containsMouse ? "#22c55e" : "#16a34a") : (toggleMa.containsMouse ? "#4b5563" : "#374151")
+                                         border.width: 1
+                                         border.color: gcard.cardOn ? "#22c55e" : (toggleMa.containsMouse ? "#64748b" : "#4b5563")
+                                         scale: toggleMa.pressed ? 0.94 : (toggleMa.containsMouse ? 1.06 : 1.0)
+                                         Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                                         Behavior on color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                                         Behavior on border.color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
                                         ToolTip.visible: toggleMa.containsMouse
                                         ToolTip.text: tipText
                                         Rectangle {
@@ -2706,7 +3026,7 @@ Item {
                                                 var tid = gcard.ensureInstId();
                                                 if (tid && api) {
                                                     api.setWidgetInstanceEnabled(tid, !gcard.cardOn);
-                                                    root.refreshWidgetInstances();
+                                                     gcard.pageRoot.refreshWidgetInstances();
                                                 }
                                             }
                                         }
@@ -2721,11 +3041,15 @@ Item {
                                 }
                                 RowLayout {
                                     Layout.fillWidth: true; spacing: 6
-                                    Rectangle {
-                                        Layout.fillWidth: true; implicitHeight: 30; radius: 8
-                                        color: copyMa.containsMouse ? "#1d2f4d" : "#16233a"
-                                        border.width: 1; border.color: "#2b3b55"
-                                        Behavior on color { ColorAnimation { duration: 120 } }
+                                     Rectangle {
+                                         id: copyButton
+                                         Layout.fillWidth: true; implicitHeight: 30; radius: 8
+                                         color: copyMa.pressed ? "#253d62" : (copyMa.containsMouse ? "#24416b" : "#16233a")
+                                         border.width: 1; border.color: copyMa.containsMouse ? "#42638f" : "#2b3b55"
+                                         scale: copyMa.pressed ? 0.97 : (copyMa.containsMouse ? 1.018 : 1.0)
+                                         Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                                         Behavior on color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                                         Behavior on border.color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
                                         Text {
                                             id: copyLbl
                                             anchors.centerIn: parent
@@ -2750,12 +3074,16 @@ Item {
                                             onTriggered: gcard._copied = false
                                         }
                                     }
-                                    Rectangle {
-                                        implicitWidth: 34; implicitHeight: 30; radius: 8
-                                        property string tipText: root.loc("widgets.gallery.preview")
-                                        color: previewMa.containsMouse ? "#1d2f4d" : "#16233a"
-                                        border.width: 1; border.color: "#2b3b55"
-                                        Behavior on color { ColorAnimation { duration: 120 } }
+                                     Rectangle {
+                                         id: previewButton
+                                         implicitWidth: 34; implicitHeight: 30; radius: 8
+                                         property string tipText: root.loc("widgets.gallery.preview")
+                                         color: previewMa.pressed ? "#253d62" : (previewMa.containsMouse ? "#24416b" : "#16233a")
+                                         border.width: 1; border.color: previewMa.containsMouse ? "#42638f" : "#2b3b55"
+                                         scale: previewMa.pressed ? 0.95 : (previewMa.containsMouse ? 1.06 : 1.0)
+                                         Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                                         Behavior on color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                                         Behavior on border.color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
                                         ToolTip.visible: previewMa.containsMouse
                                         ToolTip.text: tipText
                                         Text { anchors.centerIn: parent; text: "▶"; color: ink; font.pixelSize: 12 }
@@ -2766,16 +3094,19 @@ Item {
                                             cursorShape: Qt.PointingHandCursor
                                             onClicked: {
                                                 var pid = gcard.ensureInstId();
-                                                if (pid && api) api.previewWidgetInstance(pid);
+                                                if (pid && api) api.openWidgetInstanceUrl(pid);
                                             }
                                         }
                                     }
-                                    Rectangle {
-                                        id: kebabBtn
-                                        implicitWidth: 34; implicitHeight: 30; radius: 8
-                                        color: kebabMa.containsMouse ? "#1d2f4d" : "#16233a"
-                                        border.width: 1; border.color: "#2b3b55"
-                                        Behavior on color { ColorAnimation { duration: 120 } }
+                                     Rectangle {
+                                         id: kebabBtn
+                                         implicitWidth: 34; implicitHeight: 30; radius: 8
+                                         color: kebabMa.pressed ? "#253d62" : (kebabMa.containsMouse ? "#24416b" : "#16233a")
+                                         border.width: 1; border.color: kebabMa.containsMouse ? "#42638f" : "#2b3b55"
+                                         scale: kebabMa.pressed ? 0.95 : (kebabMa.containsMouse ? 1.06 : 1.0)
+                                         Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                                         Behavior on color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                                         Behavior on border.color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
                                         // kebab (vertical ellipsis) icon drawn with three dots
                                         Column {
                                             anchors.centerIn: parent
@@ -2812,9 +3143,10 @@ Item {
                                                 anchors.fill: parent
                                                 anchors.margins: 6
                                                 spacing: 2
-                                                Rectangle {
-                                                    Layout.fillWidth: true; implicitHeight: 34; radius: 8
-                                                    color: dupMa.containsMouse ? "#1d2f4d" : "transparent"
+                                                 Rectangle {
+                                                     Layout.fillWidth: true; implicitHeight: 34; radius: 8
+                                                     color: dupMa.pressed ? "#253d62" : (dupMa.containsMouse ? "#1d2f4d" : "transparent")
+                                                     Behavior on color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
                                                     RowLayout {
                                                         anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10
                                                         spacing: 8
@@ -2829,16 +3161,17 @@ Item {
                                                         onClicked: {
                                                             var iid = gcard.ensureInstId();
                                                             if (iid && api) api.duplicateWidgetInstance(iid);
-                                                            root.refreshWidgetInstances();
+                                                             gcard.pageRoot.refreshWidgetInstances();
                                                             cardMenu.close();
                                                         }
                                                     }
                                                 }
                                                 Rectangle {
                                                     // Fallback widgets have nothing stored to delete yet.
-                                                    visible: gcard.instance && gcard.instance.id
-                                                    Layout.fillWidth: true; implicitHeight: 34; radius: 8
-                                                    color: delMa.containsMouse ? "#3b1111" : "transparent"
+                                                     visible: gcard.instance && gcard.instance.id
+                                                     Layout.fillWidth: true; implicitHeight: 34; radius: 8
+                                                     color: delMa.pressed ? "#541515" : (delMa.containsMouse ? "#3b1111" : "transparent")
+                                                     Behavior on color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
                                                     RowLayout {
                                                         anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10
                                                         spacing: 8
@@ -2854,8 +3187,8 @@ Item {
                                                             var did = gcard.instId();
                                                             if (did && api) {
                                                                 api.deleteWidgetInstance(did);
-                                                                if (root.editingInstanceId === did) root.clearEditingInstance();
-                                                                root.refreshWidgetInstances();
+                                                                 if (gcard.pageRoot.editingInstanceId === did) gcard.pageRoot.clearEditingInstance();
+                                                                 gcard.pageRoot.refreshWidgetInstances();
                                                             }
                                                             cardMenu.close();
                                                         }
@@ -2875,14 +3208,21 @@ Item {
                             }
                         }
 
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.minimumWidth: 220
-                            implicitHeight: 250
-                            radius: 14
-                            color: "transparent"
-                            border.width: 1
-                            border.color: "#334155"
+                         Rectangle {
+                             id: createNewTile
+                             Layout.fillWidth: true
+                             Layout.minimumWidth: 220
+                             implicitHeight: 250
+                             radius: 14
+                             property bool hovered: createNewMa.containsMouse
+                             transformOrigin: Item.Center
+                             scale: createNewMa.pressed ? 0.98 : (hovered ? 1.012 : 1.0)
+                             color: hovered ? "#101827" : "transparent"
+                             border.width: 1
+                             border.color: hovered ? "#7c3aed" : "#334155"
+                             Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                             Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                             Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
                             ColumnLayout {
                                 anchors.centerIn: parent
                                 width: parent.width - 32
@@ -2891,7 +3231,7 @@ Item {
                                 Text { Layout.alignment: Qt.AlignHCenter; horizontalAlignment: Text.AlignHCenter; text: root.loc("widgets.gallery.create_new"); color: ink; font.pixelSize: 12; font.bold: true; wrapMode: Text.Wrap; Layout.fillWidth: true }
                                 Text { Layout.alignment: Qt.AlignHCenter; horizontalAlignment: Text.AlignHCenter; text: root.loc("widgets.gallery.create_new_sub"); color: muted; font.pixelSize: 10; wrapMode: Text.Wrap; Layout.fillWidth: true }
                             }
-                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { root.refreshWidgetInstances(); root.showCreateWidget = true; } }
+                             MouseArea { id: createNewMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { root.refreshWidgetInstances(); root.showCreateWidget = true; } }
                         }
                     }
                     }
@@ -3987,7 +4327,7 @@ Item {
                 color: "#0e2a26"
                 border.width: 1
                 border.color: "#14b8a6"
-                visible: root.editingInstanceId !== "" && root.widgetMode !== "grid" && root.widgetMode !== "layout"
+                visible: root.editingInstanceId !== "" && root.widgetMode !== "grid" && root.widgetMode !== "layout" && !root.universalEditorActive
                 implicitHeight: editingBanner.implicitHeight + 16
                 ColumnLayout {
                     id: editingBanner
@@ -4034,7 +4374,7 @@ Item {
                 color: cardBase
                 border.width: 1
                 border.color: cardEdge
-                visible: root.widgetMode === "chat"
+                visible: root.widgetMode === "chat" && !root.universalEditorActive
                 implicitHeight: editChatHeader.implicitHeight + 20
 
                 ColumnLayout {
@@ -4092,7 +4432,7 @@ Item {
                 color: cardBase
                 border.width: 1
                 border.color: cardEdge
-                visible: root.widgetMode === "actions"
+                visible: root.widgetMode === "actions" && !root.universalEditorActive
                 implicitHeight: editActionsHeader.implicitHeight + 20
 
                 ColumnLayout {
@@ -4156,7 +4496,7 @@ Item {
                 color: cardBase
                 border.width: 1
                 border.color: cardEdge
-                visible: root.widgetMode === "online"
+                visible: root.widgetMode === "online" && !root.universalEditorActive
                 implicitHeight: editOnlineHeader.implicitHeight + 20
 
                 ColumnLayout {
@@ -4214,7 +4554,7 @@ Item {
                 color: cardBase
                 border.width: 1
                 border.color: cardEdge
-                visible: root.widgetMode === "top_likers" || root.widgetMode === "top_gifters"
+                visible: (root.widgetMode === "top_likers" || root.widgetMode === "top_gifters") && !root.universalEditorActive
                 implicitHeight: editTopLikersHeader.implicitHeight + 20
 
                 ColumnLayout {
@@ -4286,7 +4626,7 @@ Item {
                 color: cardBase
                 border.width: 1
                 border.color: cardEdge
-                visible: root.widgetMode === "king_of_live"
+                visible: root.widgetMode === "king_of_live" && !root.universalEditorActive
                 implicitHeight: editKingHeader.implicitHeight + 20
 
                 ColumnLayout {
@@ -4350,7 +4690,7 @@ Item {
                 color: cardBase
                 border.width: 1
                 border.color: cardEdge
-                visible: root.widgetMode === "stream_pet"
+                visible: root.widgetMode === "stream_pet" && !root.universalEditorActive
                 implicitHeight: editStreamPetHeader.implicitHeight + 20
 
                 ColumnLayout {
@@ -4414,7 +4754,7 @@ Item {
                 color: cardBase
                 border.width: 1
                 border.color: cardEdge
-                visible: root.widgetMode === "community_world"
+                visible: root.widgetMode === "community_world" && !root.universalEditorActive
                 implicitHeight: editCommunityWorldHeader.implicitHeight + 20
 
                 ColumnLayout {
@@ -4478,7 +4818,7 @@ Item {
                 color: cardBase
                 border.width: 1
                 border.color: cardEdge
-                visible: root.widgetMode === "battle_royale"
+                visible: root.widgetMode === "battle_royale" && !root.universalEditorActive
                 implicitHeight: editBattleHeader.implicitHeight + 20
 
                 ColumnLayout {
@@ -4542,7 +4882,7 @@ Item {
                 color: cardBase
                 border.width: 1
                 border.color: cardEdge
-                visible: root.widgetMode === "stream_goal"
+                visible: root.widgetMode === "stream_goal" && !root.universalEditorActive
                 implicitHeight: editStreamGoalHeader.implicitHeight + 20
 
                 ColumnLayout {
@@ -4606,7 +4946,7 @@ Item {
                 color: cardBase
                 border.width: 1
                 border.color: cardEdge
-                visible: root.widgetMode === "live_leaderboard"
+                visible: root.widgetMode === "live_leaderboard" && !root.universalEditorActive
                 implicitHeight: editLiveLeaderboardHeader.implicitHeight + 20
 
                 ColumnLayout {
@@ -4670,7 +5010,7 @@ Item {
                 color: cardBase
                 border.width: 1
                 border.color: cardEdge
-                visible: root.widgetMode === "social_rotator"
+                visible: root.widgetMode === "social_rotator" && !root.universalEditorActive
                 implicitHeight: editSocialRotatorHeader.implicitHeight + 20
 
                 ColumnLayout {
@@ -4734,7 +5074,7 @@ Item {
                 color: cardBase
                 border.width: 1
                 border.color: cardEdge
-                visible: root.widgetMode === "webcam_frame"
+                visible: root.widgetMode === "webcam_frame" && !root.universalEditorActive
                 implicitHeight: editWebcamFrameHeader.implicitHeight + 20
 
                 ColumnLayout {
@@ -4798,7 +5138,7 @@ Item {
                 color: cardBase
                 border.width: 1
                 border.color: cardEdge
-                visible: root.widgetMode === "signal_system"
+                visible: root.widgetMode === "signal_system" && !root.universalEditorActive
                 implicitHeight: editSignalSystemHeader.implicitHeight + 20
 
                 ColumnLayout {
@@ -4863,7 +5203,7 @@ Item {
                 color: cardBase
                 border.width: 1
                 border.color: cardEdge
-                visible: root.widgetMode !== "grid"
+                visible: root.widgetMode !== "grid" && !root.universalEditorActive
 
                 ScrollView {
                     anchors.fill: parent

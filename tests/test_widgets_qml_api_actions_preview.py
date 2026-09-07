@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from stream_cheremsha.overlays.actions_config import (
@@ -95,3 +96,54 @@ def test_save_actions_config_ignores_invalid_json_and_does_not_publish() -> None
             return
 
     asyncio.run(_run())
+
+
+def test_widget_preview_opens_instance_url_externally() -> None:
+    api = WidgetsQmlApi()
+
+    with (
+        patch("stream_cheremsha.ui.widgets_qml_api.QDesktopServices.openUrl") as open_url,
+        patch.object(api, "previewWidgetInstance") as preview,
+    ):
+        api.set_overlay_base_url("http://127.0.0.1:17171")
+        api.openWidgetInstanceUrl("instance-1")
+
+    open_url.assert_called_once()
+    assert open_url.call_args.args[0].toString() == (
+        "http://127.0.0.1:17171/overlay/by-id/instance-1"
+    )
+    preview.assert_called_once_with("instance-1")
+
+
+def test_widget_preview_updates_only_the_explicitly_opened_instance() -> None:
+    api = WidgetsQmlApi()
+    with patch.object(api, "previewWidgetInstance") as preview:
+        api._preview_instance_id = "instance-1"  # noqa: SLF001
+        api.updateWidgetPreview("other-instance")
+        api.updateWidgetPreview("instance-1")
+
+    preview.assert_called_once_with("instance-1")
+
+
+def test_preview_config_reads_authoritative_instance_settings() -> None:
+    instance = SimpleNamespace(id="instance-1")
+    current = {"title": "new value", "color": "#14b8a6"}
+
+    with (
+        patch(
+            "stream_cheremsha.overlays.widget_instances.find_by_ws_token",
+            return_value=instance,
+        ),
+        patch(
+            "stream_cheremsha.overlays.widget_instances.merged_settings",
+            return_value=current,
+        ),
+    ):
+        result = WidgetsQmlApi._preview_config(  # noqa: SLF001
+            "test_widget",
+            "instance-1",
+            lambda: {"title": "old value"},
+            json.loads,
+        )
+
+    assert result == current

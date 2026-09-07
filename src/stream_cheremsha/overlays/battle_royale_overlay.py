@@ -34,6 +34,14 @@ class BattleRoyaleOverlayType:
             "instance": instance,
             "params": {},
         }
+        initial_scale = 100
+        instance_settings = params.get("instance_settings")
+        if isinstance(instance_settings, dict):
+            try:
+                initial_scale = max(40, min(250, int(instance_settings.get("scale_percent", 100))))
+            except (TypeError, ValueError):
+                initial_scale = 100
+        root_style = f"--br-widget-scale:{initial_scale / 100:.4f};--br-u:{initial_scale / 100:.4f};"
 
         return f"""<!doctype html>
 <html>
@@ -50,24 +58,28 @@ class BattleRoyaleOverlayType:
       .root {{
         position:absolute; inset:0;
         font-family: var(--bfont, 'Segoe UI', system-ui, sans-serif);
-        pointer-events:none;
-        display:flex; flex-direction:column;
-        padding: 8px 14px 10px;
-        color: #f1f5f9;
-        --txt-sharp: 0 1px 0 #000, 0 2px 0 #000, 0 3px 10px rgba(0,0,0,0.95), 0 0 2px rgba(0,0,0,0.9);
-        --txt-sharp-glow: 0 1px 0 #000, 0 2px 0 #000, 0 3px 12px rgba(0,0,0,0.95), 0 0 18px currentColor;
+         pointer-events:none;
+         display:flex; flex-direction:column;
+         padding: calc(8px * var(--br-u, 1)) calc(14px * var(--br-u, 1)) calc(10px * var(--br-u, 1));
+         color: #f1f5f9;
+         --txt-sharp: 0 1px 0 #000, 0 2px 0 #000, 0 3px 10px rgba(0,0,0,0.95), 0 0 2px rgba(0,0,0,0.9);
+         --txt-sharp-glow: 0 1px 0 #000, 0 2px 0 #000, 0 3px 12px rgba(0,0,0,0.95), 0 0 18px currentColor;
+         --anim-speed: 1;
+         --br-widget-scale: 1;
+         --br-u: var(--br-widget-scale, 1);
       }}
       .root.crit-flash::after {{
         content:''; position:absolute; inset:0;
-        background: rgba(255,255,255,0.35);
-        animation: critFlash 0.4s ease-out forwards;
+         background: rgba(255,255,255,0.35);
+         animation: critFlash 0.4s ease-out forwards;
+         animation-duration: calc(0.4s / var(--anim-speed, 1));
         pointer-events:none; z-index: 50;
       }}
       @keyframes critFlash {{
         0% {{ opacity:1; }} 100% {{ opacity:0; }}
       }}
       .hdr {{
-        text-align:center; margin-bottom: 6px; flex: 0 0 auto;
+         text-align:center; margin-bottom: calc(6px * var(--br-u, 1)); flex: 0 0 auto;
       }}
       .hdr-main {{
         font-family: var(--bfont, 'Segoe UI', system-ui);
@@ -81,31 +93,56 @@ class BattleRoyaleOverlayType:
           drop-shadow(0 2px 0 #000)
           drop-shadow(0 3px 10px rgba(0,0,0,0.95))
           drop-shadow(0 0 14px rgba(251,191,36,0.75));
-        line-height: 1.1;
-      }}
+         line-height: 1.1;
+       }}
+       .root.preset-cyber .hdr-main {{
+         background: linear-gradient(180deg, #a5f3fc 0%, #22d3ee 55%, #2563eb 100%);
+         -webkit-background-clip: text; background-clip: text;
+         filter: drop-shadow(0 1px 0 #000) drop-shadow(0 0 16px rgba(34,211,238,0.8));
+       }}
+       .root.preset-dark .hdr-main {{
+         background: linear-gradient(180deg, #fecaca 0%, #ef4444 55%, #991b1b 100%);
+         -webkit-background-clip: text; background-clip: text;
+         filter: drop-shadow(0 1px 0 #000) drop-shadow(0 0 16px rgba(239,68,68,0.8));
+       }}
+       .root.preset-minimal .hdr-main {{
+         background: linear-gradient(180deg, #f8fafc 0%, #cbd5e1 100%);
+         -webkit-background-clip: text; background-clip: text;
+         filter: drop-shadow(0 1px 0 #000) drop-shadow(0 0 8px rgba(226,232,240,0.45));
+       }}
       .hdr-sub {{
         font-size: 0.79em;
         letter-spacing:0.35em; color: rgba(253,230,138,0.95);
-        margin-top: 2px;
+         margin-top: calc(2px * var(--br-u, 1));
         text-shadow: var(--txt-sharp);
       }}
       .hint {{
         text-align:center; color: rgba(226,232,240,0.95);
         font-size: 0.93em;
-        padding: 24px 12px; flex: 1;
+         padding: calc(24px * var(--br-u, 1)) calc(12px * var(--br-u, 1)); flex: 1;
         text-shadow: var(--txt-sharp);
       }}
-      .stage {{
-        flex: 1 1 auto; display:flex; flex-direction:row;
-        align-items:stretch; justify-content:center;
-        gap: 8px; min-height: 200px;
-        position:relative;
-      }}
+       .stage {{
+         flex: 1 1 auto; display:flex; flex-direction:row;
+         align-items:stretch; justify-content:center;
+         gap: calc(8px * var(--br-u, 1)); min-height: calc(200px * var(--br-u, 1));
+         position:relative;
+       }}
+       .stage.multi {{
+         display:grid; grid-template-columns:repeat(2, minmax(0, 1fr));
+         align-content:start; align-items:stretch;
+       }}
+       .stage.multi .card {{
+         width:100%; max-width:none; flex:none;
+       }}
+       .stage.multi .center {{
+         grid-column:1 / -1; min-width:0; min-height:92px;
+       }}
       .card {{
         flex: 0 0 26%; max-width: 220px;
         display:flex; flex-direction:column; align-items:center;
-        padding: 10px 10px 8px;
-        border-radius: 14px;
+         padding: calc(10px * var(--br-u, 1)) calc(10px * var(--br-u, 1)) calc(8px * var(--br-u, 1));
+         border-radius: calc(14px * var(--br-u, 1));
         background: linear-gradient(165deg, rgba(8,12,22,0.92), rgba(15,23,42,0.78));
         position:relative; z-index: 2;
         transition: opacity 0.5s ease, filter 0.5s ease, transform 0.35s ease;
@@ -114,7 +151,10 @@ class BattleRoyaleOverlayType:
         opacity: 0.25; filter: grayscale(1) brightness(0.6);
         transform: scale(0.92);
       }}
-      .card.shake {{ animation: shake 0.45s ease; }}
+       .card.shake {{
+         animation: shake 0.45s ease;
+         animation-duration: calc(0.45s / var(--anim-speed, 1));
+       }}
       @keyframes shake {{
         0%,100% {{ transform: translateX(0); }}
         25% {{ transform: translateX(-6px); }}
@@ -133,14 +173,14 @@ class BattleRoyaleOverlayType:
         font-family: var(--bfont, 'Segoe UI', system-ui);
         font-size: 0.71em;
         letter-spacing:0.2em; font-weight:700;
-        margin-bottom: 8px; opacity: 0.95;
+         margin-bottom: calc(8px * var(--br-u, 1)); opacity: 0.95;
         text-shadow: var(--txt-sharp);
       }}
       .card.left .ch-label {{ color: #7dd3fc; }}
       .card.right .ch-label {{ color: #fdba74; }}
       .av-wrap {{
-        position:relative; padding: 4px;
-        border-radius: 16px;
+         position:relative; padding: calc(4px * var(--br-u, 1));
+         border-radius: calc(16px * var(--br-u, 1));
       }}
       .card.left .av-wrap {{
         box-shadow: 0 0 22px rgba(59,130,246,0.7);
@@ -150,26 +190,26 @@ class BattleRoyaleOverlayType:
         box-shadow: 0 0 22px rgba(249,115,22,0.65);
         background: linear-gradient(135deg, rgba(249,115,22,0.35), transparent);
       }}
-      .avatar {{
-        display:block; border-radius: 12px; object-fit:cover;
+       .avatar {{
+         display:block; border-radius: calc(12px * var(--br-u, 1)); object-fit:cover;
         background: rgba(30,41,59,0.8);
       }}
       .nick {{
-        margin-top: 8px; font-weight:700; font-size: 1.07em;
+         margin-top: calc(8px * var(--br-u, 1)); font-weight:700; font-size: 1.07em;
         max-width: 100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
         text-shadow: var(--txt-sharp);
       }}
       .card.left .nick {{ color: #bae6fd; }}
       .card.right .nick {{ color: #fed7aa; }}
       .hp-label {{
-        margin-top: 10px; font-size: 0.79em;
+         margin-top: calc(10px * var(--br-u, 1)); font-size: 0.79em;
         font-weight:700; letter-spacing:0.06em; opacity: 0.95;
         color: #f8fafc;
         text-shadow: var(--txt-sharp);
       }}
       .hp-wrap {{
-        width: 100%; height: 14px; margin-top: 4px;
-        background: rgba(0,0,0,0.45); border-radius: 999px;
+         width: 100%; height: calc(14px * var(--br-u, 1)); margin-top: calc(4px * var(--br-u, 1));
+         background: rgba(0,0,0,0.45); border-radius: 999px;
         overflow:hidden; border: 1px solid rgba(255,255,255,0.15);
       }}
       .card.left .hp-fill {{
@@ -185,22 +225,22 @@ class BattleRoyaleOverlayType:
         transition: width 0.3s ease;
       }}
       .donated {{
-        margin-top: 8px; font-size: 0.79em;
+         margin-top: calc(8px * var(--br-u, 1)); font-size: 0.79em;
         font-weight:700; letter-spacing:0.08em;
         color: #f1f5f9;
         text-shadow: var(--txt-sharp);
       }}
       .card-foot {{
-        margin-top: 10px; width: 100%;
+         margin-top: calc(10px * var(--br-u, 1)); width: 100%;
         display:flex; justify-content:space-between;
         font-size: 0.71em;
         color: #e2e8f0;
-        gap: 6px;
+         gap: calc(6px * var(--br-u, 1));
         text-shadow: var(--txt-sharp);
       }}
       .support-gifts {{
-        margin-top: 8px; width: 100%;
-        display:flex; flex-direction:column; align-items:center; gap: 4px;
+         margin-top: calc(8px * var(--br-u, 1)); width: 100%;
+         display:flex; flex-direction:column; align-items:center; gap: calc(4px * var(--br-u, 1));
       }}
       .support-label {{
         font-size: 0.64em;
@@ -209,17 +249,17 @@ class BattleRoyaleOverlayType:
         text-shadow: var(--txt-sharp);
       }}
       .gift-row {{
-        display:flex; flex-wrap:wrap; justify-content:center; gap: 5px;
+         display:flex; flex-wrap:wrap; justify-content:center; gap: calc(5px * var(--br-u, 1));
       }}
       .gift-icon {{
-        width: 30px; height: 30px; object-fit:contain;
-        border-radius: 8px; padding: 2px;
+         width: calc(30px * var(--br-u, 1)); height: calc(30px * var(--br-u, 1)); object-fit:contain;
+         border-radius: calc(8px * var(--br-u, 1)); padding: calc(2px * var(--br-u, 1));
         background: rgba(15,23,42,0.75);
         border: 1px solid rgba(255,255,255,0.22);
         box-shadow: 0 0 8px rgba(0,0,0,0.45);
       }}
       .center {{
-        flex: 1 1 auto; min-width: 120px;
+         flex: 1 1 auto; min-width: calc(120px * var(--br-u, 1));
         display:flex; flex-direction:column;
         align-items:center; justify-content:center;
         position:relative; z-index: 3;
@@ -229,46 +269,54 @@ class BattleRoyaleOverlayType:
         font-size: 2em;
         font-weight:900; color: #fef3c7;
         text-shadow: 0 1px 0 #000, 0 2px 0 #000, 0 4px 14px rgba(0,0,0,0.95), 0 0 20px rgba(250,204,21,0.85);
-        margin-bottom: 8px; font-variant-numeric: tabular-nums;
+         margin-bottom: calc(8px * var(--br-u, 1)); font-variant-numeric: tabular-nums;
       }}
       .clash {{
-        position:relative; width: 100%; height: 72px;
+         position:relative; width: 100%; height: calc(72px * var(--br-u, 1));
         display:flex; align-items:center; justify-content:center;
       }}
-      .beam {{
-        position:absolute; top:50%; height: 18px;
+       .beam {{
+         position:absolute; top:50%; height: calc(18px * var(--br-u, 1));
         transform: translateY(-50%);
         border-radius: 999px;
         filter: blur(0.3px);
-        transition: width 0.35s ease, opacity 0.35s ease;
-      }}
+         transition: width 0.35s ease, opacity 0.35s ease;
+         animation: beamPulse 1.1s ease-in-out infinite;
+         animation-duration: calc(1.1s / var(--anim-speed, 1));
+       }}
+       .root.projectile-off .beam {{ animation: none; }}
+       @keyframes beamPulse {{
+         0%,100% {{ opacity: 0.78; }}
+         50% {{ opacity: 1; }}
+       }}
       .beam-left {{
-        right: 50%; margin-right: 28px;
+         right: 50%; margin-right: calc(28px * var(--br-u, 1));
         background: linear-gradient(270deg, rgba(255,255,255,0.95), #38bdf8 40%, #2563eb 100%);
         box-shadow: 0 0 20px rgba(56,189,248,0.9);
         transform-origin: right center;
       }}
       .beam-right {{
-        left: 50%; margin-left: 28px;
+         left: 50%; margin-left: calc(28px * var(--br-u, 1));
         background: linear-gradient(90deg, rgba(255,255,255,0.95), #fb923c 40%, #ea580c 100%);
         box-shadow: 0 0 20px rgba(249,115,22,0.9);
         transform-origin: left center;
       }}
       .clash-core {{
         position:absolute; left:50%; top:50%;
-        width: 56px; height: 56px;
+         width: calc(56px * var(--br-u, 1)); height: calc(56px * var(--br-u, 1));
         transform: translate(-50%, -50%);
         border-radius: 50%;
         background: radial-gradient(circle, #fff 0%, #fde047 25%, #f97316 55%, transparent 72%);
-        box-shadow: 0 0 36px rgba(255,255,255,0.95), 0 0 60px rgba(251,191,36,0.6);
-        animation: corePulse 1.2s ease-in-out infinite;
+         box-shadow: 0 0 36px rgba(255,255,255,0.95), 0 0 60px rgba(251,191,36,0.6);
+         animation: corePulse 1.2s ease-in-out infinite;
+         animation-duration: calc(1.2s / var(--anim-speed, 1));
       }}
       @keyframes corePulse {{
         0%,100% {{ transform: translate(-50%,-50%) scale(1); opacity: 1; }}
         50% {{ transform: translate(-50%,-50%) scale(1.12); opacity: 0.88; }}
       }}
       .tug {{
-        width: 92%; height: 10px; margin-top: 10px;
+         width: 92%; height: calc(10px * var(--br-u, 1)); margin-top: calc(10px * var(--br-u, 1));
         background: rgba(0,0,0,0.5); border-radius: 999px;
         overflow:hidden; border: 1px solid rgba(255,255,255,0.12);
       }}
@@ -284,8 +332,9 @@ class BattleRoyaleOverlayType:
         font-family: var(--bfont, 'Segoe UI', system-ui);
         font-weight:900; font-size: 1.57em;
         color: #fecaca;
-        text-shadow: 0 1px 0 #000, 0 2px 0 #000, 0 4px 12px rgba(0,0,0,0.95), 0 0 14px rgba(239,68,68,0.95);
-        animation: dmgFloat 1.1s ease-out forwards;
+         text-shadow: 0 1px 0 #000, 0 2px 0 #000, 0 4px 12px rgba(0,0,0,0.95), 0 0 14px rgba(239,68,68,0.95);
+         animation: dmgFloat 1.1s ease-out forwards;
+         animation-duration: calc(1.1s / var(--anim-speed, 1));
         pointer-events:none; z-index: 20;
       }}
       @keyframes dmgFloat {{
@@ -293,34 +342,35 @@ class BattleRoyaleOverlayType:
         15% {{ opacity:1; transform: translate(-50%, 0) scale(1.1); }}
         100% {{ opacity:0; transform: translate(-50%, -48px) scale(0.95); }}
       }}
-      .countdown-overlay {{
+       .countdown-overlay {{
         position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
         font-family: var(--bfont, 'Segoe UI', system-ui);
         font-size: 4.57em; font-weight:900;
         color: #fde68a;
         text-shadow: 0 2px 0 #000, 0 4px 0 #000, 0 6px 20px rgba(0,0,0,0.95), 0 0 32px rgba(250,204,21,0.95);
         z-index: 40; background: rgba(0,0,0,0.35);
-        animation: countPulse 0.7s ease infinite;
+         animation: countPulse 0.7s ease infinite;
+         animation-duration: calc(0.7s / var(--anim-speed, 1));
       }}
       @keyframes countPulse {{
         0%,100% {{ transform: scale(1); }} 50% {{ transform: scale(1.06); }}
       }}
       .info-panel {{
-        flex: 0 0 auto; margin-top: 8px;
-        padding: 10px 14px;
-        border-radius: 12px;
+         flex: 0 0 auto; margin-top: calc(8px * var(--br-u, 1));
+         padding: calc(10px * var(--br-u, 1)) calc(14px * var(--br-u, 1));
+         border-radius: calc(12px * var(--br-u, 1));
         background: linear-gradient(180deg, rgba(10,14,24,0.88), rgba(6,8,14,0.92));
         border: 1px solid rgba(148,163,184,0.25);
         font-size: 0.86em;
         line-height: 1.45;
       }}
-      .info-panel .row {{ margin: 2px 0; text-shadow: var(--txt-sharp); }}
+       .info-panel .row {{ margin: calc(2px * var(--br-u, 1)) 0; text-shadow: var(--txt-sharp); }}
       .info-panel .label {{ color: #cbd5e1; font-weight:600; }}
       .info-panel .val {{ color: #f8fafc; font-weight:700; }}
       .info-panel .dmg {{ color: #fca5a5; font-weight:800; }}
-      .victory-banner {{
+       .victory-banner {{
         position:absolute; top: 42%; left:50%; transform: translate(-50%, -50%);
-        padding: 14px 28px; border-radius: 14px; z-index: 45;
+         padding: calc(14px * var(--br-u, 1)) calc(28px * var(--br-u, 1)); border-radius: calc(14px * var(--br-u, 1)); z-index: 45;
         background: rgba(8,10,18,0.9);
         border: 2px solid rgba(250,204,21,0.85);
         font-family: var(--bfont, 'Segoe UI', system-ui);
@@ -328,8 +378,16 @@ class BattleRoyaleOverlayType:
         color: #fde68a;
         text-shadow: 0 2px 0 #000, 0 4px 0 #000, 0 6px 18px rgba(0,0,0,0.95), 0 0 24px rgba(250,204,21,0.9);
         box-shadow: 0 0 32px rgba(250,204,21,0.55);
-        white-space:nowrap;
-      }}
+         white-space:nowrap;
+         animation: victoryPop 0.65s ease-out both;
+         animation-duration: calc(0.65s / var(--anim-speed, 1));
+       }}
+       .root.fatality-off .victory-banner {{ animation: none; }}
+       @keyframes victoryPop {{
+         0% {{ opacity: 0; transform: translate(-50%, -50%) scale(0.7); }}
+         70% {{ opacity: 1; transform: translate(-50%, -50%) scale(1.06); }}
+         100% {{ opacity: 1; transform: translate(-50%, -50%) scale(1); }}
+       }}
       .root.idle-empty .hdr,
       .root.idle-empty .stars,
       .root.idle-empty .hint,
@@ -348,7 +406,7 @@ class BattleRoyaleOverlayType:
     </style>
   </head>
   <body>
-    <div id="root" class="root">
+     <div id="root" class="root" style="{root_style}">
       <div class="stars"></div>
       <div class="hdr">
         <div id="hdrMain" class="hdr-main">BATTLE ROYALE</div>
@@ -456,15 +514,32 @@ class BattleRoyaleOverlayType:
           const pct = nclamp(cfg.text_scale_pct, 70, 160, 100);
           return nclamp(Math.round(14 * pct / 100), 10, 32, 14);
         }}
-        function applyCfg() {{
-          if (!cfg) return;
-          const px = baseFontPx();
-          document.documentElement.style.fontSize = px + 'px';
-          root.style.fontSize = px + 'px';
-          root.style.setProperty('--bfont', cfg.font_family || 'Rajdhani, system-ui');
-          hdrMain.textContent = String(cfg.title_text || 'BATTLE ROYALE').toUpperCase();
-          hdrSub.textContent = L().sub;
+        function widgetScale() {{
+          return nclamp(cfg && cfg.scale_percent, 40, 250, 100) / 100;
         }}
+         function applyCfg() {{
+           if (!cfg) return;
+           const px = baseFontPx();
+           const scale = widgetScale();
+           const speed = nclamp(cfg.anim_intensity_pct, 25, 200, 100) / 100;
+           const preset = String(cfg.preset || 'arcade_royale').toLowerCase();
+           const presetClass = preset === 'cyber_arena' ? 'preset-cyber'
+             : preset === 'dark_fight' ? 'preset-dark'
+             : preset === 'minimal_brawl' ? 'preset-minimal' : 'preset-arcade';
+           document.documentElement.style.fontSize = (px * scale) + 'px';
+           root.style.fontSize = (px * scale) + 'px';
+           root.style.setProperty('--bfont', cfg.font_family || 'Rajdhani, system-ui');
+           root.style.setProperty('--br-widget-scale', String(scale));
+           root.style.setProperty('--anim-speed', String(speed));
+           root.classList.remove('preset-arcade', 'preset-cyber', 'preset-dark', 'preset-minimal');
+           root.classList.add(presetClass);
+           if (cfg.anim_projectile === false) root.classList.add('projectile-off');
+           else root.classList.remove('projectile-off');
+           if (cfg.anim_fatality === false) root.classList.add('fatality-off');
+           else root.classList.remove('fatality-off');
+           hdrMain.textContent = String(cfg.title_text || 'BATTLE ROYALE').toUpperCase();
+           hdrSub.textContent = L().sub;
+         }}
         function escAttr(s) {{
           return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
         }}
@@ -528,19 +603,34 @@ class BattleRoyaleOverlayType:
             html += '<div class="row"><span class="label"></span>'
               + '<span class="dmg">' + nickAt({{user: lastAttack.target}}) + ': -' + (lastAttack.damage|0) + ' HP</span></div>';
           }} else {{
-            html += '<div class="row"><span class="label">' + L().duelLive + '</span></div>';
-          }}
-          html += '<div class="row"><span class="label">' + nickAt(fighters[0]) + ' </span>'
-            + '<span class="val">' + L().wins + ' ' + (fighters[0].wins|0) + ' \\u2022 ' + L().rank + ' ' + ((fighters[0].rank|0) || '\\u2014') + '</span></div>';
-          html += '<div class="row"><span class="label">' + nickAt(fighters[1]) + ' </span>'
-            + '<span class="val">' + L().wins + ' ' + (fighters[1].wins|0) + ' \\u2022 ' + L().rank + ' ' + ((fighters[1].rank|0) || '\\u2014') + '</span></div>';
-          infoPanel.innerHTML = html;
-        }}
-        function renderDuel() {{
-          const avSize = cfg && cfg.avatar_size_px ? cfg.avatar_size_px : 100;
-          const power = duelPower();
-          const leftW = Math.round(power * 100);
-          const rightW = 100 - leftW;
+         html += '<div class="row"><span class="label">' + L().duelLive + '</span></div>';
+           }}
+           for (let i = 0; i < fighters.length; i++) {{
+             html += '<div class="row"><span class="label">' + nickAt(fighters[i]) + ' </span>'
+               + '<span class="val">' + L().wins + ' ' + (fighters[i].wins|0) + ' \\u2022 ' + L().rank + ' ' + ((fighters[i].rank|0) || '\\u2014') + '</span></div>';
+           }}
+           infoPanel.innerHTML = html;
+         }}
+         function renderDuel() {{
+           const avSize = Math.round((cfg && cfg.avatar_size_px ? cfg.avatar_size_px : 100) * widgetScale());
+           if (fighters.length > 2) {{
+             stage.classList.add('multi');
+             let html = '';
+             for (let i = 0; i < fighters.length; i++) {{
+               const side = String(fighters[i].side || ('slot' + i));
+               const label = i === 0 ? L().challenger1 : i === 1 ? L().challenger2 : ('FIGHTER ' + (i + 1));
+               html += buildCard(fighters[i], side, label, avSize);
+             }}
+             html += '<div class="center multi-center">';
+             if (phase === 'active' || phase === 'victory')
+               html += '<div class="timer">' + fmtTime(timerRemaining) + '</div>';
+             html += '<div class="clash"><div class="clash-core"></div></div></div>';
+             stage.innerHTML = html;
+           }} else {{
+             stage.classList.remove('multi');
+           const power = duelPower();
+           const leftW = Math.round(power * 100);
+           const rightW = 100 - leftW;
           const beamScaleL = 0.45 + power * 0.55;
           const beamScaleR = 0.45 + (1 - power) * 0.55;
 
@@ -556,9 +646,10 @@ class BattleRoyaleOverlayType:
             + '</div>'
             + '<div class="tug"><div class="tug-fill" style="width:' + leftW + '%"></div></div>'
             + '</div>';
-          html += buildCard(fighters[1], 'right', L().challenger2, avSize);
-          stage.innerHTML = html;
-          stage.querySelectorAll('.avatar').forEach(img => {{
+           html += buildCard(fighters[1], 'right', L().challenger2, avSize);
+           stage.innerHTML = html;
+           }}
+           stage.querySelectorAll('.avatar').forEach(img => {{
             img.onerror = () => {{ img.style.visibility = 'hidden'; }};
           }});
           renderInfoPanel();

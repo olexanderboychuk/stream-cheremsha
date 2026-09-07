@@ -34,6 +34,7 @@ class BattleRoyaleOverlayConfig:
     avatar_size_px: int
     font_family: str
     base_font_size_px: int
+    scale_percent: int
     anim_intensity_pct: int
     sfx_volume_pct: int
 
@@ -66,6 +67,7 @@ def battle_royale_overlay_config_defaults() -> BattleRoyaleOverlayConfig:
         avatar_size_px=110,
         font_family="Segoe UI",
         base_font_size_px=14,
+        scale_percent=100,
         anim_intensity_pct=100,
         sfx_volume_pct=80,
         hide_when_idle=True,
@@ -122,6 +124,10 @@ def _ensure_bool(v: object, *, default: bool) -> bool:
     return default
 
 
+def _validate_scale_percent(v: object) -> int:
+    return max(40, min(250, _ensure_int(v, default=100)))
+
+
 def battle_royale_overlay_config_to_json_text(cfg: BattleRoyaleOverlayConfig) -> str:
     obj = {
         "schema_version": int(cfg.schema_version),
@@ -141,6 +147,7 @@ def battle_royale_overlay_config_to_json_text(cfg: BattleRoyaleOverlayConfig) ->
         "avatar_size_px": int(cfg.avatar_size_px),
         "font_family": str(cfg.font_family),
         "base_font_size_px": int(cfg.base_font_size_px),
+        "scale_percent": int(cfg.scale_percent),
         "anim_intensity_pct": int(cfg.anim_intensity_pct),
         "sfx_volume_pct": int(cfg.sfx_volume_pct),
         "hide_when_idle": bool(cfg.hide_when_idle),
@@ -178,6 +185,7 @@ def battle_royale_overlay_config_from_json_text(text: str) -> BattleRoyaleOverla
         avatar_size_px=max(64, min(200, _ensure_int(d.get("avatar_size_px"), default=110))),
         font_family=str(d.get("font_family") or "Segoe UI").strip() or "Segoe UI",
         base_font_size_px=_resolve_base_font_size_px(d, defaults=defaults),
+        scale_percent=_validate_scale_percent(d.get("scale_percent")),
         anim_intensity_pct=max(25, min(200, _ensure_int(d.get("anim_intensity_pct"), default=100))),
         sfx_volume_pct=max(0, min(100, _ensure_int(d.get("sfx_volume_pct"), default=80))),
         hide_when_idle=_ensure_bool(d.get("hide_when_idle"), default=defaults.hide_when_idle),

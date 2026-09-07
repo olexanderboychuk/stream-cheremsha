@@ -47,7 +47,6 @@ from PySide6.QtGui import (
     QShortcut,
     QTextCursor,
 )
-from PySide6.QtQuick import QQuickView
 from PySide6.QtQuickWidgets import QQuickWidget
 from PySide6.QtWidgets import (
     QApplication,
@@ -243,7 +242,7 @@ from stream_cheremsha.ui.qml_api import StreamCheremshaQmlApi
 from stream_cheremsha.ui.qt_async_dialog import async_dialog_code
 from stream_cheremsha.ui.tiktok_analytics_api import TikTokAnalyticsApi
 from stream_cheremsha.ui.twitch_analytics_api import TwitchAnalyticsApi
-from stream_cheremsha.ui.widgets_qml_api import WidgetsQmlApi, WidgetsWindowQmlApi
+from stream_cheremsha.ui.widgets_qml_api import WidgetsQmlApi
 from stream_cheremsha.ui.window_geometry import (
     KEY_MAIN_WINDOW,
     restore_window_geometry,
@@ -487,88 +486,12 @@ class _CheremshaTitleBar(StandardTitleBar):
         self.maxBtn.setPressedColor(ink)
         self.closeBtn.setNormalColor(ink)
 
-        # Big Picture mode toggle (before settings).
-        self.bigPictureBtn = QToolButton(self)
-        self.bigPictureBtn.setObjectName("titleBigPicture")
-        self.bigPictureBtn.setAutoRaise(True)
-        self.bigPictureBtn.setIcon(
-            self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarMaxButton),
-        )
-        self.bigPictureBtn.setIconSize(QSize(18, 18))
-        self.bigPictureBtn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        self.bigPictureBtn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.bigPictureBtn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.bigPictureBtn.setCheckable(True)
-        self.bigPictureBtn.setToolTip("Big Picture")
-        self.bigPictureBtn.clicked.connect(
-            lambda: self.window()._toggle_big_picture(),  # noqa: SLF001
-        )
-
-        # Settings button (moved from footer).
-        self.settingsBtn = QToolButton(self)
-        self.settingsBtn.setObjectName("titleSettings")
-        self.settingsBtn.setAutoRaise(True)
-        st_path = _asset_path("settings.png")
-        if st_path.is_file():
-            self.settingsBtn.setIcon(QIcon(str(st_path)))
-        else:
-            self.settingsBtn.setIcon(
-                QIcon.fromTheme(
-                    "preferences-system",
-                    self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogInfoView),
-                ),
-            )
-        self.settingsBtn.setIconSize(QSize(18, 18))
-        self.settingsBtn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        self.settingsBtn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.settingsBtn.setCursor(Qt.CursorShape.PointingHandCursor)
-        # Locale is initialized later by MainWindow; set translated tooltip after init.
-        self.settingsBtn.setToolTip("Settings")
-        self.settingsBtn.clicked.connect(
-            lambda: self.window()._set_main_page(self.window()._IX_SETTINGS),  # noqa: SLF001
-        )
-
-        # Insert right before min/max/close buttons (settings, then Big Picture).
-        self.hBoxLayout.insertWidget(
-            self.hBoxLayout.count() - 3,
-            self.settingsBtn,
-            0,
-            Qt.AlignRight,
-        )
-        self.hBoxLayout.insertWidget(
-            self.hBoxLayout.count() - 4,
-            self.bigPictureBtn,
-            0,
-            Qt.AlignRight,
-        )
-
         self.setStyleSheet(
             """
             QWidget#cheremshaTitleBar {
               background: #121620;
               border-bottom: 1px solid #2a3142;
             }
-
-            QToolButton#titleSettings {
-              background: rgba(0, 0, 0, 0);
-              border: none;
-              border-radius: 8px;
-              padding: 0px;
-              margin-right: 4px;
-            }
-            QToolButton#titleSettings:hover { background: #263246; }
-            QToolButton#titleSettings:pressed { background: #303a50; }
-
-            QToolButton#titleBigPicture {
-              background: rgba(0, 0, 0, 0);
-              border: none;
-              border-radius: 8px;
-              padding: 0px;
-              margin-right: 4px;
-            }
-            QToolButton#titleBigPicture:hover { background: #263246; }
-            QToolButton#titleBigPicture:pressed { background: #303a50; }
-            QToolButton#titleBigPicture:checked { background: #1e3a5f; }
 
             TitleBarButton {
               qproperty-normalColor: #e8eaed;
@@ -591,13 +514,6 @@ class _CheremshaTitleBar(StandardTitleBar):
         )
 
     def canDrag(self, pos):  # type: ignore[override]
-        # Avoid starting system move when interacting with title-bar controls.
-        try:
-            for btn in (getattr(self, "bigPictureBtn", None), self.settingsBtn):
-                if btn is not None and btn.isVisible() and btn.geometry().contains(pos):
-                    return False
-        except RuntimeError:
-            return False
         return super().canDrag(pos)
 
     def paintEvent(self, e) -> None:  # type: ignore[override]
@@ -1009,7 +925,6 @@ class MainWindow(FramelessWindow):
         self._widgets_qml_api: WidgetsQmlApi | None = None
         self._docks_qml_api: DocksQmlApi | None = None
         self._overlay_tunnel_qml_api: OverlayTunnelQmlApi | None = None
-        self._qml_widgets_win: QQuickView | None = None
         self._qml_widgets: QQuickWidget | None = None
         self._qml_docks: QQuickWidget | None = None
         self._actions_engines: dict[tuple[str, str], PlatformActionsEngine] = {}
@@ -1251,6 +1166,7 @@ class MainWindow(FramelessWindow):
             reconcile_legacy_singletons()
         except Exception:
             pass
+        self._widgets_qml_api.set_battle_host(self)
         self._widgets_qml_api.set_stream_goal_controller(self._stream_goal)
         self._widgets_qml_api.set_live_leaderboard_controller(self._live_leaderboard)
         self._widgets_qml_api.set_social_rotator_controller(self._social_rotator)
@@ -5435,14 +5351,15 @@ class MainWindow(FramelessWindow):
             self._battle_tick_timer.stop()
 
     def battle_royale_start_from_leaders(self) -> bool:
-        leaders = self._tiktok_top_gifters.leaders(limit=4, sort="likes_desc")
+        cfg = load_battle_royale_overlay_config()
+        leaders = self._tiktok_top_gifters.leaders(limit=cfg.max_fighters, sort="likes_desc")
         fighters = [
             {
                 "user_key": str(r.get("key") or ""),
                 "user": str(r.get("user") or "?"),
                 "avatar_url": str(r.get("avatar_url") or ""),
             }
-            for r in leaders[:2]
+            for r in leaders[: cfg.max_fighters]
         ]
         return self.battle_royale_start_fighters(fighters)
 
@@ -6129,59 +6046,6 @@ class MainWindow(FramelessWindow):
                     "sender_user_key": sender_user_key,
                 },
             )
-
-    def _ensure_widgets_window(self) -> QQuickView:
-        if self._qml_widgets_win is not None:
-            try:
-                self._qml_widgets_win.close()
-            except RuntimeError:
-                pass
-            self._qml_widgets_win = None
-            self._widgets_qml_api = None
-            self._widgets_window_qml_api = None
-
-        view = QQuickView()
-        view.setFlags(Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint)
-        try:
-            if self.windowHandle() is not None:
-                view.setTransientParent(self.windowHandle())
-        except RuntimeError:
-            pass
-        view.setResizeMode(QQuickView.ResizeMode.SizeRootObjectToView)
-        view.setMinimumSize(QSize(560, 420))
-        view.resize(QSize(760, 560))
-
-        try:
-            base_url = self._overlay_public_base_url()
-        except RuntimeError:
-            base_url = ""
-        self._widgets_qml_api = WidgetsQmlApi(
-            overlay_base_url=base_url,
-            pubsub=self._overlay_server.pubsub(),
-        )
-        try:
-            from stream_cheremsha.overlays.widget_instances import (
-                migrate_legacy_to_instances,
-                reconcile_legacy_singletons,
-            )
-
-            migrate_legacy_to_instances()
-            reconcile_legacy_singletons()
-        except Exception:
-            pass
-        self._widgets_qml_api.set_battle_host(self)
-        self._widgets_qml_api.set_signal_system_controller(self._signal_system)
-        self._widgets_window_qml_api = WidgetsWindowQmlApi(view=view)
-        ctx = view.engine().rootContext()
-        ctx.setContextProperty("api", self._widgets_qml_api)
-        ctx.setContextProperty("tunnelApi", self._overlay_tunnel_qml_api)
-        ctx.setContextProperty("winApi", self._widgets_window_qml_api)
-        ctx.setContextProperty("widgetsWindow", view)
-        qml_p = _qml_path("WidgetsView.qml")
-        view.setSource(QUrl.fromLocalFile(str(qml_p)))
-
-        self._qml_widgets_win = view
-        return view
 
     def open_widgets(self) -> None:
         self._set_main_page(self._IX_WIDGETS)
