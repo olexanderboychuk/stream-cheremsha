@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.18.1] - 2026-09-07
+
+### Fixed
+
+- Downgraded PySide6 to 6.11.0 (the 6.11.2 update regressed the desktop UI).
+
 ## [0.18.0] - 2026-09-07
 
 ### Added
