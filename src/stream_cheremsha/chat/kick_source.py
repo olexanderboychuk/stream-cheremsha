@@ -37,10 +37,10 @@ class KickSource:
         coordinator: StreamCoordinator,
         on_status: Callable[[str], None],
         get_locale: Callable[[], str] | None = None,
-        on_follow: Callable[[str, str], None] | None = None,
-        on_sub: Callable[[str, int], None] | None = None,
-        on_gift_sub: Callable[[str, int], None] | None = None,
-        on_kick_gift: Callable[[str, int], None] | None = None,
+        on_follow: Callable[..., None] | None = None,
+        on_sub: Callable[..., None] | None = None,
+        on_gift_sub: Callable[..., None] | None = None,
+        on_kick_gift: Callable[..., None] | None = None,
     ) -> None:
         self._coordinator = coordinator
         self._on_status = on_status
@@ -127,22 +127,22 @@ class KickSource:
         if "follow" in name:
             cb = self._on_follow
             if cb is not None:
-                cb(user, "")
+                cb(user, "", message_sender_avatar(payload))
         elif "gift" in name:
             amount = _int_field(payload, ("amount", "kicks", "count"))
             if "sub" in name:
                 cb = self._on_gift_sub
                 if cb is not None:
-                    cb(user, amount or 1)
+                    cb(user, amount or 1, message_sender_avatar(payload))
             else:
                 cb = self._on_kick_gift
                 if cb is not None:
-                    cb(user, amount)
+                    cb(user, amount, message_sender_avatar(payload))
         elif "sub" in name:
             duration = _int_field(payload, ("duration", "months"))
             cb = self._on_sub
             if cb is not None:
-                cb(user, duration or 1)
+                cb(user, duration or 1, message_sender_avatar(payload))
 
 
 def _int_field(payload: dict[str, Any], keys: tuple[str, ...]) -> int:

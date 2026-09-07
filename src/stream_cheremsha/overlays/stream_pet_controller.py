@@ -237,11 +237,11 @@ class StreamPetController(QObject):
 
         def _fire() -> None:
             self._publish_handle = None
-            asyncio.ensure_future(self._publish_patch())
+            self._publish_patch_sync()
 
         self._publish_handle = loop.call_later(delay, _fire)
 
-    async def _publish_patch(self) -> None:
+    def _publish_patch_sync(self) -> None:
         pubsub = self._pubsub
         if pubsub is None:
             return
@@ -251,7 +251,10 @@ class StreamPetController(QObject):
         patch["speech"] = self._resolved_speech_dict()
         patch["config"] = stream_pet_overlay_config_to_public_dict(cfg)
         topic = f"overlay:stream_pet:{self._instance}"
-        await pubsub.publish(topic, patch)
+        pubsub.publish_sync(topic, patch)
+
+    async def _publish_patch(self) -> None:
+        self._publish_patch_sync()
 
     def _on_decay_tick(self) -> None:
         cfg = load_stream_pet_overlay_config()

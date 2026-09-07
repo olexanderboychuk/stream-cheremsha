@@ -28,6 +28,7 @@ class TikTokAnalyticsFeedModel(QAbstractListModel):
     _ICON = Qt.ItemDataRole.UserRole + 4
     _COUNT = Qt.ItemDataRole.UserRole + 5
     _TIME = Qt.ItemDataRole.UserRole + 6
+    _AVATAR = Qt.ItemDataRole.UserRole + 7
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -54,6 +55,8 @@ class TikTokAnalyticsFeedModel(QAbstractListModel):
             return int(row.get("count", 0) or 0)
         if role == self._TIME:
             return row.get("time", "")
+        if role == self._AVATAR:
+            return row.get("avatar", "")
         return None
 
     def roleNames(self) -> dict[int, bytes]:  # noqa: N802
@@ -64,6 +67,7 @@ class TikTokAnalyticsFeedModel(QAbstractListModel):
             self._ICON: b"iconUrl",
             self._COUNT: b"giftCount",
             self._TIME: b"timeText",
+            self._AVATAR: b"avatarUrl",
         }
 
     def clear(self) -> None:
@@ -91,9 +95,9 @@ class TikTokAnalyticsApi(QObject):
 
     _viewers_current_sig = Signal(int)
     _viewers_total_sig = Signal(int)
-    _follow_sig = Signal(str)
-    _join_sig = Signal(str)
-    _gift_sig = Signal(str, str, str, int, int, str)
+    _follow_sig = Signal(str, str)
+    _join_sig = Signal(str, str)
+    _gift_sig = Signal(str, str, str, int, int, str, str)
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -158,8 +162,8 @@ class TikTokAnalyticsApi(QObject):
         self._online_total = v
         self._emit_stats()
 
-    @Slot(str)
-    def _apply_follow(self, user: str) -> None:
+    @Slot(str, str)
+    def _apply_follow(self, user: str, avatar_url: str = "") -> None:
         u = (user or "").strip() or "?"
         self._feed.prepend(
             {
@@ -169,12 +173,13 @@ class TikTokAnalyticsApi(QObject):
                 "icon": "",
                 "count": 0,
                 "time": self._now_hms(),
+                "avatar": (avatar_url or "").strip(),
             },
         )
         self._emit_stats()
 
-    @Slot(str)
-    def _apply_join(self, user: str) -> None:
+    @Slot(str, str)
+    def _apply_join(self, user: str, avatar_url: str = "") -> None:
         u = (user or "").strip() or "?"
         self._feed.prepend(
             {
@@ -184,11 +189,12 @@ class TikTokAnalyticsApi(QObject):
                 "icon": "",
                 "count": 0,
                 "time": self._now_hms(),
+                "avatar": (avatar_url or "").strip(),
             },
         )
         self._emit_stats()
 
-    @Slot(str, str, str, int, int, str)
+    @Slot(str, str, str, int, int, str, str)
     def _apply_gift(
         self,
         sender: str,
@@ -197,11 +203,23 @@ class TikTokAnalyticsApi(QObject):
         count: int,
         diamonds: int,
         icon_url: str,
+        avatar_url: str = "",
     ) -> None:
         s = (sender or "").strip() or "?"
         name = (gift_name or "").strip() or (gift_id or "").strip() or "gift"
         c = max(1, int(count)) if count else 1
         d = max(0, int(diamonds))
+        icon = (icon_url or "").strip()
+        if not icon:
+            # Fall back to the bundled gift catalog ("база іконок").
+            try:
+                from stream_cheremsha.actions.tiktok_gifts import (
+                    tiktok_catalog_gift_image_url,
+                )
+
+                icon = tiktok_catalog_gift_image_url(gift_id=gift_id, gift_name=name)
+            except Exception:  # noqa: BLE001 - analytics must never break the stream
+                icon = ""
         self._gift_units += c
         self._diamonds += d
         self._feed.prepend(
@@ -209,9 +227,10 @@ class TikTokAnalyticsApi(QObject):
                 "kind": "gift",
                 "user": s,
                 "detail": name,
-                "icon": (icon_url or "").strip(),
+                "icon": icon,
                 "count": c,
                 "time": self._now_hms(),
+                "avatar": (avatar_url or "").strip(),
             },
         )
         self._emit_stats()
@@ -222,11 +241,11 @@ class TikTokAnalyticsApi(QObject):
     def enqueue_viewers_total(self, n: int) -> None:
         self._viewers_total_sig.emit(int(n))
 
-    def enqueue_follow(self, user: str) -> None:
-        self._follow_sig.emit(user)
+    def enqueue_follow(self, user: str, avatar_url: str = "") -> None:
+        self._follow_sig.emit(user, avatar_url or "")
 
-    def enqueue_join(self, user: str) -> None:
-        self._join_sig.emit(user)
+    def enqueue_join(self, user: str, avatar_url: str = "") -> None:
+        self._join_sig.emit(user, avatar_url or "")
 
     def enqueue_gift(
         self,
@@ -236,8 +255,11 @@ class TikTokAnalyticsApi(QObject):
         count: int,
         diamonds: int,
         icon_url: str,
+        avatar_url: str = "",
     ) -> None:
-        self._gift_sig.emit(sender, gift_id, gift_name, int(count), int(diamonds), icon_url)
+        self._gift_sig.emit(
+            sender, gift_id, gift_name, int(count), int(diamonds), icon_url, avatar_url or ""
+        )
 
     @Slot()
     def resetSession(self) -> None:  # noqa: N802
@@ -258,13 +280,13 @@ class TikTokAnalyticsApi(QObject):
         return self.enqueue_viewers_total
 
     @property
-    def on_follow(self) -> Callable[[str], None]:
+    def on_follow(self) -> Callable[..., None]:
         return self.enqueue_follow
 
     @property
-    def on_join(self) -> Callable[[str], None]:
+    def on_join(self) -> Callable[..., None]:
         return self.enqueue_join
 
     @property
-    def on_gift_analytics(self) -> Callable[[str, str, str, int, int, str], None]:
+    def on_gift_analytics(self) -> Callable[..., None]:
         return self.enqueue_gift

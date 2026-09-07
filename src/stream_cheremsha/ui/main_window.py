@@ -5227,8 +5227,10 @@ class MainWindow(FramelessWindow):
         )
         tg.send_html_message_to_chat(int(result.telegram_id), msg)
 
-    def _on_youtube_analytics_event(self, kind: str, user: str, detail: str, count: int) -> None:
-        self._youtube_analytics.enqueue_event(kind, user, detail, count)
+    def _on_youtube_analytics_event(
+        self, kind: str, user: str, detail: str, count: int, avatar_url: str = ""
+    ) -> None:
+        self._youtube_analytics.enqueue_event(kind, user, detail, count, avatar_url)
         k = (kind or "").strip().lower()
         if k not in ("superchat", "supersticker", "member", "membership"):
             return
@@ -5328,7 +5330,9 @@ class MainWindow(FramelessWindow):
         )
         t.add_done_callback(lambda _t: _t.exception())
 
-    def _on_tiktok_follow_any(self, user: str, stable_key: str = "", unique_id: str = "") -> None:
+    def _on_tiktok_follow_any(
+        self, user: str, stable_key: str = "", unique_id: str = "", avatar_url: str = ""
+    ) -> None:
         if self._closing:
             return
         eng = self._get_actions_engine(
@@ -5336,7 +5340,7 @@ class MainWindow(FramelessWindow):
             constants.TIKTOK_ACTIONS_ACCOUNT_KEY,
         )
         asyncio.ensure_future(eng.on_tiktok_followed((user or "").strip(), datetime.now(UTC)))
-        self._tiktok_analytics.on_follow(user)
+        self._tiktok_analytics.on_follow(user, avatar_url)
         if self._points_enabled():
             self._register_watch_activity(
                 stable_key=stable_key,
@@ -5384,7 +5388,7 @@ class MainWindow(FramelessWindow):
             return
         self._social_rotator.on_donation(name=name, amount=amount, source=source)
 
-    def _on_tiktok_join_any(self, user: str, stable_key: str = "") -> None:
+    def _on_tiktok_join_any(self, user: str, stable_key: str = "", avatar_url: str = "") -> None:
         if self._closing:
             return
         eng = self._get_actions_engine(
@@ -5392,7 +5396,7 @@ class MainWindow(FramelessWindow):
             constants.TIKTOK_ACTIONS_ACCOUNT_KEY,
         )
         asyncio.ensure_future(eng.on_tiktok_joined((user or "").strip(), datetime.now(UTC)))
-        self._tiktok_analytics.on_join(user)
+        self._tiktok_analytics.on_join(user, avatar_url)
         if self._points_enabled():
             self._register_watch_activity(
                 stable_key=stable_key,
@@ -5424,6 +5428,7 @@ class MainWindow(FramelessWindow):
         count: int,
         diamonds: int,
         icon_url: str,
+        avatar_url: str = "",
     ) -> None:
         self._tiktok_analytics.on_gift_analytics(
             sender,
@@ -5432,6 +5437,7 @@ class MainWindow(FramelessWindow):
             count,
             diamonds,
             icon_url,
+            avatar_url,
         )
         gid = (gift_id or "").strip()
         gname = (gift_name or "").strip()
@@ -5549,21 +5555,24 @@ class MainWindow(FramelessWindow):
         self._top_likers_publish_handle = None
         if self._closing:
             return
-        loop = self._asyncio_loop
-        if loop is None:
-            return
-        loop.create_task(self._publish_top_likers_leaders_patch())
+        self._publish_top_likers_leaders_patch_sync()
 
-    async def _publish_top_likers_leaders_patch(self) -> None:
+    def _publish_top_likers_leaders_patch_sync(self) -> None:
         cfg = load_top_likers_overlay_config()
         leaders = self._tiktok_top_likers.leaders(
             limit=int(cfg.top_count),
             sort=str(cfg.leader_sort),
         )
-        await self._overlay_server.pubsub().publish(
-            "overlay:top_likers:main",
-            {"leaders": leaders},
-        )
+        try:
+            self._overlay_server.pubsub().publish_sync(
+                "overlay:top_likers:main",
+                {"leaders": leaders},
+            )
+        except RuntimeError:
+            return
+
+    async def _publish_top_likers_leaders_patch(self) -> None:
+        self._publish_top_likers_leaders_patch_sync()
 
     def _schedule_top_gifters_overlay_publish(self) -> None:
         if self._closing:
@@ -5583,21 +5592,24 @@ class MainWindow(FramelessWindow):
         self._top_gifters_publish_handle = None
         if self._closing:
             return
-        loop = self._asyncio_loop
-        if loop is None:
-            return
-        loop.create_task(self._publish_top_gifters_leaders_patch())
+        self._publish_top_gifters_leaders_patch_sync()
 
-    async def _publish_top_gifters_leaders_patch(self) -> None:
+    def _publish_top_gifters_leaders_patch_sync(self) -> None:
         cfg = load_top_gifters_overlay_config()
         leaders = self._tiktok_top_gifters.leaders(
             limit=int(cfg.top_count),
             sort=str(cfg.leader_sort),
         )
-        await self._overlay_server.pubsub().publish(
-            "overlay:top_gifters:main",
-            {"leaders": leaders},
-        )
+        try:
+            self._overlay_server.pubsub().publish_sync(
+                "overlay:top_gifters:main",
+                {"leaders": leaders},
+            )
+        except RuntimeError:
+            return
+
+    async def _publish_top_gifters_leaders_patch(self) -> None:
+        self._publish_top_gifters_leaders_patch_sync()
 
     def _schedule_king_overlay_publish(self) -> None:
         if self._closing:
@@ -5617,10 +5629,7 @@ class MainWindow(FramelessWindow):
         self._king_overlay_publish_handle = None
         if self._closing:
             return
-        loop = self._asyncio_loop
-        if loop is None:
-            return
-        loop.create_task(self._publish_king_overlay_patch())
+        self._publish_king_overlay_patch_sync()
 
     def current_tiktok_anchor_username(self) -> str:
         """Normalized TikTok live host for the active or configured stream."""
@@ -5629,7 +5638,7 @@ class MainWindow(FramelessWindow):
             streamer = (self._tiktok_username.text() or "").strip().lstrip("@").strip()
         return streamer
 
-    async def _publish_king_overlay_patch(self) -> None:
+    def _publish_king_overlay_patch_sync(self) -> None:
         cfg = load_king_of_live_overlay_config()
         anchor = self.current_tiktok_anchor_username()
         tops = fetch_all_time_gifter_totals(
@@ -5688,7 +5697,13 @@ class MainWindow(FramelessWindow):
         else:
             self._king_overlay_cached_king_key = ""
             self._king_overlay_cached_king_display = ""
-        await self._overlay_server.pubsub().publish("overlay:king_of_live:main", patch)
+        try:
+            self._overlay_server.pubsub().publish_sync("overlay:king_of_live:main", patch)
+        except RuntimeError:
+            return
+
+    async def _publish_king_overlay_patch(self) -> None:
+        self._publish_king_overlay_patch_sync()
 
     def _maybe_bump_king_presence(self, *, display_name: str, stable_key: str) -> None:
         if self._closing:
@@ -5707,15 +5722,12 @@ class MainWindow(FramelessWindow):
             ps = self._overlay_server.pubsub()
         except RuntimeError:
             return
-        t = asyncio.create_task(
-            ps.publish(
-                "overlay:king_of_live:main",
-                {
-                    "king_presence_seq": int(self._king_presence_seq),
-                },
-            ),
+        ps.publish_sync(
+            "overlay:king_of_live:main",
+            {
+                "king_presence_seq": int(self._king_presence_seq),
+            },
         )
-        t.add_done_callback(lambda _t: _t.exception())
 
     def _maybe_bump_king_chat_highlight(self, message: ChatMessage) -> None:
         if self._closing or message.platform != ChatPlatform.TIKTOK:
@@ -5734,15 +5746,12 @@ class MainWindow(FramelessWindow):
             ps = self._overlay_server.pubsub()
         except RuntimeError:
             return
-        t = asyncio.create_task(
-            ps.publish(
-                "overlay:king_of_live:main",
-                {
-                    "chat_highlight_seq": int(self._king_chat_highlight_seq),
-                },
-            ),
+        ps.publish_sync(
+            "overlay:king_of_live:main",
+            {
+                "chat_highlight_seq": int(self._king_chat_highlight_seq),
+            },
         )
-        t.add_done_callback(lambda _t: _t.exception())
 
     def _on_battle_tick(self) -> None:
         if self._closing:
@@ -5768,10 +5777,7 @@ class MainWindow(FramelessWindow):
         self._battle_overlay_publish_handle = None
         if self._closing:
             return
-        loop = self._asyncio_loop
-        if loop is None:
-            return
-        loop.create_task(self._publish_battle_overlay_patch())
+        self._publish_battle_overlay_patch_sync()
 
     def _build_battle_overlay_patch(self) -> dict[str, Any]:
         cfg = load_battle_royale_overlay_config()
@@ -5791,11 +5797,7 @@ class MainWindow(FramelessWindow):
         ps.publish_sync("overlay:battle_royale:main", self._build_battle_overlay_patch())
 
     async def _publish_battle_overlay_patch(self) -> None:
-        try:
-            ps = self._overlay_server.pubsub()
-        except RuntimeError:
-            return
-        ps.publish_sync("overlay:battle_royale:main", self._build_battle_overlay_patch())
+        self._publish_battle_overlay_patch_sync()
 
     def _sync_battle_ui_after_gift(self, *, prev_phase: BattlePhase) -> None:
         st = self._battle_controller.state()
@@ -7030,12 +7032,12 @@ class MainWindow(FramelessWindow):
         self._on_user_status(self._tr("status.logout_kick"))
         self._refresh_connection_panels()
 
-    def _on_kick_follow_any(self, user: str, _stable_key: str = "") -> None:
+    def _on_kick_follow_any(self, user: str, _stable_key: str = "", avatar_url: str = "") -> None:
         if self._closing:
             return
         eng = self._get_app_actions_engine()
         asyncio.ensure_future(eng.on_kick_follow((user or "").strip(), datetime.now(UTC)))
-        self._kick_analytics.enqueue_follow(user)
+        self._kick_analytics.enqueue_follow(user, avatar_url)
         it = ActivityItem(
             platform="kick",
             kind="follow",
@@ -7047,14 +7049,14 @@ class MainWindow(FramelessWindow):
         )
         self._publish_activity_item(it)
 
-    def _on_kick_sub_any(self, user: str, months: int) -> None:
+    def _on_kick_sub_any(self, user: str, months: int, avatar_url: str = "") -> None:
         if self._closing:
             return
         eng = self._get_app_actions_engine()
         asyncio.ensure_future(
             eng.on_kick_subscription((user or "").strip(), int(months), datetime.now(UTC))
         )
-        self._kick_analytics.enqueue_sub(user, months)
+        self._kick_analytics.enqueue_sub(user, months, avatar_url)
         it = ActivityItem(
             platform="kick",
             kind="subscription",
@@ -7066,14 +7068,14 @@ class MainWindow(FramelessWindow):
         )
         self._publish_activity_item(it)
 
-    def _on_kick_gift_sub_any(self, user: str, count: int) -> None:
+    def _on_kick_gift_sub_any(self, user: str, count: int, avatar_url: str = "") -> None:
         if self._closing:
             return
         eng = self._get_app_actions_engine()
         asyncio.ensure_future(
             eng.on_kick_gift_subscription((user or "").strip(), int(count), datetime.now(UTC))
         )
-        self._kick_analytics.enqueue_gift_sub(user, count)
+        self._kick_analytics.enqueue_gift_sub(user, count, avatar_url)
         it = ActivityItem(
             platform="kick",
             kind="gift",
@@ -7085,14 +7087,14 @@ class MainWindow(FramelessWindow):
         )
         self._publish_activity_item(it)
 
-    def _on_kick_gift_any(self, user: str, amount: int) -> None:
+    def _on_kick_gift_any(self, user: str, amount: int, avatar_url: str = "") -> None:
         if self._closing:
             return
         eng = self._get_app_actions_engine()
         asyncio.ensure_future(
             eng.on_kick_gift((user or "").strip(), int(amount), datetime.now(UTC))
         )
-        self._kick_analytics.enqueue_kick_gift(user, amount)
+        self._kick_analytics.enqueue_kick_gift(user, amount, avatar_url)
         it = ActivityItem(
             platform="kick",
             kind="kick_gift",

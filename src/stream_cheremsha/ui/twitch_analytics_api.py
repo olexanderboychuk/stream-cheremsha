@@ -27,6 +27,7 @@ class TwitchAnalyticsFeedModel(QAbstractListModel):
     _DETAIL = Qt.ItemDataRole.UserRole + 3
     _COUNT = Qt.ItemDataRole.UserRole + 4
     _TIME = Qt.ItemDataRole.UserRole + 5
+    _AVATAR = Qt.ItemDataRole.UserRole + 6
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -51,6 +52,8 @@ class TwitchAnalyticsFeedModel(QAbstractListModel):
             return int(row.get("count", 0) or 0)
         if role == self._TIME:
             return row.get("time", "")
+        if role == self._AVATAR:
+            return row.get("avatar", "")
         return None
 
     def roleNames(self) -> dict[int, bytes]:  # noqa: N802
@@ -60,6 +63,7 @@ class TwitchAnalyticsFeedModel(QAbstractListModel):
             self._DETAIL: b"detailText",
             self._COUNT: b"countValue",
             self._TIME: b"timeText",
+            self._AVATAR: b"avatarUrl",
         }
 
     def clear(self) -> None:
@@ -86,10 +90,10 @@ class TwitchAnalyticsApi(QObject):
     statsChanged = Signal()
 
     _viewers_sig = Signal(int)
-    _follow_sig = Signal(str)
-    _sub_sig = Signal(str, str, int, str)
-    _cheer_sig = Signal(str, int)
-    _raid_sig = Signal(str, int)
+    _follow_sig = Signal(str, str)
+    _sub_sig = Signal(str, str, int, str, str)
+    _cheer_sig = Signal(str, int, str)
+    _raid_sig = Signal(str, int, str)
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -153,8 +157,8 @@ class TwitchAnalyticsApi(QObject):
             self._viewers_peak = v
         self._emit_stats()
 
-    @Slot(str)
-    def _apply_follow(self, user: str) -> None:
+    @Slot(str, str)
+    def _apply_follow(self, user: str, avatar_url: str = "") -> None:
         u = (user or "").strip() or "?"
         self._follows += 1
         self._feed.prepend(
@@ -164,12 +168,15 @@ class TwitchAnalyticsApi(QObject):
                 "detail": "",
                 "count": 1,
                 "time": self._now_hms(),
+                "avatar": (avatar_url or "").strip(),
             },
         )
         self._emit_stats()
 
-    @Slot(str, str, int, str)
-    def _apply_sub(self, user: str, sub_type: str, months: int, message: str = "") -> None:
+    @Slot(str, str, int, str, str)
+    def _apply_sub(
+        self, user: str, sub_type: str, months: int, message: str = "", avatar_url: str = ""
+    ) -> None:
         u = (user or "").strip() or "?"
         st = (sub_type or "").strip()
         m = max(0, int(months))
@@ -185,12 +192,13 @@ class TwitchAnalyticsApi(QObject):
                 "detail": detail,
                 "count": 1,
                 "time": self._now_hms(),
+                "avatar": (avatar_url or "").strip(),
             },
         )
         self._emit_stats()
 
-    @Slot(str, int)
-    def _apply_cheer(self, user: str, bits: int) -> None:
+    @Slot(str, int, str)
+    def _apply_cheer(self, user: str, bits: int, avatar_url: str = "") -> None:
         u = (user or "").strip() or "?"
         b = max(0, int(bits))
         self._bits += b
@@ -201,12 +209,13 @@ class TwitchAnalyticsApi(QObject):
                 "detail": "",
                 "count": b,
                 "time": self._now_hms(),
+                "avatar": (avatar_url or "").strip(),
             },
         )
         self._emit_stats()
 
-    @Slot(str, int)
-    def _apply_raid(self, from_channel: str, viewers: int) -> None:
+    @Slot(str, int, str)
+    def _apply_raid(self, from_channel: str, viewers: int, avatar_url: str = "") -> None:
         ch = (from_channel or "").strip() or "?"
         v = max(0, int(viewers))
         self._raids += 1
@@ -217,6 +226,7 @@ class TwitchAnalyticsApi(QObject):
                 "detail": "",
                 "count": v,
                 "time": self._now_hms(),
+                "avatar": (avatar_url or "").strip(),
             },
         )
         self._emit_stats()
@@ -225,17 +235,19 @@ class TwitchAnalyticsApi(QObject):
     def enqueue_viewers(self, n: int) -> None:
         self._viewers_sig.emit(int(n))
 
-    def enqueue_follow(self, user: str) -> None:
-        self._follow_sig.emit(user)
+    def enqueue_follow(self, user: str, avatar_url: str = "") -> None:
+        self._follow_sig.emit(user, avatar_url or "")
 
-    def enqueue_sub(self, user: str, sub_type: str, months: int, message: str = "") -> None:
-        self._sub_sig.emit(user, sub_type, int(months), message or "")
+    def enqueue_sub(
+        self, user: str, sub_type: str, months: int, message: str = "", avatar_url: str = ""
+    ) -> None:
+        self._sub_sig.emit(user, sub_type, int(months), message or "", avatar_url or "")
 
-    def enqueue_cheer(self, user: str, bits: int) -> None:
-        self._cheer_sig.emit(user, int(bits))
+    def enqueue_cheer(self, user: str, bits: int, avatar_url: str = "") -> None:
+        self._cheer_sig.emit(user, int(bits), avatar_url or "")
 
-    def enqueue_raid(self, from_channel: str, viewers: int) -> None:
-        self._raid_sig.emit(from_channel, int(viewers))
+    def enqueue_raid(self, from_channel: str, viewers: int, avatar_url: str = "") -> None:
+        self._raid_sig.emit(from_channel, int(viewers), avatar_url or "")
 
     @Slot()
     def resetSession(self) -> None:  # noqa: N802

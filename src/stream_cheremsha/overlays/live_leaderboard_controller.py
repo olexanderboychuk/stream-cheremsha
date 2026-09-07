@@ -202,17 +202,20 @@ class LiveLeaderboardController(QObject):
 
         def _fire() -> None:
             self._publish_handle = None
-            asyncio.ensure_future(self._publish_patch())
+            self._publish_patch_sync()
 
         self._publish_handle = loop.call_later(delay, _fire)
 
-    async def _publish_patch(self) -> None:
+    def _publish_patch_sync(self) -> None:
         pubsub = self._pubsub
         if pubsub is None:
             return
         patch = self._build_state()
         topic = f"overlay:live_leaderboard:{self._instance}"
-        await pubsub.publish(topic, patch)
+        pubsub.publish_sync(topic, patch)
+
+    async def _publish_patch(self) -> None:
+        self._publish_patch_sync()
 
     def _on_rotation_tick(self) -> None:
         cfg = load_live_leaderboard_overlay_config()

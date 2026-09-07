@@ -191,11 +191,11 @@ class StreamGoalController(QObject):
 
         def _fire() -> None:
             self._publish_handle = None
-            asyncio.ensure_future(self._publish_patch())
+            self._publish_patch_sync()
 
         self._publish_handle = loop.call_later(delay, _fire)
 
-    async def _publish_patch(self) -> None:
+    def _publish_patch_sync(self) -> None:
         pubsub = self._pubsub
         if pubsub is None:
             return
@@ -204,7 +204,12 @@ class StreamGoalController(QObject):
         patch["config"] = stream_goal_overlay_config_to_public_dict(cfg)
         patch["locale"] = str(self._get_locale() or "uk")
         topic = f"overlay:stream_goal:{self._instance}"
-        await pubsub.publish(topic, patch)
+        # Synchronous: publish_sync never blocks, so avoid fire-and-forget
+        # tasks (destroyed-pending on loop shutdown -> log spam).
+        pubsub.publish_sync(topic, patch)
+
+    async def _publish_patch(self) -> None:
+        self._publish_patch_sync()
 
     def _on_tick(self) -> None:
         cfg = load_stream_goal_overlay_config()

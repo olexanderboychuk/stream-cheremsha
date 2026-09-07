@@ -1,9 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import time
 from collections.abc import Callable
 from typing import Any
+
+
+def _swallow_task_result(task: asyncio.Task[Any]) -> None:
+    try:
+        if not task.cancelled():
+            task.exception()
+    except Exception:
+        pass
 
 
 class ActivityEngine:
@@ -76,15 +85,20 @@ class ActivityEngine:
         try:
             loop = asyncio.get_running_loop()
             self._task = loop.create_task(self._decay_loop())
+            self._task.add_done_callback(_swallow_task_result)
         except RuntimeError:
             self._task = None
 
     def stop(self) -> None:
         """Stop the background decay task."""
         self._running = False
-        if self._task is not None:
-            self._task.cancel()
-            self._task = None
+        task, self._task = self._task, None
+        if task is not None:
+            task.cancel()
+            # Swallow CancelledError so a pending decay loop never surfaces
+            # as "Task was destroyed but it is pending" / unretrieved exception
+            # noise during shutdown.
+            task.add_done_callback(_swallow_task_result)
 
     # ------------------------------------------------------------------
     # Event handling
@@ -123,16 +137,15 @@ class ActivityEngine:
     def get_score(self) -> float:
         """Return the current activity score (0-100)."""
         # Apply inline decay so the returned value is always fresh.
+        # NOTE: pure — no task scheduling here. This is called from inside
+        # the overlay publish path (initial_state), so scheduling another
+        # publish from here would create a publish -> get_score -> publish
+        # feedback loop of fire-and-forget tasks.
         now = time.monotonic()
         elapsed = now - self._last_update
         if elapsed > 0:
             self._apply_decay(elapsed)
             self._last_update = now
-            try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(self._publish_score())
-            except RuntimeError:
-                pass
         return round(self._score, 1)
 
     def get_state(self) -> str:
@@ -163,7 +176,12 @@ class ActivityEngine:
         """Invoke the score-change callback, if any."""
         if self._on_score_change is not None:
             try:
-                await self._on_score_change(self._score)
+                res = self._on_score_change(self._score)
+                # The callback may be plain sync (e.g. schedule_publish) or
+                # async — only await awaitables. Awaiting None (sync return)
+                # raises TypeError, which was previously swallowed every tick.
+                if inspect.isawaitable(res):
+                    await res
             except Exception:  # pragma: no cover
                 pass
 

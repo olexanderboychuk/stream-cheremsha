@@ -546,7 +546,7 @@ class YouTubeChatSource:
         self,
         coordinator: StreamCoordinator,
         on_status: Callable[[str], None],
-        on_analytics_event: Callable[[str, str, str, int], None] | None = None,
+        on_analytics_event: Callable[..., None] | None = None,
         get_locale: Callable[[], str] | None = None,
         on_viewers_current: Callable[[int], None] | None = None,
         on_action_event: Callable[[YouTubeActionSignal], None] | None = None,
@@ -1052,7 +1052,7 @@ class YouTubeChatSource:
             )
             if cb is not None:
                 det = f"{amount} · {msg}" if (amount and msg) else (amount or msg)
-                cb("superchat", author_s, det, 1)
+                cb("superchat", author_s, det, 1, pic)
             return
         if kind_s == "superStickerEvent":
             details = snippet.get("superStickerDetails") or {}
@@ -1070,7 +1070,7 @@ class YouTubeChatSource:
             )
             if cb is not None:
                 det = f"{amount} · {msg}" if (amount and msg) else (amount or msg)
-                cb("supersticker", author_s, det, 1)
+                cb("supersticker", author_s, det, 1, pic)
             return
         if kind_s in ("newSponsorEvent", "memberMilestoneChatEvent"):
             if kind_s == "newSponsorEvent":
@@ -1089,9 +1089,9 @@ class YouTubeChatSource:
                 )
             )
             if cb is not None:
-                cb("member", author_s, "", 1)
+                cb("member", author_s, "", 1, pic)
             return
 
         # Default: count as chat message and keep the full message text as detail.
         if cb is not None:
-            cb("chat", author_s, str(text or ""), 1)
+            cb("chat", author_s, str(text or ""), 1, pic)

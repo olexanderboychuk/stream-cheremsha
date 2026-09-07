@@ -120,12 +120,30 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "ui.tiktok_head": {"uk": "TikTok", "en": "TikTok"},
     "ui.kick_head": {"uk": "Kick", "en": "Kick"},
     "connections.tts_chat": {"uk": "Озвучувати чат (TTS)", "en": "Speak chat (TTS)"},
-    "connections.platform_enabled": {"uk": "Платформа увімкнена", "en": "Platform enabled"},
-    "connections.page_title": {"uk": "Платформи", "en": "Platforms"},
-    "connections.page_subtitle": {
-        "uk": "Керуйте підключеннями та контролюйте активність стріму",
-        "en": "Manage connections and monitor stream activity",
+    "connections.tts_desc": {
+        "uk": "Читати повідомлення з чату голосом",
+        "en": "Read chat messages aloud",
     },
+    "connections.platform_enabled": {"uk": "Платформа увімкнена", "en": "Platform enabled"},
+    "connections.platform_enabled_desc": {
+        "uk": "Приймати події з цієї платформи",
+        "en": "Receive events from this platform",
+    },
+    "connections.page_title": {"uk": "Підключення платформ", "en": "Platform connections"},
+    "connections.page_subtitle": {
+        "uk": "Налаштуйте та керуйте вашими стрімінговими платформами",
+        "en": "Configure and manage your streaming platforms",
+    },
+    "connections.analytics_title": {"uk": "Аналітика в реальному часі", "en": "Realtime analytics"},
+    "connections.analytics_subtitle": {
+        "uk": "Слідкуйте за активністю та подіями на ваших платформах",
+        "en": "Track activity and events across your platforms",
+    },
+    "connections.stream_time": {"uk": "Час стріму", "en": "Stream time"},
+    "connections.all_events": {"uk": "Усі події", "en": "All events"},
+    "connections.open_full_log": {"uk": "Відкрити повний лог", "en": "Open full log"},
+    "connections.not_connected": {"uk": "Не підключено", "en": "Not connected"},
+    "connections.status_connected_plain": {"uk": "Підключено", "en": "Connected"},
     "connections.section_platforms": {
         "uk": "Підключення платформ",
         "en": "Platform connections",

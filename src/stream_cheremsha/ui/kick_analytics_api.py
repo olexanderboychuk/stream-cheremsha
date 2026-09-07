@@ -27,6 +27,7 @@ class KickAnalyticsFeedModel(QAbstractListModel):
     _DETAIL = Qt.ItemDataRole.UserRole + 3
     _COUNT = Qt.ItemDataRole.UserRole + 4
     _TIME = Qt.ItemDataRole.UserRole + 5
+    _AVATAR = Qt.ItemDataRole.UserRole + 6
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -51,6 +52,8 @@ class KickAnalyticsFeedModel(QAbstractListModel):
             return int(row.get("count", 0) or 0)
         if role == self._TIME:
             return row.get("time", "")
+        if role == self._AVATAR:
+            return row.get("avatar", "")
         return None
 
     def roleNames(self) -> dict[int, bytes]:  # noqa: N802
@@ -60,6 +63,7 @@ class KickAnalyticsFeedModel(QAbstractListModel):
             self._DETAIL: b"detailText",
             self._COUNT: b"countValue",
             self._TIME: b"timeText",
+            self._AVATAR: b"avatarUrl",
         }
 
     def clear(self) -> None:
@@ -87,10 +91,10 @@ class KickAnalyticsApi(QObject):
 
     _viewers_sig = Signal(int)
     _messages_sig = Signal(int)
-    _follow_sig = Signal(str)
-    _sub_sig = Signal(str, int)
-    _gift_sub_sig = Signal(str, int)
-    _kick_gift_sig = Signal(str, int)
+    _follow_sig = Signal(str, str)
+    _sub_sig = Signal(str, int, str)
+    _gift_sub_sig = Signal(str, int, str)
+    _kick_gift_sig = Signal(str, int, str)
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -165,17 +169,18 @@ class KickAnalyticsApi(QObject):
         self._messages += max(1, int(n))
         self._emit_stats()
 
-    @Slot(str)
-    def _apply_follow(self, user: str) -> None:
+    @Slot(str, str)
+    def _apply_follow(self, user: str, avatar_url: str = "") -> None:
         u = (user or "").strip() or "?"
         self._follows += 1
         self._feed.prepend(
-            {"kind": "follow", "user": u, "detail": "", "count": 1, "time": self._now_hms()}
+            {"kind": "follow", "user": u, "detail": "", "count": 1, "time": self._now_hms(),
+             "avatar": (avatar_url or "").strip()}
         )
         self._emit_stats()
 
-    @Slot(str, int)
-    def _apply_sub(self, user: str, months: int) -> None:
+    @Slot(str, int, str)
+    def _apply_sub(self, user: str, months: int, avatar_url: str = "") -> None:
         u = (user or "").strip() or "?"
         m = max(0, int(months))
         self._subscriptions += 1
@@ -186,27 +191,30 @@ class KickAnalyticsApi(QObject):
                 "detail": f"{m}m" if m else "",
                 "count": 1,
                 "time": self._now_hms(),
+                "avatar": (avatar_url or "").strip(),
             }
         )
         self._emit_stats()
 
-    @Slot(str, int)
-    def _apply_gift_sub(self, user: str, count: int) -> None:
+    @Slot(str, int, str)
+    def _apply_gift_sub(self, user: str, count: int, avatar_url: str = "") -> None:
         u = (user or "").strip() or "?"
         c = max(1, int(count))
         self._gift_subs += c
         self._feed.prepend(
-            {"kind": "gift", "user": u, "detail": "gift sub", "count": c, "time": self._now_hms()}
+            {"kind": "gift", "user": u, "detail": "gift sub", "count": c, "time": self._now_hms(),
+             "avatar": (avatar_url or "").strip()}
         )
         self._emit_stats()
 
-    @Slot(str, int)
-    def _apply_kick_gift(self, user: str, amount: int) -> None:
+    @Slot(str, int, str)
+    def _apply_kick_gift(self, user: str, amount: int, avatar_url: str = "") -> None:
         u = (user or "").strip() or "?"
         a = max(1, int(amount))
         self._kicks += a
         self._feed.prepend(
-            {"kind": "kick_gift", "user": u, "detail": "", "count": a, "time": self._now_hms()}
+            {"kind": "kick_gift", "user": u, "detail": "", "count": a, "time": self._now_hms(),
+             "avatar": (avatar_url or "").strip()}
         )
         self._emit_stats()
 
@@ -217,17 +225,17 @@ class KickAnalyticsApi(QObject):
     def enqueue_messages(self, n: int) -> None:
         self._messages_sig.emit(int(n))
 
-    def enqueue_follow(self, user: str) -> None:
-        self._follow_sig.emit(user)
+    def enqueue_follow(self, user: str, avatar_url: str = "") -> None:
+        self._follow_sig.emit(user, avatar_url or "")
 
-    def enqueue_sub(self, user: str, months: int = 1) -> None:
-        self._sub_sig.emit(user, int(months))
+    def enqueue_sub(self, user: str, months: int = 1, avatar_url: str = "") -> None:
+        self._sub_sig.emit(user, int(months), avatar_url or "")
 
-    def enqueue_gift_sub(self, user: str, count: int = 1) -> None:
-        self._gift_sub_sig.emit(user, int(count))
+    def enqueue_gift_sub(self, user: str, count: int = 1, avatar_url: str = "") -> None:
+        self._gift_sub_sig.emit(user, int(count), avatar_url or "")
 
-    def enqueue_kick_gift(self, user: str, amount: int = 1) -> None:
-        self._kick_gift_sig.emit(user, int(amount))
+    def enqueue_kick_gift(self, user: str, amount: int = 1, avatar_url: str = "") -> None:
+        self._kick_gift_sig.emit(user, int(amount), avatar_url or "")
 
     @Slot()
     def resetSession(self) -> None:  # noqa: N802
@@ -247,17 +255,17 @@ class KickAnalyticsApi(QObject):
         return self.enqueue_viewers
 
     @property
-    def on_follow(self) -> Callable[[str], None]:
+    def on_follow(self) -> Callable[..., None]:
         return self.enqueue_follow
 
     @property
-    def on_sub(self) -> Callable[[str, int], None]:
+    def on_sub(self) -> Callable[..., None]:
         return self.enqueue_sub
 
     @property
-    def on_gift_sub(self) -> Callable[[str, int], None]:
+    def on_gift_sub(self) -> Callable[..., None]:
         return self.enqueue_gift_sub
 
     @property
-    def on_kick_gift(self) -> Callable[[str, int], None]:
+    def on_kick_gift(self) -> Callable[..., None]:
         return self.enqueue_kick_gift

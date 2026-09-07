@@ -93,7 +93,11 @@ TIKTOK_GIFTS_FALLBACK: Final[list[TikTokGift]] = [
 
 
 TIKTOK_GIFTS: Final[list[TikTokGift]] = next(
-    (gifts for gifts in (_load_streamtoearn_ua(),) if gifts),
+    (
+        gifts
+        for gifts in (_load_packaged_catalog(), _load_streamtoearn_ua())
+        if gifts
+    ),
     TIKTOK_GIFTS_FALLBACK,
 )
 

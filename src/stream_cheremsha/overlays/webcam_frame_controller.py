@@ -105,17 +105,24 @@ class WebcamFrameController(QObject):
 
         def _fire() -> None:
             self._publish_handle = None
-            asyncio.ensure_future(self._publish_patch())
+            self._publish_patch_sync()
 
         self._publish_handle = loop.call_later(delay, _fire)
 
-    async def _publish_patch(self) -> None:
+    def _publish_patch_sync(self) -> None:
         pubsub = self._pubsub
         if pubsub is None:
             return
         topic = f"overlay:webcam_frame:{self._instance}"
         # Publish config + activity score as a single patch.
-        await pubsub.publish(topic, self.initial_state())
+        # Synchronous: OverlayPubSub.publish_sync is GUI-thread safe and
+        # never blocks, so no fire-and-forget asyncio Task is needed
+        # (bare ensure_future tasks get destroyed pending on loop
+        # shutdown/restart, spamming "Task was destroyed" + "never awaited").
+        pubsub.publish_sync(topic, self.initial_state())
+
+    async def _publish_patch(self) -> None:
+        self._publish_patch_sync()
 
     # -----------------------------------------------------------------
     # Activity score change handler

@@ -175,11 +175,11 @@ class CommunityWorldController(QObject):
 
         def _fire() -> None:
             self._publish_handle = None
-            asyncio.ensure_future(self._publish_patch())
+            self._publish_patch_sync()
 
         self._publish_handle = loop.call_later(delay, _fire)
 
-    async def _publish_patch(self) -> None:
+    def _publish_patch_sync(self) -> None:
         pubsub = self._pubsub
         if pubsub is None:
             return
@@ -189,8 +189,11 @@ class CommunityWorldController(QObject):
         patch["elders"] = fetch_village_elders(limit=8)
         patch["locale"] = str(self._get_locale() or "uk")
         topic = f"overlay:community_world:{self._instance}"
-        await pubsub.publish(topic, patch)
+        pubsub.publish_sync(topic, patch)
         self._session.consume_pending_buildings()
+
+    async def _publish_patch(self) -> None:
+        self._publish_patch_sync()
 
     def _persist_session_badges(self) -> None:
         """Best-effort persist badges earned during the session to SQLite."""

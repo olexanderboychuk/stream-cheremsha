@@ -27,6 +27,7 @@ class YouTubeAnalyticsFeedModel(QAbstractListModel):
     _DETAIL = Qt.ItemDataRole.UserRole + 3
     _COUNT = Qt.ItemDataRole.UserRole + 4
     _TIME = Qt.ItemDataRole.UserRole + 5
+    _AVATAR = Qt.ItemDataRole.UserRole + 6
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -51,6 +52,8 @@ class YouTubeAnalyticsFeedModel(QAbstractListModel):
             return int(row.get("count", 0) or 0)
         if role == self._TIME:
             return row.get("time", "")
+        if role == self._AVATAR:
+            return row.get("avatar", "")
         return None
 
     def roleNames(self) -> dict[int, bytes]:  # noqa: N802
@@ -60,6 +63,7 @@ class YouTubeAnalyticsFeedModel(QAbstractListModel):
             self._DETAIL: b"detailText",
             self._COUNT: b"countValue",
             self._TIME: b"timeText",
+            self._AVATAR: b"avatarUrl",
         }
 
     def clear(self) -> None:
@@ -85,7 +89,7 @@ class YouTubeAnalyticsApi(QObject):
 
     statsChanged = Signal()
 
-    _event_sig = Signal(str, str, str, int)
+    _event_sig = Signal(str, str, str, int, str)
     _viewers_sig = Signal(int)
 
     def __init__(self, parent: QObject | None = None) -> None:
@@ -137,8 +141,10 @@ class YouTubeAnalyticsApi(QObject):
     def _emit_stats(self) -> None:
         self.statsChanged.emit()
 
-    @Slot(str, str, str, int)
-    def _apply_event(self, kind: str, user: str, detail: str, count: int) -> None:
+    @Slot(str, str, str, int, str)
+    def _apply_event(
+        self, kind: str, user: str, detail: str, count: int, avatar_url: str = ""
+    ) -> None:
         k = (kind or "").strip() or "chat"
         u = (user or "").strip() or "?"
         d = (detail or "").strip()
@@ -159,6 +165,7 @@ class YouTubeAnalyticsApi(QObject):
                 "detail": d,
                 "count": max(1, c or 1),
                 "time": self._now_hms(),
+                "avatar": (avatar_url or "").strip(),
             },
         )
         self._emit_stats()
@@ -174,23 +181,25 @@ class YouTubeAnalyticsApi(QObject):
         self._emit_stats()
 
     # Public enqueue helpers (thread-safe)
-    def enqueue_event(self, kind: str, user: str, detail: str, count: int = 1) -> None:
-        self._event_sig.emit(kind, user, detail, int(count))
+    def enqueue_event(
+        self, kind: str, user: str, detail: str, count: int = 1, avatar_url: str = ""
+    ) -> None:
+        self._event_sig.emit(kind, user, detail, int(count), avatar_url or "")
 
     def enqueue_viewers(self, n: int) -> None:
         self._viewers_sig.emit(int(n))
 
-    def enqueue_chat(self, user: str, text: str) -> None:
-        self.enqueue_event("chat", user, text, 1)
+    def enqueue_chat(self, user: str, text: str, avatar_url: str = "") -> None:
+        self.enqueue_event("chat", user, text, 1, avatar_url)
 
-    def enqueue_superchat(self, user: str, amount: str, text: str) -> None:
+    def enqueue_superchat(self, user: str, amount: str, text: str, avatar_url: str = "") -> None:
         detail = amount.strip() if amount.strip() else ""
         if text.strip():
             detail = f"{detail} · {text.strip()}" if detail else text.strip()
-        self.enqueue_event("superchat", user, detail, 1)
+        self.enqueue_event("superchat", user, detail, 1, avatar_url)
 
-    def enqueue_membership(self, user: str, detail: str = "") -> None:
-        self.enqueue_event("member", user, detail, 1)
+    def enqueue_membership(self, user: str, detail: str = "", avatar_url: str = "") -> None:
+        self.enqueue_event("member", user, detail, 1, avatar_url)
 
     @Slot()
     def resetSession(self) -> None:  # noqa: N802
@@ -205,7 +214,7 @@ class YouTubeAnalyticsApi(QObject):
 
     # Callable aliases for external clients
     @property
-    def on_event(self) -> Callable[[str, str, str, int], None]:
+    def on_event(self) -> Callable[..., None]:
         return self.enqueue_event
 
     @property
@@ -213,13 +222,13 @@ class YouTubeAnalyticsApi(QObject):
         return self.enqueue_viewers
 
     @property
-    def on_chat(self) -> Callable[[str, str], None]:
+    def on_chat(self) -> Callable[..., None]:
         return self.enqueue_chat
 
     @property
-    def on_superchat(self) -> Callable[[str, str, str], None]:
+    def on_superchat(self) -> Callable[..., None]:
         return self.enqueue_superchat
 
     @property
-    def on_membership(self) -> Callable[[str, str], None]:
+    def on_membership(self) -> Callable[..., None]:
         return lambda user, detail: self.enqueue_membership(user, detail)

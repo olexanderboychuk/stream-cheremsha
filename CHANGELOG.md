@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.19.0] - 2026-09-07
+
+### Added
+
+- Platforms page redesign to match the reference dashboard: dual headers with LIVE badge and stream clock, ~37/63 column split with breathing room around the center divider, expanded Twitch card, side-by-side TikTok/Twitch analytics with metric tiles, event feeds with per-row avatars and a full-log action.
+- Real user avatars in analytics event feeds (TikTok/YouTube/Kick where the source provides them) with circular Canvas crop and initial-letter fallback; TikTok gift events show the gift icon, falling back to the bundled 451-item gift catalog (which is now actually loaded).
+- Subtle entrance animation for newly arrived feed events.
+- Overlay controllers publish patches synchronously instead of scheduling loop tasks.
+
+### Fixed
+
+- Collapsed platform cards: toggle switch no longer overflows the card boundary (bounded content container, flexible text cell, fixed-size controls; collapsed height 82px with bottom padding).
+- Platform/metric icons use layout-safe sizes instead of implicit raster sizes.
+
 ## [0.18.1] - 2026-09-07
 
 ### Fixed

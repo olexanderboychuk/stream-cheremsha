@@ -727,9 +727,9 @@ class TikTokChatSource:
         on_room_viewers: Callable[[int], None] | None = None,
         on_room_viewers_current: Callable[[int], None] | None = None,
         on_room_viewers_total: Callable[[int], None] | None = None,
-        on_follow: Callable[[str], None] | None = None,
-        on_join: Callable[[str, str], None] | None = None,
-        on_gift_analytics: Callable[[str, str, str, int, int, str], None] | None = None,
+        on_follow: Callable[..., None] | None = None,
+        on_join: Callable[..., None] | None = None,
+        on_gift_analytics: Callable[..., None] | None = None,
         on_like: Callable[..., object] | None = None,
         on_share: Callable[[str, int], None] | None = None,
         on_stream_start: Callable[[], None] | None = None,
@@ -802,15 +802,18 @@ class TikTokChatSource:
     @staticmethod
     def _wrap_on_follow(
         cb: Callable[..., object] | None,
-    ) -> Callable[[str, str, str], None] | None:
+    ) -> Callable[[str, str, str, str], None] | None:
         if cb is None:
             return None
 
-        def wrapped(user: str, stable_key: str, unique_id: str) -> None:
+        def wrapped(user: str, stable_key: str, unique_id: str, avatar_url: str = "") -> None:
             try:
-                cb(user, stable_key, unique_id)
+                cb(user, stable_key, unique_id, avatar_url)
             except TypeError:
-                cb(user)
+                try:
+                    cb(user, stable_key, unique_id)
+                except TypeError:
+                    cb(user)
 
         return wrapped
 
@@ -1256,6 +1259,7 @@ class TikTokChatSource:
                         _display_name_from_user(user),
                         tiktok_user_stable_key(user),
                         tiktok_user_unique_id(user),
+                        tiktok_user_avatar_url(user),
                     )
 
             if JoinEvent is not None:
@@ -1274,6 +1278,7 @@ class TikTokChatSource:
                             cb(
                                 _display_name_from_user(user),
                                 tiktok_user_stable_key(user),
+                                tiktok_user_avatar_url(user),
                             )
                     n = _join_event_live_viewer_count_hint(event)
                     if n > 0:
@@ -1530,7 +1535,8 @@ class TikTokChatSource:
                     )
                     ga = self._on_gift_analytics
                     if ga is not None:
-                        ga(sender_s, gift_id_s, gift_name_s, count_i, diamonds_total, icon_url)
+                        ga(sender_s, gift_id_s, gift_name_s, count_i, diamonds_total, icon_url,
+                           sender_avatar)
                     if cb is not None:
                         cb(
                             sender_s,
