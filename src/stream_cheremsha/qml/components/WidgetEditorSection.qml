@@ -71,14 +71,12 @@ Rectangle {
             visible: root.expanded
             implicitHeight: visible ? contentColumn.implicitHeight : 0
             clip: true
-            GridLayout {
+            ColumnLayout {
                 id: contentColumn
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
-            columns: width < 430 ? 1 : 2
-            columnSpacing: 28
-            rowSpacing: 12
+                spacing: 12
             }
         }
     }

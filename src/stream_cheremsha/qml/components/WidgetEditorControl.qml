@@ -18,17 +18,15 @@ ColumnLayout {
     signal changed(string field, var value)
 
     Layout.fillWidth: true
-    Layout.columnSpan: root.wide ? 2 : 1
-    Layout.minimumWidth: 0
-    spacing: 5
+    spacing: 8
 
     RowLayout {
         Layout.fillWidth: true
-        spacing: 10
+        spacing: 12
         ColumnLayout {
             Layout.fillWidth: true
             Layout.minimumWidth: 0
-            spacing: 2
+            spacing: 4
             Text { text: root.label; color: "#e8eaed"; font.pixelSize: 12; font.weight: Font.DemiBold }
             Text {
                 visible: root.description !== ""
@@ -44,8 +42,8 @@ ColumnLayout {
             id: textField
             visible: root.type === "text" || root.type === "url" || root.type === "hotkey"
             Layout.preferredWidth: 150
+            Layout.minimumWidth: 150
             Layout.maximumWidth: 150
-            Layout.alignment: Qt.AlignRight
             implicitHeight: 36
             text: root.value
             color: "#e8eaed"
@@ -59,8 +57,8 @@ ColumnLayout {
             id: spinBox
             visible: root.type === "number"
             Layout.preferredWidth: 124
+            Layout.minimumWidth: 124
             Layout.maximumWidth: 124
-            Layout.alignment: Qt.AlignRight
             from: root.minimum; to: root.maximum
             value: Number(root.value || root.minimum)
              function stepBy(delta) {
@@ -91,8 +89,8 @@ ColumnLayout {
         Slider {
             visible: root.type === "slider"
             Layout.preferredWidth: 150
+            Layout.minimumWidth: 150
             Layout.maximumWidth: 150
-            Layout.alignment: Qt.AlignRight
             from: root.minimum; to: root.maximum
             value: Number(root.value || root.minimum)
             onMoved: root.changed(root.field, value)
@@ -105,8 +103,8 @@ ColumnLayout {
             implicitWidth: 46
             implicitHeight: 26
             Layout.preferredWidth: 46
+            Layout.minimumWidth: 46
             Layout.maximumWidth: 46
-            Layout.alignment: Qt.AlignRight
             indicator: Rectangle {
                 x: switchControl.leftPadding
                 y: switchControl.height / 2 - height / 2
@@ -130,8 +128,8 @@ ColumnLayout {
             id: comboBox
             visible: root.type === "select" || root.type === "dropdown" || root.type === "font"
             Layout.preferredWidth: 140
+            Layout.minimumWidth: 140
             Layout.maximumWidth: 140
-            Layout.alignment: Qt.AlignRight
             model: root.optionLabels.length ? root.optionLabels : root.options
             currentIndex: Math.max(0, root.options.indexOf(root.value))
             hoverEnabled: true
@@ -175,8 +173,8 @@ ColumnLayout {
             id: colorField
             visible: root.type === "color"
             Layout.preferredWidth: 120
+            Layout.minimumWidth: 120
             Layout.maximumWidth: 120
-            Layout.alignment: Qt.AlignRight
             implicitHeight: 36
             text: root.value
             color: "#e8eaed"
@@ -191,7 +189,8 @@ ColumnLayout {
             text: root.type === "button" ? root.label : "Налаштувати"
             hoverEnabled: true
             implicitHeight: 36
-            Layout.alignment: Qt.AlignRight
+            Layout.preferredWidth: 120
+            Layout.minimumWidth: 120
             leftPadding: 12; rightPadding: 12
             contentItem: Text { text: utilityButton.text; color: "#e8eaed"; font.pixelSize: 12; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
             background: Rectangle { radius: 8; color: utilityButton.pressed ? "#2d3748" : (utilityButton.hovered ? "#2d3748" : "#10141a"); border.width: 1; border.color: utilityButton.hovered ? "#2d3748" : "#242b36"; Behavior on color { ColorAnimation { duration: 160 } } }
