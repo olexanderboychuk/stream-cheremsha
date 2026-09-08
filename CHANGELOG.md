@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.19.1] - 2026-09-08
+
+### Fixed
+
+- Windows silent auto-update no longer installs a second copy when the app lives in a custom folder: the updater passes the running install dir explicitly via `/D=...` instead of relying only on the registry.
+- NSIS installer registry moved to a dedicated `...-Setup` key (the old shared key collides with `QSettings`, which is case-insensitive on Windows); legacy `InstallDir` is read as fallback and migrated, `/D` always wins, uninstall no longer wipes user settings.
+
 ## [0.19.0] - 2026-09-07
 
 ### Added
