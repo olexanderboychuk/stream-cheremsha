@@ -1,5 +1,7 @@
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
+!include "StrFunc.nsh"
+${StrStr}
 
 Unicode true
 
@@ -16,7 +18,12 @@ Unicode true
 !define APP_NAME "Cheremsha"
 !define APP_PUBLISHER "stream-cheremsha"
 !define APP_EXE "cheremsha.exe"
-!define APP_REGKEY "Software\\${APP_PUBLISHER}\\${APP_NAME}"
+; Installer-only key. NOTE: QSettings("stream-cheremsha", "cheremsha") uses the
+; same path case-insensitively on Windows (HKCU\...\Cheremsha), so the installer
+; must NOT share it: Uninstall used to wipe user settings, and foreign values
+; could confuse updates. New installs write here; old key is read as fallback.
+!define APP_REGKEY "Software\\${APP_PUBLISHER}\\${APP_NAME}-Setup"
+!define LEGACY_REGKEY "Software\\${APP_PUBLISHER}\\${APP_NAME}"
 !define UNINST_KEY "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APP_NAME}"
 
 ; Holds the previously installed path (empty on a fresh install). When set we treat
@@ -61,9 +68,23 @@ ShowUninstDetails show
 
 Function .onInit
   ; Detect a previous installation so we can run as an in-place update.
-  ReadRegStr $PrevInstallDir HKCU "${APP_REGKEY}" "InstallDir"
-  ${If} $PrevInstallDir != ""
-    StrCpy $INSTDIR "$PrevInstallDir"
+  ; Priority: explicit /D=... (passed by the in-app updater, already in
+  ; $INSTDIR) always wins and must not be clobbered here.
+  ; InstallDirRegKey above already backfilled $INSTDIR from the new key.
+  ; Fall back to registry only when /D was not given: new installer-only key
+  ; first, then the legacy shared key (0.17-0.19 custom installs wrote
+  ; InstallDir there alongside QSettings values).
+  ${StrStr} $0 $CMDLINE "/D="
+  ${If} $0 == ""
+    ReadRegStr $PrevInstallDir HKCU "${APP_REGKEY}" "InstallDir"
+    ${If} $PrevInstallDir == ""
+      ReadRegStr $PrevInstallDir HKCU "${LEGACY_REGKEY}" "InstallDir"
+    ${EndIf}
+    ${If} $PrevInstallDir != ""
+      StrCpy $INSTDIR "$PrevInstallDir"
+    ${EndIf}
+  ${Else}
+    StrCpy $PrevInstallDir "$INSTDIR"
   ${EndIf}
 FunctionEnd
 
@@ -113,9 +134,13 @@ Section "Install"
   CreateShortCut "$SMPROGRAMS\\${APP_NAME}\\${APP_NAME}.lnk" "$INSTDIR\\${APP_EXE}" "" "$INSTDIR\\${APP_EXE}" 0
   CreateShortCut "$DESKTOP\\${APP_NAME}.lnk" "$INSTDIR\\${APP_EXE}" "" "$INSTDIR\\${APP_EXE}" 0
 
-  ; Registry (per-user)
+  ; Registry (per-user, installer-only key)
   WriteRegStr HKCU "${APP_REGKEY}" "InstallDir" "$INSTDIR"
   WriteRegStr HKCU "${APP_REGKEY}" "Version" "${APP_VERSION}"
+  ; Migrate pre-0.20 installs: drop stale installer values from the legacy
+  ; shared key, but keep the key itself (it holds QSettings user data).
+  DeleteRegValue HKCU "${LEGACY_REGKEY}" "InstallDir"
+  DeleteRegValue HKCU "${LEGACY_REGKEY}" "Version"
 
   ; Add/Remove Programs entry (per-user)
   WriteRegStr HKCU "${UNINST_KEY}" "DisplayName" "${APP_NAME}"
@@ -145,7 +170,7 @@ Section "Uninstall"
   ; Remove installed files
   RMDir /r "$INSTDIR"
 
-  ; Remove registry keys
+  ; Remove registry keys (installer-only; legacy app-settings key is left alone)
   DeleteRegKey HKCU "${UNINST_KEY}"
   DeleteRegKey HKCU "${APP_REGKEY}"
 SectionEnd

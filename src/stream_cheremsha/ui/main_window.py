@@ -3263,9 +3263,23 @@ class MainWindow(FramelessWindow):
         finally:
             self._btn_updates_check_now.setEnabled(True)
 
-        # Silent in-place update: the installer reuses the recorded install dir,
-        # waits for this process to exit, then relaunches the new version.
-        subprocess.Popen([str(installer_path), "/S"], close_fds=True)
+        # Silent in-place update: pass the running install dir explicitly via /D
+        # (must be the last arg, no quotes even with spaces). Relying only on
+        # the registry breaks custom install paths when the key is missing or
+        # read from another HKCU context -> second copy in %LOCALAPPDATA%.
+        # Nuitka standalone: sys.executable is cheremsha.exe inside $INSTDIR.
+        try:
+            _exe = Path(sys.executable).resolve()
+            _exe_dir = str(_exe.parent) if _exe.name.lower() == "cheremsha.exe" else ""
+        except OSError:
+            _exe_dir = ""
+        if _exe_dir:
+            subprocess.Popen(
+                [str(installer_path), "/S", f"/D={_exe_dir}"],
+                close_fds=True,
+            )
+        else:  # dev/portable fallback: registry-based detection in the installer
+            subprocess.Popen([str(installer_path), "/S"], close_fds=True)
         self.close()
 
     def _verify_windows_installer_signature(self, exe_path: str) -> bool:
