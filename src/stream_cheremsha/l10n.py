@@ -941,8 +941,8 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "donations.donatello_published": {"uk": "На сайті", "en": "Published"},
     "donations.donatello_draft": {"uk": "Чернетка", "en": "Draft"},
     "donations.subtitle_pick": {
-        "uk": "Оберіть сервіс. Пізніше з’являться й інші платформи.",
-        "en": "Pick a provider. More platforms will appear later.",
+        "uk": "Підключіть сервіси для отримання та озвучування донатів.",
+        "en": "Connect services to receive and voice donations.",
     },
     "donations.card_donatik_hint": {
         "uk": "Перегляд донатів через API Donatik (токен з кабінету).",
@@ -950,7 +950,7 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     },
     "donations.tap_to_open": {"uk": "Натисніть, щоб відкрити", "en": "Tap to open"},
     "donations.more_soon": {"uk": "Інші сервіси — незабаром", "en": "More providers coming soon"},
-    "donations.back_services": {"uk": "Сервіси", "en": "Services"},
+    "donations.back_services": {"uk": "Донати", "en": "Donations"},
     "donations.setup_intro_html": {
         "uk": "Створіть API-токен у кабінеті Donatik: "
         '<a href="https://donatik.io">donatik.io</a> — він зберігається локально в сховищі ОС.',
@@ -991,6 +991,20 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Некоректна відповідь Donatik: {detail}",
         "en": "Invalid Donatik response: {detail}",
     },
+    "donations.status_connected": {"uk": "Підключено", "en": "Connected"},
+    "donations.status_disconnected": {"uk": "Не підключено", "en": "Not connected"},
+    "donations.action_setup": {"uk": "Налаштувати", "en": "Configure"},
+    "donations.connection": {"uk": "Підключення", "en": "Connection"},
+    "donations.about_donatello": {"uk": "Про Donatello", "en": "About Donatello"},
+    "donations.about_donatik": {"uk": "Про Donatik", "en": "About Donatik"},
+    "donations.period": {"uk": "Період", "en": "Period"},
+    "donations.history": {"uk": "Історія донатів", "en": "Donation history"},
+    "donations.empty_title": {"uk": "Немає донатів", "en": "No donations"},
+    "donations.empty_hint": {
+        "uk": "За вибраний період донатів не знайдено.",
+        "en": "No donations found for the selected period.",
+    },
+    "donations.loading": {"uk": "Завантаження…", "en": "Loading…"},
     # Settings
     "settings.lang_label": {"uk": "Мова інтерфейсу", "en": "Interface language"},
     "settings.lang.uk": {"uk": "Українська", "en": "Ukrainian"},

@@ -13,3 +13,4 @@ BpSection 1.0 BpSection.qml
 WidgetEditorSection 1.0 WidgetEditorSection.qml
 WidgetEditorControl 1.0 WidgetEditorControl.qml
 CheremshaSourceCard 1.0 CheremshaSourceCard.qml
+CheremshaServiceCard 1.0 CheremshaServiceCard.qml
