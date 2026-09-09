@@ -2671,6 +2671,8 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "widgets.gallery.sort_platform": {"uk": "За платформою", "en": "By platform"},
     "widgets.gallery.open": {"uk": "Відкрити", "en": "Open"},
     "widgets.gallery.copy_link": {"uk": "Скопіювати посилання", "en": "Copy link"},
+    "widgets.gallery.copy_url": {"uk": "Копіювати URL", "en": "Copy URL"},
+    "widgets.gallery.enabled": {"uk": "Увімкнено", "en": "Enabled"},
     "widgets.gallery.copied": {"uk": "Скопійовано", "en": "Copied"},
     "widgets.gallery.preview": {"uk": "Попередній перегляд", "en": "Preview"},
     "widgets.gallery.toggle": {"uk": "Увімкнути/вимкнути віджет", "en": "Enable/disable widget"},

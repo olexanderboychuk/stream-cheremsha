@@ -3,6 +3,8 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
 
+import components
+
 Item {
     id: root
     implicitWidth: 800
@@ -244,402 +246,6 @@ Item {
         }
     }
 
-    component WebDocCard: Item {
-        id: webDocCard
-        property string title: ""
-        property string description: ""
-        property string url: ""
-        property string iconSource: ""
-        property color accentColor: root.primaryPurple
-        property bool showCopyButton: true
-        property bool showOpenButton: true
-        property var copyFunction: null
-        property var openFunction: null
-
-        // Content-driven height: anchored children do not propagate
-        // implicit size, so derive it from the internal column.
-        implicitHeight: cardBody.implicitHeight + 32
-
-        Rectangle {
-            id: cardBg
-            anchors.fill: parent
-            radius: 14
-            color: hoverArea.containsMouse ? "#151d2d" : root.cardBase
-            border.width: 1
-            border.color: hoverArea.containsMouse ? "#3d4a63" : root.cardEdge
-            Behavior on color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
-            Behavior on border.color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
-
-            MouseArea {
-                id: hoverArea
-                anchors.fill: parent
-                hoverEnabled: true
-                acceptedButtons: Qt.NoButton
-            }
-
-            // Subtle per-card accent identity: faint wash from the top,
-            // corners matched so it never reads as glow.
-            Rectangle {
-                anchors.fill: parent
-                radius: 14
-                gradient: Gradient {
-                    GradientStop { position: 0.0; color: webDocCard.accentColor }
-                    GradientStop { position: 0.5; color: "transparent" }
-                }
-                opacity: 0.07
-            }
-
-            ColumnLayout {
-                id: cardBody
-                anchors.fill: parent
-                anchors.margins: 14
-                spacing: 8
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 12
-
-                    Item {
-                        Layout.preferredWidth: 44
-                        Layout.preferredHeight: 44
-                        Layout.alignment: Qt.AlignVCenter
-
-                        Rectangle {
-                            anchors.fill: parent
-                            radius: 9
-                            color: webDocCard.accentColor
-                            opacity: 0.15
-                        }
-                        Rectangle {
-                            anchors.fill: parent
-                            radius: 9
-                            color: "transparent"
-                            border.width: 1
-                            border.color: webDocCard.accentColor
-                            opacity: 0.5
-                        }
-                        Image {
-                            anchors.centerIn: parent
-                            source: webDocCard.iconSource
-                            width: 22
-                            height: 22
-                        }
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        Layout.alignment: Qt.AlignVCenter
-                        spacing: 4
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 8
-
-                            Text {
-                                text: webDocCard.title
-                                color: root.ink
-                                font.pixelSize: 17
-                                font.weight: Font.DemiBold
-                                Layout.fillWidth: true
-                                elide: Text.ElideRight
-                            }
-
-                            Rectangle {
-                                Layout.alignment: Qt.AlignVCenter
-                                width: 7
-                                height: 7
-                                radius: 3.5
-                                color: "#10b981"
-                            }
-
-                            Text {
-                                text: "Веб-док"
-                                color: root.muted
-                                font.pixelSize: 12
-                            }
-                        }
-                    }
-                }
-
-                Text {
-                    text: webDocCard.description
-                    color: "#9aa7bc"
-                    font.pixelSize: 13
-                    Layout.fillWidth: true
-                    wrapMode: Text.Wrap
-                    elide: Text.ElideRight
-                }
-
-                Item { Layout.fillHeight: true }
-
-                // Preview area for each card type
-                Rectangle {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 96
-                    radius: 8
-                    color: "#0c111c"
-                    border.width: 1
-                    border.color: "#2b3650"
-                    clip: true
-                    visible: webDocCard.title === "MultiChat"
-
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 8
-                        spacing: 5
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 5
-                            Image {
-                                source: Qt.resolvedUrl("../assets/twitch.svg")
-                                Layout.preferredWidth: 12
-                                Layout.preferredHeight: 12
-                            }
-                            Text { text: "<b><font color=\"#a970ff\">luna</font></b> <font color=\"#c3cddc\">Крутий стрім, друзі!</font> <font color=\"#5b6575\">12:04</font>"; textFormat: Text.RichText; font.pixelSize: 9; Layout.fillWidth: true; elide: Text.ElideRight }
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 5
-                            Image {
-                                source: Qt.resolvedUrl("../assets/youtube.svg")
-                                Layout.preferredWidth: 12
-                                Layout.preferredHeight: 12
-                            }
-                            Text { text: "<b><font color=\"#f87171\">darkness</font></b> <font color=\"#c3cddc\">Всім привіт!</font> <font color=\"#5b6575\">12:05</font>"; textFormat: Text.RichText; font.pixelSize: 9; Layout.fillWidth: true; elide: Text.ElideRight }
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 5
-                            Image {
-                                source: Qt.resolvedUrl("../assets/tiktok.svg")
-                                Layout.preferredWidth: 12
-                                Layout.preferredHeight: 12
-                            }
-                            Text { text: "<b><font color=\"#67e8f9\">sakura</font></b> <font color=\"#c3cddc\">great stream, love it!</font> <font color=\"#5b6575\">12:06</font>"; textFormat: Text.RichText; font.pixelSize: 9; Layout.fillWidth: true; elide: Text.ElideRight }
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 5
-                            Image {
-                                source: Qt.resolvedUrl("../assets/kick.svg")
-                                Layout.preferredWidth: 12
-                                Layout.preferredHeight: 12
-                            }
-                            Text { text: "<b><font color=\"#6ee7a0\">mira</font></b> <font color=\"#c3cddc\">Саунд топ!</font> <font color=\"#5b6575\">12:07</font>"; textFormat: Text.RichText; font.pixelSize: 9; Layout.fillWidth: true; elide: Text.ElideRight }
-                        }
-                    }
-                }
-
-                Rectangle {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 96
-                    radius: 8
-                    color: "#0c111c"
-                    border.width: 1
-                    border.color: "#2b3650"
-                    clip: true
-                    visible: webDocCard.title === "Активність"
-
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 8
-                        spacing: 5
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 6
-                            Image {
-                                source: Qt.resolvedUrl("../assets/icons/web_event_subscribe.svg")
-                                Layout.preferredWidth: 13
-                                Layout.preferredHeight: 13
-                            }
-                            Text { text: "Підписка"; color: "#dbe2ec"; font.pixelSize: 10; font.weight: Font.DemiBold }
-                            Text { text: "luna"; color: "#9aa7bc"; font.pixelSize: 10; Layout.fillWidth: true; elide: Text.ElideRight }
-                            Text { text: "2 хв"; color: root.muted; font.pixelSize: 9 }
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 6
-                            Image {
-                                source: Qt.resolvedUrl("../assets/icons/web_event_donation.svg")
-                                Layout.preferredWidth: 13
-                                Layout.preferredHeight: 13
-                            }
-                            Text { text: "Донат $5"; color: "#dbe2ec"; font.pixelSize: 10; font.weight: Font.DemiBold }
-                            Text { text: "darkness"; color: "#9aa7bc"; font.pixelSize: 10; Layout.fillWidth: true; elide: Text.ElideRight }
-                            Text { text: "5 хв"; color: root.muted; font.pixelSize: 9 }
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 6
-                            Image {
-                                source: Qt.resolvedUrl("../assets/icons/web_event_gift.svg")
-                                Layout.preferredWidth: 13
-                                Layout.preferredHeight: 13
-                            }
-                            Text { text: "Подарунок"; color: "#dbe2ec"; font.pixelSize: 10; font.weight: Font.DemiBold }
-                            Text { text: "sakura"; color: "#9aa7bc"; font.pixelSize: 10; Layout.fillWidth: true; elide: Text.ElideRight }
-                            Text { text: "9 хв"; color: root.muted; font.pixelSize: 9 }
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 6
-                            Image {
-                                source: Qt.resolvedUrl("../assets/icons/web_event_raid.svg")
-                                Layout.preferredWidth: 13
-                                Layout.preferredHeight: 13
-                            }
-                            Text { text: "Рейд ×42"; color: "#dbe2ec"; font.pixelSize: 10; font.weight: Font.DemiBold }
-                            Text { text: "void"; color: "#9aa7bc"; font.pixelSize: 10; Layout.fillWidth: true; elide: Text.ElideRight }
-                            Text { text: "12 хв"; color: root.muted; font.pixelSize: 9 }
-                        }
-                    }
-                }
-
-                Rectangle {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 96
-                    radius: 8
-                    color: "#0c111c"
-                    border.width: 1
-                    border.color: "#2b3650"
-                    clip: true
-                    visible: webDocCard.title === "Онлайн"
-
-                    RowLayout {
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.leftMargin: 10
-                        anchors.rightMargin: 10
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: 12
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 3
-                            Text { text: "01:24:17"; color: root.ink; font.pixelSize: 13; font.bold: true }
-                            Text { text: "Онлайн"; color: root.muted; font.pixelSize: 9 }
-                            Rectangle {
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 3
-                                radius: 1.5
-                                color: "#1c2536"
-                                Rectangle {
-                                    anchors.left: parent.left
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    width: parent.width * 0.85
-                                    height: 3
-                                    radius: 1.5
-                                    color: "#22d3ee"
-                                }
-                            }
-                        }
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 3
-                            Text { text: "1 247"; color: root.ink; font.pixelSize: 13; font.bold: true }
-                            Text { text: "Глядачі"; color: root.muted; font.pixelSize: 9 }
-                            Rectangle {
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 3
-                                radius: 1.5
-                                color: "#1c2536"
-                                Rectangle {
-                                    anchors.left: parent.left
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    width: parent.width * 0.6
-                                    height: 3
-                                    radius: 1.5
-                                    color: "#8b5cf6"
-                                }
-                            }
-                        }
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 3
-                            Text { text: "892"; color: root.ink; font.pixelSize: 13; font.bold: true }
-                            Text { text: "Підписники"; color: root.muted; font.pixelSize: 9 }
-                            Rectangle {
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 3
-                                radius: 1.5
-                                color: "#1c2536"
-                                Rectangle {
-                                    anchors.left: parent.left
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    width: parent.width * 0.4
-                                    height: 3
-                                    radius: 1.5
-                                    color: "#10b981"
-                                }
-                            }
-                        }
-                    }
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 32
-                        radius: 8
-                        color: root.fieldBg
-                        border.width: 1
-                        border.color: root.cardEdge
-
-                        Text {
-                            text: webDocCard.url
-                            color: "#9aa7bc"
-                            font.pixelSize: 11
-                            font.family: "monospace"
-                            horizontalAlignment: Text.AlignLeft
-                            verticalAlignment: Text.AlignVCenter
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            anchors.leftMargin: 10
-                            anchors.rightMargin: 10
-                            elide: Text.ElideRight
-                        }
-                    }
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
-
-                    PrimaryButton {
-                        Layout.fillWidth: true
-                        Layout.maximumWidth: 150
-                        text: "Копіювати URL"
-                        btnIcon: Qt.resolvedUrl("../assets/icons/web_copy.svg")
-                        onClicked: if (webDocCard.copyFunction) webDocCard.copyFunction()
-                    }
-
-                    SecondaryButton {
-                        Layout.fillWidth: true
-                        Layout.maximumWidth: 100
-                        text: "Відкрити"
-                        btnIcon: Qt.resolvedUrl("../assets/icons/web_open.svg")
-                        visible: webDocCard.showOpenButton
-                        onClicked: if (webDocCard.openFunction) webDocCard.openFunction()
-                    }
-                }
-            }
-        }
-    }
-
     Loader {
         id: apiGate
         anchors.fill: parent
@@ -876,40 +482,253 @@ Item {
                 objectName: "secCards"
                 Layout.fillWidth: true
                 spacing: 12
-                WebDocCard {
+                CheremshaSourceCard {
                     title: "MultiChat"
                     description: "Чат з усіх підключених платформ в одному вікні. Підтримує Twitch, YouTube, TikTok, Kick та інші."
                     url: dockApi ? dockApi.multichatDockUrlValue : ""
                     iconSource: Qt.resolvedUrl("../assets/icons/web_multichat.svg")
                     accentColor: primaryPurple
-                    copyFunction: if (dockApi) dockApi.copyMultichatDockUrl
-                    openFunction: if (dockApi) dockApi.openMultichatDockUrl
+                    statusText: "Веб-док"
+                    onCopyClicked: dockApi.copyMultichatDockUrl()
+                    onOpenClicked: dockApi.openMultichatDockUrl()
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+                    previewContent: Component {
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 8
+                            color: "#0c111c"
+                            border.width: 1
+                            border.color: "#2b3650"
+                            clip: true
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                spacing: 5
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 5
+                                    Image {
+                                        source: Qt.resolvedUrl("../assets/twitch.svg")
+                                        Layout.preferredWidth: 12
+                                        Layout.preferredHeight: 12
+                                    }
+                                    Text { text: "<b><font color=\"#a970ff\">luna</font></b> <font color=\"#c3cddc\">Крутий стрім, друзі!</font> <font color=\"#5b6575\">12:04</font>"; textFormat: Text.RichText; font.pixelSize: 9; Layout.fillWidth: true; elide: Text.ElideRight }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 5
+                                    Image {
+                                        source: Qt.resolvedUrl("../assets/youtube.svg")
+                                        Layout.preferredWidth: 12
+                                        Layout.preferredHeight: 12
+                                    }
+                                    Text { text: "<b><font color=\"#f87171\">darkness</font></b> <font color=\"#c3cddc\">Всім привіт!</font> <font color=\"#5b6575\">12:05</font>"; textFormat: Text.RichText; font.pixelSize: 9; Layout.fillWidth: true; elide: Text.ElideRight }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 5
+                                    Image {
+                                        source: Qt.resolvedUrl("../assets/tiktok.svg")
+                                        Layout.preferredWidth: 12
+                                        Layout.preferredHeight: 12
+                                    }
+                                    Text { text: "<b><font color=\"#67e8f9\">sakura</font></b> <font color=\"#c3cddc\">great stream, love it!</font> <font color=\"#5b6575\">12:06</font>"; textFormat: Text.RichText; font.pixelSize: 9; Layout.fillWidth: true; elide: Text.ElideRight }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 5
+                                    Image {
+                                        source: Qt.resolvedUrl("../assets/kick.svg")
+                                        Layout.preferredWidth: 12
+                                        Layout.preferredHeight: 12
+                                    }
+                                    Text { text: "<b><font color=\"#6ee7a0\">mira</font></b> <font color=\"#c3cddc\">Саунд топ!</font> <font color=\"#5b6575\">12:07</font>"; textFormat: Text.RichText; font.pixelSize: 9; Layout.fillWidth: true; elide: Text.ElideRight }
+                                }
+                            }
+                        }
+                    }
                 }
 
-                WebDocCard {
+                CheremshaSourceCard {
                     title: "Активність"
                     description: "Останні події: підписки, донати, подарунки, рейди та інша активність у реальному часі."
                     url: dockApi ? dockApi.activityDockUrlValue : ""
                     iconSource: Qt.resolvedUrl("../assets/icons/web_activity.svg")
                     accentColor: accentAmber
-                    copyFunction: if (dockApi) dockApi.copyActivityDockUrl
-                    openFunction: if (dockApi) dockApi.openActivityDockUrl
+                    statusText: "Веб-док"
+                    onCopyClicked: dockApi.copyActivityDockUrl()
+                    onOpenClicked: dockApi.openActivityDockUrl()
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+                    previewContent: Component {
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 8
+                            color: "#0c111c"
+                            border.width: 1
+                            border.color: "#2b3650"
+                            clip: true
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                spacing: 5
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 6
+                                    Image {
+                                        source: Qt.resolvedUrl("../assets/icons/web_event_subscribe.svg")
+                                        Layout.preferredWidth: 13
+                                        Layout.preferredHeight: 13
+                                    }
+                                    Text { text: "Підписка"; color: "#dbe2ec"; font.pixelSize: 10; font.weight: Font.DemiBold }
+                                    Text { text: "luna"; color: "#9aa7bc"; font.pixelSize: 10; Layout.fillWidth: true; elide: Text.ElideRight }
+                                    Text { text: "2 хв"; color: root.muted; font.pixelSize: 9 }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 6
+                                    Image {
+                                        source: Qt.resolvedUrl("../assets/icons/web_event_donation.svg")
+                                        Layout.preferredWidth: 13
+                                        Layout.preferredHeight: 13
+                                    }
+                                    Text { text: "Донат $5"; color: "#dbe2ec"; font.pixelSize: 10; font.weight: Font.DemiBold }
+                                    Text { text: "darkness"; color: "#9aa7bc"; font.pixelSize: 10; Layout.fillWidth: true; elide: Text.ElideRight }
+                                    Text { text: "5 хв"; color: root.muted; font.pixelSize: 9 }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 6
+                                    Image {
+                                        source: Qt.resolvedUrl("../assets/icons/web_event_gift.svg")
+                                        Layout.preferredWidth: 13
+                                        Layout.preferredHeight: 13
+                                    }
+                                    Text { text: "Подарунок"; color: "#dbe2ec"; font.pixelSize: 10; font.weight: Font.DemiBold }
+                                    Text { text: "sakura"; color: "#9aa7bc"; font.pixelSize: 10; Layout.fillWidth: true; elide: Text.ElideRight }
+                                    Text { text: "9 хв"; color: root.muted; font.pixelSize: 9 }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 6
+                                    Image {
+                                        source: Qt.resolvedUrl("../assets/icons/web_event_raid.svg")
+                                        Layout.preferredWidth: 13
+                                        Layout.preferredHeight: 13
+                                    }
+                                    Text { text: "Рейд ×42"; color: "#dbe2ec"; font.pixelSize: 10; font.weight: Font.DemiBold }
+                                    Text { text: "void"; color: "#9aa7bc"; font.pixelSize: 10; Layout.fillWidth: true; elide: Text.ElideRight }
+                                    Text { text: "12 хв"; color: root.muted; font.pixelSize: 9 }
+                                }
+                            }
+                        }
+                    }
                 }
 
-                WebDocCard {
+                CheremshaSourceCard {
                     title: "Онлайн"
                     description: "Показує поточний онлайн, глядачів з усіх платформ та загальну статистику стріму."
                     url: dockApi ? dockApi.onlineDockUrlValue : ""
                     iconSource: Qt.resolvedUrl("../assets/icons/web_online.svg")
                     accentColor: secondaryCyan
-                    copyFunction: if (dockApi) dockApi.copyOnlineDockUrl
-                    openFunction: if (dockApi) dockApi.openOnlineDockUrl
+                    statusText: "Веб-док"
+                    onCopyClicked: dockApi.copyOnlineDockUrl()
+                    onOpenClicked: dockApi.openOnlineDockUrl()
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+                    previewContent: Component {
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 8
+                            color: "#0c111c"
+                            border.width: 1
+                            border.color: "#2b3650"
+                            clip: true
+
+                            RowLayout {
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.leftMargin: 10
+                                anchors.rightMargin: 10
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 12
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 3
+                                    Text { text: "01:24:17"; color: root.ink; font.pixelSize: 13; font.bold: true }
+                                    Text { text: "Онлайн"; color: root.muted; font.pixelSize: 9 }
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 3
+                                        radius: 1.5
+                                        color: "#1c2536"
+                                        Rectangle {
+                                            anchors.left: parent.left
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: parent.width * 0.85
+                                            height: 3
+                                            radius: 1.5
+                                            color: "#22d3ee"
+                                        }
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 3
+                                    Text { text: "1 247"; color: root.ink; font.pixelSize: 13; font.bold: true }
+                                    Text { text: "Глядачі"; color: root.muted; font.pixelSize: 9 }
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 3
+                                        radius: 1.5
+                                        color: "#1c2536"
+                                        Rectangle {
+                                            anchors.left: parent.left
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: parent.width * 0.6
+                                            height: 3
+                                            radius: 1.5
+                                            color: "#8b5cf6"
+                                        }
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 3
+                                    Text { text: "892"; color: root.ink; font.pixelSize: 13; font.bold: true }
+                                    Text { text: "Підписники"; color: root.muted; font.pixelSize: 9 }
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 3
+                                        radius: 1.5
+                                        color: "#1c2536"
+                                        Rectangle {
+                                            anchors.left: parent.left
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: parent.width * 0.4
+                                            height: 3
+                                            radius: 1.5
+                                            color: "#10b981"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 

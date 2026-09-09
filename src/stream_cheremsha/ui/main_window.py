@@ -1481,6 +1481,7 @@ class MainWindow(FramelessWindow):
         self._qml_donations.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
         self._qml_donations.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._qml_donations.setClearColor(QColor(10, 11, 14))
+        _setup_qml_import_path(self._qml_donations)
         self._widgets_qml_api = WidgetsQmlApi(pubsub=self._overlay_server.pubsub())
         # NOTE: legacy widget-instance DB migration runs lazily on the first
         # open of the Widgets page (see _load_qml_page), not at startup.
@@ -1496,15 +1497,18 @@ class MainWindow(FramelessWindow):
         self._qml_widgets.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
         self._qml_widgets.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._qml_widgets.setClearColor(QColor(10, 11, 14))
+        _setup_qml_import_path(self._qml_widgets)
         self._docks_qml_api = DocksQmlApi()
         self._qml_docks = QQuickWidget(self)
         self._qml_docks.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
         self._qml_docks.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._qml_docks.setClearColor(QColor(10, 11, 14))
+        _setup_qml_import_path(self._qml_docks)
         self._qml_actions = QQuickWidget(self)
         self._qml_actions.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
         self._qml_actions.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._qml_actions.setClearColor(QColor(10, 11, 14))
+        _setup_qml_import_path(self._qml_actions)
         root = QVBoxLayout(self)
         root.setSpacing(0)
         # qframelesswindow title bar is drawn on top of the client area

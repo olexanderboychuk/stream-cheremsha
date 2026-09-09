@@ -3,6 +3,8 @@ import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
 
+import components
+
 Item {
     id: root
     implicitWidth: 720
@@ -211,6 +213,191 @@ Item {
     }
     function galleryFilteredTypes() {
         return root.galleryCards();
+    }
+
+    // ---- Miniature widget preview renderers (static, lightweight) ----
+    // Data-driven building blocks for gallery card previews. Each renderer
+    // fills the shared preview container; per-type DATA lives in the
+    // delegate (previewSpec), never type conditionals in the visuals.
+    component WidgetFeedPreview: ColumnLayout {
+        property var rows: []
+        anchors.fill: parent
+        anchors.margins: 8
+        spacing: 5
+        Repeater {
+            model: rows
+            delegate: RowLayout {
+                required property var modelData
+                Layout.fillWidth: true
+                spacing: 6
+                Image {
+                    source: Qt.resolvedUrl("../assets/icons/" + modelData.icon + ".svg")
+                    Layout.preferredWidth: 13
+                    Layout.preferredHeight: 13
+                    Layout.alignment: Qt.AlignVCenter
+                }
+                Text { text: modelData.label; color: "#dbe2ec"; font.pixelSize: 10; font.weight: Font.DemiBold; Layout.alignment: Qt.AlignVCenter }
+                Text { text: modelData.user; color: "#9aa7bc"; font.pixelSize: 10; Layout.fillWidth: true; Layout.alignment: Qt.AlignVCenter; elide: Text.ElideRight }
+                Text { text: modelData.time; color: root.muted; font.pixelSize: 9; Layout.alignment: Qt.AlignVCenter }
+            }
+        }
+    }
+
+    component WidgetChatPreview: ColumnLayout {
+        property var rows: []
+        anchors.fill: parent
+        anchors.margins: 8
+        spacing: 5
+        Repeater {
+            model: rows
+            delegate: RowLayout {
+                required property var modelData
+                Layout.fillWidth: true
+                spacing: 5
+                Image {
+                    source: Qt.resolvedUrl("../assets/" + modelData.platform + ".svg")
+                    Layout.preferredWidth: 12
+                    Layout.preferredHeight: 12
+                    Layout.alignment: Qt.AlignVCenter
+                }
+                Text { text: modelData.html; textFormat: Text.RichText; font.pixelSize: 9; Layout.fillWidth: true; Layout.alignment: Qt.AlignVCenter; elide: Text.ElideRight }
+            }
+        }
+    }
+
+    component WidgetStatsPreview: RowLayout {
+        property var cols: []
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.leftMargin: 10
+        anchors.rightMargin: 10
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: 12
+        Repeater {
+            model: cols
+            delegate: ColumnLayout {
+                required property var modelData
+                Layout.fillWidth: true
+                spacing: 3
+                Text { text: modelData.value; color: "#e8eaed"; font.pixelSize: 13; font.bold: true }
+                Text { text: modelData.label; color: root.muted; font.pixelSize: 9 }
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 3
+                    radius: 1.5
+                    color: "#1c2536"
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width * modelData.frac
+                        height: 3
+                        radius: 1.5
+                        color: modelData.color
+                    }
+                }
+            }
+        }
+    }
+
+    component WidgetEmblemPreview: ColumnLayout {
+        property string iconSource: ""
+        property string caption: ""
+        property real progress: -1
+        anchors.fill: parent
+        anchors.margins: 8
+        spacing: 6
+        Item { Layout.fillWidth: true; Layout.fillHeight: true }
+        Image {
+            source: iconSource
+            Layout.preferredWidth: 30
+            Layout.preferredHeight: 30
+            Layout.alignment: Qt.AlignHCenter
+        }
+        Text {
+            text: caption
+            color: "#9aa7bc"
+            font.pixelSize: 10
+            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignHCenter
+            horizontalAlignment: Text.AlignHCenter
+            elide: Text.ElideRight
+            maximumLineCount: 1
+        }
+        Rectangle {
+            visible: progress >= 0
+            Layout.fillWidth: true
+            Layout.leftMargin: 14
+            Layout.rightMargin: 14
+            Layout.preferredHeight: 4
+            radius: 2
+            color: "#1c2536"
+            Rectangle {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                width: parent.width * Math.max(0, Math.min(1, progress))
+                height: 4
+                radius: 2
+                color: "#34d399"
+            }
+        }
+        Item { Layout.fillWidth: true; Layout.fillHeight: true }
+    }
+
+    component WidgetBattlePreview: ColumnLayout {
+        anchors.fill: parent
+        anchors.margins: 8
+        spacing: 4
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 6
+            Rectangle { width: 7; height: 7; radius: 3.5; color: "#ef4444"; Layout.alignment: Qt.AlignVCenter }
+            Text { text: "luna"; color: "#dbe2ec"; font.pixelSize: 10; font.weight: Font.DemiBold; Layout.alignment: Qt.AlignVCenter }
+            Text { text: "82%"; color: root.muted; font.pixelSize: 9; Layout.fillWidth: true; Layout.alignment: Qt.AlignVCenter; horizontalAlignment: Text.AlignRight }
+        }
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 4
+            radius: 2
+            color: "#1c2536"
+            Rectangle {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                width: parent.width * 0.82
+                height: 4
+                radius: 2
+                color: "#ef4444"
+            }
+        }
+        Text {
+            text: "VS"
+            color: "#5b6575"
+            font.pixelSize: 10
+            font.bold: true
+            font.letterSpacing: 2
+            Layout.fillWidth: true
+            horizontalAlignment: Text.AlignHCenter
+        }
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 4
+            radius: 2
+            color: "#1c2536"
+            Rectangle {
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                width: parent.width * 0.64
+                height: 4
+                radius: 2
+                color: "#60a5fa"
+            }
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 6
+            Rectangle { width: 7; height: 7; radius: 3.5; color: "#60a5fa"; Layout.alignment: Qt.AlignVCenter }
+            Text { text: "void"; color: "#dbe2ec"; font.pixelSize: 10; font.weight: Font.DemiBold; Layout.alignment: Qt.AlignVCenter }
+            Text { text: "64%"; color: root.muted; font.pixelSize: 9; Layout.fillWidth: true; Layout.alignment: Qt.AlignVCenter; horizontalAlignment: Text.AlignRight }
+        }
     }
     // Counts follow galleryCards(): every stored instance is a card, plus one active
     // fallback card for each type that has no stored instances.
@@ -2885,201 +3072,218 @@ Item {
                         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
                         GridLayout {
                         width: galleryScroll.availableWidth
-                        columns: Math.max(1, Math.floor((width + 12) / 260))
-                        columnSpacing: 12
-                        rowSpacing: 12
+                        // Readable cards first: 270px minimum + 14px gaps.
+                        // 6 cols wide desktop → 2 cols narrow.
+                        columns: Math.max(2, Math.floor((width + 14) / 284))
+                        columnSpacing: 14
+                        rowSpacing: 14
 
                         Repeater {
                             model: root.galleryFilteredTypes()
-                            delegate: Rectangle {
-                            id: gcard
-                            required property var modelData
-                            property var wtype: modelData.wtype
-                            property var instance: modelData.instance
-                            property var pageRoot: root
-                            property string wstatus: modelData.instance
-                                ? (modelData.instance.enabled ? "active" : "disabled")
-                                : "active"
-                            property bool _copied: false
-                            property string dupText: root.loc("widgets.common.duplicate")
-                            property string delText: root.loc("widgets.common.delete")
-                            // Raise above neighbour cards while the dropdown is open.
-                             z: cardMenu.visible ? 100 : (hovered ? 2 : 0)
-                             // Fallback widgets (no instance yet) render with defaults = active.
-                             property bool cardOn: wstatus === "active"
-                             property bool hovered: gma.containsMouse
-                             transformOrigin: Item.Center
-                             scale: openMa.pressed ? 0.994 : (hovered ? 1.012 : 1.0)
-                            function instId() {
-                                if (instance && instance.id) return instance.id;
-                                return firstInstId();
-                            }
-                            function firstInstId() {
-                                var tid = (wtype && wtype.type_id) || "";
-                                var lst = pageRoot.widgetInstanceList || [];
-                                for (var i = 0; i < lst.length; ++i)
-                                    if (lst[i].type_id === tid) return lst[i].id;
-                                return "";
-                            }
-                            function ensureInstId() {
-                                if (instance && instance.id) return instance.id;
-                                var existing = firstInstId();
-                                if (existing) return existing;
-                                if (typeof api === "undefined" || !api) return "";
-                                var nid = api.createWidgetInstance(
-                                    (wtype && wtype.type_id) || "",
-                                    (wtype && wtype.name) || ((wtype && wtype.type_id) || ""));
-                                pageRoot.refreshWidgetInstances();
-                                return nid || "";
-                            }
-                             function openEditor() {
-                                var iid = ensureInstId();
-                                if (!iid) return;
-                                var lst = pageRoot.widgetInstanceList || [];
-                                for (var i = 0; i < lst.length; ++i) {
-                                    if (lst[i].id === iid) { pageRoot.editWidgetInstance(lst[i]); return; }
-                                }
-                            }
-                            // Click on the card opens the widget editor.
-                            // Declared before the content so buttons/toggle/kebab keep click priority.
-                            MouseArea {
-                                id: openMa
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    if (cardMenu.visible) { cardMenu.close(); return; }
-                                    gcard.openEditor();
-                                }
-                            }
-                            Layout.fillWidth: true
-                            Layout.minimumWidth: 220
-                            implicitHeight: 250
-                            radius: 14
-                            color: "#0d1320"
-                            border.width: 1
-                             border.color: hovered ? "#8b5cf6" : cardEdge
-                             Behavior on scale { NumberAnimation { duration: 190; easing.type: Easing.OutCubic } }
-                             Behavior on border.color { ColorAnimation { duration: 190; easing.type: Easing.OutCubic } }
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.margins: 10
-                                spacing: 6
-                                 Rectangle {
-                                     id: cardPreview
-                                     Layout.fillWidth: true
-                                    Layout.preferredHeight: 92
-                                    radius: 10
-                                    color: "#070b14"
-                                    border.width: 1
-                                     border.color: gcard.hovered ? "#312e81" : "#1e293b"
-                                     scale: gcard.hovered ? 1.012 : 1.0
-                                     Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                                     Behavior on border.color { ColorAnimation { duration: 190; easing.type: Easing.OutCubic } }
-                                     Text {
-                                         anchors.centerIn: parent
-                                         text: (gcard.wtype && gcard.wtype.icon) || "📦"
-                                         font.pixelSize: 34
-                                         scale: gcard.hovered ? 1.06 : 1.0
-                                         Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                                     }
-                                    Rectangle {
-                                        anchors.top: parent.top; anchors.right: parent.right
-                                        anchors.margins: 6
-                                        implicitHeight: 20; implicitWidth: platLbl.implicitWidth + 14; radius: 10
-                                        color: "#1e1b4b"
-                                        border.width: 1; border.color: "#4c1d95"
-                                        Text { id: platLbl; anchors.centerIn: parent
-                                            text: (root.galleryPlatforms(gcard.wtype).join(" · ") || "all")
-                                            color: "#c4b5fd"; font.pixelSize: 10; font.bold: true }
-                                    }
-                                }
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: ((gcard.instance && gcard.instance.name) || (gcard.wtype && (gcard.wtype.name || gcard.wtype.type_id))) || ""
-                                    color: ink; font.pixelSize: 13; font.bold: true
-                                    elide: Text.ElideRight; maximumLineCount: 1
-                                }
-                                RowLayout {
-                                    spacing: 6
-                                    Rectangle { width: 8; height: 8; radius: 4
-                                        color: gcard.cardOn ? "#22c55e" : "#6b7280" }
-                                    Text {
-                                        text: gcard.cardOn ? root.loc("widgets.instances.active") : root.loc("widgets.instances.disabled")
-                                        color: gcard.cardOn ? "#22c55e" : muted
-                                        font.pixelSize: 11
-                                    }
-                                    Item { Layout.fillWidth: true }
-                                    // Enable/disable toggle, always visible and functional.
-                                    Rectangle {
-                                        id: enableToggle
-                                        property string tipText: root.loc("widgets.gallery.toggle")
-                                        width: 38; height: 22; radius: 11
-                                         color: gcard.cardOn ? (toggleMa.containsMouse ? "#22c55e" : "#16a34a") : (toggleMa.containsMouse ? "#4b5563" : "#374151")
-                                         border.width: 1
-                                         border.color: gcard.cardOn ? "#22c55e" : (toggleMa.containsMouse ? "#64748b" : "#4b5563")
-                                         scale: toggleMa.pressed ? 0.94 : (toggleMa.containsMouse ? 1.06 : 1.0)
-                                         Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
-                                         Behavior on color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
-                                         Behavior on border.color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
-                                        ToolTip.visible: toggleMa.containsMouse
-                                        ToolTip.text: tipText
-                                        Rectangle {
-                                            width: 16; height: 16; radius: 8
-                                            color: "white"
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            x: gcard.cardOn ? parent.width - width - 3 : 3
-                                            Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                            delegate: CheremshaSourceCard {
+                                        id: gcard
+                                        required property var modelData
+                                        property var wtype: modelData.wtype
+                                        property var instance: modelData.instance
+                                        property var pageRoot: root
+                                        property string wstatus: modelData.instance
+                                            ? (modelData.instance.enabled ? "active" : "disabled")
+                                            : "active"
+                                        property bool _copied: false
+                                        property string dupText: root.loc("widgets.common.duplicate")
+                                        property string delText: root.loc("widgets.common.delete")
+                                        // Raise above neighbour cards while the dropdown is open.
+                                        z: cardMenu.visible ? 100 : 0
+                                        // Fallback widgets (no instance yet) render with defaults = active.
+                                        property bool cardOn: wstatus === "active"
+
+                                        title: ((instance && instance.name) || (wtype && (wtype.name || wtype.type_id))) || ""
+                                        description: (wtype && wtype.description) || ""
+                                        iconSource: Qt.resolvedUrl("../assets/" + ((wtype && wtype.icon_svg) || "icons/web_multichat.svg"))
+                                        accentColor: (wtype && wtype.accent) || "#8b5cf6"
+                                        statusText: cardOn ? root.loc("widgets.gallery.enabled") : root.loc("widgets.gallery.disabled")
+                                        statusColor: cardOn ? "#22c55e" : muted
+                                        statusDotColor: cardOn ? "#22c55e" : "#6b7280"
+                                        url: galleryCardUrl()
+                                        previewBadgeText: (root.galleryPlatforms(wtype).join(" · ") || "all")
+                                        previewBadgeColor: platBadgeColor()
+                                        openButtonText: root.loc("widgets.gallery.open")
+                                        copyButtonText: _copied ? root.loc("widgets.gallery.copied") : root.loc("widgets.gallery.copy_url")
+                                        showMenuButton: true
+                                        showToggle: true
+                                        toggleOn: cardOn
+                                        toggleTipText: root.loc("widgets.gallery.toggle")
+                                        clickEnabled: true
+                                        openIconOnly: true
+                                        accentFlow: true
+                                        descriptionMinHeight: 34
+                                        onCopyClicked: {
+                                            var iid = gcard.ensureInstId();
+                                            if (iid && typeof api !== "undefined" && api) api.copyWidgetInstanceUrl(iid);
+                                            gcard._copied = true;
+                                            copiedTimer.restart();
                                         }
-                                        MouseArea {
-                                            id: toggleMa
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                var tid = gcard.ensureInstId();
-                                                if (tid && api) {
-                                                    api.setWidgetInstanceEnabled(tid, !gcard.cardOn);
-                                                     gcard.pageRoot.refreshWidgetInstances();
-                                                }
+                                        onOpenClicked: {
+                                            var pid = gcard.ensureInstId();
+                                            if (pid && typeof api !== "undefined" && api) api.openWidgetInstanceUrl(pid);
+                                        }
+                                        onToggleClicked: {
+                                            var tid = gcard.ensureInstId();
+                                            if (tid && typeof api !== "undefined" && api) {
+                                                api.setWidgetInstanceEnabled(tid, !gcard.cardOn);
+                                                gcard.pageRoot.refreshWidgetInstances();
                                             }
                                         }
-                                    }
-                                }
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: (gcard.wtype && gcard.wtype.description) || ""
-                                    color: muted; font.pixelSize: 11
-                                    wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight
-                                    Layout.preferredHeight: 30
-                                }
-                                RowLayout {
-                                    Layout.fillWidth: true; spacing: 6
-                                     Rectangle {
-                                         id: copyButton
-                                         Layout.fillWidth: true; implicitHeight: 30; radius: 8
-                                         color: copyMa.pressed ? "#253d62" : (copyMa.containsMouse ? "#24416b" : "#16233a")
-                                         border.width: 1; border.color: copyMa.containsMouse ? "#42638f" : "#2b3b55"
-                                         scale: copyMa.pressed ? 0.97 : (copyMa.containsMouse ? 1.018 : 1.0)
-                                         Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-                                         Behavior on color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
-                                         Behavior on border.color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
-                                        Text {
-                                            id: copyLbl
-                                            anchors.centerIn: parent
-                                            text: (gcard._copied ? root.loc("widgets.gallery.copied") : "🔗 " + root.loc("widgets.gallery.copy_link"))
-                                            color: gcard._copied ? "#22c55e" : ink; font.pixelSize: 12
+                                        onMenuClicked: cardMenu.visible ? cardMenu.close() : cardMenu.open()
+                                        onCardClicked: {
+                                            if (cardMenu.visible) { cardMenu.close(); return; }
+                                            gcard.openEditor();
                                         }
-                                        MouseArea {
-                                            id: copyMa
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                var iid = gcard.ensureInstId();
-                                                if (iid && api) api.copyWidgetInstanceUrl(iid);
-                                                gcard._copied = true;
-                                                copiedTimer.restart();
+                                        previewContent: pickPreview()
+
+                                        // ---- per-type preview data (presentation layer only;
+                                        // the generic card never sees widget types) ----
+                                        property var previewSpec: selectPreviewSpec()
+                                        function platBadgeColor() {
+                                            var plats = root.galleryPlatforms(wtype);
+                                            var first = (plats && plats.length) ? plats[0] : "all";
+                                            var m = {tiktok: "#67e8f9", twitch: "#a970ff", youtube: "#f87171", kick: "#6ee7a0"};
+                                            return m[first] || "#8b95a5";
+                                        }
+                                        function selectPreviewSpec() {
+                                            var t = (wtype && wtype.type_id) || "";
+                                            switch (t) {
+                                            case "activity":
+                                                return {kind: "feed", rows: [
+                                                    {icon: "web_event_subscribe", label: "Підписка", user: "luna", time: "2 хв"},
+                                                    {icon: "web_event_donation", label: "Донат $5", user: "darkness", time: "5 хв"},
+                                                    {icon: "web_event_gift", label: "Подарунок", user: "sakura", time: "9 хв"},
+                                                    {icon: "web_event_raid", label: "Рейд ×42", user: "void", time: "12 хв"}]};
+                                            case "top_gifters":
+                                                return {kind: "feed", rows: [
+                                                    {icon: "web_event_gift", label: "sakura", user: "320 монет", time: "топ-1"},
+                                                    {icon: "web_event_gift", label: "luna", user: "210 монет", time: "топ-2"},
+                                                    {icon: "web_event_gift", label: "void", user: "98 монет", time: "топ-3"}]};
+                                            case "top_likers":
+                                                return {kind: "feed", rows: [
+                                                    {icon: "heart", label: "luna", user: "12,4 тис.", time: "топ-1"},
+                                                    {icon: "heart", label: "darkness", user: "9,1 тис.", time: "топ-2"},
+                                                    {icon: "heart", label: "sakura", user: "7,8 тис.", time: "топ-3"}]};
+                                            case "live_leaderboard":
+                                                return {kind: "feed", rows: [
+                                                    {icon: "web_trophy", label: "luna", user: "12 400", time: "#1"},
+                                                    {icon: "web_trophy", label: "darkness", user: "9 870", time: "#2"},
+                                                    {icon: "web_trophy", label: "void", user: "7 310", time: "#3"}]};
+                                            case "king_of_live":
+                                                return {kind: "feed", rows: [
+                                                    {icon: "web_crown", label: "luna", user: "42 дні", time: "#1"},
+                                                    {icon: "web_crown", label: "mira", user: "18 днів", time: "#2"},
+                                                    {icon: "web_crown", label: "void", user: "9 днів", time: "#3"}]};
+                                            case "chat":
+                                                return {kind: "chat", rows: [
+                                                    {platform: "twitch", html: "<b><font color=\"#a970ff\">luna</font></b> <font color=\"#c3cddc\">Крутий стрім!</font>"},
+                                                    {platform: "youtube", html: "<b><font color=\"#f87171\">darkness</font></b> <font color=\"#c3cddc\">Всім привіт!</font>"},
+                                                    {platform: "tiktok", html: "<b><font color=\"#67e8f9\">sakura</font></b> <font color=\"#c3cddc\">love it!</font>"}]};
+                                            case "online":
+                                                return {kind: "stats", cols: [
+                                                    {value: "01:24", label: "Онлайн", frac: 0.85, color: "#22d3ee"},
+                                                    {value: "1 247", label: "Глядачі", frac: 0.6, color: "#8b5cf6"},
+                                                    {value: "892", label: "Підписники", frac: 0.4, color: "#10b981"}]};
+                                            case "stream_goal":
+                                                return {kind: "stats", cols: [
+                                                    {value: "6 800", label: "Зібрано", frac: 0.68, color: "#34d399"},
+                                                    {value: "10 000", label: "Ціль", frac: 1.0, color: "#3a4356"}]};
+                                            case "battle_royale":
+                                                return {kind: "battle"};
+                                            case "actions":
+                                                return {kind: "emblem", caption: "3 активні алерти", progress: -1};
+                                            case "stream_pet":
+                                                return {kind: "emblem", caption: "Рівень 12 · Ситий", progress: 0.7};
+                                            case "community_world":
+                                                return {kind: "emblem", caption: "1 240 мешканців", progress: -1};
+                                            case "social_rotator":
+                                                return {kind: "emblem", caption: "TikTok / Twitch · 15 с", progress: -1};
+                                            case "webcam_frame":
+                                                return {kind: "emblem", caption: "1080p · CAM 1", progress: -1};
+                                            case "signal_system":
+                                                return {kind: "emblem", caption: "Канал чистий · 12 мс", progress: -1};
+                                            case "music":
+                                                return {kind: "emblem", caption: "Саундтрек стріму", progress: 0.35};
+                                            default:
+                                                return {kind: "emblem", caption: "", progress: -1};
+                                            }
+                                        }
+                                        function pickPreview() {
+                                            var k = (previewSpec && previewSpec.kind) || "emblem";
+                                            if (k === "feed") return pvFeed;
+                                            if (k === "chat") return pvChat;
+                                            if (k === "stats") return pvStats;
+                                            if (k === "battle") return pvBattle;
+                                            return pvEmblem;
+                                        }
+                                        property Component pvFeed: Component {
+                                            WidgetFeedPreview { rows: previewSpec.rows }
+                                        }
+                                        property Component pvChat: Component {
+                                            WidgetChatPreview { rows: previewSpec.rows }
+                                        }
+                                        property Component pvStats: Component {
+                                            WidgetStatsPreview { cols: previewSpec.cols }
+                                        }
+                                        property Component pvEmblem: Component {
+                                            WidgetEmblemPreview {
+                                                iconSource: gcard.iconSource
+                                                caption: previewSpec.caption || ""
+                                                progress: (previewSpec.progress !== undefined) ? previewSpec.progress : -1
+                                            }
+                                        }
+                                        property Component pvBattle: Component {
+                                            WidgetBattlePreview {}
+                                        }
+
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: 250
+                                        Layout.fillHeight: true
+
+                                        function instId() {
+                                            if (instance && instance.id) return instance.id;
+                                            return firstInstId();
+                                        }
+                                        function firstInstId() {
+                                            var tid = (wtype && wtype.type_id) || "";
+                                            var lst = pageRoot.widgetInstanceList || [];
+                                            for (var i = 0; i < lst.length; ++i)
+                                                if (lst[i].type_id === tid) return lst[i].id;
+                                            return "";
+                                        }
+                                        // Non-creating lookup for display bindings (never
+                                        // creates an instance as a side effect).
+                                        function viewId() {
+                                            if (instance && instance.id) return instance.id;
+                                            return firstInstId();
+                                        }
+                                        function galleryCardUrl() {
+                                            var id = viewId();
+                                            if (!id || typeof api === "undefined" || !api) return "";
+                                            return api.widgetInstanceUrl(id) || "";
+                                        }
+                                        function ensureInstId() {
+                                            if (instance && instance.id) return instance.id;
+                                            var existing = firstInstId();
+                                            if (existing) return existing;
+                                            if (typeof api === "undefined" || !api) return "";
+                                            var nid = api.createWidgetInstance(
+                                                (wtype && wtype.type_id) || "",
+                                                (wtype && wtype.name) || ((wtype && wtype.type_id) || ""));
+                                            pageRoot.refreshWidgetInstances();
+                                            return nid || "";
+                                        }
+                                        function openEditor() {
+                                            var iid = ensureInstId();
+                                            if (!iid) return;
+                                            var lst = pageRoot.widgetInstanceList || [];
+                                            for (var i = 0; i < lst.length; ++i) {
+                                                if (lst[i].id === iid) { pageRoot.editWidgetInstance(lst[i]); return; }
                                             }
                                         }
                                         Timer {
@@ -3087,69 +3291,24 @@ Item {
                                             interval: 1500; repeat: false
                                             onTriggered: gcard._copied = false
                                         }
-                                    }
-                                     Rectangle {
-                                         id: previewButton
-                                         implicitWidth: 34; implicitHeight: 30; radius: 8
-                                         property string tipText: root.loc("widgets.gallery.preview")
-                                         color: previewMa.pressed ? "#253d62" : (previewMa.containsMouse ? "#24416b" : "#16233a")
-                                         border.width: 1; border.color: previewMa.containsMouse ? "#42638f" : "#2b3b55"
-                                         scale: previewMa.pressed ? 0.95 : (previewMa.containsMouse ? 1.06 : 1.0)
-                                         Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-                                         Behavior on color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
-                                         Behavior on border.color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
-                                        ToolTip.visible: previewMa.containsMouse
-                                        ToolTip.text: tipText
-                                        Text { anchors.centerIn: parent; text: "▶"; color: ink; font.pixelSize: 12 }
-                                        MouseArea {
-                                            id: previewMa
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                var pid = gcard.ensureInstId();
-                                                if (pid && api) api.openWidgetInstanceUrl(pid);
-                                            }
-                                        }
-                                    }
-                                     Rectangle {
-                                         id: kebabBtn
-                                         implicitWidth: 34; implicitHeight: 30; radius: 8
-                                         color: kebabMa.pressed ? "#253d62" : (kebabMa.containsMouse ? "#24416b" : "#16233a")
-                                         border.width: 1; border.color: kebabMa.containsMouse ? "#42638f" : "#2b3b55"
-                                         scale: kebabMa.pressed ? 0.95 : (kebabMa.containsMouse ? 1.06 : 1.0)
-                                         Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-                                         Behavior on color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
-                                         Behavior on border.color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
-                                        // kebab (vertical ellipsis) icon drawn with three dots
-                                        Column {
-                                            anchors.centerIn: parent
-                                            spacing: 2
-                                            Repeater {
-                                                model: 3
-                                                Rectangle { width: 4; height: 4; radius: 2; color: ink }
-                                            }
-                                        }
-                                        MouseArea {
-                                            id: kebabMa
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: cardMenu.visible ? cardMenu.close() : cardMenu.open()
-                                        }
-                                        // Inline dropdown (stays in delegate scope, unlike Popup
-                                        // which reparents to Overlay and loses the file scope).
-                                        Rectangle {
-                                            id: cardMenu
-                                            visible: false
-                                            width: 202
-                                            height: menuCol.implicitHeight + 12
-                                            radius: 10; color: "#0d1320"
-                                            border.width: 1; border.color: "#2b3b55"
-                                            anchors.top: kebabBtn.bottom; anchors.topMargin: 4
-                                            anchors.right: kebabBtn.right
-                                            z: 50
-                                            function open() { visible = true; }
+                            // Inline dropdown (stays in delegate scope, unlike Popup
+                            // which reparents to Overlay and loses the file scope).
+                            // Anchors can't target the kebab (not a sibling), so
+                            // place under it when opening.
+                            Rectangle {
+                                id: cardMenu
+                                visible: false
+                                width: 202
+                                height: menuCol.implicitHeight + 12
+                                radius: 10; color: "#0d1320"
+                                border.width: 1; border.color: "#2b3b55"
+                                z: 50
+                                function open() {
+                                    var p = gcard.menuButton.mapToItem(gcard, 0, 0);
+                                    x = p.x + gcard.menuButton.width - width;
+                                    y = p.y + gcard.menuButton.height + 4;
+                                    visible = true;
+                                }
                                             function close() { visible = false; }
                                             function toggle() { visible = !visible; }
                                             ColumnLayout {
@@ -3157,14 +3316,14 @@ Item {
                                                 anchors.fill: parent
                                                 anchors.margins: 6
                                                 spacing: 2
-                                                 Rectangle {
-                                                     Layout.fillWidth: true; implicitHeight: 34; radius: 8
-                                                     color: dupMa.pressed ? "#253d62" : (dupMa.containsMouse ? "#1d2f4d" : "transparent")
-                                                     Behavior on color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                                                Rectangle {
+                                                    Layout.fillWidth: true; implicitHeight: 34; radius: 8
+                                                    color: dupMa.pressed ? "#253d62" : (dupMa.containsMouse ? "#1d2f4d" : "transparent")
+                                                    Behavior on color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
                                                     RowLayout {
                                                         anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10
                                                         spacing: 8
-                                                        Text { text: "⧉"; color: ink; font.pixelSize: 14 }
+                                                        Image { source: Qt.resolvedUrl("../assets/icons/web_copy.svg"); Layout.preferredWidth: 14; Layout.preferredHeight: 14; Layout.alignment: Qt.AlignVCenter }
                                                         Text { text: gcard.dupText; color: ink; font.pixelSize: 12; Layout.fillWidth: true }
                                                     }
                                                     MouseArea {
@@ -3174,22 +3333,22 @@ Item {
                                                         cursorShape: Qt.PointingHandCursor
                                                         onClicked: {
                                                             var iid = gcard.ensureInstId();
-                                                            if (iid && api) api.duplicateWidgetInstance(iid);
-                                                             gcard.pageRoot.refreshWidgetInstances();
+                                                            if (iid && typeof api !== "undefined" && api) api.duplicateWidgetInstance(iid);
+                                                            gcard.pageRoot.refreshWidgetInstances();
                                                             cardMenu.close();
                                                         }
                                                     }
                                                 }
                                                 Rectangle {
                                                     // Fallback widgets have nothing stored to delete yet.
-                                                     visible: gcard.instance && gcard.instance.id
-                                                     Layout.fillWidth: true; implicitHeight: 34; radius: 8
-                                                     color: delMa.pressed ? "#541515" : (delMa.containsMouse ? "#3b1111" : "transparent")
-                                                     Behavior on color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                                                    visible: gcard.instance && gcard.instance.id
+                                                    Layout.fillWidth: true; implicitHeight: 34; radius: 8
+                                                    color: delMa.pressed ? "#541515" : (delMa.containsMouse ? "#3b1111" : "transparent")
+                                                    Behavior on color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
                                                     RowLayout {
                                                         anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10
                                                         spacing: 8
-                                                        Text { text: "🗑"; color: "#ef4444"; font.pixelSize: 14 }
+                                                        Image { source: Qt.resolvedUrl("../assets/icons/web_trash.svg"); Layout.preferredWidth: 14; Layout.preferredHeight: 14; Layout.alignment: Qt.AlignVCenter }
                                                         Text { text: gcard.delText; color: "#ef4444"; font.pixelSize: 12; Layout.fillWidth: true }
                                                     }
                                                     MouseArea {
@@ -3199,10 +3358,10 @@ Item {
                                                         cursorShape: Qt.PointingHandCursor
                                                         onClicked: {
                                                             var did = gcard.instId();
-                                                            if (did && api) {
+                                                            if (did && typeof api !== "undefined" && api) {
                                                                 api.deleteWidgetInstance(did);
-                                                                 if (gcard.pageRoot.editingInstanceId === did) gcard.pageRoot.clearEditingInstance();
-                                                                 gcard.pageRoot.refreshWidgetInstances();
+                                                                if (gcard.pageRoot.editingInstanceId === did) gcard.pageRoot.clearEditingInstance();
+                                                                gcard.pageRoot.refreshWidgetInstances();
                                                             }
                                                             cardMenu.close();
                                                         }
@@ -3211,42 +3370,37 @@ Item {
                                             }
                                         }
                                     }
-                                }
-                            }
-                            MouseArea {
-                                id: gma
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                acceptedButtons: Qt.NoButton
-                            }
-                            }
                         }
 
                          Rectangle {
                              id: createNewTile
                              Layout.fillWidth: true
-                             Layout.minimumWidth: 220
-                             implicitHeight: 250
+                             Layout.minimumWidth: 250
+                             Layout.fillHeight: true
+                             implicitHeight: 300
                              radius: 14
                              property bool hovered: createNewMa.containsMouse
                              transformOrigin: Item.Center
-                             scale: createNewMa.pressed ? 0.98 : (hovered ? 1.012 : 1.0)
                              color: hovered ? "#101827" : "transparent"
                              border.width: 1
                              border.color: hovered ? "#7c3aed" : "#334155"
-                             Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
                              Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
                              Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
                             ColumnLayout {
                                 anchors.centerIn: parent
                                 width: parent.width - 32
                                 spacing: 6
-                                Text { Layout.alignment: Qt.AlignHCenter; text: "+"; color: ink; font.pixelSize: 28 }
+                                Image {
+                                    Layout.alignment: Qt.AlignHCenter
+                                    source: Qt.resolvedUrl("../assets/icons/web_plus.svg")
+                                    Layout.preferredWidth: 26
+                                    Layout.preferredHeight: 26
+                                }
                                 Text { Layout.alignment: Qt.AlignHCenter; horizontalAlignment: Text.AlignHCenter; text: root.loc("widgets.gallery.create_new"); color: ink; font.pixelSize: 12; font.bold: true; wrapMode: Text.Wrap; Layout.fillWidth: true }
                                 Text { Layout.alignment: Qt.AlignHCenter; horizontalAlignment: Text.AlignHCenter; text: root.loc("widgets.gallery.create_new_sub"); color: muted; font.pixelSize: 10; wrapMode: Text.Wrap; Layout.fillWidth: true }
                             }
                              MouseArea { id: createNewMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { root.refreshWidgetInstances(); root.showCreateWidget = true; } }
-                        }
+                         }
                     }
                     }
 

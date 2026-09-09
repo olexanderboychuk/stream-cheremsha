@@ -2284,6 +2284,8 @@ class WidgetsQmlApi(QObject):
                 "name": widget_type_name(tid),
                 "description": widget_type_desc(tid),
                 "icon": m.get("icon", "📦"),
+                "icon_svg": m.get("icon_svg", "icons/web_multichat.svg"),
+                "accent": m.get("accent", "#8b5cf6"),
                 "platforms": list(m.get("platforms", ["all"])),
             }
             for tid, m in sorted(WIDGET_TYPES.items())
