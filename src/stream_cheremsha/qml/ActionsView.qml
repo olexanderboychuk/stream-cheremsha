@@ -34,6 +34,30 @@ Item {
     readonly property color ink: "#e8eaed"
     readonly property color muted: "#8b95a5"
     readonly property color fieldBg: "#0c0f16"
+    // Cheremsha automation-center accents (shared with Widgets/Docks/Donations/TTS).
+    readonly property color accentPurple: "#8b5cf6"
+    readonly property color accentPurpleSoft: "#a78bfa"
+    readonly property color accentTeal: "#14b8a6"
+    readonly property color okGreen: "#34d399"
+    readonly property color dangerRed: "#ef4444"
+
+    // Rule library filter state (search only filters the visible list, never the model).
+    property string ruleSearchText: ""
+    property string libraryFilter: "all"
+    property bool showActionPicker: false
+    // -1 means append; otherwise the picker replaces the selected existing action type.
+    property int actionPickerReplaceIdx: -1
+    property string actionPickerQuery: ""
+    // Collapsible advanced sections in the rule builder (persist per session only).
+    property bool whenAdvancedOpen: false
+    property bool thenAdvancedOpen: false
+    // Tracks unsaved edits for the sticky save bar (set on any local edit, cleared on save/load).
+    property bool hasUnsavedChanges: false
+
+    function _assetUrl(name) {
+        // Resolve local SVG assets relative to this QML file.
+        return Qt.resolvedUrl("../assets/icons/" + name);
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -50,6 +74,371 @@ Item {
     property string selectedRuleId: ""
     property int selectedIdx: -1
     property bool dndDebug: false
+
+    // Pointer DnD state. The list stays laid out by its existing Column/Repeater;
+    // only visual transforms are applied while this state is active.
+    property bool reducedMotion: false
+    property bool dndActive: false
+    property bool dndArmed: false
+    property bool dndDropPending: false
+    property string dndKind: ""
+    property string dndId: ""
+    property string dndTargetMode: "none"
+    property string dndTargetBeforeId: ""
+    property string dndTargetFolderId: ""
+    property string dndTargetParentFolderId: ""
+    property real dndPointerX: 0
+    property real dndPointerY: 0
+    property real dndPressX: 0
+    property real dndPressY: 0
+    property real dndIndicatorY: 0
+    property real dndIndicatorX: 0
+    property real dndIndicatorWidth: 0
+    property var dndSourceTarget: null
+    property var dndTarget: null
+    property var _dndTargets: []
+    property var _dndPendingDrop: null
+    property int dndRevision: 0
+    readonly property int dndAnimationDuration: reducedMotion ? 0 : 150
+
+    function _registerDndTarget(target) {
+        if (!target)
+            return;
+        var next = root._dndTargets.slice();
+        if (next.indexOf(target) < 0) {
+            next.push(target);
+            root._dndTargets = next;
+        }
+    }
+
+    function _unregisterDndTarget(target) {
+        var next = root._dndTargets.slice();
+        var ix = next.indexOf(target);
+        if (ix >= 0) {
+            next.splice(ix, 1);
+            root._dndTargets = next;
+        }
+    }
+
+    function _dndNode(target) {
+        return target && target.node ? target.node : null;
+    }
+
+    function _dndNodeId(node) {
+        if (!node)
+            return "";
+        return node.kind === "folder" ? ("" + (node.id || "")) : ("" + (node.rule_id || ""));
+    }
+
+    function _dndTargetParent(target) {
+        return target && target.dndParentFolderId ? ("" + target.dndParentFolderId) : "";
+    }
+
+    function _dndRect(target) {
+        if (!target || !target.dndArea)
+            return null;
+        if (!target.dndArea.visible && target !== root.dndSourceTarget)
+            return null;
+        try {
+            var area = target.dndArea;
+            // Map from the target's parent so its own active Translate is not
+            // fed back into hit testing or neighbor displacement calculations.
+            var mapParent = target.parent || area.parent;
+            var p = mapParent.mapToItem(root, (target.x || 0) + (area.x || 0),
+                                        (target.y || 0) + (area.y || 0));
+            return { x: p.x, y: p.y, width: area.width, height: area.height };
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function _dndSiblingId(target) {
+        var sibling = target ? target.nextSibling : null;
+        return sibling ? _dndNodeId(sibling) : "";
+    }
+
+    function _dndSourceSpan() {
+        if (!root.dndSourceTarget)
+            return 0;
+        return Math.max(1, root.dndSourceTarget.height || root.dndSourceTarget.dndArea.height || 1);
+    }
+
+    function _dndOffsetFor(target) {
+        var revision = root.dndRevision;
+        if (!root.dndActive || root.dndTargetMode !== "between"
+                || !root.dndSourceTarget || !target || target === root.dndSourceTarget)
+            return 0;
+        var sourceRect = root._dndRect(root.dndSourceTarget);
+        var rect = root._dndRect(target);
+        if (!sourceRect || !rect)
+            return 0;
+        var span = root._dndSourceSpan() + 4;
+        var sourceTop = sourceRect.y;
+        var line = root.dndIndicatorY;
+        // The source keeps its slot. Siblings between it and the insertion point
+        // slide by that slot using a GPU-friendly transform only.
+        if (line < sourceTop && rect.y >= line && rect.y < sourceTop)
+            return span;
+        if (line > sourceTop + span - 4 && rect.y > sourceTop && rect.y < line)
+            return -span;
+        return 0;
+    }
+
+    function _dndClearTarget() {
+        root.dndTargetMode = "none";
+        root.dndTargetBeforeId = "";
+        root.dndTargetFolderId = "";
+        root.dndTargetParentFolderId = "";
+        root.dndTarget = null;
+        root.dndIndicatorWidth = 0;
+    }
+
+    function _dndSetBetweenTarget(target, before, rect) {
+        var node = root._dndNode(target);
+        if (!node || !rect)
+            return;
+        root.dndTargetMode = "between";
+        root.dndTarget = target;
+        root.dndTargetFolderId = "";
+        root.dndTargetParentFolderId = root._dndTargetParent(target);
+        root.dndTargetBeforeId = before ? root._dndNodeId(node) : root._dndSiblingId(target);
+        root.dndIndicatorX = rect.x;
+        root.dndIndicatorWidth = Math.max(24, rect.width);
+        root.dndIndicatorY = before ? rect.y : rect.y + rect.height;
+    }
+
+    function _dndChooseTarget(x, y) {
+        if (!root.dndActive)
+            return;
+        root.dndPointerX = x;
+        root.dndPointerY = y;
+
+        var targets = root._dndTargets || [];
+        var folderCandidate = null;
+        for (var i = 0; i < targets.length; i++) {
+            if (targets[i] === root.dndSourceTarget)
+                continue;
+            var folderNode = root._dndNode(targets[i]);
+            var folderRect = root._dndRect(targets[i]);
+            if (!folderNode || folderNode.kind !== "folder" || !folderRect)
+                continue;
+            // The middle of a folder header means “move into”; its edges remain
+            // reorder zones so dropping above/below is never ambiguous.
+            if (root.dndKind === "rule"
+                    && y >= folderRect.y + folderRect.height * 0.24
+                    && y <= folderRect.y + folderRect.height * 0.76) {
+                folderCandidate = { target: targets[i], rect: folderRect };
+                break;
+            }
+        }
+        if (folderCandidate) {
+            root.dndTargetMode = "folder";
+            root.dndTarget = folderCandidate.target;
+            root.dndTargetFolderId = root._dndNodeId(root._dndNode(folderCandidate.target));
+            root.dndTargetParentFolderId = root._dndTargetParent(folderCandidate.target);
+            root.dndTargetBeforeId = "";
+            root.dndIndicatorWidth = 0;
+            root.dndRevision++;
+            return;
+        }
+
+        var best = null;
+        var bestDistance = Number.MAX_VALUE;
+        for (var j = 0; j < targets.length; j++) {
+            if (targets[j] === root.dndSourceTarget)
+                continue;
+            var node = root._dndNode(targets[j]);
+            var rect = root._dndRect(targets[j]);
+            if (!node || !rect || rect.height <= 0)
+                continue;
+            var distance = y < rect.y ? rect.y - y : (y > rect.y + rect.height ? y - rect.y - rect.height : 0);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = { target: targets[j], rect: rect };
+            }
+        }
+        if (!best) {
+            root._dndClearTarget();
+            root.dndRevision++;
+            return;
+        }
+        root._dndSetBetweenTarget(best.target, y < best.rect.y + best.rect.height / 2, best.rect);
+        root.dndRevision++;
+    }
+
+    function _dndAutoScroll() {
+        if (!root.dndActive || !rulesList)
+            return;
+        var viewport = rulesList.contentItem;
+        if (!viewport)
+            return;
+        var topLeft = rulesList.mapToItem(root, 0, 0);
+        var edge = 36;
+        var delta = 0;
+        if (root.dndPointerY < topLeft.y + edge)
+            delta = -Math.max(2, (topLeft.y + edge - root.dndPointerY) * 0.28);
+        else if (root.dndPointerY > topLeft.y + rulesList.height - edge)
+            delta = Math.max(2, (root.dndPointerY - (topLeft.y + rulesList.height - edge)) * 0.28);
+        if (delta) {
+            var maxY = Math.max(0, viewport.contentHeight - viewport.height);
+            viewport.contentY = Math.max(0, Math.min(maxY, viewport.contentY + delta));
+            root._dndChooseTarget(root.dndPointerX, root.dndPointerY);
+        }
+    }
+
+    function _dndArm(kind, id, target, x, y) {
+        if (root.dndActive || root.dndDropPending)
+            return;
+        root.dndKind = kind;
+        root.dndId = "" + id;
+        root.dndSourceTarget = target;
+        root.dndPressX = x;
+        root.dndPressY = y;
+        root.dndPointerX = x;
+        root.dndPointerY = y;
+        root.dndArmed = true;
+    }
+
+    function _dndStart(target) {
+        if (root.dndActive || !target)
+            return;
+        root.dndArmed = false;
+        root.dndActive = true;
+        root.dndSourceTarget = target;
+        root.dndPointerX = root.dndPressX;
+        root.dndPointerY = root.dndPressY;
+        root._dndChooseTarget(root.dndPointerX, root.dndPointerY);
+        root.dndRevision++;
+    }
+
+    function _dndMovePointer(x, y) {
+        if (root.dndArmed && !root.dndActive) {
+            var dx = x - root.dndPressX;
+            var dy = y - root.dndPressY;
+            if (Math.sqrt(dx * dx + dy * dy) >= 4)
+                root._dndStart(root.dndSourceTarget);
+        }
+        if (root.dndActive)
+            root._dndChooseTarget(x, y);
+    }
+
+    function _dndApplyPendingDrop() {
+        var pending = root._dndPendingDrop;
+        root._dndPendingDrop = null;
+        root.dndDropPending = false;
+        if (!pending)
+            return;
+        if (pending.mode === "folder" && pending.kind === "rule") {
+            root._dropRuleOntoFolder(pending.id, pending.folderId);
+        } else if (pending.mode === "between") {
+            if (pending.kind === "rule") {
+                if (pending.parentFolderId)
+                    root._dropOntoFolderBetween(pending.parentFolderId, pending.id, pending.beforeId);
+                else
+                    root._dropOntoRootBetween(pending.id, pending.beforeId);
+            } else if (pending.kind === "folder") {
+                root._moveFolderToParentBefore(pending.id, pending.parentFolderId, pending.beforeId);
+            }
+        }
+    }
+
+    // The single drag cleanup path. It restores the source delegate and all
+    // transient state before any persistence/model operation is allowed to run.
+    function finishDrag(commitDrop) {
+        var wasActive = root.dndActive;
+        var shouldCommit = commitDrop === true && wasActive;
+        if (!wasActive && !root.dndArmed && !root.dndDropPending)
+            return;
+
+        if (shouldCommit) {
+            root._dndPendingDrop = {
+                mode: root.dndTargetMode,
+                kind: root.dndKind,
+                id: root.dndId,
+                folderId: root.dndTargetFolderId,
+                parentFolderId: root.dndTargetParentFolderId,
+                beforeId: root.dndTargetBeforeId
+            };
+            root.dndDropPending = true;
+            dndSettleTimer.interval = root.reducedMotion ? 0 : 125;
+            dndSettleTimer.restart();
+        } else {
+            root._dndPendingDrop = null;
+            root.dndDropPending = false;
+            dndSettleTimer.stop();
+        }
+
+        root.dndActive = false;
+        root.dndArmed = false;
+        root._dndClearTarget();
+        root.dndSourceTarget = null;
+        root.dndKind = "";
+        root.dndId = "";
+        root.dndRevision++;
+    }
+
+    function _dndFinish() {
+        root.finishDrag(true);
+    }
+
+    function _cancelDnd() {
+        root.finishDrag(false);
+    }
+
+    function _dndTargetDestroyed(target) {
+        root._unregisterDndTarget(target);
+        if (root.dndSourceTarget === target)
+            root.finishDrag(false);
+    }
+
+    function _dndKeyboardMove(step) {
+        if (!root.dndActive)
+            return;
+        var visible = [];
+        var targets = root._dndTargets || [];
+        for (var i = 0; i < targets.length; i++) {
+            if (targets[i] === root.dndSourceTarget)
+                continue;
+            var node = root._dndNode(targets[i]);
+            var rect = root._dndRect(targets[i]);
+            if (node && rect)
+                visible.push({ target: targets[i], rect: rect });
+        }
+        visible.sort(function(a, b) { return a.rect.y - b.rect.y; });
+        var current = -1;
+        for (var j = 0; j < visible.length; j++) {
+            if (visible[j].target === root.dndTarget) {
+                current = j;
+                break;
+            }
+        }
+        var next = Math.max(0, Math.min(visible.length - 1, (current < 0 ? 0 : current) + step));
+        if (visible.length && next !== current) {
+            root._dndSetBetweenTarget(visible[next].target, step < 0, visible[next].rect);
+            root.dndRevision++;
+        }
+    }
+
+    Timer {
+        id: dndAutoScrollTimer
+        interval: 16
+        repeat: true
+        running: root.dndActive
+        onTriggered: root._dndAutoScroll()
+    }
+
+    Timer {
+        id: dndSettleTimer
+        interval: 125
+        repeat: false
+        onTriggered: root._dndApplyPendingDrop()
+    }
+
+    Shortcut {
+        sequence: "Escape"
+        enabled: root.dndArmed || root.dndActive || root.dndDropPending
+        onActivated: root._cancelDnd()
+    }
     property var selectedRule: null
     property var giftOptions: []
     property var actionsModel: []
@@ -497,46 +886,6 @@ Item {
         }
     }
 
-    function _dropPayload(drop) {
-        // Qt versions differ in how drag mime maps to DropArea.drop.text.
-        // Try drop.text first, then fall back to mimeData.
-        var raw = "";
-        try {
-            raw = (drop && drop.text) ? ("" + drop.text) : "";
-        } catch (e0) {
-            raw = "";
-        }
-        if (dndDebug) {
-            console.log("[ActionsView] drop.text.len=", (raw || "").length);
-        }
-        if (!raw || !raw.trim().length) {
-            try {
-                if (drop && drop.mimeData) {
-                    if (drop.mimeData.text && ("" + drop.mimeData.text).trim().length) {
-                        raw = "" + drop.mimeData.text;
-                    } else if (drop.mimeData.dataAsString) {
-                        raw = "" + (drop.mimeData.dataAsString("text/plain") || "");
-                        if (!raw || !raw.trim().length)
-                            raw = "" + (drop.mimeData.dataAsString("text") || "");
-                    }
-                }
-            } catch (e1) {
-                raw = raw || "";
-            }
-        }
-        if (dndDebug) {
-            console.log("[ActionsView] parsed-raw.len=", (raw || "").length, "raw.head=", (raw || "").slice(0, 80));
-        }
-        if (!raw || !raw.trim().length)
-            return null;
-        try {
-            return JSON.parse(raw);
-        } catch (e2) {
-            if (dndDebug)
-                console.log("[ActionsView] JSON.parse failed");
-            return null;
-        }
-    }
 
     function _mergeActionsIntoRulesModel() {
         if (root.selectedRule === null || root.selectedIdx < 0)
@@ -603,6 +952,7 @@ Item {
         }
         actApi.saveRulesJson(platform, accountKey, JSON.stringify(payload));
         root._suppressActionsAutosave = false;
+        root.hasUnsavedChanges = false;
         if (showToast)
             _notifySaved();
     }
@@ -840,7 +1190,8 @@ Item {
                         pos = ch.length;
                         for (var t = 0; t < ch.length; t++) {
                             var c = ch[t];
-                            if (c && c.kind === "rule" && ("" + c.rule_id) === ("" + beforeId)) {
+                            if (c && ((c.kind === "rule" && ("" + c.rule_id) === ("" + beforeId))
+                                    || (c.kind === "folder" && ("" + c.id) === ("" + beforeId)))) {
                                 pos = t;
                                 break;
                             }
@@ -862,6 +1213,72 @@ Item {
             return;
         if (!insertInFolder(tree, folderId, ruleId, insertBeforeChildId))
             return;
+        root._preserveScroll(function() {
+            rulesUiTree = tree;
+            root._nextUiRevision();
+            root._syncRulesModelOrder();
+            root._saveUiLayoutOnly();
+            root._save(false);
+        });
+    }
+
+    function _moveFolderToParentBefore(folderId, parentFolderId, beforeId) {
+        function removeFolder(nodes, fid) {
+            for (var i = 0; i < nodes.length; i++) {
+                var n = nodes[i];
+                if (!n)
+                    continue;
+                if (n.kind === "folder" && ("" + n.id) === ("" + fid)) {
+                    nodes.splice(i, 1);
+                    return n;
+                }
+                if (n.kind === "folder") {
+                    var found = removeFolder(n.children || [], fid);
+                    if (found)
+                        return found;
+                }
+            }
+            return null;
+        }
+
+        function insertBefore(nodes, node, bid) {
+            var pos = nodes.length;
+            if (bid) {
+                for (var i = 0; i < nodes.length; i++) {
+                    var candidate = nodes[i];
+                    if (candidate && ((candidate.kind === "rule" && ("" + candidate.rule_id) === bid)
+                            || (candidate.kind === "folder" && ("" + candidate.id) === bid))) {
+                        pos = i;
+                        break;
+                    }
+                }
+            }
+            nodes.splice(pos, 0, node);
+            return true;
+        }
+
+        function insertInto(nodes, fid, node, bid) {
+            for (var i = 0; i < nodes.length; i++) {
+                var n = nodes[i];
+                if (!n)
+                    continue;
+                if (n.kind === "folder" && ("" + n.id) === fid)
+                    return insertBefore(n.children || (n.children = []), node, bid);
+                if (n.kind === "folder" && insertInto(n.children || [], fid, node, bid))
+                    return true;
+            }
+            return false;
+        }
+
+        var tree = _cloneUiTree(rulesUiTree);
+        var folder = removeFolder(tree, folderId);
+        if (!folder)
+            return;
+        // A folder cannot be moved into itself or one of its descendants.
+        if (parentFolderId && !insertInto(tree, parentFolderId, folder, beforeId))
+            return;
+        else if (!parentFolderId)
+            insertBefore(tree, folder, beforeId);
         root._preserveScroll(function() {
             rulesUiTree = tree;
             root._nextUiRevision();
@@ -1031,22 +1448,179 @@ Item {
         }
     }
 
+    // Shared Cheremsha button language: filled primary, quiet secondary, compact icon.
+    component CheremshaPrimaryButton: Button {
+        id: primaryButton
+        property string iconName: ""
+        property int buttonFontSize: 12
+        implicitHeight: 34
+        leftPadding: 12
+        rightPadding: 12
+        hoverEnabled: true
+        focusPolicy: Qt.NoFocus
+        contentItem: Row {
+            anchors.centerIn: parent
+            spacing: 6
+            Image {
+                source: iconName ? root._assetUrl(iconName) : ""
+                visible: iconName !== ""
+                width: 14
+                height: 14
+                fillMode: Image.PreserveAspectFit
+                anchors.verticalCenter: parent.verticalCenter
+            }
+            Text {
+                text: primaryButton.text
+                color: "white"
+                font.pixelSize: primaryButton.buttonFontSize
+                font.bold: true
+                anchors.verticalCenter: parent.verticalCenter
+            }
+        }
+        background: Rectangle {
+            radius: 8
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: primaryButton.pressed ? "#6d28d9" : (primaryButton.hovered ? "#9d71f7" : "#8b5cf6") }
+                GradientStop { position: 1.0; color: primaryButton.pressed ? "#5b21b6" : (primaryButton.hovered ? "#8b5cf6" : "#7c3aed") }
+            }
+            border.width: 1
+            border.color: primaryButton.hovered ? "#c4b5fd" : "#8b54f5"
+        }
+    }
+
+    component CheremshaSecondaryButton: Button {
+        id: secondaryButton
+        property string iconName: ""
+        property bool danger: false
+        property int buttonFontSize: 12
+        implicitHeight: 34
+        leftPadding: 11
+        rightPadding: 11
+        hoverEnabled: true
+        focusPolicy: Qt.NoFocus
+        contentItem: Row {
+            anchors.centerIn: parent
+            spacing: 6
+            Image {
+                source: iconName ? root._assetUrl(iconName) : ""
+                visible: iconName !== ""
+                width: 14
+                height: 14
+                fillMode: Image.PreserveAspectFit
+                anchors.verticalCenter: parent.verticalCenter
+            }
+            Text {
+                text: secondaryButton.text
+                color: secondaryButton.danger ? root.dangerRed : root.ink
+                font.pixelSize: secondaryButton.buttonFontSize
+                anchors.verticalCenter: parent.verticalCenter
+            }
+        }
+        background: Rectangle {
+            radius: 8
+            color: secondaryButton.pressed ? "#303a50" : (secondaryButton.hovered ? "#263246" : "#161f31")
+            border.width: 1
+            border.color: secondaryButton.danger
+                ? (secondaryButton.hovered ? "#f87171" : "#7f3342")
+                : (secondaryButton.hovered ? "#52617a" : "#2a3850")
+        }
+    }
+
+    component CheremshaLibrarySectionHeader: RowLayout {
+        property string iconName: "web_rule.svg"
+        property string title: ""
+        property string countText: ""
+        implicitHeight: 24
+        spacing: 6
+        Image {
+            Layout.preferredWidth: 15
+            Layout.preferredHeight: 15
+            source: root._assetUrl(parent.iconName)
+            fillMode: Image.PreserveAspectFit
+            opacity: 0.9
+        }
+        Text {
+            Layout.fillWidth: true
+            text: parent.title
+            color: root.ink
+            font.pixelSize: 11
+            font.bold: true
+        }
+        Text {
+            visible: parent.countText !== ""
+            text: parent.countText
+            color: root.muted
+            font.pixelSize: 10
+        }
+    }
+
+    component CheremshaFilterChip: Button {
+        id: filterChip
+        property bool active: false
+        property int chipFontSize: 11
+        implicitHeight: 26
+        leftPadding: 10
+        rightPadding: 10
+        hoverEnabled: true
+        focusPolicy: Qt.NoFocus
+        contentItem: Text {
+            text: filterChip.text
+            color: filterChip.active ? "white" : root.muted
+            font.pixelSize: filterChip.chipFontSize
+            font.bold: filterChip.active
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+        }
+        background: Rectangle {
+            radius: 7
+            color: filterChip.active ? "#6d28d9" : (filterChip.hovered ? "#1c2940" : "transparent")
+            border.width: 1
+            border.color: filterChip.active ? "#8b5cf6" : (filterChip.hovered ? "#52617a" : "#2a3850")
+        }
+    }
+
+    component CheremshaIconButton: Button {
+        id: iconButton
+        property string iconName: ""
+        property color iconColor: root.ink
+        property bool danger: false
+        implicitWidth: 30
+        implicitHeight: 30
+        padding: 0
+        hoverEnabled: true
+        focusPolicy: Qt.NoFocus
+        contentItem: Image {
+            source: iconButton.iconName ? root._assetUrl(iconButton.iconName) : ""
+            width: 14
+            height: 14
+            anchors.centerIn: parent
+            fillMode: Image.PreserveAspectFit
+            opacity: iconButton.enabled ? 1.0 : 0.45
+        }
+        background: Rectangle {
+            radius: 7
+            color: iconButton.pressed ? "#303a50" : (iconButton.hovered ? "#263246" : "#151e30")
+            border.width: 1
+            border.color: iconButton.danger
+                ? (iconButton.hovered ? "#f87171" : "#7f3342")
+                : (iconButton.hovered ? "#52617a" : "#2a3850")
+        }
+    }
+
     // Same preference toggle as ConnectionsView.qml `ConnPrefSwitch`.
     component ConnPrefSwitch: Switch {
         id: prefSw
         padding: 0
-        implicitWidth: 46
-        implicitHeight: 24
+        implicitWidth: 36
+        implicitHeight: 22
         focusPolicy: Qt.NoFocus
         hoverEnabled: true
         transformOrigin: Item.Right
-        scale: prefSw.hovered ? 1.06 : 1.0
-        Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
         indicator: Rectangle {
             width: prefSw.implicitWidth
             height: prefSw.implicitHeight
-            radius: 12
+            radius: 11
             color: prefSw.checked ? "#134e4a" : "#252d3d"
             border.width: 1
             border.color: prefSw.checked ? "#14b8a6" : "#3b4a63"
@@ -1055,10 +1629,10 @@ Item {
             Behavior on border.color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
             Rectangle {
-                width: 18
-                height: 18
-                radius: 9
-                y: 3
+                width: 16
+                height: 16
+                radius: 8
+                y: 2
                 x: prefSw.checked ? (parent.width - width - 3) : 3
                 color: prefSw.checked ? "#e8eaed" : "#52607a"
                 border.width: 1
@@ -1072,43 +1646,28 @@ Item {
         contentItem: Item {}
     }
 
+    // Keeps the established spacing between rows. DnD feedback is rendered by
+    // the root overlay; there is intentionally no native DropArea here.
     component UiRulesDropGap: Item {
         id: gapRoot
-        height: trailing ? 14 : 10
+        implicitHeight: trailing ? (dndDropZone ? 0 : 14) : 10
         property bool trailing: false
+        property bool dndDropZone: false
+        property string dndParentFolderId: ""
+        property var node: dndDropZone ? { kind: "rule", rule_id: "" } : null
+        property var dndArea: dndHitArea
         property string dropBeforeRuleId: ""
         property string dropBeforeFolderId: ""
 
-        DropArea {
-            anchors.fill: parent
-
-            Rectangle {
-                anchors.fill: parent
-                radius: 4
-                color: parent.containsDrag ? "#2c6bff55" : "transparent"
-            }
-
-            onDropped: function(drop) {
-                var payload = root._dropPayload(drop);
-                if (!payload || payload.scope !== "actions-rules")
-                    return;
-
-                if (trailing) {
-                    if (payload.kind === "rule")
-                        root._dropOntoRootBetween(payload.rule_id, "");
-                    else if (payload.kind === "folder")
-                        root._moveFolderBefore(payload.folder_id, "", "");
-                    drop.acceptProposedAction();
-                    return;
-                }
-
-                if (payload.kind === "rule")
-                    root._dropOntoRootBetween(payload.rule_id, dropBeforeRuleId);
-                else if (payload.kind === "folder")
-                    root._moveFolderBefore(payload.folder_id, dropBeforeRuleId, dropBeforeFolderId);
-                drop.acceptProposedAction();
-            }
+        Item {
+            id: dndHitArea
+            visible: gapRoot.dndDropZone
+            width: gapRoot.width
+            height: gapRoot.dndDropZone ? 24 : 0
         }
+
+        Component.onCompleted: root._registerDndTarget(gapRoot)
+        Component.onDestruction: root._unregisterDndTarget(gapRoot)
     }
 
     component UiRulesRuleRow: Rectangle {
@@ -1116,26 +1675,47 @@ Item {
         property var node: null
         property int depth: 0
         property var nextSibling: null
+        property string dndParentFolderId: ""
+        readonly property var dndArea: ruleCard
+        property real dndOffset: root._dndOffsetFor(ruleCard)
 
-        implicitHeight: ruleMainCol.implicitHeight + 20
-        height: implicitHeight
-        radius: 10
-        x: depth * 14
-        width: Math.max(120, parent.width - depth * 14)
+        Component.onCompleted: root._registerDndTarget(ruleCard)
+        Component.onDestruction: root._dndTargetDestroyed(ruleCard)
+
+        transform: Translate { y: ruleCard.dndOffset }
+        Behavior on dndOffset {
+            NumberAnimation {
+                duration: root.dndAnimationDuration
+                easing.type: Easing.OutCubic
+            }
+        }
+        // Opacity is intentionally not animated: the source must disappear in
+        // the same frame the preview becomes visible, otherwise both render.
+        opacity: root.dndActive && root.dndKind === "rule" && root.dndId === ruleCard.rid ? 0.0 : 1.0
+
+        implicitHeight: ruleMainCol.implicitHeight + 10
+        // Search filters the visible list only (never the model / DnD / persistence).
+        // Keep the source item alive for MouseArea release/cancel delivery, but
+        // make it completely transparent while its one preview is active.
+        visible: root._ruleMatchesSearch(ruleObj) && root._ruleMatchesLibraryFilter(ruleObj)
+        height: visible ? implicitHeight : 0
+        radius: 8
+        anchors.left: parent ? parent.left : undefined
+        anchors.right: parent ? parent.right : undefined
 
         property string rid: node && node.rule_id ? ("" + node.rule_id) : ""
         property var ruleObj: rid ? root._ruleById(rid) : null
         property int idxInRules: rid ? root._rulesIndexById(rid) : -1
 
-        color: idxInRules >= 0 && idxInRules === root.selectedIdx ? "#1a2232" : "#111827"
-        border.width: 1
-        border.color: cardEdge
+        color: idxInRules >= 0 && idxInRules === root.selectedIdx ? "#1d2340" : "#111827"
+        border.width: idxInRules >= 0 && idxInRules === root.selectedIdx ? 1 : 1
+        border.color: idxInRules >= 0 && idxInRules === root.selectedIdx ? root.accentPurple : cardEdge
 
         MouseArea {
             anchors.fill: parent
             z: -1
             onClicked: {
-                if (!rid.length)
+                if (!rid.length || root.dndActive || root.dndDropPending)
                     return;
                 root._selectRule(idxInRules, rid);
             }
@@ -1144,42 +1724,27 @@ Item {
         ColumnLayout {
             id: ruleMainCol
             anchors.fill: parent
-            anchors.margins: 10
-            spacing: 6
+            anchors.margins: 7
+            spacing: 3
 
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 8
+                spacing: 7
 
                 Item {
                     id: dragPad
-                    Layout.preferredWidth: 26
-                    Layout.preferredHeight: 28
+                    Layout.preferredWidth: 18
+                    Layout.preferredHeight: 24
                     Layout.alignment: Qt.AlignTop
 
-                    // NOTE: don't bind Drag.active (can create binding loops on some Qt builds).
-                    Drag.supportedActions: Qt.MoveAction
-                    Drag.proposedAction: Qt.MoveAction
-                    Drag.hotSpot: Qt.point(width / 2, height / 2)
-                    Drag.dragType: Drag.Automatic
-                    Drag.mimeData: {
-                        "text/plain": JSON.stringify({
-                            scope: "actions-rules",
-                            kind: "rule",
-                            rule_id: rid
-                        }),
-                        "text": JSON.stringify({
-                            scope: "actions-rules",
-                            kind: "rule",
-                            rule_id: rid
-                        })
-                    }
 
-                    Text {
+                    Image {
                         anchors.centerIn: parent
-                        text: "⠿"
-                        color: muted
-                        font.pixelSize: 14
+                        source: root._assetUrl("web_drag.svg")
+                        width: 14
+                        height: 14
+                        fillMode: Image.PreserveAspectFit
+                        opacity: 0.9
                     }
 
                     MouseArea {
@@ -1187,108 +1752,159 @@ Item {
                         anchors.fill: parent
                         hoverEnabled: true
                         preventStealing: true
-                        cursorShape: Qt.OpenHandCursor
-                        property real pressX: 0
-                        property real pressY: 0
-                        property bool armed: false
+                        cursorShape: root.dndActive && root.dndSourceTarget === ruleCard
+                            ? Qt.ClosedHandCursor : Qt.OpenHandCursor
 
                         onPressed: function(mouse) {
-                            pressX = mouse.x;
-                            pressY = mouse.y;
-                            armed = true;
-                            dragPad.Drag.active = false;
-                            cursorShape = Qt.OpenHandCursor;
+                            dragPad.forceActiveFocus();
+                            var p = dragPad.mapToItem(root, mouse.x, mouse.y);
+                            root._dndArm("rule", rid, ruleCard, p.x, p.y);
                         }
                         onPositionChanged: function(mouse) {
-                            if (!armed)
-                                return;
-                            var dx = Math.abs(mouse.x - pressX);
-                            var dy = Math.abs(mouse.y - pressY);
-                            if (dx + dy >= 10) {
-                                dragPad.Drag.hotSpot = Qt.point(pressX, pressY);
-                                dragPad.Drag.active = true;
-                                cursorShape = Qt.ClosedHandCursor;
-                            }
+                            var p = dragPad.mapToItem(root, mouse.x, mouse.y);
+                            root._dndMovePointer(p.x, p.y);
                         }
                         onReleased: function(mouse) {
-                            armed = false;
-                            dragPad.Drag.active = false;
-                            cursorShape = Qt.OpenHandCursor;
+                            if (root.dndActive && root.dndSourceTarget === ruleCard)
+                                root._dndFinish();
+                            else
+                                root.dndArmed = false;
                         }
-                        onCanceled: function() {
-                            armed = false;
-                            dragPad.Drag.active = false;
-                            cursorShape = Qt.OpenHandCursor;
-                        }
+                        onCanceled: root._cancelDnd()
                     }
-                }
 
-                ConnPrefSwitch {
-                    Layout.alignment: Qt.AlignTop
-                    Layout.topMargin: 2
-                    checked: ruleObj ? !!ruleObj.enabled : false
-                    enabled: ruleObj !== null && idxInRules >= 0
-                    onClicked: {
-                        if (ruleObj === null || idxInRules < 0)
-                            return;
-                        var r = root._copyRule(ruleObj);
-                        if (r == null)
-                            return;
-                        r.enabled = checked;
-                        root._setRule(idxInRules, r);
-                        root._save(false);
+                    activeFocusOnTab: true
+                    Keys.onPressed: function(event) {
+                        if (event.key === Qt.Key_Escape) {
+                            root._cancelDnd();
+                            event.accepted = true;
+                        } else if (event.key === Qt.Key_Space || event.key === Qt.Key_Return
+                                || event.key === Qt.Key_Enter) {
+                            if (!root.dndActive && !root.dndDropPending) {
+                                var p = dragPad.mapToItem(root, dragPad.width / 2, dragPad.height / 2);
+                                root._dndArm("rule", rid, ruleCard, p.x, p.y);
+                                root._dndStart(ruleCard);
+                            } else if (root.dndActive && root.dndSourceTarget === ruleCard) {
+                                root._dndFinish();
+                            }
+                            event.accepted = true;
+                        } else if (root.dndActive && root.dndSourceTarget === ruleCard
+                                && event.key === Qt.Key_Up) {
+                            root._dndKeyboardMove(-1);
+                            event.accepted = true;
+                        } else if (root.dndActive && root.dndSourceTarget === ruleCard
+                                && event.key === Qt.Key_Down) {
+                            root._dndKeyboardMove(1);
+                            event.accepted = true;
+                        }
                     }
                 }
 
                 ColumnLayout {
                     Layout.fillWidth: true
                     Layout.minimumWidth: 40
-                    Layout.alignment: Qt.AlignTop
-                    spacing: 2
+                    Layout.alignment: Qt.AlignVCenter
+                    spacing: 3
 
-                    Text {
-                        id: ruleTitleLine
+                    RowLayout {
                         Layout.fillWidth: true
-                        color: ink
-                        font.pixelSize: 13
-                        wrapMode: Text.WordWrap
-                        maximumLineCount: 2
-                        elide: Text.ElideRight
-                        text: root._ruleListTitle(ruleObj || {})
+                        spacing: 6
+
+                        Image {
+                            Layout.preferredWidth: 15
+                            Layout.preferredHeight: 15
+                            Layout.alignment: Qt.AlignVCenter
+                            source: root._assetUrl(root._ruleIconForRow(ruleObj))
+                            fillMode: Image.PreserveAspectFit
+                            opacity: 0.95
+                        }
+
+                        Text {
+                            id: ruleTitleLine
+                            Layout.fillWidth: true
+                            color: ink
+                            font.pixelSize: 13
+                            font.bold: idxInRules >= 0 && idxInRules === root.selectedIdx
+                            wrapMode: Text.NoWrap
+                            elide: Text.ElideRight
+                            text: root._ruleListTitle(ruleObj || {})
+                        }
                     }
+                    // Human-readable second line: what the rule reacts to + what it does.
+                    // e.g. Слово «привіт» · 1 дія
                     Text {
                         id: ruleSubLine
                         Layout.fillWidth: true
+                        leftPadding: 21
                         color: muted
                         font.pixelSize: 11
-                        wrapMode: Text.WordWrap
-                        maximumLineCount: 3
+                        wrapMode: Text.NoWrap
                         elide: Text.ElideRight
-                        text: root._ruleListSubtitle(ruleObj || {})
+                        text: root._ruleLine2(ruleObj || {})
                     }
                 }
 
-                RowLayout {
-                    id: ruleActionsRow
-                    spacing: 4
-                    Layout.alignment: Qt.AlignTop
-                    Layout.preferredWidth: 110
+                ConnPrefSwitch {
+                    Layout.alignment: Qt.AlignVCenter
+                    checked: ruleObj ? !!ruleObj.enabled : false
+                    enabled: ruleObj !== null && idxInRules >= 0
+                        && !root.dndActive && !root.dndDropPending
+                    onClicked: {
+                        if (root.dndActive || root.dndDropPending
+                                || ruleObj === null || idxInRules < 0)
+                            return;
+                        var r2 = root._copyRule(ruleObj);
+                        if (r2 == null)
+                            return;
+                        r2.enabled = checked;
+                        root._setRule(idxInRules, r2);
+                        root._save(false);
+                    }
+                }
 
-                    ConnPillButton {
-                            text: "▶"
-                            pillFontSize: 12
-                            leftPadding: 8
-                            rightPadding: 8
-                            topPadding: 4
-                            bottomPadding: 4
-                            Layout.preferredWidth: 34
-                            Layout.maximumWidth: 34
-                            hoverEnabled: true
-                            ToolTip.visible: hovered
-                            ToolTip.delay: 350
-                            ToolTip.text: api ? api.loc("actions.rule_preview_tt") : "Test this rule (preview)"
+                // Single compact "…" menu for secondary actions (preview / duplicate / delete).
+                // Primary row click = open/edit rule; toggle stays visible for enable/disable.
+                Rectangle {
+                    id: ruleMoreBtn
+                    Layout.alignment: Qt.AlignTop
+                    Layout.preferredWidth: 30
+                    Layout.preferredHeight: 26
+                    radius: 8
+                    color: ruleMoreMouse.containsMouse ? "#263246" : "#1c2434"
+                    border.width: 1
+                    border.color: ruleMoreMouse.containsMouse ? "#3b4458" : cardEdge
+                    enabled: idxInRules >= 0 && !root.dndActive && !root.dndDropPending
+                    opacity: enabled ? 1.0 : 0.5
+
+                    Image {
+                        anchors.centerIn: parent
+                        width: 14
+                        height: 14
+                        source: root._assetUrl("web_more.svg")
+                        fillMode: Image.PreserveAspectFit
+                    }
+
+                    MouseArea {
+                        id: ruleMoreMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (idxInRules >= 0 && !root.dndActive && !root.dndDropPending)
+                                ruleMoreMenu.popup();
+                        }
+                    }
+
+                    ToolTip.visible: !!(ruleMoreMouse && ruleMoreMouse.containsMouse)
+                    ToolTip.delay: 350
+                    ToolTip.text: api ? api.loc("actions.rule_more_tt") : "More actions"
+
+                    Menu {
+                        id: ruleMoreMenu
+                        MenuItem {
+                            text: api ? api.loc("actions.rule_preview_tt") : "Test this rule (preview)"
                             enabled: ruleObj !== null && !!ruleObj.id
-                            onClicked: {
+                            onTriggered: {
                                 if (ruleObj === null)
                                     return;
                                 var pr = root._ruleToPersistObj(ruleObj);
@@ -1298,158 +1914,97 @@ Item {
                                 root._notifyPreviewToast(m);
                             }
                         }
-
-                        ConnPillButton {
-                            text: "\u29C9"
-                            pillFontSize: 13
-                            leftPadding: 8
-                            rightPadding: 8
-                            topPadding: 4
-                            bottomPadding: 4
-                            Layout.preferredWidth: 34
-                            Layout.maximumWidth: 34
-                            hoverEnabled: true
-                            ToolTip.visible: hovered
-                            ToolTip.delay: 350
-                            ToolTip.text: api ? api.loc("actions.duplicate_btn") : "Copy"
+                        MenuItem {
+                            text: api ? api.loc("actions.duplicate_btn") : "Copy"
                             enabled: idxInRules >= 0
-                            onClicked: root._duplicateRuleAt(idxInRules)
+                            onTriggered: root._duplicateRuleAt(idxInRules)
                         }
-
-                        ConnPillButton {
-                            text: "\u2715"
-                            pillFontSize: 13
-                            leftPadding: 8
-                            rightPadding: 8
-                            topPadding: 4
-                            bottomPadding: 4
-                            Layout.preferredWidth: 34
-                            Layout.maximumWidth: 34
-                            hoverEnabled: true
-                            ToolTip.visible: hovered
-                            ToolTip.delay: 350
-                            ToolTip.text: api ? api.loc("actions.delete") : "Delete"
+                        MenuSeparator {}
+                        MenuItem {
+                            text: api ? api.loc("actions.delete") : "Delete"
                             enabled: idxInRules >= 0
-                            onClicked: {
-                                var killId = rid;
-                                var copy = rulesModel.slice();
-                                copy.splice(idxInRules, 1);
-                                root._preserveScroll(function() {
-                                    rulesModel = copy;
-                                    root._patchUiRemoveRuleId(killId);
-                                    if (("" + root.selectedRuleId) === killId)
-                                        root.selectedRuleId = "";
-                                    root._syncRulesModelOrder();
-                                    root._saveUiLayoutOnly();
-                                    root._saveRulesPayload(false);
-                                });
-                            }
+                            onTriggered: root._deleteRuleAt(idxInRules)
                         }
                     }
                 }
             }
-
-        DropArea {
-            anchors.fill: parent
-
-            Rectangle {
-                anchors.fill: parent
-                radius: ruleCard.radius
-                color: parent.containsDrag ? "#2c6bff33" : "transparent"
-                border.width: parent.containsDrag ? 1 : 0
-                border.color: "#4d8dff"
-            }
-
-            onDropped: function(drop) {
-                var payload = root._dropPayload(drop);
-                if (!payload || payload.scope !== "actions-rules")
-                    return;
-                if (payload.kind !== "rule")
-                    return;
-                root._moveRuleBefore(payload.rule_id, idxInRules);
-                drop.acceptProposedAction();
-            }
         }
+
+
     }
 
-    component UiRulesFolderColumn: Column {
+    component UiRulesFolderColumn: ColumnLayout {
         id: folderRoot
         property var node: null
         property int depth: 0
         property var nextSibling: null
+        property string dndParentFolderId: ""
+        readonly property var dndArea: folderHeader
+        property real dndOffset: root._dndOffsetFor(folderRoot)
+
+        Component.onCompleted: root._registerDndTarget(folderRoot)
+        Component.onDestruction: root._dndTargetDestroyed(folderRoot)
+
+        transform: Translate { y: folderRoot.dndOffset }
+        Behavior on dndOffset {
+            NumberAnimation {
+                duration: root.dndAnimationDuration
+                easing.type: Easing.OutCubic
+            }
+        }
+        // Keep the source handle alive for release/cancel delivery; the entire
+        // folder subtree is visually transparent while its preview is active.
+        opacity: root.dndActive && root.dndKind === "folder" && root.dndId === folderRoot.fid ? 0.0 : 1.0
 
         spacing: 6
-        x: depth * 14
-        width: Math.max(120, parent.width - depth * 14)
+        anchors.left: parent ? parent.left : undefined
+        anchors.right: parent ? parent.right : undefined
 
         property string fid: node && node.id ? ("" + node.id) : ""
         property bool expanded: !!(node && node.expanded)
         readonly property int childCount: (node && node.children) ? node.children.length : 0
+        // Session-only rename edit mode (secondary op, hidden until requested via "…" menu).
+        property bool renaming: false
 
         Rectangle {
             id: folderHeader
-            width: parent.width
-            height: 44
-            radius: 10
-            color: "#141b29"
-            border.width: 1
-            border.color: cardEdge
+            Layout.fillWidth: true
+            Layout.preferredHeight: 32
+            radius: 0
+            color: "transparent"
+            border.width: 0
 
-            DropArea {
+            Rectangle {
                 anchors.fill: parent
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius: folderHeader.radius
-                    color: parent.containsDrag ? "#2c6bff33" : "transparent"
-                    border.width: parent.containsDrag ? 1 : 0
-                    border.color: "#4d8dff"
-                }
-
-                onDropped: function(drop) {
-                    var payload = root._dropPayload(drop);
-                    if (!payload || payload.scope !== "actions-rules")
-                        return;
-                    if (payload.kind !== "rule")
-                        return;
-                    root._dropRuleOntoFolder(payload.rule_id, fid);
-                    drop.acceptProposedAction();
+                radius: folderHeader.radius
+                color: root.dndActive && root.dndTargetMode === "folder"
+                    && root.dndTargetFolderId === folderRoot.fid ? "#2c6bff33" : "transparent"
+                border.width: root.dndActive && root.dndTargetMode === "folder"
+                    && root.dndTargetFolderId === folderRoot.fid ? 1 : 0
+                border.color: root.accentPurpleSoft
+                Behavior on color {
+                    ColorAnimation { duration: root.dndAnimationDuration; easing.type: Easing.OutCubic }
                 }
             }
 
             RowLayout {
                 anchors.fill: parent
-                anchors.margins: 10
-                spacing: 8
+                anchors.margins: 8
+                spacing: 7
 
                 Item {
                     id: fdDragPad
-                    Layout.preferredWidth: 28
+                    Layout.preferredWidth: 18
                     Layout.fillHeight: true
 
-                    // NOTE: don't bind Drag.active (can create binding loops on some Qt builds).
-                    Drag.supportedActions: Qt.MoveAction
-                    Drag.proposedAction: Qt.MoveAction
-                    Drag.hotSpot: Qt.point(width / 2, height / 2)
-                    Drag.dragType: Drag.Automatic
-                    Drag.mimeData: {
-                        "text/plain": JSON.stringify({
-                            scope: "actions-rules",
-                            kind: "folder",
-                            folder_id: fid
-                        }),
-                        "text": JSON.stringify({
-                            scope: "actions-rules",
-                            kind: "folder",
-                            folder_id: fid
-                        })
-                    }
 
-                    Text {
+                    Image {
                         anchors.centerIn: parent
-                        text: "⠿"
-                        color: muted
-                        font.pixelSize: 14
+                        source: root._assetUrl("web_drag.svg")
+                        width: 14
+                        height: 14
+                        fillMode: Image.PreserveAspectFit
+                        opacity: 0.9
                     }
 
                     MouseArea {
@@ -1457,67 +2012,117 @@ Item {
                         anchors.fill: parent
                         hoverEnabled: true
                         preventStealing: true
-                        cursorShape: Qt.OpenHandCursor
-                        property real pressX: 0
-                        property real pressY: 0
-                        property bool armed: false
+                        cursorShape: root.dndActive && root.dndSourceTarget === folderRoot
+                            ? Qt.ClosedHandCursor : Qt.OpenHandCursor
 
                         onPressed: function(mouse) {
-                            pressX = mouse.x;
-                            pressY = mouse.y;
-                            armed = true;
-                            fdDragPad.Drag.active = false;
-                            cursorShape = Qt.OpenHandCursor;
+                            fdDragPad.forceActiveFocus();
+                            var p = fdDragPad.mapToItem(root, mouse.x, mouse.y);
+                            root._dndArm("folder", fid, folderRoot, p.x, p.y);
                         }
                         onPositionChanged: function(mouse) {
-                            if (!armed)
-                                return;
-                            var dx = Math.abs(mouse.x - pressX);
-                            var dy = Math.abs(mouse.y - pressY);
-                            if (dx + dy >= 10) {
-                                fdDragPad.Drag.hotSpot = Qt.point(pressX, pressY);
-                                fdDragPad.Drag.active = true;
-                                cursorShape = Qt.ClosedHandCursor;
-                            }
+                            var p = fdDragPad.mapToItem(root, mouse.x, mouse.y);
+                            root._dndMovePointer(p.x, p.y);
                         }
                         onReleased: function(mouse) {
-                            armed = false;
-                            fdDragPad.Drag.active = false;
-                            cursorShape = Qt.OpenHandCursor;
+                            if (root.dndActive && root.dndSourceTarget === folderRoot)
+                                root._dndFinish();
+                            else
+                                root.dndArmed = false;
                         }
-                        onCanceled: function() {
-                            armed = false;
-                            fdDragPad.Drag.active = false;
-                            cursorShape = Qt.OpenHandCursor;
+                        onCanceled: root._cancelDnd()
+                    }
+
+                    activeFocusOnTab: true
+                    Keys.onPressed: function(event) {
+                        if (event.key === Qt.Key_Escape) {
+                            root._cancelDnd();
+                            event.accepted = true;
+                        } else if (event.key === Qt.Key_Space || event.key === Qt.Key_Return
+                                || event.key === Qt.Key_Enter) {
+                            if (!root.dndActive && !root.dndDropPending) {
+                                var p = fdDragPad.mapToItem(root, fdDragPad.width / 2, fdDragPad.height / 2);
+                                root._dndArm("folder", fid, folderRoot, p.x, p.y);
+                                root._dndStart(folderRoot);
+                            } else if (root.dndActive && root.dndSourceTarget === folderRoot) {
+                                root._dndFinish();
+                            }
+                            event.accepted = true;
+                        } else if (root.dndActive && root.dndSourceTarget === folderRoot
+                                && event.key === Qt.Key_Up) {
+                            root._dndKeyboardMove(-1);
+                            event.accepted = true;
+                        } else if (root.dndActive && root.dndSourceTarget === folderRoot
+                                && event.key === Qt.Key_Down) {
+                            root._dndKeyboardMove(1);
+                            event.accepted = true;
                         }
                     }
                 }
 
-                Button {
+                Rectangle {
                     id: folderChevronBtn
-                    Layout.preferredWidth: 36
-                    Layout.preferredHeight: 30
+                    Layout.preferredWidth: 22
+                    Layout.preferredHeight: 22
                     Layout.alignment: Qt.AlignVCenter
-                    flat: true
-                    focusPolicy: Qt.NoFocus
-                    padding: 0
-                    topPadding: 0
-                    bottomPadding: 0
-                    leftPadding: 0
-                    rightPadding: 0
-                    text: folderRoot.expanded ? "▾" : "▸"
-                    onClicked: root._commitFolderToggleUi(fid)
-                    background: Item {}
-                    contentItem: Text {
-                        text: folderChevronBtn.text
-                        color: ink
-                        font.pixelSize: 14
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
+                    radius: 5
+                    color: folderChevMouse.containsMouse ? "#1c2940" : "transparent"
+
+                    Image {
+                        anchors.centerIn: parent
+                        width: 14
+                        height: 14
+                        source: folderRoot.expanded
+                            ? root._assetUrl("chevron-down.svg")
+                            : root._assetUrl("chevron-right.svg")
+                        fillMode: Image.PreserveAspectFit
+                        opacity: 0.9
+                    }
+
+                    MouseArea {
+                        id: folderChevMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (!root.dndActive && !root.dndDropPending)
+                                root._commitFolderToggleUi(fid);
+                        }
+                    }
+                }
+
+                Image {
+                    Layout.preferredWidth: 16
+                    Layout.preferredHeight: 16
+                    Layout.alignment: Qt.AlignVCenter
+                    source: root._assetUrl("web_folder.svg")
+                    fillMode: Image.PreserveAspectFit
+                    opacity: 0.95
+                }
+
+                // Folder name: plain text by default; rename mode toggled via "…" menu.
+                Text {
+                    visible: !folderRoot.renaming
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    color: ink
+                    font.pixelSize: 13
+                    font.bold: true
+                    elide: Text.ElideRight
+                    text: node ? (node.name || "") : ""
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onDoubleClicked: {
+                            if (!root.dndActive && !root.dndDropPending)
+                                folderRoot.renaming = true;
+                        }
                     }
                 }
 
                 TextField {
+                    id: folderRenameField
+                    visible: folderRoot.renaming
                     Layout.fillWidth: true
                     Layout.minimumWidth: 0
                     color: ink
@@ -1528,101 +2133,111 @@ Item {
                         radius: 8
                         color: fieldBg
                         border.width: 1
-                        border.color: cardEdge
+                        border.color: root.accentPurple
+                    }
+                    onVisibleChanged: {
+                        if (visible) {
+                            forceActiveFocus();
+                            selectAll();
+                        }
                     }
                     onEditingFinished: {
-                        var nm = text.trim().substring(0, 120);
-                        if (!nm.length || !fid.length)
-                            return;
-
-                        function rename(nodes) {
-                            if (!nodes)
-                                return false;
-                            for (var i = 0; i < nodes.length; i++) {
-                                var n = nodes[i];
-                                if (!n)
-                                    continue;
-                                if (n.kind === "folder" && ("" + n.id) === fid) {
-                                    n.name = nm;
-                                    return true;
-                                }
-                                if (n.kind === "folder") {
-                                    if (rename(n.children || []))
-                                        return true;
-                                }
-                            }
-                            return false;
-                        }
-
-                        var tree = root._cloneUiTree(rulesUiTree);
-                        if (!rename(tree))
-                            return;
-                        root._preserveScroll(function() {
-                            rulesUiTree = tree;
-                            root._nextUiRevision();
-                            root._saveUiLayoutOnly();
-                            root._saveRulesPayload(false);
-                        });
+                        folderRoot.renaming = false;
+                        root._renameFolder(fid, text);
                     }
                 }
 
-                Rectangle {
+                Text {
+                    id: countText
                     Layout.alignment: Qt.AlignVCenter
-                    radius: 10
-                    color: "#0f1420"
-                    border.width: 1
-                    border.color: cardEdge
                     visible: folderRoot.childCount > 0
-                    implicitHeight: 22
-                    implicitWidth: countText.implicitWidth + 14
-                    Text {
-                        id: countText
-                        anchors.centerIn: parent
-                        text: "" + folderRoot.childCount
-                        color: muted
-                        font.pixelSize: 12
-                    }
+                    text: "(" + folderRoot.childCount + ")"
+                    color: muted
+                    font.pixelSize: 11
                 }
 
-                ConnPillButton {
-                    text: "\u2715"
-                    pillFontSize: 13
-                    leftPadding: 8
-                    rightPadding: 8
-                    topPadding: 4
-                    bottomPadding: 4
-                    Layout.preferredWidth: 34
-                    Layout.maximumWidth: 34
-                    hoverEnabled: true
-                    ToolTip.visible: hovered
+                // Secondary folder ops (rename / delete) live in "…" — clean and uncluttered.
+                Rectangle {
+                    id: folderMoreBtn
+                    Layout.alignment: Qt.AlignVCenter
+                    Layout.preferredWidth: 28
+                    Layout.preferredHeight: 28
+                    radius: 6
+                    color: folderMoreMouse.containsMouse ? "#1c2940" : "transparent"
+                    border.width: folderMoreMouse.containsMouse ? 1 : 0
+                    border.color: "#3b4458"
+
+                    Image {
+                        anchors.centerIn: parent
+                        width: 14
+                        height: 14
+                        source: root._assetUrl("web_more.svg")
+                        fillMode: Image.PreserveAspectFit
+                    }
+
+                    MouseArea {
+                        id: folderMoreMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (!root.dndActive && !root.dndDropPending)
+                                folderMoreMenu.popup();
+                        }
+                    }
+
+                    ToolTip.visible: !!(folderMoreMouse && folderMoreMouse.containsMouse)
                     ToolTip.delay: 350
-                    ToolTip.text: api ? api.loc("actions.folder_delete") : "Delete folder"
-                    onClicked: root._deleteFolderKeepRules(fid)
+                    ToolTip.text: api ? api.loc("actions.folder_menu_tt") : "Folder actions"
+
+                    Menu {
+                        id: folderMoreMenu
+                        MenuItem {
+                            text: api ? api.loc("actions.folder_rename") : "Rename"
+                            onTriggered: {
+                                folderRoot.renaming = true;
+                            }
+                        }
+                        MenuSeparator {}
+                        MenuItem {
+                            text: api ? api.loc("actions.folder_delete") : "Delete folder"
+                            onTriggered: root._deleteFolderKeepRules(fid)
+                        }
+                    }
                 }
             }
         }
 
         Item {
             id: folderBody
-            width: parent.width
-            height: expanded ? folderInnerCol.implicitHeight : 0
+            Layout.fillWidth: true
+            Layout.preferredHeight: expanded ? folderInnerCol.implicitHeight : 0
             clip: true
+
+            Rectangle {
+                visible: folderRoot.childCount > 0
+                x: 16
+                y: 0
+                width: 1
+                height: folderInnerCol.implicitHeight
+                color: "#263650"
+            }
 
             Rectangle {
                 anchors.fill: folderInnerCol
                 anchors.margins: folderRoot.childCount > 0 ? 4 : 0
-                radius: 10
-                color: "#111827"
-                border.width: folderRoot.childCount > 0 ? 1 : 0
-                border.color: cardEdge
-                visible: folderRoot.childCount > 0
+                radius: 0
+                color: "transparent"
+                border.width: 0
+                visible: false
                 z: -1
             }
 
             Column {
                 id: folderInnerCol
-                width: parent.width
-                spacing: 8
+                anchors.left: parent.left
+                anchors.right: parent.right
+                spacing: 6
 
                 Repeater {
                     model: (node && node.children) ? node.children : []
@@ -1635,6 +2250,7 @@ Item {
                             ? node.children[index + 1]
                             : null
                         prevSibling: (node && node.children && index > 0) ? node.children[index - 1] : null
+                        parentFolderId: folderRoot.fid
                     }
                 }
             }
@@ -1651,18 +2267,20 @@ Item {
         UiRulesFolderColumn {}
     }
 
-    component UiRulesTreeItem: Column {
+    component UiRulesTreeItem: ColumnLayout {
         id: treeItemRoot
         property var node: null
         property int depth: 0
         property var nextSibling: null
         property var prevSibling: null
+        property string parentFolderId: ""
 
         spacing: 0
-        width: parent.width
+        Layout.fillWidth: true
 
         UiRulesDropGap {
-            width: parent.width
+            Layout.fillWidth: true
+            Layout.leftMargin: depth * 16
             visible: !!prevSibling
             dropBeforeRuleId: node && node.kind === "rule" ? ("" + node.rule_id) : ""
             dropBeforeFolderId: node && node.kind === "folder" ? ("" + node.id) : ""
@@ -1670,7 +2288,8 @@ Item {
 
         Loader {
             id: innerRuleLoader
-            width: parent.width
+            Layout.fillWidth: true
+            Layout.leftMargin: depth * 16
             active: !!node && node.kind !== "folder"
             visible: active
             sourceComponent: uiRulesRuleRowComp
@@ -1681,6 +2300,7 @@ Item {
                 item.node = node;
                 item.depth = depth;
                 item.nextSibling = nextSibling;
+                item.dndParentFolderId = parentFolderId;
             }
             Connections {
                 target: treeItemRoot
@@ -1690,6 +2310,11 @@ Item {
                     innerRuleLoader.item.node = treeItemRoot.node;
                     innerRuleLoader.item.depth = treeItemRoot.depth;
                     innerRuleLoader.item.nextSibling = treeItemRoot.nextSibling;
+                    innerRuleLoader.item.dndParentFolderId = treeItemRoot.parentFolderId;
+                }
+                function onParentFolderIdChanged() {
+                    if (innerRuleLoader.item)
+                        innerRuleLoader.item.dndParentFolderId = treeItemRoot.parentFolderId;
                 }
                 function onDepthChanged() {
                     if (!innerRuleLoader.item || !treeItemRoot.node)
@@ -1706,7 +2331,8 @@ Item {
 
         Loader {
             id: innerFolderLoader
-            width: parent.width
+            Layout.fillWidth: true
+            Layout.leftMargin: depth * 16
             active: !!node && node.kind === "folder"
             visible: active
             sourceComponent: uiRulesFolderColumnComp
@@ -1717,6 +2343,7 @@ Item {
                 item.node = node;
                 item.depth = depth;
                 item.nextSibling = nextSibling;
+                item.dndParentFolderId = parentFolderId;
             }
             Connections {
                 target: treeItemRoot
@@ -1726,6 +2353,11 @@ Item {
                     innerFolderLoader.item.node = treeItemRoot.node;
                     innerFolderLoader.item.depth = treeItemRoot.depth;
                     innerFolderLoader.item.nextSibling = treeItemRoot.nextSibling;
+                    innerFolderLoader.item.dndParentFolderId = treeItemRoot.parentFolderId;
+                }
+                function onParentFolderIdChanged() {
+                    if (innerFolderLoader.item)
+                        innerFolderLoader.item.dndParentFolderId = treeItemRoot.parentFolderId;
                 }
                 function onDepthChanged() {
                     if (!innerFolderLoader.item || !treeItemRoot.node)
@@ -1874,13 +2506,13 @@ Item {
             color: chk.down ? "#1a2232" : (chk.checked ? "#134e4a" : root.fieldBg)
             border.width: 1
             border.color: chk.checked ? "#14b8a6" : (chk.hovered ? "#3b4458" : root.cardEdge)
-            Text {
+            Image {
                 anchors.centerIn: parent
-                text: "✓"
-                font.pixelSize: 11
-                font.bold: true
-                color: root.ink
-                visible: chk.checked
+                width: 12
+                height: 12
+                source: root._assetUrl("check.svg")
+                fillMode: Image.PreserveAspectFit
+                opacity: chk.checked ? 1.0 : 0.0
             }
         }
         contentItem: Text {
@@ -1889,12 +2521,14 @@ Item {
             opacity: chk.enabled ? 1.0 : 0.55
             color: root.ink
             verticalAlignment: Text.AlignVCenter
+            wrapMode: Text.WordWrap
             leftPadding: chk.indicator.width + chk.spacing
         }
     }
 
     component ConnSlider: Slider {
         id: sl
+        property color trackColor: "#14b8a6"
         implicitHeight: 28
         background: Rectangle {
             x: sl.leftPadding
@@ -1908,7 +2542,7 @@ Item {
             Rectangle {
                 width: sl.visualPosition * parent.width
                 height: parent.height
-                color: "#14b8a6"
+                color: sl.trackColor
                 radius: 2
             }
         }
@@ -1920,7 +2554,7 @@ Item {
             radius: 7
             color: sl.pressed ? root.ink : "#cbd5e1"
             border.width: 1
-            border.color: sl.hovered ? "#14b8a6" : "#3b4a63"
+            border.color: sl.hovered ? sl.trackColor : "#3b4a63"
         }
     }
 
@@ -2705,7 +3339,14 @@ Item {
         if (n) return n;
         var rr = root._normalizeRuleEvents(r);
         if (!rr || !rr.events || !rr.events.length) return "—";
-        if (rr.events.length === 1) return root._oneEventTitle(rr.events[0]);
+        if (rr.events.length === 1) {
+            var ev = rr.events[0];
+            if (ev && ev.type === "chat_keyword") {
+                var kw = ev.params && ev.params.text ? ("" + ev.params.text).trim() : "";
+                if (kw) return kw.charAt(0).toUpperCase() + kw.substring(1);
+            }
+            return root._oneEventTitle(ev);
+        }
         var parts = [];
         for (var ti = 0; ti < rr.events.length; ti++)
             parts.push(root._oneEventTitle(rr.events[ti]));
@@ -2717,9 +3358,474 @@ Item {
         if (!r || !r.actions || !r.actions.length)
             return api ? api.loc("actions.rule_no_actions") : "no actions";
         var parts = [];
-        for (var i = 0; i < r.actions.length; i++)
-            parts.push(r.actions[i].type || "?");
+        for (var i = 0; i < r.actions.length; i++) {
+            var a = r.actions[i] || {};
+            parts.push(root._actionHumanName(a.type));
+        }
         return parts.join(", ");
+    }
+
+    function _actionHumanName(t) {
+        var v = (t || "").trim();
+        if (v === "run_exe") v = "run_program";
+        function L(key, fb) { return api ? api.loc(key) : fb; }
+        if (v === "play_sound") return L("actions.play_sound", "Програти звук");
+        if (v === "play_random_myinstants_ua") return L("actions.play_random_myinstants_ua", "Випадковий звук");
+        if (v === "speak_tts") return L("actions.speak_tts", "Озвучити текст");
+        if (v === "show_overlay") return L("actions.show_overlay", "Показати в оверлеї");
+        if (v === "obs_scene") return L("actions.obs_scene", "Керувати OBS");
+        if (v === "write_file") return L("actions.write_file", "Записати у файл");
+        if (v === "run_program") return L("actions.run_program", "Запустити програму");
+        if (v === "simulate_keystrokes") return L("actions.simulate_keystrokes", "Натиснути клавіші");
+        return v || "?";
+    }
+
+    // Human-readable "WHEN …" summary for the rule library rows.
+    // e.g. 'Чат · Певне слово "привіт"' instead of raw trigger ids.
+    function _whenSummary(r) {
+        if (!r) return "—";
+        var rr = root._normalizeRuleEvents(r);
+        if (!rr || !rr.events || !rr.events.length) return "—";
+        var parts = [];
+        for (var ti = 0; ti < rr.events.length; ti++) {
+            (function(ev) {
+                var t = (ev && ev.type) ? ("" + ev.type) : "";
+                var p = (ev && ev.params) || {};
+                var plat = root._effectiveTriggerPlatform(ev);
+                var platLabel = "";
+                if (plat === "tiktok") platLabel = "TikTok";
+                else if (plat === "twitch") platLabel = "Twitch";
+                else if (plat === "youtube") platLabel = "YouTube";
+                else if (plat === "kick") platLabel = "Kick";
+                if (t === "chat_keyword") {
+                    var kw = (p.text !== undefined && p.text !== null) ? ("" + p.text).trim() : "";
+                    var kindLabel = api ? api.loc("actions.event.chat_keyword") : "Chat keyword";
+                    var s = (platLabel ? platLabel + " · " : "Чат · ") + kindLabel;
+                    if (kw) s += ' "' + (kw.length > 24 ? kw.substring(0, 24) + "…" : kw) + '"';
+                    parts.push(s);
+                    return;
+                }
+                parts.push(root._oneEventTitle(ev));
+            })(rr.events[ti]);
+        }
+        var sep = "  /  ";
+        return parts.join(sep);
+    }
+
+    function _actionsCountText(r) {
+        var n = (r && r.actions) ? r.actions.length : 0;
+        if (n === 0) return api ? api.loc("actions.rule_no_actions") : "no actions";
+        if (n === 1) return api ? api.loc("actions.rule_one_action") : "1 action";
+        var tmpl = api ? api.loc("actions.rule_n_actions") : "%1 actions";
+        return ("" + tmpl).replace("%1", "" + n);
+    }
+
+    function _shortQuote(s, maxLen) {
+        var t = (s !== undefined && s !== null) ? ("" + s).trim() : "";
+        if (t.length > maxLen) t = t.substring(0, maxLen) + "…";
+        return t;
+    }
+
+    // Human-readable single-trigger summary, e.g. Слово «привіт».
+    function _humanTrigger(ev) {
+        if (!ev) return "—";
+        var t = (ev.type || "").trim();
+        var p = ev.params || {};
+        if (t === "chat_keyword") {
+            var kw = root._shortQuote(p.text, 24);
+            var tmpl = api ? api.loc("actions.sum_word") : "Word “%1”";
+            if (!kw) return api ? api.loc("actions.event.chat_keyword") : "Chat keyword";
+            return ("" + tmpl).replace("%1", kw);
+        }
+        if (t === "gift_received") {
+            var gn = (p.gift_name !== undefined && p.gift_name !== null) ? ("" + p.gift_name).trim() : "";
+            if (gn) return root._shortQuote(gn, 28);
+            return api ? api.loc("actions.event.gift_received") : "Gift received";
+        }
+        return root._oneEventTitle(ev);
+    }
+
+    // Combined second line for rule rows: trigger summary · action count.
+    // e.g. Слово «привіт» · 1 дія
+    function _ruleLine2(r) {
+        if (!r) return "—";
+        var rr = root._normalizeRuleEvents(r);
+        var trig = "—";
+        if (rr && rr.events && rr.events.length) {
+            var parts = [];
+            for (var i = 0; i < rr.events.length; i++)
+                parts.push(root._humanTrigger(rr.events[i]));
+            trig = parts.join(" / ");
+        }
+        return trig + " · " + root._actionsCountText(r);
+    }
+
+    function _actionVerb(t) {
+        var v = (t || "").trim();
+        if (v === "run_exe") v = "run_program";
+        function L(key, fb) { return api ? api.loc(key) : fb; }
+        if (v === "play_sound") return L("actions.verb_play_sound", "plays a sound");
+        if (v === "play_random_myinstants_ua") return L("actions.verb_play_random", "plays a random sound");
+        if (v === "speak_tts") return L("actions.verb_speak_tts", "speaks text");
+        if (v === "show_overlay") return L("actions.verb_show_overlay", "shows the overlay");
+        if (v === "obs_scene") return L("actions.verb_obs", "controls OBS");
+        if (v === "write_file") return L("actions.verb_write_file", "writes to a file");
+        if (v === "run_program") return L("actions.verb_run_program", "runs a program");
+        if (v === "simulate_keystrokes") return L("actions.verb_keystrokes", "presses keys");
+        return v || "?";
+    }
+
+    function _actionDesc(t) {
+        var v = (t || "").trim();
+        if (v === "run_exe") v = "run_program";
+        function L(key, fb) { return api ? api.loc(key) : fb; }
+        if (v === "play_sound") return L("actions.action_desc_play_sound", "Plays an audio file");
+        if (v === "play_random_myinstants_ua") return L("actions.action_desc_play_random", "Random sound");
+        if (v === "speak_tts") return L("actions.action_desc_speak_tts", "Speaks text aloud");
+        if (v === "show_overlay") return L("actions.action_desc_show_overlay", "Shows text on overlay");
+        if (v === "obs_scene") return L("actions.action_desc_obs", "Controls the OBS scene");
+        if (v === "write_file") return L("actions.action_desc_write_file", "Writes text to a file");
+        if (v === "run_program") return L("actions.action_desc_run_program", "Launches a program");
+        if (v === "simulate_keystrokes") return L("actions.action_desc_keystrokes", "Simulates key presses");
+        return v || "?";
+    }
+
+    // Generated rule description for the editor header, e.g.
+    // Реагує на слово «привіт» у чаті та програє звук
+    function _ruleDescription(r) {
+        if (!r) return "";
+        var rr = root._normalizeRuleEvents(r);
+        var trigText = "";
+        if (rr && rr.events && rr.events.length) {
+            var ev0 = rr.events[0];
+            var t0 = (ev0.type || "").trim();
+            var p0 = ev0.params || {};
+            if (t0 === "chat_keyword") {
+                var kw = root._shortQuote(p0.text, 24) || "…";
+                var tmpl = api ? api.loc("actions.desc_word_in_chat") : "the word “%1” in chat";
+                trigText = ("" + tmpl).replace("%1", kw);
+            } else {
+                trigText = root._humanTrigger(ev0);
+            }
+        }
+        var prefix = api ? api.loc("actions.desc_prefix") : "Reacts to ";
+        var out = prefix + trigText;
+        var acts = (r && r.actions) ? r.actions : [];
+        var andWord = api ? api.loc("actions.desc_and") : " and ";
+        if (!acts.length) {
+            out += api ? api.loc("actions.desc_no_actions") : " (add an action below)";
+            return out;
+        }
+        if (acts.length === 1) {
+            out += andWord + root._actionVerb(acts[0].type);
+            return out;
+        }
+        var nTmpl = api ? api.loc("actions.verb_n_actions") : "runs %1 actions";
+        out += andWord + ("" + nTmpl).replace("%1", "" + acts.length);
+        return out;
+    }
+
+    // Rename a folder by id (shared by inline edit + folder menu).
+    function _renameFolder(fid, name) {
+        var nm = (name || "").trim().substring(0, 120);
+        if (!nm.length || !fid.length)
+            return false;
+        function rename(nodes) {
+            if (!nodes)
+                return false;
+            for (var i = 0; i < nodes.length; i++) {
+                var n = nodes[i];
+                if (!n)
+                    continue;
+                if (n.kind === "folder" && ("" + n.id) === fid) {
+                    n.name = nm;
+                    return true;
+                }
+                if (n.kind === "folder") {
+                    if (rename(n.children || []))
+                        return true;
+                }
+            }
+            return false;
+        }
+        var tree = root._cloneUiTree(rulesUiTree);
+        if (!rename(tree))
+            return false;
+        root._preserveScroll(function() {
+            rulesUiTree = tree;
+            root._nextUiRevision();
+            root._saveUiLayoutOnly();
+            root._saveRulesPayload(false);
+        });
+        return true;
+    }
+
+    function _ruleIconForRow(r) {
+        var rr = root._normalizeRuleEvents(r);
+        var t = (rr && rr.events && rr.events.length) ? ("" + (rr.events[0].type || "")) : "";
+        if (t === "gift_received" || t === "tiktok_any_gift_received") return "gift.svg";
+        if (t === "tiktok_likes_received") return "web_event_gift.svg";
+        if (t.indexOf("superchat") >= 0 || t.indexOf("supersticker") >= 0 || t.indexOf("cheer") >= 0)
+            return "donation.svg";
+        if (t.indexOf("subscribe") >= 0 || t.indexOf("subscription") >= 0 || t.indexOf("paid_subscribed") >= 0)
+            return "web_crown.svg";
+        if (t.indexOf("follow") >= 0 || t === "tiktok_joined" || t === "tiktok_shared" || t === "tiktok_first_activity")
+            return "users.svg";
+        if (t.indexOf("raid") >= 0) return "raid.svg";
+        return "chat.svg";
+    }
+
+    function _actionIconForType(t) {
+        var v = (t || "play_sound").trim();
+        if (v === "run_exe") v = "run_program";
+        if (v === "play_sound") return "web_volume.svg";
+        if (v === "play_random_myinstants_ua") return "web_music.svg";
+        if (v === "speak_tts") return "mic.svg";
+        if (v === "show_overlay") return "web_camera.svg";
+        if (v === "obs_scene") return "web_signal.svg";
+        if (v === "write_file") return "copy.svg";
+        if (v === "run_program") return "web_arrow_right.svg";
+        if (v === "simulate_keystrokes") return "web_key.svg";
+        return "web_bolt.svg";
+    }
+
+    // Default params for a freshly added action (mirrors the type-switch defaults in the card).
+    function _defaultActionParams(t) {
+        if (t === "play_sound") return {
+            file_path: "",
+            volume_percent: 100,
+            skip_if_same_playing: false,
+            play_immediately: false,
+            respect_gift_combo: false
+        };
+        if (t === "play_random_myinstants_ua") return {
+            volume_percent: 100,
+            skip_if_same_playing: false,
+            play_immediately: false,
+            respect_gift_combo: false,
+            max_duration_seconds: 0,
+            max_page: 1,
+            skip_words: ""
+        };
+        if (t === "write_file") return { file_path: "", text: "", mode: "overwrite" };
+        if (t === "run_program") return { program_path: "", arguments: "" };
+        if (t === "simulate_keystrokes") return {
+            sequence: "",
+            hold_ms: 0,
+            game_compatibility: false,
+            use_interception: false,
+            modifier_ctrl: false,
+            modifier_alt: false,
+            modifier_shift: false
+        };
+        if (t === "speak_tts") return { text: "" };
+        if (t === "show_overlay") return { text: "", seconds: 3 };
+        if (t === "obs_scene") return {
+            mode: "program_scene",
+            canvas_uuid: "",
+            scene_name: "",
+            source_name: "",
+            visible: true,
+            revert_previous_state: false,
+            revert_delay_seconds: 5
+        };
+        return {};
+    }
+
+    function _clearSelectedRuleActions() {
+        if (root.selectedRule === null)
+            return;
+        var r = root._copyRule(root.selectedRule);
+        if (r == null)
+            return;
+        root.actionsModel = [];
+        root.selectedActionIdx = -1;
+        r.actions = [];
+        root._setRule(root.selectedIdx, r);
+        root._markDirty();
+        root._save();
+    }
+
+    function _moveAction(fromIdx, toIdx) {
+        if (root.selectedRule === null || fromIdx < 0 || toIdx < 0)
+            return;
+        var aa = root.actionsModel.slice();
+        if (fromIdx >= aa.length || toIdx >= aa.length)
+            return;
+        var moved = aa.splice(fromIdx, 1)[0];
+        aa.splice(toIdx, 0, moved);
+        var r = root._copyRule(root.selectedRule);
+        if (r == null)
+            return;
+        r.actions = aa;
+        root.actionsModel = aa;
+        root.selectedActionIdx = toIdx;
+        root._setRule(root.selectedIdx, r);
+        root._markDirty();
+        root._save();
+    }
+
+    function _addActionOfType(t) {
+        if (root.selectedRule === null) return;
+        var r = root._copyRule(root.selectedRule);
+        if (r == null) return;
+        var aa = root.actionsModel.slice();
+        var replaceIdx = root.actionPickerReplaceIdx;
+        if (replaceIdx >= 0 && replaceIdx < aa.length) {
+            aa[replaceIdx] = {
+                type: t,
+                params: root._defaultActionParams(t)
+            };
+            root.selectedActionIdx = replaceIdx;
+        } else {
+            aa.push({ type: t, params: root._defaultActionParams(t) });
+            root.selectedActionIdx = aa.length - 1;
+        }
+        root.actionsModel = aa;
+        r.actions = aa;
+        root._setRule(root.selectedIdx, r);
+        root._markDirty();
+        root._save();
+        root.showActionPicker = false;
+        root.actionPickerReplaceIdx = -1;
+        root.actionPickerQuery = "";
+    }
+
+    // Action picker model: categorized existing action types only (no invented types).
+    function _actionPickerEntries() {
+        function label(key, fallback) { return api ? api.loc(key) : fallback; }
+        return [
+            { group: label("actions.action_group_sound", "Sound"), type: "play_sound",
+              title: label("actions.play_sound", "Play sound") },
+            { group: label("actions.action_group_sound", "Sound"), type: "play_random_myinstants_ua",
+              title: label("actions.play_random_myinstants_ua", "Random MyInstants UA") },
+            { group: label("actions.action_group_voice", "Voice & overlay"), type: "speak_tts",
+              title: label("actions.speak_tts", "Speak text (TTS)") },
+            { group: label("actions.action_group_voice", "Voice & overlay"), type: "show_overlay",
+              title: label("actions.show_overlay", "Show on Actions overlay") },
+            { group: label("actions.action_group_obs", "OBS"), type: "obs_scene",
+              title: label("actions.obs_scene", "OBS scene") },
+            { group: label("actions.action_group_system", "System"), type: "write_file",
+              title: label("actions.write_file", "Write to file") },
+            { group: label("actions.action_group_system", "System"), type: "run_program",
+              title: label("actions.run_program", "Run program") },
+            { group: label("actions.action_group_system", "System"), type: "simulate_keystrokes",
+              title: label("actions.simulate_keystrokes", "Simulate keystrokes") }
+        ];
+    }
+
+    function _actionPickerFiltered() {
+        var q = (root.actionPickerQuery || "").trim().toLowerCase();
+        var all = root._actionPickerEntries();
+        if (!q) return all;
+        var out = [];
+        for (var i = 0; i < all.length; i++) {
+            var e = all[i];
+            if (("" + e.title).toLowerCase().indexOf(q) >= 0
+                || ("" + e.group).toLowerCase().indexOf(q) >= 0
+                || ("" + e.type).toLowerCase().indexOf(q) >= 0)
+                out.push(e);
+        }
+        return out;
+    }
+
+    function _isPinnedRule(r) {
+        return !!(r && (r.pinned === true || r.favorite === true || r.is_pinned === true));
+    }
+
+    function _topLevelRuleNodes() {
+        var out = [];
+        var tree = root.rulesUiTree || [];
+        for (var i = 0; i < tree.length; i++) {
+            if (tree[i] && tree[i].kind === "rule" && tree[i].rule_id)
+                out.push(tree[i]);
+        }
+        return out;
+    }
+
+    function _topLevelFolderNodes() {
+        var out = [];
+        var tree = root.rulesUiTree || [];
+        for (var i = 0; i < tree.length; i++) {
+            if (tree[i] && tree[i].kind === "folder")
+                out.push(tree[i]);
+        }
+        return out;
+    }
+
+    function _pinnedRuleNodes() {
+        var out = [];
+        var rules = root.rulesModel || [];
+        for (var i = 0; i < rules.length; i++) {
+            if (_isPinnedRule(rules[i]) && rules[i].id)
+                out.push({ kind: "rule", rule_id: "" + rules[i].id });
+        }
+        return out;
+    }
+
+    function _folderCount() {
+        function count(nodes) {
+            var n = 0;
+            for (var i = 0; i < (nodes || []).length; i++) {
+                if (!nodes[i]) continue;
+                if (nodes[i].kind === "folder") {
+                    n++;
+                    n += count(nodes[i].children || []);
+                }
+            }
+            return n;
+        }
+        return count(root.rulesUiTree || []);
+    }
+
+    function _unfiledRuleCount() {
+        return _topLevelRuleNodes().length;
+    }
+
+    function _ruleMatchesLibraryFilter(r) {
+        var f = root.libraryFilter || "all";
+        if (f === "pinned") return _isPinnedRule(r);
+        if (f === "unfiled") {
+            var top = _topLevelRuleNodes();
+            for (var i = 0; i < top.length; i++)
+                if (top[i].rule_id === (r && "" + r.id)) return true;
+            return false;
+        }
+        // The folders filter is applied by the section repeater; keep all
+        // children inside those folders visible so the hierarchy remains useful.
+        return true;
+    }
+
+    function _ruleMatchesSearch(r) {
+        var q = (root.ruleSearchText || "").trim().toLowerCase();
+        if (!q) return true;
+        var hay = [];
+        if (r && r.name) hay.push("" + r.name);
+        try { hay.push(root._whenSummary(r)); } catch (e0) {}
+        try { hay.push(root._ruleLine2(r)); } catch (e1) {}
+        try { hay.push(root._ruleListSubtitle(r)); } catch (e2) {}
+        return hay.join(" ").toLowerCase().indexOf(q) >= 0;
+    }
+
+    function _markDirty() {
+        root.hasUnsavedChanges = true;
+    }
+
+    function _deleteRuleAt(i) {
+        if (i < 0 || i >= rulesModel.length)
+            return;
+        var killId = rulesModel[i] && rulesModel[i].id ? ("" + rulesModel[i].id) : "";
+        var copy = rulesModel.slice();
+        copy.splice(i, 1);
+        root._preserveScroll(function() {
+            rulesModel = copy;
+            root._patchUiRemoveRuleId(killId);
+            if (("" + root.selectedRuleId) === killId)
+                root.selectedRuleId = "";
+            root._syncRulesModelOrder();
+            root._saveUiLayoutOnly();
+            root._saveRulesPayload(false);
+        });
     }
 
     function _duplicateRuleAt(i) {
@@ -2776,6 +3882,8 @@ Item {
     }
 
     function _load() {
+        // A reload must never leave a source/preview pair alive.
+        root.finishDrag(false);
         if (!actApi) return;
         root._rulesPersistBlocked = true;
         var ok = false;
@@ -2815,8 +3923,10 @@ Item {
             _syncSelected();
         }
         // Failed load keeps persistence blocked so autosave/UI cannot overwrite good QSettings JSON.
-        if (ok)
+        if (ok) {
             root._rulesPersistBlocked = false;
+            root.hasUnsavedChanges = false;
+        }
     }
 
     function _save(showToast) {
@@ -2872,37 +3982,81 @@ Item {
         spacing: 14
 
         Rectangle {
-            // Wider so rule rows clear the list scrollbar; was 340.
-            Layout.preferredWidth: 396
+            // The library is a panel, not a card around the entire rule tree.
+            Layout.preferredWidth: 360
+            Layout.minimumWidth: 330
+            Layout.maximumWidth: 380
             Layout.fillHeight: true
-            radius: 14
-            color: cardBase
-            border.width: 1
-            border.color: cardEdge
+            radius: 0
+            color: "#0b1220"
+            border.width: 0
+
+            Rectangle {
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                anchors.right: parent.right
+                width: 1
+                color: "#263650"
+            }
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 14
+                anchors.leftMargin: 12
+                anchors.rightMargin: 14
+                anchors.topMargin: 12
+                anchors.bottomMargin: 12
                 spacing: 10
 
-                Text {
+                // Library header: title + subtitle (automation-center identity).
+                RowLayout {
                     Layout.fillWidth: true
-                    text: api ? api.loc("actions.title") : "Actions"
-                    color: ink
-                    font.pixelSize: 16
-                    font.bold: true
-                    wrapMode: Text.Wrap
+                    spacing: 8
+
+                    Image {
+                        Layout.preferredWidth: 20
+                        Layout.preferredHeight: 20
+                        Layout.alignment: Qt.AlignVCenter
+                        source: root._assetUrl("web_bolt.svg")
+                        fillMode: Image.PreserveAspectFit
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 1
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: api ? api.loc("actions.title") : "Actions"
+                            color: ink
+                            font.pixelSize: 16
+                            font.bold: true
+                            wrapMode: Text.Wrap
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: api ? api.loc("actions.library_subtitle") : "Stream event automation"
+                            color: muted
+                            font.pixelSize: 11
+                            wrapMode: Text.Wrap
+                        }
+                    }
                 }
 
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 8
 
-                    ConnPillButton {
+                    // Compact primary action: add rule.
+                    CheremshaPrimaryButton {
                         text: api ? api.loc("actions.add_rule") : "Add rule"
+                        iconName: "web_plus.svg"
+                        Layout.preferredWidth: 150
                         onClicked: {
                             root._save(false);
                             var nr = _defaultRule();
+                            // Useful default name so a new rule reads well in the library.
+                            var defName = api ? api.loc("actions.new_rule_default_name") : "New rule";
+                            nr.name = defName || "New rule";
                             var copy = rulesModel.slice();
                             copy.push(nr);
                             rulesModel = copy;
@@ -2920,11 +4074,70 @@ Item {
                         }
                     }
 
-                    ConnPillButton {
+                    CheremshaSecondaryButton {
                         text: api ? api.loc("actions.add_folder") : "+ Folder"
+                        iconName: "web_folder.svg"
+                        Layout.preferredWidth: 105
                         onClicked: root._insertFolderAtRoot("")
                     }
+                }
 
+                // Compact search field (filters the visible list only).
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 32
+                    radius: 8
+                    color: fieldBg
+                    border.width: 1
+                    border.color: cardEdge
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        spacing: 6
+
+                        Image {
+                            Layout.preferredWidth: 14
+                            Layout.preferredHeight: 14
+                            Layout.alignment: Qt.AlignVCenter
+                            source: root._assetUrl("web_search.svg")
+                            fillMode: Image.PreserveAspectFit
+                            opacity: 0.85
+                        }
+
+                        TextField {
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignVCenter
+                            color: ink
+                            placeholderTextColor: muted
+                            placeholderText: api ? api.loc("actions.search_ph") : "Search rules…"
+                            text: root.ruleSearchText
+                            font.pixelSize: 12
+                            background: Item {}
+                            onTextChanged: root.ruleSearchText = text
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 5
+                    CheremshaFilterChip {
+                        text: (api ? api.loc("actions.filter_all") : "Усі") + " (" + (root.rulesModel || []).length + ")"
+                        active: root.libraryFilter === "all"
+                        onClicked: root.libraryFilter = "all"
+                    }
+                    CheremshaFilterChip {
+                        text: (api ? api.loc("actions.filter_folders") : "Папки") + " (" + root._folderCount() + ")"
+                        active: root.libraryFilter === "folders"
+                        onClicked: root.libraryFilter = "folders"
+                    }
+                    CheremshaFilterChip {
+                        text: (api ? api.loc("actions.filter_unfiled") : "Без папки") + " (" + root._unfiledRuleCount() + ")"
+                        active: root.libraryFilter === "unfiled"
+                        onClicked: root.libraryFilter = "unfiled"
+                    }
                     Item { Layout.fillWidth: true }
                 }
 
@@ -2932,34 +4145,71 @@ Item {
                     id: rulesList
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+                    Layout.minimumHeight: 0
                     clip: true
-                    ScrollBar.vertical.policy: ScrollBar.AlwaysOn
+                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
                     Column {
-                        width: Math.max(120, rulesList.availableWidth - 28)
-                        spacing: 8
+                        width: Math.max(120, rulesList.availableWidth - 8)
+                        spacing: 4
 
-                        UiRulesDropGap {
+                        CheremshaLibrarySectionHeader {
+                            visible: root.libraryFilter === "all" && root._pinnedRuleNodes().length > 0
                             width: parent.width
-                            dropBeforeRuleId: (rulesUiTree && rulesUiTree.length && rulesUiTree[0].kind === "rule") ? ("" + rulesUiTree[0].rule_id) : ""
-                            dropBeforeFolderId: (rulesUiTree && rulesUiTree.length && rulesUiTree[0].kind === "folder") ? ("" + rulesUiTree[0].id) : ""
+                            iconName: "pin.svg"
+                            title: api ? api.loc("actions.section_pinned") : "Закріплені"
+                            countText: "(" + root._pinnedRuleNodes().length + ")"
                         }
-
                         Repeater {
-                            model: rulesUiTree || []
-
+                            model: root.libraryFilter === "all" ? root._pinnedRuleNodes() : []
                             delegate: UiRulesTreeItem {
                                 width: parent.width
                                 node: modelData
                                 depth: 0
-                                nextSibling: (index + 1 < (rulesUiTree || []).length) ? rulesUiTree[index + 1] : null
-                                prevSibling: index > 0 ? rulesUiTree[index - 1] : null
+                                nextSibling: (index + 1 < root._pinnedRuleNodes().length) ? root._pinnedRuleNodes()[index + 1] : null
+                                prevSibling: index > 0 ? root._pinnedRuleNodes()[index - 1] : null
                             }
                         }
 
+                        Repeater {
+                            model: (root.libraryFilter === "all" || root.libraryFilter === "folders")
+                                ? root._topLevelFolderNodes() : []
+                            delegate: UiRulesTreeItem {
+                                width: parent.width
+                                node: modelData
+                                depth: 0
+                                nextSibling: (index + 1 < root._topLevelFolderNodes().length)
+                                    ? root._topLevelFolderNodes()[index + 1] : null
+                                prevSibling: index > 0 ? root._topLevelFolderNodes()[index - 1] : null
+                            }
+                        }
+
+                        CheremshaLibrarySectionHeader {
+                            visible: (root.libraryFilter === "all" || root.libraryFilter === "unfiled")
+                                && root._unfiledRuleCount() > 0
+                            width: parent.width
+                            iconName: "web_rule.svg"
+                            title: api ? api.loc("actions.section_unfiled") : "Без папки"
+                            countText: "(" + root._unfiledRuleCount() + ")"
+                        }
+                        Repeater {
+                            model: (root.libraryFilter === "all" || root.libraryFilter === "unfiled")
+                                ? root._topLevelRuleNodes() : []
+                            delegate: UiRulesTreeItem {
+                                width: parent.width
+                                node: modelData
+                                depth: 0
+                                nextSibling: (index + 1 < root._topLevelRuleNodes().length)
+                                    ? root._topLevelRuleNodes()[index + 1] : null
+                                prevSibling: index > 0 ? root._topLevelRuleNodes()[index - 1] : null
+                            }
+                        }
                         UiRulesDropGap {
+                            id: unfiledTrailingDropGap
+                            visible: root.libraryFilter === "all" || root.libraryFilter === "unfiled"
                             width: parent.width
                             trailing: true
+                            dndDropZone: root.libraryFilter === "all" || root.libraryFilter === "unfiled"
                         }
                     }
                 }
@@ -2967,33 +4217,110 @@ Item {
         }
 
         Rectangle {
+            // The editor is an application canvas; only its builder sections are cards.
             Layout.fillWidth: true
             Layout.fillHeight: true
-            radius: 14
-            color: cardBase
-            border.width: 1
-            border.color: cardEdge
-            ScrollView {
-                id: rightScroll
+            radius: 0
+            color: "transparent"
+            border.width: 0
+
+            ColumnLayout {
+                id: editorShell
                 anchors.fill: parent
                 anchors.margins: 14
-                clip: true
-                ScrollBar.vertical.policy: ScrollBar.AlwaysOn
+                spacing: 10
 
-                ColumnLayout {
-                    // Narrower than viewport so row controls (e.g. +/−) and combo arrows clear the scrollbar.
-                    width: Math.max(1, rightScroll.availableWidth - 22)
+                ScrollView {
+                    id: rightScroll
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.minimumHeight: 0
+                    contentWidth: availableWidth
+                    clip: true
+                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+                    ColumnLayout {
+                    // The ScrollView owns the available width; all builder cards fill this content column.
+                    width: Math.max(1, rightScroll.availableWidth)
                     spacing: 10
 
-                Text {
-                    text: api ? api.loc("actions.edit") : "Edit"
-                    color: ink
-                    font.pixelSize: 16
-                    font.bold: true
+                // Onboarding empty state: shown when no rules exist at all.
+                // Never a giant empty editor — explain + primary/secondary creation actions.
+                Rectangle {
+                    visible: root.selectedIdx < 0 && rulesModel.length === 0
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: emptyStateCol.implicitHeight + 36
+                    radius: 12
+                    color: "#111827"
+                    border.width: 1
+                    border.color: cardEdge
+
+                    ColumnLayout {
+                        id: emptyStateCol
+                        anchors.fill: parent
+                        anchors.margins: 18
+                        spacing: 8
+
+                        Image {
+                            Layout.preferredWidth: 28
+                            Layout.preferredHeight: 28
+                            Layout.alignment: Qt.AlignHCenter
+                            source: root._assetUrl("web_bolt.svg")
+                            fillMode: Image.PreserveAspectFit
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            horizontalAlignment: Text.AlignHCenter
+                            text: api ? api.loc("actions.empty_title") : "Actions automate your stream"
+                            color: ink
+                            font.pixelSize: 15
+                            font.bold: true
+                            wrapMode: Text.WordWrap
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            horizontalAlignment: Text.AlignHCenter
+                            text: api ? api.loc("actions.empty_body") : "Create a rule that reacts to chat, gifts, subscriptions and other events automatically."
+                            color: muted
+                            font.pixelSize: 12
+                            wrapMode: Text.WordWrap
+                        }
+                        RowLayout {
+                            Layout.alignment: Qt.AlignHCenter
+                            spacing: 8
+                            ConnPillButton {
+                                text: api ? api.loc("actions.empty_create_rule") : "+ Create first rule"
+                                onClicked: {
+                                    var nr = _defaultRule();
+                                    var defName = api ? api.loc("actions.new_rule_default_name") : "New rule";
+                                    nr.name = defName || "New rule";
+                                    var copy = rulesModel.slice();
+                                    copy.push(nr);
+                                    rulesModel = copy;
+                                    var tree = _cloneUiTree(rulesUiTree);
+                                    tree.push({ kind: "rule", rule_id: nr.id });
+                                    root._preserveScroll(function() {
+                                        rulesUiTree = tree;
+                                        root._nextUiRevision();
+                                        selectedRuleId = "" + nr.id;
+                                        selectedIdx = rulesModel.length - 1;
+                                        root._syncRulesModelOrder();
+                                        root._saveUiLayoutOnly();
+                                        root._saveRulesPayload(false);
+                                    });
+                                }
+                            }
+                            ConnPillButton {
+                                text: api ? api.loc("actions.add_folder") : "+ Folder"
+                                onClicked: root._insertFolderAtRoot("")
+                            }
+                        }
+                    }
                 }
 
                 Text {
-                    visible: root.selectedIdx < 0
+                    visible: root.selectedIdx < 0 && rulesModel.length > 0
                     text: api ? api.loc("actions.pick_rule_hint") : "Pick a rule on the left."
                     color: muted
                     font.pixelSize: 12
@@ -3004,31 +4331,234 @@ Item {
                     Layout.fillWidth: true
                     spacing: 10
 
-                    Text { text: api ? api.loc("actions.rule_name") : "Name"; color: muted; font.pixelSize: 12 }
-                    TextField {
+                    // Rule identity header: [icon] name + enabled state + natural summary.
+                    Rectangle {
                         Layout.fillWidth: true
-                        color: ink
-                        placeholderTextColor: muted
-                        placeholderText: api ? api.loc("actions.rule_name_ph") : "e.g. Rose → OBS"
-                        text: root.selectedRule !== null ? (root.selectedRule.name || "") : ""
-                        background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                        onEditingFinished: {
-                            if (root.selectedRule === null) return;
-                            var v = text.trim();
-                            if (v.length > 200) v = v.substring(0, 200);
-                            var r = root._copyRule(root.selectedRule);
-                            if (r == null) return;
-                            r.name = v;
-                            root._setRule(root.selectedIdx, r);
-                            root._save();
+                        implicitHeight: identityInner.implicitHeight + 20
+                        radius: 12
+                        color: "#111827"
+                        border.width: 1
+                        border.color: cardEdge
+
+                        RowLayout {
+                            id: identityInner
+                            anchors.fill: parent
+                            anchors.margins: 10
+                            spacing: 8
+
+                            Rectangle {
+                                Layout.preferredWidth: 38
+                                Layout.preferredHeight: 38
+                                Layout.alignment: Qt.AlignTop
+                                radius: 10
+                                color: "#1d2340"
+                                border.width: 1
+                                border.color: root.accentPurple
+
+                                Image {
+                                    anchors.centerIn: parent
+                                    width: 20
+                                    height: 20
+                                    source: root.selectedRule ? root._assetUrl(root._ruleIconForRow(root.selectedRule)) : root._assetUrl("web_rule.svg")
+                                    fillMode: Image.PreserveAspectFit
+                                }
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                spacing: 4
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    spacing: 5
+                                    TextField {
+                                        Layout.fillWidth: true
+                                        color: ink
+                                        font.pixelSize: 16
+                                        font.bold: true
+                                        placeholderTextColor: muted
+                                        placeholderText: api ? api.loc("actions.rule_name_ph") : "Rule name"
+                                        text: root.selectedRule !== null ? (root.selectedRule.name || "") : ""
+                                        background: Item {}
+                                        onEditingFinished: {
+                                            if (root.selectedRule === null) return;
+                                            var v = text.trim();
+                                            if (v.length > 200) v = v.substring(0, 200);
+                                            var r = root._copyRule(root.selectedRule);
+                                            if (r == null) return;
+                                            r.name = v;
+                                            root._setRule(root.selectedIdx, r);
+                                            root._markDirty();
+                                            root._save();
+                                        }
+                                    }
+                                    Image {
+                                        Layout.preferredWidth: 14
+                                        Layout.preferredHeight: 14
+                                        Layout.alignment: Qt.AlignVCenter
+                                        source: root._assetUrl("edit.svg")
+                                        fillMode: Image.PreserveAspectFit
+                                        opacity: 0.65
+                                    }
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    color: muted
+                                    font.pixelSize: 12
+                                    wrapMode: Text.WordWrap
+                                    text: root.selectedRule ? root._ruleDescription(root.selectedRule) : ""
+                                }
+                            }
+
+                            ColumnLayout {
+                                Layout.alignment: Qt.AlignTop
+                                spacing: 4
+
+                                ConnPrefSwitch {
+                                    Layout.alignment: Qt.AlignHCenter
+                                    checked: root.selectedRule ? !!root.selectedRule.enabled : false
+                                    enabled: root.selectedRule !== null && root.selectedIdx >= 0
+                                    onClicked: {
+                                        if (root.selectedRule === null || root.selectedIdx < 0)
+                                            return;
+                                        var r = root._copyRule(root.selectedRule);
+                                        if (r == null)
+                                            return;
+                                        r.enabled = checked;
+                                        root._setRule(root.selectedIdx, r);
+                                        root._markDirty();
+                                        root._save(false);
+                                    }
+                                }
+                                Text {
+                                    Layout.alignment: Qt.AlignHCenter
+                                    color: (root.selectedRule && root.selectedRule.enabled) ? root.okGreen : muted
+                                    font.pixelSize: 10
+                                    text: (root.selectedRule && root.selectedRule.enabled)
+                                        ? (api ? api.loc("actions.rule_enabled") : "Enabled")
+                                        : (api ? api.loc("actions.rule_disabled") : "Disabled")
+                                }
+                            }
+
+                            Item { Layout.fillWidth: true }
+
+                            ColumnLayout {
+                                Layout.alignment: Qt.AlignTop
+                                spacing: 6
+                                Text {
+                                    visible: !!(root.selectedRule && root.selectedRule.created_at)
+                                    text: root.selectedRule && root.selectedRule.created_at
+                                        ? "Створено: " + root.selectedRule.created_at : ""
+                                    color: muted
+                                    font.pixelSize: 10
+                                }
+                                Text {
+                                    visible: !!(root.selectedRule && root.selectedRule.updated_at)
+                                    text: root.selectedRule && root.selectedRule.updated_at
+                                        ? "Оновлено: " + root.selectedRule.updated_at : ""
+                                    color: muted
+                                    font.pixelSize: 10
+                                }
+                                RowLayout {
+                                    spacing: 6
+                                    CheremshaSecondaryButton {
+                                        text: api ? api.loc("actions.duplicate_btn") : "Duplicate"
+                                        iconName: "copy.svg"
+                                        onClicked: root._duplicateRuleAt(root.selectedIdx)
+                                    }
+                                    CheremshaSecondaryButton {
+                                        text: api ? api.loc("actions.delete") : "Delete"
+                                        iconName: "web_trash.svg"
+                                        danger: true
+                                        onClicked: root._deleteRuleAt(root.selectedIdx)
+                                    }
+                                }
+                            }
                         }
                     }
+
+                    // ============ SECTION 1 — WHEN ============
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: whenInner.implicitHeight + 20
+                        radius: 12
+                        color: "#121a2e"
+                        border.width: 1
+                        border.color: root.accentPurple
+
+                        ColumnLayout {
+                            id: whenInner
+                            anchors.fill: parent
+                            anchors.margins: 12
+                            spacing: 8
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                Image {
+                                    Layout.preferredWidth: 16
+                                    Layout.preferredHeight: 16
+                                    Layout.alignment: Qt.AlignVCenter
+                                    source: root._assetUrl("web_bolt.svg")
+                                    fillMode: Image.PreserveAspectFit
+                                }
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    spacing: 1
+                                    Text {
+                                        text: api ? api.loc("actions.when_title") : "WHEN"
+                                        color: ink
+                                        font.pixelSize: 14
+                                        font.bold: true
+                                    }
+                                    Text {
+                                        text: api ? api.loc("actions.when_subtitle") : "Choose the event that triggers the rule"
+                                        color: muted
+                                        font.pixelSize: 11
+                                    }
+                                }
+                                ConnPillButton {
+                                    visible: root.selectedRule && root.selectedRule.events && root.selectedRule.events.length === 1
+                                    Layout.preferredWidth: 68
+                                    Layout.minimumWidth: 60
+                                    text: "+ АБО"
+                                    pillFontSize: 11
+                                    hoverEnabled: true
+                                    ToolTip.visible: hovered
+                                    ToolTip.delay: 350
+                                    ToolTip.text: api ? api.loc("actions.add_or_trigger_tt") : "Add alternative trigger (OR)"
+                                    onClicked: {
+                                        if (root.selectedRule === null) return;
+                                        var base = root._normalizeRuleEvents(root._copyRule(root.selectedRule));
+                                        if (!base) return;
+                                        var evs = JSON.parse(JSON.stringify(base.events));
+                                        evs.push(root._chatEvent({
+                                            platform: "all",
+                                            text: "",
+                                            match: "contains",
+                                            case_sensitive: false
+                                        }));
+                                        base.events = evs;
+                                        if (base.event) delete base.event;
+                                        root.selectedTriggerIdx = evs.length - 1;
+                                        root._setRule(root.selectedIdx, base);
+                                        root._markDirty();
+                                        root._save(false);
+                                        root._syncTriggerCombos();
+                                    }
+                                }
+                            }
 
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 10
+                        visible: root.selectedRule && root.selectedRule.events && root.selectedRule.events.length > 1
                         Text {
-                            text: api ? api.loc("actions.triggers") : "Triggers"
+                            text: api ? api.loc("actions.triggers_label_when") : "When:"
                             color: muted
                             font.pixelSize: 12
                             Layout.alignment: Qt.AlignVCenter
@@ -3115,12 +4645,21 @@ Item {
                         }
                     }
 
-                    Text {
-                        text: api ? api.loc("actions.trigger_platform_label") : "Trigger platform"
-                        color: muted
-                        font.pixelSize: 12
-                    }
-                    ConnComboBox {
+                    // Common trigger controls stay in one horizontal builder row, matching the reference.
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 1
+                            spacing: 5
+                            Text {
+                                text: api ? api.loc("actions.when_platform_label") : "Platform"
+                                color: muted
+                                font.pixelSize: 11
+                            }
+                            ConnComboBox {
                         id: triggerPlatformCombo
                         Layout.fillWidth: true
                         model: root._triggerPlatformModel()
@@ -3147,12 +4686,18 @@ Item {
                             root._syncTriggerCombos();
                         }
                     }
-                    Text {
-                        text: api ? api.loc("actions.trigger_kind_label") : "Event type"
-                        color: muted
-                        font.pixelSize: 12
-                    }
-                    ConnComboBox {
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 1
+                            spacing: 5
+                            Text {
+                                text: api ? api.loc("actions.when_event_label") : "Event type"
+                                color: muted
+                                font.pixelSize: 11
+                            }
+                            ConnComboBox {
                         id: triggerKindCombo
                         Layout.fillWidth: true
                         model: root.triggerKindModel
@@ -3185,10 +4730,16 @@ Item {
                             root._save();
                             root._syncTriggerCombos();
                         }
-                    }
+                        }
+                        }
 
-                    // Chat keyword editor
-                    ColumnLayout {
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 1
+                            spacing: 5
+
+                            // Chat keyword editor
+                            ColumnLayout {
                         visible: root.editingTrigger && root.editingTrigger.type === "chat_keyword"
                         Layout.fillWidth: true
                         spacing: 6
@@ -3215,7 +4766,9 @@ Item {
                                 root._setRule(root.selectedIdx, r);
                                 root._save();
                             }
+                            }
                         }
+                    }
                     }
 
                     // Gift editor
@@ -3890,22 +5443,127 @@ Item {
                     }
 
                     Rectangle { Layout.fillWidth: true; height: 1; color: cardEdge; opacity: 0.6 }
-                    Text { text: api ? api.loc("actions.actions") : "Actions"; color: ink; font.pixelSize: 14; font.bold: true }
+                    } // WHEN card ColumnLayout
+                    } // WHEN card Rectangle
+
+                    // ============ SECTION 2 — THEN ============
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: thenInner.implicitHeight + 20
+                        radius: 12
+                        color: "#121a2e"
+                        border.width: 1
+                        border.color: root.accentTeal
+
+                        ColumnLayout {
+                            id: thenInner
+                            anchors.fill: parent
+                            anchors.margins: 12
+                            spacing: 8
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                Image {
+                                    Layout.preferredWidth: 16
+                                    Layout.preferredHeight: 16
+                                    Layout.alignment: Qt.AlignVCenter
+                                    source: root._assetUrl("play.svg")
+                                    fillMode: Image.PreserveAspectFit
+                                }
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    spacing: 1
+                                    Text {
+                                        text: api ? api.loc("actions.then_title") : "THEN"
+                                        color: ink
+                                        font.pixelSize: 14
+                                        font.bold: true
+                                    }
+                                    Text {
+                                        text: api ? api.loc("actions.then_subtitle") : "These actions run when the event happens"
+                                        color: muted
+                                        font.pixelSize: 11
+                                    }
+                                }
+                                CheremshaPrimaryButton {
+                                    visible: root.actionsModel && root.actionsModel.length > 0
+                                    text: api ? api.loc("actions.add_action_short") : "+ Add action"
+                                    iconName: "web_plus.svg"
+                                    Layout.preferredWidth: 112
+                                    Layout.minimumWidth: 0
+                                    Layout.alignment: Qt.AlignVCenter
+                                    onClicked: {
+                                        root.actionPickerReplaceIdx = -1;
+                                        root.showActionPicker = true;
+                                    }
+                                }
+                                CheremshaIconButton {
+                                    visible: root.actionsModel && root.actionsModel.length > 0
+                                    iconName: "web_more.svg"
+                                    Layout.alignment: Qt.AlignVCenter
+                                    onClicked: thenMoreMenu.popup()
+                                    Menu {
+                                        id: thenMoreMenu
+                                        MenuItem {
+                                            text: api ? (api.loc("actions.clear") || "Clear") : "Clear"
+                                            onTriggered: root._clearSelectedRuleActions()
+                                        }
+                                    }
+                                }
+                            }
+
+                    // With no actions this is an intentional builder step, not an empty form.
+                    Rectangle {
+                        visible: !root.actionsModel || root.actionsModel.length === 0
+                        Layout.fillWidth: true
+                        implicitHeight: emptyActionsCol.implicitHeight + 28
+                        radius: 10
+                        color: "#0f172a"
+                        border.width: 1
+                        border.color: cardEdge
+
+                        ColumnLayout {
+                            id: emptyActionsCol
+                            anchors.fill: parent
+                            anchors.margins: 16
+                            spacing: 5
+
+                            CheremshaPrimaryButton {
+                                Layout.alignment: Qt.AlignHCenter
+                                iconName: "web_plus.svg"
+                                text: api ? api.loc("actions.then_empty_cta") : "+ Add first action"
+                                onClicked: {
+                                    root.actionPickerReplaceIdx = -1;
+                                    root.showActionPicker = true;
+                                }
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                text: api ? api.loc("actions.then_empty_hint") : "Choose what Cheremsha should do when the rule triggers"
+                                color: muted
+                                font.pixelSize: 11
+                                wrapMode: Text.WordWrap
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+                        }
+                    }
 
                     ListView {
                         id: actionsList
+                        visible: root.actionsModel && root.actionsModel.length > 0
                         Layout.fillWidth: true
-                        width: parent.width
                         clip: true
-                        interactive: true
-                        spacing: 10
+                        interactive: false
+                        spacing: 8
                         model: root.actionsModel
                         property int _contentHeightCache: 0
                         implicitHeight: _contentHeightCache
                         onContentHeightChanged: _contentHeightCache = contentHeight
-                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AlwaysOn }
-
-                        // Expose root API & action types to delegate via ListView.view.*
+                        // The page ScrollView is the single vertical scroll container.
+                        // Expose root API & action types to ListView.view.*
                         property var rootApi: root
                         property var actionTypes: root.actionTypeModel
 
@@ -3931,6 +5589,7 @@ Item {
 
                             Layout.fillWidth: true
                             width: actionsList.width
+                            Layout.minimumWidth: 0
                             radius: 10
                             color: "#111827"
                             border.width: 1
@@ -3940,6 +5599,9 @@ Item {
                             readonly property string aType: ((modelData && modelData.type) || "play_sound")
                             readonly property string aKind: (aType === "run_exe") ? "run_program" : aType
                             readonly property bool isOpen: index === page.selectedActionIdx
+                            // Progressive disclosure for less-frequent sound options (per-card, session-only).
+                            property bool playSoundAdvOpen: false
+                            property bool playRandomAdvOpen: false
                             // OBS pick lists are global (root._obsPickScenes/_obsPickSources), so do not
                             // tie visibility to selection; selection can lag behind ComboBox popup open.
                             readonly property bool obsBrowseUi: aType === "obs_scene"
@@ -3950,81 +5612,79 @@ Item {
 
                             ColumnLayout {
                                 id: cardLayout
-                                x: 10
-                                y: 10
-                                width: Math.max(1, parent.width - 20)
+                                anchors.fill: parent
+                                anchors.margins: 12
                                 spacing: 8
 
                                 RowLayout {
                                     Layout.fillWidth: true
                                     spacing: 8
 
-                                    ConnComboBox {
-                                        Layout.preferredWidth: 200
-                                        Layout.fillWidth: true
-                                        model: actionsList.actionTypes
-                                        textRole: "text"
-                                        valueRole: "value"
-                                        currentIndex: actionsList.rootApi._actionTypeIndex(aType)
-                                        onPicked: function (idx) {
-                                            var apiRef = actionsList.rootApi;
-                                            if (apiRef.selectedRule === null) return;
-                                            var typeModel = actionsList.actionTypes;
-                                            if (idx < 0 || idx >= typeModel.length) return;
-                                            var r = apiRef._copyRule(apiRef.selectedRule);
-                                            if (r == null) return;
-                                            var t = typeModel[idx].value;
-                                            var aa = apiRef.actionsModel.slice();
-                                            var ac = apiRef._copyRule(aa[aIdx]);
-                                            if (ac) aa[aIdx] = ac;
-                                            aa[aIdx].type = t;
-                                            if (t === "play_sound") aa[aIdx].params = {
-                                                file_path: "",
-                                                volume_percent: 100,
-                                                skip_if_same_playing: false,
-                                                play_immediately: false,
-                                                respect_gift_combo: false
-                                            };
-                                            if (t === "play_random_myinstants_ua") aa[aIdx].params = {
-                                                volume_percent: 100,
-                                                skip_if_same_playing: false,
-                                                play_immediately: false,
-                                                respect_gift_combo: false,
-                                                max_duration_seconds: 0,
-                                                max_page: 1,
-                                                skip_words: ""
-                                            };
-                                            if (t === "write_file") aa[aIdx].params = { file_path: "", text: "", mode: "overwrite" };
-                                            if (t === "run_program") aa[aIdx].params = { program_path: "", arguments: "" };
-                                            if (t === "simulate_keystrokes") aa[aIdx].params = {
-                                                sequence: "",
-                                                hold_ms: 0,
-                                                game_compatibility: false,
-                                                use_interception: false,
-                                                modifier_ctrl: false,
-                                                modifier_alt: false,
-                                                modifier_shift: false
-                                            };
-                                            if (t === "speak_tts") aa[aIdx].params = { text: "" };
-                                            if (t === "show_overlay") aa[aIdx].params = { text: "", seconds: 3 };
-                                            if (t === "obs_scene") aa[aIdx].params = {
-                                                mode: "program_scene",
-                                                canvas_uuid: "",
-                                                scene_name: "",
-                                                source_name: "",
-                                                visible: true,
-                                                revert_previous_state: false,
-                                                revert_delay_seconds: 5
-                                            };
-                                            apiRef.actionsModel = aa;
-                                            r.actions = aa;
-                                            apiRef._setRule(apiRef.selectedIdx, r);
-                                            apiRef._save();
+                                    Rectangle {
+                                        Layout.preferredWidth: 34
+                                        Layout.preferredHeight: 34
+                                        Layout.alignment: Qt.AlignTop
+                                        radius: 9
+                                        color: "#17243a"
+                                        border.width: 1
+                                        border.color: aType === "play_sound" || aType === "play_random_myinstants_ua"
+                                            ? "#0e9f9a" : "#334363"
+                                        Image {
+                                            anchors.centerIn: parent
+                                            width: 18
+                                            height: 18
+                                            source: page._assetUrl(page._actionIconForType(aType))
+                                            fillMode: Image.PreserveAspectFit
+                                            opacity: 0.98
                                         }
                                     }
 
-                                    ConnPillButton {
-                                        text: api ? api.loc("actions.delete") : "Delete"
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
+                                        spacing: 1
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: page._actionHumanName(aType)
+                                            color: ink
+                                            font.pixelSize: 13
+                                            font.bold: true
+                                            elide: Text.ElideRight
+                                        }
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: page._actionDesc(aType)
+                                            color: muted
+                                            font.pixelSize: 11
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+
+                                    Item { Layout.fillWidth: true }
+
+                                    CheremshaIconButton {
+                                        iconName: "chevron-up.svg"
+                                        enabled: aIdx > 0
+                                        ToolTip.visible: hovered
+                                        ToolTip.text: "Перемістити вище"
+                                        onClicked: page._moveAction(aIdx, aIdx - 1)
+                                    }
+                                    CheremshaIconButton {
+                                        iconName: "chevron-down.svg"
+                                        enabled: aIdx + 1 < page.actionsModel.length
+                                        ToolTip.visible: hovered
+                                        ToolTip.text: "Перемістити нижче"
+                                        onClicked: page._moveAction(aIdx, aIdx + 1)
+                                    }
+                                    CheremshaIconButton {
+                                        iconName: "web_more.svg"
+                                        onClicked: actionMoreMenu.popup()
+                                        ToolTip.visible: hovered
+                                        ToolTip.text: api ? api.loc("actions.rule_more_tt") : "More actions"
+                                    }
+                                    CheremshaIconButton {
+                                        iconName: "web_trash.svg"
+                                        danger: true
                                         onClicked: {
                                             var apiRef = actionsList.rootApi;
                                             if (apiRef.selectedRule === null) return;
@@ -4038,6 +5698,21 @@ Item {
                                             r.actions = aa;
                                             apiRef._setRule(apiRef.selectedIdx, r);
                                             apiRef._save();
+                                        }
+                                        ToolTip.visible: hovered
+                                        ToolTip.text: api ? api.loc("actions.delete") : "Delete"
+                                    }
+
+                                    Menu {
+                                        id: actionMoreMenu
+                                        MenuItem {
+                                            text: "Змінити дію"
+                                            onTriggered: {
+                                                page.selectedActionIdx = aIdx;
+                                                page.actionPickerReplaceIdx = aIdx;
+                                                page.actionPickerQuery = "";
+                                                page.showActionPicker = true;
+                                            }
                                         }
                                     }
                                 }
@@ -4053,15 +5728,20 @@ Item {
                                         spacing: 8
                                         TextField {
                                             Layout.fillWidth: true
+                                            Layout.minimumWidth: 0
                                             color: ink
                                             placeholderTextColor: muted
                                             placeholderText: api ? api.loc("actions.pick_mp3") : "Pick .mp3..."
                                             text: (modelData && modelData.params && modelData.params.file_path) ? modelData.params.file_path : ""
+                                            implicitHeight: 36
                                             background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
                                             readOnly: true
                                         }
-                                        ConnPillButton {
+                                        CheremshaSecondaryButton {
+                                            Layout.preferredWidth: 94
+                                            Layout.minimumWidth: 86
                                             text: api ? api.loc("actions.browse") : "Browse…"
+                                            iconName: "web_folder.svg"
                                             onClicked: {
                                                 var apiRef = actionsList.rootApi;
                                                 if (apiRef.selectedRule === null) return;
@@ -4112,6 +5792,7 @@ Item {
                                         ConnSlider {
                                             id: playSoundVolume
                                             Layout.fillWidth: true
+                                            Layout.minimumWidth: 0
                                             from: 0
                                             to: 100
                                             stepSize: 1
@@ -4124,9 +5805,28 @@ Item {
                                                 page._updateActionsModel(aa);
                                             }
                                         }
+                                        Rectangle {
+                                            Layout.preferredWidth: 46
+                                            Layout.preferredHeight: 24
+                                            Layout.alignment: Qt.AlignVCenter
+                                            radius: 6
+                                            color: "#182033"
+                                            border.width: 1
+                                            border.color: cardEdge
+                                            Text {
+                                                anchors.fill: parent
+                                                text: Math.round(playSoundVolume.value) + "%"
+                                                color: ink
+                                                font.pixelSize: 11
+                                                horizontalAlignment: Text.AlignHCenter
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+                                        }
                                     }
 
                                     ConnCheckBox {
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
                                         id: playSoundSkipDupCb
                                         text: api ? api.loc("actions.play_sound_skip_if_same_playing") : "Skip if this file is already playing or queued"
                                         checked: !!(modelData && modelData.params && modelData.params.skip_if_same_playing)
@@ -4140,7 +5840,19 @@ Item {
                                         }
                                     }
 
+                                    // Progressive disclosure: secondary playback rules live here.
+                                    ConnPillButton {
+                                        // The rule-level Advanced row controls these fields now.
+                                        visible: false
+                                        text: (api ? api.loc("actions.advanced_params") : "Advanced parameters") + (playSoundAdvOpen ? " −" : " +")
+                                        pillFontSize: 11
+                                        onClicked: playSoundAdvOpen = !playSoundAdvOpen
+                                    }
+
                                     ConnCheckBox {
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
+                                        visible: playSoundAdvOpen || page.thenAdvancedOpen
                                         id: playSoundPlayNowCb
                                         text: api ? api.loc("actions.play_immediately") : "Play immediately (ignore queue)"
                                         checked: !!(modelData && modelData.params && modelData.params.play_immediately)
@@ -4155,6 +5867,9 @@ Item {
                                     }
 
                                     ConnCheckBox {
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
+                                        visible: playSoundAdvOpen || page.thenAdvancedOpen
                                         id: playSoundGiftComboCb
                                         text: api ? (api.loc("actions.respect_gift_combo") || "Respect gift combo count") : "Respect gift combo count"
                                         checked: !!(modelData && modelData.params && modelData.params.respect_gift_combo)
@@ -4186,6 +5901,7 @@ Item {
                                         ConnSlider {
                                             id: playRandomMyinstantsUaVolume
                                             Layout.fillWidth: true
+                                            Layout.minimumWidth: 0
                                             from: 0
                                             to: 100
                                             stepSize: 1
@@ -4198,9 +5914,28 @@ Item {
                                                 page._updateActionsModel(aa);
                                             }
                                         }
+                                        Rectangle {
+                                            Layout.preferredWidth: 46
+                                            Layout.preferredHeight: 24
+                                            Layout.alignment: Qt.AlignVCenter
+                                            radius: 6
+                                            color: "#182033"
+                                            border.width: 1
+                                            border.color: cardEdge
+                                            Text {
+                                                anchors.fill: parent
+                                                text: Math.round(playRandomMyinstantsUaVolume.value) + "%"
+                                                color: ink
+                                                font.pixelSize: 11
+                                                horizontalAlignment: Text.AlignHCenter
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+                                        }
                                     }
 
                                     ConnCheckBox {
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
                                         id: playRandomMyinstantsUaSkipDupCb
                                         text: api ? api.loc("actions.play_sound_skip_if_same_playing") : "Skip if this file is already playing or queued"
                                         checked: !!(modelData && modelData.params && modelData.params.skip_if_same_playing)
@@ -4214,7 +5949,19 @@ Item {
                                         }
                                     }
 
+                                    // Progressive disclosure: secondary random-sound options live here.
+                                    ConnPillButton {
+                                        // The rule-level Advanced row controls these fields now.
+                                        visible: false
+                                        text: (api ? api.loc("actions.advanced_params") : "Advanced parameters") + (playRandomAdvOpen ? " −" : " +")
+                                        pillFontSize: 11
+                                        onClicked: playRandomAdvOpen = !playRandomAdvOpen
+                                    }
+
                                     ConnCheckBox {
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
+                                        visible: playRandomAdvOpen || page.thenAdvancedOpen
                                         id: playRandomMyinstantsUaPlayNowCb
                                         text: api ? (api.loc("actions.play_immediately") || "Play immediately (ignore queue)") : "Play immediately (ignore queue)"
                                         checked: !!(modelData && modelData.params && modelData.params.play_immediately)
@@ -4229,6 +5976,9 @@ Item {
                                     }
 
                                     ConnCheckBox {
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
+                                        visible: playRandomAdvOpen || page.thenAdvancedOpen
                                         id: playRandomMyinstantsUaGiftComboCb
                                         text: api ? (api.loc("actions.respect_gift_combo") || "Respect gift combo count") : "Respect gift combo count"
                                         checked: !!(modelData && modelData.params && modelData.params.respect_gift_combo)
@@ -4243,6 +5993,7 @@ Item {
                                     }
 
                                     RowLayout {
+                                        visible: playRandomAdvOpen || page.thenAdvancedOpen
                                         Layout.fillWidth: true
                                         spacing: 8
                                         Text {
@@ -4273,6 +6024,7 @@ Item {
                                     }
 
                                     RowLayout {
+                                        visible: playRandomAdvOpen || page.thenAdvancedOpen
                                         Layout.fillWidth: true
                                         spacing: 8
                                         Text {
@@ -4302,6 +6054,7 @@ Item {
                                     }
 
                                     RowLayout {
+                                        visible: playRandomAdvOpen || page.thenAdvancedOpen
                                         Layout.fillWidth: true
                                         spacing: 8
                                         Text {
@@ -4370,6 +6123,7 @@ Item {
                                         spacing: 8
                                         TextField {
                                             Layout.fillWidth: true
+                                            Layout.minimumWidth: 0
                                             color: ink
                                             placeholderTextColor: muted
                                             placeholderText: api ? api.loc("actions.pick_file") : "Pick file..."
@@ -4389,6 +6143,8 @@ Item {
                                             }
                                         }
                                         ConnPillButton {
+                                            Layout.preferredWidth: 94
+                                            Layout.minimumWidth: 86
                                             text: api ? api.loc("actions.browse") : "Browse…"
                                             onClicked: {
                                                 var apiRef = actionsList.rootApi;
@@ -4468,6 +6224,7 @@ Item {
                                         spacing: 8
                                         TextField {
                                             Layout.fillWidth: true
+                                            Layout.minimumWidth: 0
                                             color: ink
                                             placeholderTextColor: muted
                                             placeholderText: api ? api.loc("actions.pick_program") : "Pick executable…"
@@ -4479,6 +6236,8 @@ Item {
                                             readOnly: true
                                         }
                                         ConnPillButton {
+                                            Layout.preferredWidth: 94
+                                            Layout.minimumWidth: 86
                                             text: api ? api.loc("actions.browse") : "Browse…"
                                             onClicked: {
                                                 var apiRef = actionsList.rootApi;
@@ -5228,45 +6987,366 @@ Item {
                         }
                     }
 
-                    ConnPillButton {
-                        text: api ? api.loc("actions.add_action") : "+ Add action"
-                        pillFontSize: 12
-                        onClicked: {
-                            if (root.selectedRule === null) return;
-                            var r = root._copyRule(root.selectedRule);
-                            if (r == null) return;
-                            var aa = root.actionsModel.slice();
-                            aa.push({
-                                type: "play_sound",
-                                params: { file_path: "", volume_percent: 100, skip_if_same_playing: false }
-                            });
-                            root.actionsModel = aa;
-                            root.selectedActionIdx = aa.length - 1;
-                            r.actions = aa;
-                            root._setRule(root.selectedIdx, r);
-                            root._save();
+                    // One compact rule-level disclosure control for secondary action parameters.
+                    Rectangle {
+                        visible: root.actionsModel && root.actionsModel.length > 0
+                        Layout.fillWidth: true
+                        implicitHeight: advancedRuleRow.implicitHeight + 16
+                        radius: 9
+                        color: "#101a2b"
+                        border.width: 1
+                        border.color: cardEdge
+
+                        RowLayout {
+                            id: advancedRuleRow
+                            anchors.fill: parent
+                            anchors.margins: 8
+                            spacing: 8
+                            Image {
+                                Layout.preferredWidth: 16
+                                Layout.preferredHeight: 16
+                                source: root._assetUrl("gear.svg")
+                                fillMode: Image.PreserveAspectFit
+                            }
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 1
+                                Text {
+                                    text: api ? api.loc("actions.advanced_params") : "Advanced parameters"
+                                    color: ink
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                }
+                                Text {
+                                    text: "Ліміти, фільтри, затримки та інші налаштування"
+                                    color: muted
+                                    font.pixelSize: 10
+                                }
+                            }
+                            Image {
+                                Layout.preferredWidth: 14
+                                Layout.preferredHeight: 14
+                                rotation: root.thenAdvancedOpen ? 180 : 0
+                                source: root._assetUrl("chevron-down.svg")
+                                fillMode: Image.PreserveAspectFit
+                            }
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.thenAdvancedOpen = !root.thenAdvancedOpen
                         }
                     }
 
-                    ConnPillButton {
-                        text: api ? (api.loc("actions.clear") || "Clear") : "Clear"
-                        pillFontSize: 12
-                        onClicked: {
-                            if (root.selectedRule === null) return;
-                            var r = root._copyRule(root.selectedRule);
-                            if (r == null) return;
-                            root.actionsModel = [];
-                            root.selectedActionIdx = -1;
-                            r.actions = [];
-                            root._setRule(root.selectedIdx, r);
-                            root._save();
+                    // Destructive clear operation is available from the THEN overflow menu.
+                    } // THEN card ColumnLayout
+                    } // THEN card Rectangle
+
+                } // selected rule editor content
+                } // scroll content column
+                } // editor ScrollView
+
+                Rectangle {
+                    id: bottomSaveBar
+                    visible: root.selectedIdx >= 0
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 48
+                    radius: 10
+                    color: "#0f172a"
+                    border.width: 1
+                    border.color: cardEdge
+
+                    RowLayout {
+                        id: bottomSaveBarInner
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        spacing: 8
+                        Text {
+                            visible: root.hasUnsavedChanges
+                            color: root.accentPurpleSoft
+                            font.pixelSize: 11
+                            text: api ? api.loc("actions.unsaved_dot") : "Незбережені зміни"
+                        }
+                        Item { Layout.fillWidth: true }
+                        CheremshaSecondaryButton {
+                            text: api ? api.loc("actions.cancel_btn") : "Скасувати"
+                            iconName: "x.svg"
+                            onClicked: {
+                                actionsAutosaveTimer.stop();
+                                root.hasUnsavedChanges = false;
+                                root._load();
+                            }
+                        }
+                        CheremshaPrimaryButton {
+                            text: api ? api.loc("actions.save_changes") : "Зберегти зміни"
+                            iconName: "check.svg"
+                            onClicked: root._commitSelectedRuleActions(true)
                         }
                     }
-
-                    Item { Layout.fillHeight: true }
-                }
                 }
             }
+        }
+    }
+
+    // Compact action picker: categorized existing action types, searchable.
+    Rectangle {
+        anchors.fill: parent
+        visible: root.showActionPicker
+        color: "#060810aa"
+        z: 50
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: {
+                root.showActionPicker = false;
+                root.actionPickerReplaceIdx = -1;
+                root.actionPickerQuery = "";
+            }
+        }
+
+        Rectangle {
+            anchors.centerIn: parent
+            width: Math.min(parent.width - 80, 420)
+            height: Math.min(parent.height - 80, pickerCol.implicitHeight + 28)
+            radius: 12
+            color: "#121620"
+            border.width: 1
+            border.color: root.accentPurple
+
+            ColumnLayout {
+                id: pickerCol
+                anchors.fill: parent
+                anchors.margins: 14
+                spacing: 8
+
+                Text {
+                    Layout.fillWidth: true
+                    text: api ? api.loc("actions.picker_title") : "Add action"
+                    color: ink
+                    font.pixelSize: 14
+                    font.bold: true
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 32
+                    radius: 8
+                    color: fieldBg
+                    border.width: 1
+                    border.color: cardEdge
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        spacing: 6
+
+                        Image {
+                            Layout.preferredWidth: 14
+                            Layout.preferredHeight: 14
+                            source: root._assetUrl("web_search.svg")
+                            fillMode: Image.PreserveAspectFit
+                            opacity: 0.85
+                        }
+                        TextField {
+                            Layout.fillWidth: true
+                            color: ink
+                            font.pixelSize: 12
+                            placeholderTextColor: muted
+                            placeholderText: api ? api.loc("actions.picker_search_ph") : "Search actions…"
+                            text: root.actionPickerQuery
+                            background: Item {}
+                            onTextChanged: root.actionPickerQuery = text
+                        }
+                    }
+                }
+
+                ScrollView {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Math.min(320, pickerList.contentHeight + 4)
+                    clip: true
+                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+                    ListView {
+                        id: pickerList
+                        width: parent.width
+                        height: contentHeight
+                        interactive: false
+                        spacing: 4
+                        model: root._actionPickerFiltered()
+                        delegate: Rectangle {
+                            width: pickerList.width
+                            height: 44
+                            radius: 8
+                            color: pickerMouse.containsMouse ? "#1d2340" : "transparent"
+                            border.width: 1
+                            border.color: pickerMouse.containsMouse ? root.accentPurple : "transparent"
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 8
+                                anchors.rightMargin: 8
+                                spacing: 8
+
+                                Image {
+                                    Layout.preferredWidth: 16
+                                    Layout.preferredHeight: 16
+                                    source: root._assetUrl(root._actionIconForType(modelData.type))
+                                    fillMode: Image.PreserveAspectFit
+                                }
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 0
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: modelData.title
+                                        color: ink
+                                        font.pixelSize: 13
+                                        elide: Text.ElideRight
+                                    }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: modelData.group
+                                        color: muted
+                                        font.pixelSize: 10
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                            }
+
+                            MouseArea {
+                                id: pickerMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root._addActionOfType(modelData.type)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // One and only one drag representation. The source delegate is hidden
+    // while this clipped layer renders the complete floating card.
+    Item {
+        id: dndOverlayLayer
+        visible: root.dndActive
+        x: rulesList ? rulesList.mapToItem(root, 0, 0).x : 0
+        y: rulesList ? rulesList.mapToItem(root, 0, 0).y : 0
+        width: rulesList ? rulesList.width : 0
+        height: rulesList ? rulesList.height : 0
+        clip: true
+        z: 900
+
+        Rectangle {
+            id: dndInsertionIndicator
+            visible: root.dndTargetMode === "between"
+            x: root.dndIndicatorX - dndOverlayLayer.x
+            y: root.dndIndicatorY - dndOverlayLayer.y
+                + root._dndOffsetFor(root.dndTarget) - height / 2
+            width: root.dndIndicatorWidth
+            height: 2
+            radius: 1
+            color: root.accentPurpleSoft
+            z: 1
+            antialiasing: true
+            Behavior on y {
+                NumberAnimation {
+                    duration: root.dndAnimationDuration
+                    easing.type: Easing.OutCubic
+                }
+            }
+            Behavior on width {
+                NumberAnimation {
+                    duration: root.dndAnimationDuration
+                    easing.type: Easing.OutCubic
+                }
+            }
+        }
+
+        Item {
+            id: dndFloatingPreview
+            visible: root.dndActive
+            z: 2
+            width: Math.max(1, Math.min(360, dndOverlayLayer.width - 16))
+            height: 48
+            x: Math.max(8, Math.min(dndOverlayLayer.width - width - 8,
+                                    root.dndPointerX - dndOverlayLayer.x + 14))
+            y: Math.max(8, Math.min(dndOverlayLayer.height - height - 8,
+                                    root.dndPointerY - dndOverlayLayer.y + 14))
+            scale: root.reducedMotion ? 1.0 : 1.01
+            transformOrigin: Item.TopLeft
+
+            Rectangle {
+                anchors.fill: parent
+                anchors.topMargin: 5
+                anchors.leftMargin: 3
+                color: "#000000"
+                opacity: 0.34
+                radius: 9
+            }
+            Rectangle {
+                anchors.fill: parent
+                radius: 8
+                color: "#151e30"
+                border.width: 1
+                border.color: root.accentPurpleSoft
+                antialiasing: true
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 9
+                    spacing: 8
+                    Image {
+                        Layout.preferredWidth: 16
+                        Layout.preferredHeight: 16
+                        source: root._assetUrl(root.dndKind === "folder"
+                            ? "web_folder.svg"
+                            : root._ruleIconForRow(root._ruleById(root.dndId) || {}))
+                        fillMode: Image.PreserveAspectFit
+                        opacity: 0.95
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        color: root.ink
+                        font.pixelSize: 13
+                        font.bold: true
+                        elide: Text.ElideRight
+                        text: root.dndKind === "folder"
+                            ? (root.dndSourceTarget && root.dndSourceTarget.node
+                                ? (root.dndSourceTarget.node.name || "Folder") : "Folder")
+                            : root._ruleListTitle(root._ruleById(root.dndId) || {})
+                    }
+                    ConnPrefSwitch {
+                        visible: root.dndKind === "rule"
+                        enabled: false
+                        checked: {
+                            var previewRule = root._ruleById(root.dndId);
+                            return previewRule ? !!previewRule.enabled : false;
+                        }
+                    }
+                    Rectangle {
+                        visible: root.dndKind === "rule"
+                        Layout.preferredWidth: 30
+                        Layout.preferredHeight: 26
+                        radius: 8
+                        color: "#1c2434"
+                        border.width: 1
+                        border.color: root.cardEdge
+                        Text {
+                            anchors.centerIn: parent
+                            text: "…"
+                            color: root.muted
+                            font.pixelSize: 16
+                        }
+                    }
+                }
+            }
+            Behavior on x { NumberAnimation { duration: root.dndAnimationDuration; easing.type: Easing.OutCubic } }
+            Behavior on y { NumberAnimation { duration: root.dndAnimationDuration; easing.type: Easing.OutCubic } }
+            Behavior on scale { NumberAnimation { duration: root.dndAnimationDuration; easing.type: Easing.OutCubic } }
         }
     }
 

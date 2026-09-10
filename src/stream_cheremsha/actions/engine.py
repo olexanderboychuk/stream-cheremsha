@@ -687,7 +687,7 @@ class PlatformActionsEngine:
 
         # Update activity score if an activity engine is configured.
         if self._activity_engine is not None:
-            self._activity_engine.handle_event("follow")
+            await self._activity_engine.handle_event("follow")
 
     async def on_tiktok_shared(self, user: str, count: int, received_at: datetime) -> None:
         u = (user or "").strip()
@@ -724,7 +724,7 @@ class PlatformActionsEngine:
 
         # Update activity score if an activity engine is configured.
         if self._activity_engine is not None:
-            self._activity_engine.handle_event("share")
+            await self._activity_engine.handle_event("share")
 
     async def on_tiktok_paid_subscribed(self, user: str, received_at: datetime) -> None:
         u = (user or "").strip()
@@ -757,7 +757,7 @@ class PlatformActionsEngine:
 
         # Update activity score if an activity engine is configured.
         if self._activity_engine is not None:
-            self._activity_engine.handle_event("follow")
+            await self._activity_engine.handle_event("follow")
 
     async def on_twitch_follow(
         self,
@@ -796,7 +796,7 @@ class PlatformActionsEngine:
 
         # Update activity score if an activity engine is configured.
         if self._activity_engine is not None:
-            self._activity_engine.handle_event("follow")
+            await self._activity_engine.handle_event("follow")
 
     async def on_twitch_subscribe(
         self,
@@ -1323,7 +1323,7 @@ class PlatformActionsEngine:
 
         # Update activity score if an activity engine is configured.
         if self._activity_engine is not None:
-            self._activity_engine.handle_event("comment")
+            await self._activity_engine.handle_event("comment")
 
     async def on_gift_received(self, ev: GiftReceivedEvent) -> None:
         logger.info(
@@ -1415,7 +1415,7 @@ class PlatformActionsEngine:
 
         # Update activity score if an activity engine is configured.
         if self._activity_engine is not None:
-            self._activity_engine.handle_event("gift")
+            await self._activity_engine.handle_event("gift")
 
     async def on_tiktok_likes_received(
         self,
@@ -1485,7 +1485,7 @@ class PlatformActionsEngine:
 
         # Update activity score if an activity engine is configured.
         if self._activity_engine is not None:
-            self._activity_engine.handle_event("like")
+            await self._activity_engine.handle_event("like")
 
     def tiktok_likes_preview_batch(
         self, *, scope: str, min_count: int, user: str
