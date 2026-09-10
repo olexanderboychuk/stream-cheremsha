@@ -13,7 +13,13 @@ Item {
     // Micro entrance transition, retriggered by MainWindow (enterPulse toggle)
     // on every cached navigation. GPU-cheap root opacity only, 120ms.
     property bool enterPulse: false
-    onEnterPulseChanged: enterFade.restart()
+    onEnterPulseChanged: {
+        enterFade.restart();
+        // The QQuickWidget is cached. Rehydrate the Layout collection when
+        // the cached Layouts page is shown again instead of recreating it.
+        if (root.layoutsOnly)
+            root.showLayoutList();
+    }
     NumberAnimation {
         id: enterFade
         target: root
@@ -65,6 +71,10 @@ Item {
     property var _undoStack: []
     property var _redoStack: []
     property bool _inspectorUpdating: false
+    // The layout editor is also hosted by the dedicated Layouts navigation page.
+    // Keeping it in this component avoids duplicating the canvas/CRUD logic.
+    property bool layoutsOnly: false
+    property string layoutViewMode: "list" // list | create | edit
     property var _snapGuides: []
 
     readonly property var layoutWidgetTypes: [
@@ -131,12 +141,13 @@ Item {
     // A widget may list several platforms; "all" = platform-agnostic (shown under every filter).
     function galleryPlatforms(t) {
         var p = (t && t.platforms) || ["all"];
-        if (!p.length) return ["all"];
+        if (!Array.isArray(p) || !p.length) return ["all"];
         return p;
     }
     function galleryMatchesCategory(t, cat) {
         if (cat === "all") return true;
-        var p = root.galleryPlatforms(t);
+        var p = (t && t.platforms) || ["all"];
+        if (!Array.isArray(p)) return false;
         return p.indexOf(cat) >= 0 || p.indexOf("all") >= 0;
     }
     function galleryPrimaryPlatform(t) {
@@ -847,8 +858,36 @@ Item {
 
     property var layoutDocList: []
     property string activeLayoutId: "default"
+    property string layoutCopiedId: ""
     property bool showCreateLayout: false
     property string newLayoutName: ""
+
+    function layoutWidgetTotal() {
+        var total = 0;
+        var all = root.layoutDocList || [];
+        for (var i = 0; i < all.length; ++i)
+            total += (all[i] && all[i].widgets ? all[i].widgets.length : 0);
+        return total;
+    }
+
+    function layoutActiveTotal() {
+        var all = root.layoutDocList || [];
+        if (!all.length || !root.activeLayoutId) return 0;
+        for (var i = 0; i < all.length; ++i)
+            if (all[i] && all[i].id === root.activeLayoutId) return 1;
+        return 0;
+    }
+
+    function layoutPreviewLabel(type) {
+        var info = root.widgetTypeInfo(type);
+        var label = String((info && info.label) || type || "Widget");
+        return label.length > 18 ? label.slice(0, 17) + "…" : label;
+    }
+
+    function layoutPreviewAccent(index) {
+        var colors = ["#a78bfa", "#22d3ee", "#c084fc", "#2dd4bf", "#818cf8"];
+        return colors[index % colors.length];
+    }
 
     function refreshLayouts() {
         try {
@@ -865,9 +904,35 @@ Item {
         } catch (e) { console.warn("layouts refresh failed:", e); }
     }
 
+    function showLayoutList() {
+        if (!root.layoutsOnly) return;
+        var alreadyGrid = root.widgetMode === "grid";
+        root.layoutViewMode = "list";
+        root.widgetMode = "grid";
+        root.layoutDoc = {};
+        root.selectedLayoutWidget = -1;
+        root._undoStack = [];
+        root._redoStack = [];
+        root._snapGuides = [];
+        root.layoutCopiedId = "";
+        // Changing widgetMode to grid invokes the existing refresh hook. If
+        // it was already grid, perform the one required refresh here.
+        if (alreadyGrid) root.refreshLayouts();
+    }
+
+    function createLayoutAndOpen() {
+        if (!api) return;
+        var id = api.createLayout("");
+        if (!id) return;
+        root.loadLayoutEditor(id);
+        root.layoutViewMode = "create";
+        root.widgetMode = "layout";
+    }
+
     function openLayoutEditor(layoutId) {
         root.loadLayoutEditor(layoutId);
         try { if (api) api.setActiveLayoutId(root.activeLayoutId); } catch (e) {}
+        root.layoutViewMode = "edit";
         root.widgetMode = "layout";
     }
 
@@ -979,21 +1044,31 @@ Item {
     }
 
     function saveLayoutEditor() {
-        if (api) {
-            // Preserve sibling layouts: replace only the active doc.
+        var saved = false;
+        if (api && root.layoutDoc && root.layoutDoc.id) {
+            // Keep the QML list as a display cache, but persist only the
+            // selected object. This prevents stale QML state from replacing
+            // a sibling Layout edited elsewhere.
             var all = (root.layoutDocList || []).slice();
             var replaced = false;
             for (var i = 0; i < all.length; ++i) {
-                if (all[i] && root.layoutDoc && all[i].id === root.layoutDoc.id) {
+                if (all[i] && all[i].id === root.layoutDoc.id) {
                     all[i] = root.layoutDoc;
                     replaced = true;
+                    break;
                 }
             }
-            if (!replaced && root.layoutDoc && root.layoutDoc.id) all.push(root.layoutDoc);
+            if (!replaced) all.push(root.layoutDoc);
             root.layoutDocList = all;
-            api.saveLayoutsJson(JSON.stringify({schema_version: 1, layouts: all}));
+            if (typeof api.saveLayoutJson === "function")
+                saved = api.saveLayoutJson(JSON.stringify(root.layoutDoc));
+            else {
+                api.saveLayoutsJson(JSON.stringify({schema_version: 1, layouts: all}));
+                saved = true;
+            }
         }
         root.layoutRevision += 1;
+        return saved;
     }
 
     function updateLayoutItemStr(key, value) {
@@ -1103,6 +1178,86 @@ Item {
         else if (index === 2) root.applyLayoutPreset(1080, 1080, "Квадрат");
         else if (index === 3) root.applyLayoutPreset(1280, 720, "HD");
         else if (index === 0) root.applyLayoutPreset(1920, 1080, "Основна сцена");
+    }
+
+    component LayoutPrimaryButton: Button {
+        id: layoutPrimaryButton
+        property string iconName: ""
+        property int buttonFontSize: 12
+        implicitHeight: 38
+        leftPadding: 14
+        rightPadding: 14
+        hoverEnabled: true
+        focusPolicy: Qt.NoFocus
+        contentItem: Row {
+            anchors.centerIn: parent
+            spacing: 7
+            Image {
+                source: layoutPrimaryButton.iconName ? Qt.resolvedUrl("../assets/icons/" + layoutPrimaryButton.iconName) : ""
+                visible: layoutPrimaryButton.iconName !== ""
+                width: 16
+                height: 16
+                fillMode: Image.PreserveAspectFit
+                anchors.verticalCenter: parent.verticalCenter
+            }
+            Text {
+                text: layoutPrimaryButton.text
+                color: "white"
+                font.pixelSize: layoutPrimaryButton.buttonFontSize
+                font.bold: true
+                anchors.verticalCenter: parent.verticalCenter
+            }
+        }
+        background: Rectangle {
+            radius: 9
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: layoutPrimaryButton.pressed ? "#6d28d9" : (layoutPrimaryButton.hovered ? "#9d71f7" : "#8b5cf6") }
+                GradientStop { position: 1.0; color: layoutPrimaryButton.pressed ? "#5b21b6" : (layoutPrimaryButton.hovered ? "#8b5cf6" : "#7c3aed") }
+            }
+            border.width: 1
+            border.color: layoutPrimaryButton.hovered ? "#ddd6fe" : "#8b5cf6"
+        }
+    }
+
+    component LayoutCardButton: Button {
+        id: layoutCardButton
+        property string iconName: ""
+        property bool primary: false
+        property int buttonFontSize: 11
+        implicitHeight: 32
+        leftPadding: 10
+        rightPadding: 10
+        hoverEnabled: true
+        focusPolicy: Qt.NoFocus
+        contentItem: Row {
+            anchors.centerIn: parent
+            spacing: 6
+            Image {
+                source: layoutCardButton.iconName ? Qt.resolvedUrl("../assets/icons/" + layoutCardButton.iconName) : ""
+                visible: layoutCardButton.iconName !== ""
+                width: 14
+                height: 14
+                fillMode: Image.PreserveAspectFit
+                anchors.verticalCenter: parent.verticalCenter
+            }
+            Text {
+                text: layoutCardButton.text
+                color: layoutCardButton.primary ? "#f5f3ff" : root.ink
+                font.pixelSize: layoutCardButton.buttonFontSize
+                font.bold: layoutCardButton.primary
+                anchors.verticalCenter: parent.verticalCenter
+            }
+        }
+        background: Rectangle {
+            radius: 8
+            color: layoutCardButton.primary
+                ? (layoutCardButton.pressed ? "#5b21b6" : (layoutCardButton.hovered ? "#6d28d9" : "#351879"))
+                : (layoutCardButton.pressed ? "#263653" : (layoutCardButton.hovered ? "#1c2b42" : "#121d30"))
+            border.width: 1
+            border.color: layoutCardButton.primary
+                ? (layoutCardButton.hovered ? "#c4b5fd" : "#7c3aed")
+                : (layoutCardButton.hovered ? "#52617a" : "#2a3850")
+        }
     }
 
     component PillButton: Button {
@@ -2434,6 +2589,21 @@ Item {
             tlPanelShadowAlphaSb.value = Math.round(_tlPanelShadowAlpha * 100);
     }
 
+    onLayoutsOnlyChanged: {
+        if (root.layoutsOnly) {
+            root.refreshWidgetInstances();
+            root.showLayoutList();
+        }
+    }
+
+    Connections {
+        target: (typeof api !== "undefined" && api) ? api : null
+        function onLayoutsChanged() {
+            if (root.layoutsOnly)
+                root.refreshLayouts();
+        }
+    }
+
     onWidgetModeChanged: {
         if (root.widgetMode === "grid") {
             root.clearEditingInstance();
@@ -2638,7 +2808,7 @@ Item {
                     spacing: 10
 
                     Text {
-                        text: "Віджети"
+                        text: root.layoutsOnly ? root.loc("ui.nav_layouts") : "Віджети"
                         color: ink
                         font.pixelSize: 14
                         font.bold: true
@@ -2745,7 +2915,7 @@ Item {
                 color: cardBase
                 border.width: 1
                 border.color: cardEdge
-                visible: root.widgetMode === "grid"
+                visible: root.widgetMode === "grid" && !root.layoutsOnly
                 implicitHeight: gridCol.implicitHeight + 20
 
                 ColumnLayout {
@@ -3070,7 +3240,7 @@ Item {
                         contentWidth: availableWidth
                         ScrollBar.vertical.policy: ScrollBar.AsNeeded
                         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-                        GridLayout {
+                        CheremshaResponsiveCardGrid {
                         width: galleryScroll.availableWidth
                         // Readable cards first: 270px minimum + 14px gaps.
                         // 6 cols wide desktop → 2 cols narrow.
@@ -3415,6 +3585,538 @@ Item {
                     }
             }
 
+            Item {
+                id: layoutBrowserCard
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignTop
+                implicitHeight: layoutBrowserColumn.implicitHeight
+                visible: root.layoutsOnly && root.layoutViewMode === "list"
+
+                ColumnLayout {
+                    id: layoutBrowserColumn
+                    anchors.fill: parent
+                    spacing: 16
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 12
+
+                        Rectangle {
+                            Layout.preferredWidth: 50
+                            Layout.preferredHeight: 50
+                            radius: 13
+                            color: "#21104f"
+                            border.width: 1
+                            border.color: "#5b35b6"
+                            Image {
+                                anchors.centerIn: parent
+                                width: 28
+                                height: 28
+                                source: Qt.resolvedUrl("../assets/icons/web_layout.svg")
+                                fillMode: Image.PreserveAspectFit
+                            }
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            spacing: 3
+                            Text {
+                                Layout.minimumWidth: 0
+                                text: root.loc("ui.nav_layouts")
+                                color: ink
+                                font.pixelSize: 25
+                                font.bold: true
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                text: root.loc("widgets.layouts.description")
+                                color: muted
+                                font.pixelSize: 12
+                                wrapMode: Text.Wrap
+                                elide: Text.ElideRight
+                            }
+                        }
+
+                        LayoutPrimaryButton {
+                            Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                            text: root.loc("widgets.layouts.create")
+                            iconName: "web_plus.svg"
+                            onClicked: root.createLayoutAndOpen()
+                        }
+                    }
+
+                    GridLayout {
+                        id: layoutStatsGrid
+                        Layout.fillWidth: true
+                        columns: width > 720 ? 3 : 1
+                        columnSpacing: 10
+                        rowSpacing: 8
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 140
+                            Layout.preferredHeight: 58
+                            radius: 10
+                            color: "#101827"
+                            border.width: 1
+                            border.color: cardEdge
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.margins: 11
+                                spacing: 10
+                                Rectangle {
+                                    Layout.preferredWidth: 32
+                                    Layout.preferredHeight: 32
+                                    radius: 9
+                                    color: "#24104f"
+                                    Image { anchors.centerIn: parent; width: 18; height: 18; source: Qt.resolvedUrl("../assets/icons/web_layout.svg") }
+                                }
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 0
+                                    Text { text: root.layoutDocList.length; color: ink; font.pixelSize: 16; font.bold: true }
+                                    Text { text: root.loc("widgets.layouts.stat_layouts"); color: muted; font.pixelSize: 10 }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 140
+                            Layout.preferredHeight: 58
+                            radius: 10
+                            color: "#101827"
+                            border.width: 1
+                            border.color: cardEdge
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.margins: 11
+                                spacing: 10
+                                Rectangle {
+                                    Layout.preferredWidth: 32
+                                    Layout.preferredHeight: 32
+                                    radius: 9
+                                    color: "#0b3048"
+                                    Image { anchors.centerIn: parent; width: 18; height: 18; source: Qt.resolvedUrl("../assets/icons/web_layers.svg") }
+                                }
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 0
+                                    Text { text: root.layoutWidgetTotal(); color: ink; font.pixelSize: 16; font.bold: true }
+                                    Text { text: root.loc("widgets.layouts.stat_widgets"); color: muted; font.pixelSize: 10 }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 140
+                            Layout.preferredHeight: 58
+                            radius: 10
+                            color: "#101827"
+                            border.width: 1
+                            border.color: cardEdge
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.margins: 11
+                                spacing: 10
+                                Rectangle {
+                                    Layout.preferredWidth: 32
+                                    Layout.preferredHeight: 32
+                                    radius: 9
+                                    color: "#10352f"
+                                    Rectangle { anchors.centerIn: parent; width: 12; height: 12; radius: 6; color: "#34d399" }
+                                }
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 0
+                                    Text { text: root.layoutActiveTotal(); color: ink; font.pixelSize: 16; font.bold: true }
+                                    Text { text: root.loc("widgets.layouts.stat_active"); color: muted; font.pixelSize: 10 }
+                                }
+                            }
+                        }
+                    }
+
+                    Item {
+                        id: layoutGridHost
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        Layout.preferredWidth: layoutBrowserColumn.width
+                        Layout.alignment: Qt.AlignTop
+                        implicitHeight: layoutBrowserGrid.implicitHeight
+                        Layout.preferredHeight: implicitHeight
+                        visible: (root.layoutDocList || []).length > 0
+
+                        Grid {
+                            id: layoutBrowserGrid
+                            width: layoutGridHost.width
+                            columns: {
+                                var availableWidth = Math.max(0, width);
+                                if (availableWidth >= 1500) return 4;
+                                if (availableWidth >= 1200) return 3;
+                                if (availableWidth >= 850) return 2;
+                                return 1;
+                            }
+                            columnSpacing: 14
+                            rowSpacing: 14
+                            property real cardWidth: Math.min(
+                                420,
+                                Math.max(280, (width - ((columns - 1) * columnSpacing)) / columns)
+                            )
+
+                            Repeater {
+                                // Delegates are siblings in Grid; hide only the zero-size
+                                // generator so it cannot participate in positioning.
+                                visible: false
+                                model: (root.layoutDocList || []).concat([{__create: true}])
+                                delegate: Rectangle {
+                                id: layoutCard
+                                required property var modelData
+                                property var layoutModel: modelData
+                                property bool isCreateCard: !!(modelData && modelData.__create)
+                                property bool hovered: layoutCardHover.hovered
+                                width: layoutBrowserGrid.cardWidth
+                                height: 386
+                                radius: 12
+                                color: isCreateCard
+                                    ? (hovered ? "#111b2e" : "#0c1422")
+                                    : (hovered ? "#121c2e" : "#0f1726")
+                                border.width: 1
+                                border.color: isCreateCard
+                                    ? (hovered ? "#7451c7" : "#33445f")
+                                    : (hovered ? "#7451c7" : "#26344b")
+                                Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                                Behavior on border.color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
+
+                                HoverHandler { id: layoutCardHover }
+
+                                ColumnLayout {
+                                    visible: !layoutCard.isCreateCard
+                                    anchors.fill: parent
+                                    anchors.margins: 14
+                                    spacing: 10
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 9
+
+                                        Rectangle {
+                                            Layout.preferredWidth: 38
+                                            Layout.preferredHeight: 38
+                                            radius: 10
+                                            color: hovered ? "#3d1c93" : "#2b146d"
+                                            border.width: 1
+                                            border.color: hovered ? "#a78bfa" : "#6336c5"
+                                            Image { anchors.centerIn: parent; width: 21; height: 21; source: Qt.resolvedUrl("../assets/icons/web_layout.svg") }
+                                        }
+
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 2
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: layoutModel.name || root.loc("widgets.layouts.untitled")
+                                                color: ink
+                                                font.pixelSize: 15
+                                                font.bold: true
+                                                elide: Text.ElideRight
+                                            }
+                                            RowLayout {
+                                                visible: layoutModel.id === root.activeLayoutId
+                                                spacing: 5
+                                                Rectangle { width: 7; height: 7; radius: 4; color: "#34d399" }
+                                                Text { text: root.loc("widgets.layouts.active_status"); color: "#5eead4"; font.pixelSize: 10 }
+                                            }
+                                        }
+
+                                        Button {
+                                            implicitWidth: 31
+                                            implicitHeight: 31
+                                            padding: 0
+                                            hoverEnabled: true
+                                            focusPolicy: Qt.NoFocus
+                                            onClicked: layoutCardMenu.popup()
+                                            contentItem: Image {
+                                                source: Qt.resolvedUrl("../assets/icons/web_more.svg")
+                                                width: 16
+                                                height: 16
+                                                anchors.centerIn: parent
+                                                fillMode: Image.PreserveAspectFit
+                                            }
+                                            background: Rectangle {
+                                                radius: 8
+                                                color: parent.hovered ? "#1e2b42" : "#121d30"
+                                                border.width: 1
+                                                border.color: parent.hovered ? "#52617a" : "#26344b"
+                                            }
+                                        }
+
+                                        Menu {
+                                            id: layoutCardMenu
+                                            MenuItem {
+                                                text: root.loc("widgets.common.duplicate")
+                                                onTriggered: {
+                                                    if (api) {
+                                                        var duplicateId = api.duplicateLayout(layoutModel.id);
+                                                        if (duplicateId) root.openLayoutEditor(duplicateId);
+                                                    }
+                                                }
+                                            }
+                                            MenuSeparator {}
+                                            MenuItem {
+                                                text: root.loc("widgets.common.delete")
+                                                enabled: (root.layoutDocList || []).length > 1
+                                                onTriggered: {
+                                                    if (api && api.deleteLayout(layoutModel.id)) root.refreshLayouts();
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Item {
+                                        id: layoutPreviewFrame
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 178
+                                        clip: true
+
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: 12
+                                            color: "#080d18"
+                                            border.width: 1
+                                            border.color: hovered ? "#344c70" : "#1c2b41"
+                                        }
+
+                                        Item {
+                                            id: layoutPreviewCanvas
+                                            property real documentWidth: Math.max(1, Number(layoutModel.width || 1920))
+                                            property real documentHeight: Math.max(1, Number(layoutModel.height || 1080))
+                                            property real previewScale: Math.min((layoutPreviewFrame.width - 18) / documentWidth, (layoutPreviewFrame.height - 18) / documentHeight)
+                                            width: documentWidth * previewScale
+                                            height: documentHeight * previewScale
+                                            anchors.centerIn: parent
+                                            clip: true
+
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                radius: 8
+                                                color: "#0c1322"
+                                                border.width: 1
+                                                border.color: hovered ? "#5b4a9a" : "#26344b"
+                                                gradient: Gradient {
+                                                    GradientStop { position: 0.0; color: "#111a2d" }
+                                                    GradientStop { position: 1.0; color: "#090f1c" }
+                                                }
+                                            }
+
+                                            Repeater {
+                                                model: layoutModel.widgets || []
+                                                delegate: Rectangle {
+                                                    required property var modelData
+                                                    required property int index
+                                                    x: Number(modelData.x || 0) * layoutPreviewCanvas.previewScale
+                                                    y: Number(modelData.y || 0) * layoutPreviewCanvas.previewScale
+                                                    width: Math.max(16, Number(modelData.width || 320) * layoutPreviewCanvas.previewScale)
+                                                    height: Math.max(12, Number(modelData.height || 180) * layoutPreviewCanvas.previewScale)
+                                                    radius: 4
+                                                    color: "#111827cc"
+                                                    border.width: 1
+                                                    border.color: root.layoutPreviewAccent(index)
+                                                    z: Number(modelData.z_index || index)
+                                                    clip: true
+                                                    Text {
+                                                        anchors.fill: parent
+                                                        anchors.margins: 4
+                                                        text: root.layoutPreviewLabel(modelData.type)
+                                                        color: "#dbeafe"
+                                                        font.pixelSize: Math.max(7, Math.min(11, parent.height * 0.18))
+                                                        elide: Text.ElideRight
+                                                        verticalAlignment: Text.AlignVCenter
+                                                        visible: parent.width > 40 && parent.height > 18
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 30
+                                            radius: 7
+                                            color: "#111c2e"
+                                            border.width: 1
+                                            border.color: "#1f3048"
+                                            RowLayout {
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 8
+                                                anchors.rightMargin: 8
+                                                spacing: 6
+                                                Image { Layout.preferredWidth: 14; Layout.preferredHeight: 14; source: Qt.resolvedUrl("../assets/icons/web_layout.svg") }
+                                                Text { Layout.fillWidth: true; text: (layoutModel.width || 0) + " × " + (layoutModel.height || 0); color: inkSecondary; font.pixelSize: 11 }
+                                            }
+                                        }
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 30
+                                            radius: 7
+                                            color: "#111c2e"
+                                            border.width: 1
+                                            border.color: "#1f3048"
+                                            RowLayout {
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 8
+                                                anchors.rightMargin: 8
+                                                spacing: 6
+                                                Image { Layout.preferredWidth: 14; Layout.preferredHeight: 14; source: Qt.resolvedUrl("../assets/icons/web_layers.svg") }
+                                                Text { Layout.fillWidth: true; text: (layoutModel.widgets || []).length + " " + root.loc("widgets.layouts.widgets"); color: inkSecondary; font.pixelSize: 11; elide: Text.ElideRight }
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 31
+                                        radius: 7
+                                        color: "#0c1423"
+                                        border.width: 1
+                                        border.color: "#1e2d44"
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 8
+                                            anchors.rightMargin: 5
+                                            spacing: 6
+                                            Image { Layout.preferredWidth: 14; Layout.preferredHeight: 14; source: Qt.resolvedUrl("../assets/icons/web_globe.svg") }
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: api ? api.layoutOverlayUrl(layoutModel.id) : ""
+                                                color: muted
+                                                font.pixelSize: 10
+                                                elide: Text.ElideRight
+                                            }
+
+                                        }
+                                    }
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+                                        Layout.alignment: Qt.AlignBottom
+                                        Layout.fillHeight: true
+                                        Item { Layout.fillWidth: true }
+                                        LayoutCardButton {
+                                            text: root.layoutCopiedId === layoutModel.id ? root.loc("widgets.gallery.copied") : root.loc("widgets.common.copy_url")
+                                            iconName: "web_copy.svg"
+                                            primary: true
+                                            onClicked: {
+                                                if (api) {
+                                                    api.copyLayoutOverlayUrl(layoutModel.id);
+                                                    root.layoutCopiedId = layoutModel.id;
+                                                }
+                                            }
+                                        }
+                                        LayoutCardButton {
+                                            text: root.loc("widgets.common.edit")
+                                            iconName: "edit.svg"
+                                            onClicked: root.openLayoutEditor(layoutModel.id)
+                                        }
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    visible: layoutCard.isCreateCard
+                                    anchors.centerIn: parent
+                                    width: parent.width - 36
+                                    spacing: 10
+                                    Rectangle {
+                                        Layout.alignment: Qt.AlignHCenter
+                                        Layout.preferredWidth: 56
+                                        Layout.preferredHeight: 56
+                                        radius: 28
+                                        color: "#1a1733"
+                                        border.width: 1
+                                        border.color: "#6d4ac1"
+                                        Image { anchors.centerIn: parent; width: 26; height: 26; source: Qt.resolvedUrl("../assets/icons/web_plus.svg") }
+                                    }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: root.loc("widgets.layouts.create_card_title")
+                                        color: ink
+                                        font.pixelSize: 15
+                                        font.bold: true
+                                        horizontalAlignment: Text.AlignHCenter
+                                    }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: root.loc("widgets.layouts.create_card_hint")
+                                        color: muted
+                                        font.pixelSize: 11
+                                        wrapMode: Text.Wrap
+                                        horizontalAlignment: Text.AlignHCenter
+                                    }
+                                }
+
+                                MouseArea {
+                                    visible: layoutCard.isCreateCard
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.createLayoutAndOpen()
+                                }
+                                }
+                            }
+                        }
+                    }
+
+                    Item {
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignTop
+                        implicitHeight: 260
+                        visible: (root.layoutDocList || []).length === 0
+                        ColumnLayout {
+                            anchors.centerIn: parent
+                            width: Math.min(parent.width - 48, 420)
+                            spacing: 10
+                            Rectangle {
+                                Layout.alignment: Qt.AlignHCenter
+                                Layout.preferredWidth: 58
+                                Layout.preferredHeight: 58
+                                radius: 16
+                                color: "#21104f"
+                                border.width: 1
+                                border.color: "#5b35b6"
+                                Image { anchors.centerIn: parent; width: 29; height: 29; source: Qt.resolvedUrl("../assets/icons/web_layout.svg") }
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                text: root.loc("widgets.layouts.empty_title")
+                                color: ink
+                                font.pixelSize: 17
+                                font.bold: true
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                text: root.loc("widgets.layouts.empty_hint")
+                                color: muted
+                                font.pixelSize: 12
+                                wrapMode: Text.Wrap
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+                            LayoutPrimaryButton {
+                                Layout.alignment: Qt.AlignHCenter
+                                text: root.loc("widgets.layouts.create")
+                                iconName: "web_plus.svg"
+                                onClicked: root.createLayoutAndOpen()
+                            }
+                        }
+                    }
+                }
+            }
+
             Rectangle {
                 id: layoutEditorCard
                 Layout.fillWidth: true
@@ -3422,7 +4124,7 @@ Item {
                 color: cardBase
                 border.width: 1
                 border.color: cardEdge
-                visible: root.widgetMode === "layout"
+                visible: root.layoutsOnly && root.layoutViewMode !== "list" && root.widgetMode === "layout"
                 implicitHeight: layoutEditorColumn.implicitHeight + 24
 
                 ColumnLayout {
@@ -3460,8 +4162,24 @@ Item {
                                 if (api) api.previewLayout(root.activeLayoutId);
                             }
                         }
-                        PillButton { text: "Зберегти"; primary: true; onClicked: root.saveLayoutEditor() }
-                        PillButton { text: "Назад"; onClicked: root.widgetMode = "grid" }
+                        PillButton {
+                            text: "Зберегти"
+                            primary: true
+                            onClicked: {
+                                if (root.saveLayoutEditor())
+                                    root.showLayoutList();
+                            }
+                        }
+                        PillButton {
+                            visible: root.layoutsOnly
+                            text: root.loc("widgets.common.back")
+                            onClicked: root.showLayoutList()
+                        }
+                        PillButton {
+                            visible: !root.layoutsOnly
+                            text: "Назад"
+                            onClicked: root.widgetMode = "grid"
+                        }
                     }
 
                     Text {
@@ -3519,14 +4237,22 @@ Item {
                             enabled: (root.layoutDocList || []).length > 1
                             opacity: enabled ? 1.0 : 0.4
                             onClicked: {
-                                if (api && api.deleteLayout(root.activeLayoutId)) root.loadLayoutEditor();
+                                if (api && api.deleteLayout(root.activeLayoutId)) {
+                                    if (root.layoutsOnly) root.showLayoutList();
+                                    else root.loadLayoutEditor();
+                                }
                             }
                         }
                         TextField {
                             id: layoutNameField
                             Layout.preferredWidth: 200
-                            text: root.layoutDoc.name || ""
                             placeholderText: root.loc("widgets.layouts.name_placeholder")
+                            Binding {
+                                target: layoutNameField
+                                property: "text"
+                                value: root.layoutDoc.name || ""
+                                when: !layoutNameField.activeFocus
+                            }
                             color: ink
                             font.pixelSize: 12
                             background: Rectangle { radius: 8; color: "#0b0f17"; border.width: 1; border.color: cardEdge }
@@ -4382,9 +5108,15 @@ Item {
 
                                     Text { text: "X:"; color: muted; font.pixelSize: 12 }
                                     StyledSpinBox {
+                                        id: layoutXSpin
                                         Layout.preferredWidth: 110
                                         from: -5000; to: 10000
-                                        value: root.selectedLayoutItem() ? Number(root.selectedLayoutItem().x || 0) : 0
+                                        Binding {
+                                            target: layoutXSpin
+                                            property: "value"
+                                            value: root.selectedLayoutItem() ? Number(root.selectedLayoutItem().x || 0) : 0
+                                            when: !layoutXSpin.activeFocus
+                                        }
                                         onValueModified: {
                                             if (root.selectedLayoutItem() && value !== Number(root.selectedLayoutItem().x || 0)) {
                                                 root.updateLayoutItem("x", value);
@@ -4394,9 +5126,15 @@ Item {
 
                                     Text { text: "Y:"; color: muted; font.pixelSize: 12 }
                                     StyledSpinBox {
+                                        id: layoutYSpin
                                         Layout.preferredWidth: 110
                                         from: -5000; to: 10000
-                                        value: root.selectedLayoutItem() ? Number(root.selectedLayoutItem().y || 0) : 0
+                                        Binding {
+                                            target: layoutYSpin
+                                            property: "value"
+                                            value: root.selectedLayoutItem() ? Number(root.selectedLayoutItem().y || 0) : 0
+                                            when: !layoutYSpin.activeFocus
+                                        }
                                         onValueModified: {
                                             if (root.selectedLayoutItem() && value !== Number(root.selectedLayoutItem().y || 0)) {
                                                 root.updateLayoutItem("y", value);
@@ -4406,9 +5144,15 @@ Item {
 
                                     Text { text: "W:"; color: muted; font.pixelSize: 12 }
                                     StyledSpinBox {
+                                        id: layoutWSpin
                                         Layout.preferredWidth: 110
                                         from: 1; to: 10000
-                                        value: root.selectedLayoutItem() ? Number(root.selectedLayoutItem().width || 320) : 320
+                                        Binding {
+                                            target: layoutWSpin
+                                            property: "value"
+                                            value: root.selectedLayoutItem() ? Number(root.selectedLayoutItem().width || 320) : 320
+                                            when: !layoutWSpin.activeFocus
+                                        }
                                         onValueModified: {
                                             if (root.selectedLayoutItem() && value !== Number(root.selectedLayoutItem().width || 320)) {
                                                 root.updateLayoutItem("width", value);
@@ -4418,9 +5162,15 @@ Item {
 
                                     Text { text: "H:"; color: muted; font.pixelSize: 12 }
                                     StyledSpinBox {
+                                        id: layoutHSpin
                                         Layout.preferredWidth: 110
                                         from: 1; to: 10000
-                                        value: root.selectedLayoutItem() ? Number(root.selectedLayoutItem().height || 180) : 180
+                                        Binding {
+                                            target: layoutHSpin
+                                            property: "value"
+                                            value: root.selectedLayoutItem() ? Number(root.selectedLayoutItem().height || 180) : 180
+                                            when: !layoutHSpin.activeFocus
+                                        }
                                         onValueModified: {
                                             if (root.selectedLayoutItem() && value !== Number(root.selectedLayoutItem().height || 180)) {
                                                 root.updateLayoutItem("height", value);
@@ -4466,12 +5216,12 @@ Item {
                             readOnly: true
                             selectByMouse: true
                             color: ink
-                            text: api ? api.layoutOverlayUrl("default") : ""
+                            text: api ? api.layoutOverlayUrl(root.activeLayoutId || "default") : ""
                             background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
                         }
                         PillButton {
                             text: "Скопіювати URL"
-                            onClicked: if (api) api.copyLayoutOverlayUrl("default")
+                            onClicked: if (api) api.copyLayoutOverlayUrl(root.activeLayoutId || "default")
                         }
                     }
                 }

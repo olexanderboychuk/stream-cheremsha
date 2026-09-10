@@ -951,12 +951,13 @@ class MainWindow(FramelessWindow):
     _IX_AUDIO = 3
     _IX_DONATIONS = 4
     _IX_WIDGETS = 5
-    _IX_DOCKS = 6
-    _IX_ACTIONS = 7
-    _IX_MUSIC = 8
-    _IX_BIG_PICTURE = 9
+    _IX_LAYOUTS = 6
+    _IX_DOCKS = 7
+    _IX_ACTIONS = 8
+    _IX_MUSIC = 9
+    _IX_BIG_PICTURE = 10
     _QML_STACK_INDICES = frozenset(
-        {_IX_CONN, _IX_DONATIONS, _IX_WIDGETS, _IX_DOCKS, _IX_ACTIONS},
+        {_IX_CONN, _IX_DONATIONS, _IX_WIDGETS, _IX_LAYOUTS, _IX_DOCKS, _IX_ACTIONS},
     )
 
     @staticmethod
@@ -1250,6 +1251,7 @@ class MainWindow(FramelessWindow):
         self._docks_qml_api: DocksQmlApi | None = None
         self._overlay_tunnel_qml_api: OverlayTunnelQmlApi | None = None
         self._qml_widgets: QQuickWidget | None = None
+        self._qml_layouts: QQuickWidget | None = None
         self._qml_docks: QQuickWidget | None = None
         self._actions_engines: dict[tuple[str, str], PlatformActionsEngine] = {}
         self._chat_ic_tw: str | None = None
@@ -1504,6 +1506,11 @@ class MainWindow(FramelessWindow):
         self._qml_widgets.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._qml_widgets.setClearColor(QColor(10, 11, 14))
         _setup_qml_import_path(self._qml_widgets)
+        self._qml_layouts = QQuickWidget(self)
+        self._qml_layouts.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
+        self._qml_layouts.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self._qml_layouts.setClearColor(QColor(10, 11, 14))
+        _setup_qml_import_path(self._qml_layouts)
         self._docks_qml_api = DocksQmlApi()
         self._qml_docks = QQuickWidget(self)
         self._qml_docks.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
@@ -1633,6 +1640,12 @@ class MainWindow(FramelessWindow):
             fallback=QStyle.StandardPixmap.SP_DesktopIcon,
             on_click=lambda: self._set_main_page(self._IX_WIDGETS),
         )
+        self._btn_footer_layouts = _make_nav_btn(
+            nav_id="navLayouts",
+            asset_name="nav/layouts.svg",
+            fallback=QStyle.StandardPixmap.SP_DirOpenIcon,
+            on_click=lambda: self._set_main_page(self._IX_LAYOUTS),
+        )
         self._btn_footer_docks = _make_nav_btn(
             nav_id="navDocks",
             asset_name="nav/docks.svg",
@@ -1665,7 +1678,12 @@ class MainWindow(FramelessWindow):
         )
         _add_group(
             "CONTENT",
-            [self._btn_footer_widgets, self._btn_footer_docks, self._btn_footer_music],
+            [
+                self._btn_footer_widgets,
+                self._btn_footer_layouts,
+                self._btn_footer_docks,
+                self._btn_footer_music,
+            ],
         )
         _add_group(
             "TOOLS",
@@ -1705,6 +1723,7 @@ class MainWindow(FramelessWindow):
         self._stack.addWidget(self._build_audio_tab())
         self._stack.addWidget(self._qml_donations)
         self._stack.addWidget(self._qml_widgets)
+        self._stack.addWidget(self._qml_layouts)
         self._stack.addWidget(self._qml_docks)
         self._stack.addWidget(self._qml_actions)
         self._stack.addWidget(self._build_music_tab())
@@ -2080,6 +2099,7 @@ class MainWindow(FramelessWindow):
             self._IX_CONN: "_qml_conn",
             self._IX_DONATIONS: "_qml_donations",
             self._IX_WIDGETS: "_qml_widgets",
+            self._IX_LAYOUTS: "_qml_layouts",
             self._IX_DOCKS: "_qml_docks",
             self._IX_ACTIONS: "_qml_actions",
         }.get(index)
@@ -2101,7 +2121,7 @@ class MainWindow(FramelessWindow):
             ctx.setContextProperty("kickAnalytics", self._kick_analytics)
         elif index == self._IX_DONATIONS:
             ctx.setContextProperty("donApi", self._donations_qml_api)
-        elif index == self._IX_WIDGETS:
+        elif index in (self._IX_WIDGETS, self._IX_LAYOUTS):
             ctx.setContextProperty("api", self._widgets_qml_api)
             ctx.setContextProperty("tunnelApi", self._overlay_tunnel_qml_api)
             ctx.setContextProperty("navApi", self._qml_api)
@@ -2131,7 +2151,7 @@ class MainWindow(FramelessWindow):
             qml_path = _qml_path("ConnectionsView.qml")
         elif index == self._IX_DONATIONS:
             qml_path = _qml_path("DonationsView.qml")
-        elif index == self._IX_WIDGETS:
+        elif index in (self._IX_WIDGETS, self._IX_LAYOUTS):
             if not self._widget_instances_migrated:
                 self._widget_instances_migrated = True
                 try:
@@ -2161,12 +2181,16 @@ class MainWindow(FramelessWindow):
             if ro_actions is not None:
                 ro_actions.setProperty("platform", "tiktok")
                 ro_actions.setProperty("accountKey", constants.TIKTOK_ACTIONS_ACCOUNT_KEY)
-        elif index == self._IX_WIDGETS:
+        elif index in (self._IX_WIDGETS, self._IX_LAYOUTS):
             try:
                 local_url = self._overlay_server.base_url() or ""
             except RuntimeError:
                 local_url = ""
             self._apply_overlay_urls_to_qml(local_url=local_url)
+            if index == self._IX_LAYOUTS:
+                root = widget.rootObject()
+                if root is not None:
+                    root.setProperty("layoutsOnly", True)
         self._qml_pages_loaded.add(index)
 
     def _set_main_page(self, index: int) -> None:
@@ -2224,8 +2248,8 @@ class MainWindow(FramelessWindow):
     ) -> None:
         """Staged splash-phase preload of heavy QML pages into the navigation cache.
 
-        Priority order follows measured first-open cost (Widgets ~0.8s,
-        Actions ~0.2s, Donations ~0.05s, Docks ~0.02s). Each load is the same
+        Priority order starts with the related Widgets and Layouts pages,
+        followed by Actions, Donations, and Docks. Each load is the same
         _load_qml_page() navigation uses — exactly one instance per page, kept
         alive, never unloaded afterwards. Yields to the event loop around every
         load so the splash keeps rendering; stops early if the hidden-time
@@ -2234,6 +2258,7 @@ class MainWindow(FramelessWindow):
         """
         order = (
             (self._IX_WIDGETS, "Завантаження віджетів…"),
+            (self._IX_LAYOUTS, "Завантаження макетів…"),
             (self._IX_ACTIONS, "Завантаження дій…"),
             (self._IX_DONATIONS, "Завантаження донатів…"),
             (self._IX_DOCKS, "Завантаження доків…"),
@@ -2306,6 +2331,7 @@ class MainWindow(FramelessWindow):
         "_btn_footer_donations": "#f9a8d4",
         "_btn_footer_actions": "#e879f9",
         "_btn_footer_widgets": "#a78bfa",
+        "_btn_footer_layouts": "#67e8f9",
         "_btn_footer_docks": "#c084fc",
         "_btn_footer_music": "#93c5fd",
         "_btn_footer_chat": "#5eead4",
@@ -2409,6 +2435,7 @@ class MainWindow(FramelessWindow):
         on_don = self._stack.currentIndex() == self._IX_DONATIONS
         on_actions = self._stack.currentIndex() == self._IX_ACTIONS
         on_widgets = self._stack.currentIndex() == self._IX_WIDGETS
+        on_layouts = self._stack.currentIndex() == self._IX_LAYOUTS
         on_docks = self._stack.currentIndex() == self._IX_DOCKS
         on_music = self._stack.currentIndex() == self._IX_MUSIC
         for b, active in (
@@ -2416,6 +2443,7 @@ class MainWindow(FramelessWindow):
             (getattr(self, "_btn_footer_donations", None), on_don),
             (getattr(self, "_btn_footer_actions", None), on_actions),
             (getattr(self, "_btn_footer_widgets", None), on_widgets),
+            (getattr(self, "_btn_footer_layouts", None), on_layouts),
             (getattr(self, "_btn_footer_docks", None), on_docks),
             (getattr(self, "_btn_footer_music", None), on_music),
             (self._btn_footer_chat, on_chat),
@@ -2491,6 +2519,11 @@ class MainWindow(FramelessWindow):
             self._btn_footer_widgets.setText(self._nav_text("ui.nav_widgets"))
             self._btn_footer_widgets.setToolTip(self._tr("ui.nav_widgets_hint"))
             self._btn_footer_widgets.setAccessibleName(tw)
+        if hasattr(self, "_btn_footer_layouts"):
+            tl = self._tr("ui.nav_layouts")
+            self._btn_footer_layouts.setText(self._nav_text("ui.nav_layouts"))
+            self._btn_footer_layouts.setToolTip(self._tr("ui.nav_layouts_hint"))
+            self._btn_footer_layouts.setAccessibleName(tl)
         if hasattr(self, "_btn_footer_docks"):
             td = self._tr("ui.nav_docks")
             self._btn_footer_docks.setText(self._nav_text("ui.nav_docks"))
@@ -6907,6 +6940,9 @@ class MainWindow(FramelessWindow):
 
     def open_widgets(self) -> None:
         self._set_main_page(self._IX_WIDGETS)
+
+    def open_layouts(self) -> None:
+        self._set_main_page(self._IX_LAYOUTS)
 
     def open_actions(self) -> None:
         self._set_main_page(self._IX_ACTIONS)

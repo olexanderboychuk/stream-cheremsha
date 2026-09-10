@@ -6,7 +6,7 @@ import re
 import uuid
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from PySide6.QtCore import QSettings
 
@@ -196,15 +196,58 @@ def layouts_to_json_text(layouts: list[StreamLayout]) -> str:
     )
 
 
-def layouts_from_json_text(text: str) -> list[StreamLayout]:
-    raw = json.loads(text)
+def _layout_collection_items(raw: object) -> list[object]:
+    """Return layout records from current and pre-collection payloads.
+
+    The first layout editor stored one layout object directly.  The current
+    format stores ``{"layouts": [...]}``; accepting both here keeps existing
+    user data intact while ensuring the rest of the application only deals in
+    the collection model.
+    """
+    if isinstance(raw, list):
+        return raw
     if not isinstance(raw, dict):
         raise ValueError("Invalid layouts JSON")
-    items = raw.get("layouts", [])
+    items = raw.get("layouts")
+    if items is None:
+        legacy = raw.get("layout")
+        items = [legacy if legacy is not None else raw]
     if not isinstance(items, list):
         raise ValueError("Invalid layouts list")
-    result = [layout_from_dict(item) for item in items]
+    return cast(list[object], items)
+
+
+def _parse_layout_collection(items: list[object]) -> list[StreamLayout]:
+    result: list[StreamLayout] = []
+    seen_ids: set[str] = set()
+    for item in items:
+        layout = layout_from_dict(item)
+        # IDs are the object identity used by the selector and overlay URL.
+        # Repair duplicate IDs during migration rather than allowing edits to
+        # one object to replace another object with the same identity.
+        if layout.id in seen_ids:
+            layout = replace(layout, id=uuid.uuid4().hex)
+        seen_ids.add(layout.id)
+        result.append(layout)
     return result or [default_layout()]
+
+
+def layouts_from_json_text(text: str) -> list[StreamLayout]:
+    return _parse_layout_collection(_layout_collection_items(json.loads(text)))
+
+
+def _load_and_migrate_layouts(text: str, settings: QSettings) -> list[StreamLayout]:
+    layouts = layouts_from_json_text(text)
+    # Rewrite legacy/sanitized payloads once. This migrates the former single
+    # layout object to the canonical collection and makes repaired IDs stable.
+    try:
+        if json.loads(text) != json.loads(layouts_to_json_text(layouts)):
+            save_layouts(layouts, settings)
+    except (TypeError, json.JSONDecodeError):
+        save_layouts(layouts, settings)
+    if get_active_layout_id(settings) not in {layout.id for layout in layouts}:
+        set_active_layout_id(layouts[0].id, settings)
+    return layouts
 
 
 def load_layouts(settings: QSettings | None = None) -> list[StreamLayout]:
@@ -213,11 +256,11 @@ def load_layouts(settings: QSettings | None = None) -> list[StreamLayout]:
     if not text:
         return [default_layout()]
     try:
-        return layouts_from_json_text(text)
+        return _load_and_migrate_layouts(text, settings)
     except (ValueError, TypeError, json.JSONDecodeError):
         backup = str(settings.value(_LAYOUTS_BACKUP_QSETTINGS_KEY, "", str) or "").strip()
         try:
-            return layouts_from_json_text(backup)
+            return _load_and_migrate_layouts(backup, settings)
         except (ValueError, TypeError, json.JSONDecodeError):
             return [default_layout()]
 

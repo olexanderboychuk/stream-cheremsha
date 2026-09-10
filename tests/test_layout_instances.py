@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from PySide6.QtCore import QSettings
 
 from stream_cheremsha.overlays import layout as L
@@ -11,6 +13,32 @@ def _fresh() -> QSettings:
     s.clear()
     s.sync()
     return s
+
+
+def test_legacy_single_layout_is_persisted_as_collection() -> None:
+    s = _fresh()
+    s.setValue(
+        L.LAYOUTS_QSETTINGS_KEY,
+        json.dumps(
+            {
+                "id": "tiktok-vertical",
+                "name": "TikTok вертикаль",
+                "width": 1080,
+                "height": 1920,
+                "widgets": [],
+            },
+            ensure_ascii=False,
+        ),
+    )
+    s.sync()
+
+    layouts = L.load_layouts(s)
+    stored = json.loads(str(s.value(L.LAYOUTS_QSETTINGS_KEY, "", str)))
+
+    assert len(layouts) == 1
+    assert layouts[0].id == "tiktok-vertical"
+    assert stored["layouts"][0]["name"] == "TikTok вертикаль"
+    assert L.get_active_layout_id(s) == "tiktok-vertical"
 
 
 def test_legacy_default_layout_survives() -> None:
@@ -97,7 +125,6 @@ def test_layout_overlay_renders_by_id_when_bound(monkeypatch) -> None:
     QSettings("t-org-lay", "t-app-lay").clear()
 
     inst = wi.create_instance("chat", "Bound Chat", None)
-    base = L.default_layout()
     legacy_w = L.LayoutWidget("w1", "chat", "main", 0, 0, 100, 100)
     bound_w = L.LayoutWidget("w2", "chat", "main", 0, 0, 100, 100, widget_instance_id=inst.id)
     lay = L.StreamLayout(

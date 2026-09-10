@@ -975,6 +975,11 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Налаштування віджетів (оверлеї, URL для OBS)",
         "en": "Widget settings (overlays, OBS URLs)",
     },
+    "ui.nav_layouts": {"uk": "Макети", "en": "Layouts"},
+    "ui.nav_layouts_hint": {
+        "uk": "Створення та редагування сцен із віджетів",
+        "en": "Create and edit scenes made from widgets",
+    },
     "battle.winner_music_toast": {
         "uk": "BATTLE ROYALE: переможець {user} — може замовити 1 трек у Telegram /music",
         "en": "BATTLE ROYALE: winner {user} — may request 1 track via Telegram /music",
@@ -2754,6 +2759,26 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "widgets.layouts.default_name": {"uk": "Основна сцена", "en": "Main scene"},
     "widgets.layouts.new_name": {"uk": "Сцена {n}", "en": "Scene {n}"},
     "widgets.layouts.copy_suffix": {"uk": " Копія", "en": " Copy"},
+    "widgets.layouts.widgets": {"uk": "віджетів", "en": "widgets"},
+    "widgets.layouts.description": {
+        "uk": "Збирайте кілька віджетів в одну сцену та використовуйте одне посилання у стрімінговому софті.",
+        "en": "Combine several widgets into one scene and use a single link in your streaming software.",
+    },
+    "widgets.layouts.create": {"uk": "+ Створити layout", "en": "+ Create layout"},
+    "widgets.layouts.stat_layouts": {"uk": "Layout-ів", "en": "Layouts"},
+    "widgets.layouts.stat_widgets": {"uk": "Віджетів загалом", "en": "Widgets total"},
+    "widgets.layouts.stat_active": {"uk": "Активний", "en": "Active"},
+    "widgets.layouts.active_status": {"uk": "Активний", "en": "Active"},
+    "widgets.layouts.create_card_title": {"uk": "Створити новий layout", "en": "Create new layout"},
+    "widgets.layouts.create_card_hint": {
+        "uk": "Додайте кілька віджетів та отримайте одне посилання.",
+        "en": "Add several widgets and get one public link.",
+    },
+    "widgets.layouts.empty_title": {"uk": "Ще немає layout-ів", "en": "No layouts yet"},
+    "widgets.layouts.empty_hint": {
+        "uk": "Створіть layout, додайте кілька віджетів та використовуйте одне посилання для всієї сцени.",
+        "en": "Create a layout, add several widgets, and use one link for the whole scene.",
+    },
     "widgets.layouts.default_instance": {
         "uk": "За замовчуванням (main)",
         "en": "Default (main)",

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any
+from typing import Any, cast
 from urllib.parse import quote
 
 from PySide6.QtCore import Property, QObject, QUrl, Signal, Slot
@@ -136,7 +136,9 @@ def _json_normalize_for_dump(value: Any) -> Any:
     keys_method = getattr(value, "keys", None)
     if callable(keys_method):
         try:
-            return {str(k): _json_normalize_for_dump(value[k]) for k in keys_method()}
+            mapping = cast(Any, value)
+            keys = cast(Any, keys_method)()
+            return {str(k): _json_normalize_for_dump(mapping[k]) for k in keys}
         except (TypeError, KeyError, AttributeError):
             pass
     return str(value)
@@ -332,6 +334,22 @@ class WidgetsQmlApi(QObject):
             topic="overlay:layout:main",
             patch={"action": "reload", "timestamp": time.time()},
         )
+
+    @Slot(str, result=bool)
+    def saveLayoutJson(self, layout_json: str) -> bool:
+        """Persist one layout without replacing the rest of the collection."""
+        from stream_cheremsha.overlays.layout import layout_from_dict, upsert_layout
+
+        try:
+            raw = json.loads(str(layout_json or ""))
+            layout = layout_from_dict(raw)
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            _LOG.warning("saveLayoutJson: rejected payload: %s", exc)
+            return False
+        if upsert_layout(layout) is None:
+            return False
+        self._notify_layouts_changed()
+        return True
 
     def _notify_layouts_changed(self) -> None:
         self.layoutsChanged.emit()
