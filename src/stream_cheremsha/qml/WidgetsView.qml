@@ -76,24 +76,28 @@ Item {
     property bool layoutsOnly: false
     property string layoutViewMode: "list" // list | create | edit
     property var _snapGuides: []
+    property string layoutLibrarySearch: ""
+    property real layoutCanvasZoom: 1.0
+    property bool layoutCanvasGridVisible: true
+    property bool layoutSaveSucceeded: true
 
     readonly property var layoutWidgetTypes: [
-        {type: "chat", label: "Чат", icon: "💬"},
-        {type: "actions", label: "Дії та алерти", icon: "⚡"},
-        {type: "activity", label: "Активність", icon: "📊"},
-        {type: "online", label: "Онлайн / глядачі", icon: "👥"},
-        {type: "top_likers", label: "Топ лайкерів", icon: "👍"},
-        {type: "top_gifters", label: "Топ GIFтерів", icon: "🎁"},
-        {type: "king_of_live", label: "King of the Live", icon: "👑"},
-        {type: "battle_royale", label: "Battle Royale", icon: "⚔️"},
-        {type: "stream_pet", label: "Stream Pet", icon: "🐾"},
-        {type: "community_world", label: "Community World", icon: "🏘️"},
-        {type: "stream_goal", label: "Stream Goal", icon: "🎯"},
-        {type: "live_leaderboard", label: "Live Leaderboard", icon: "🏆"},
-        {type: "social_rotator", label: "Social Rotator", icon: "🔄"},
-        {type: "webcam_frame", label: "Webcam Frame", icon: "📷"},
-        {type: "signal_system", label: "Signal System", icon: "⚡"},
-        {type: "music", label: "Музика", icon: "🎵"}
+        {type: "chat", label: "Чат", iconName: "chat.svg"},
+        {type: "actions", label: "Дії та алерти", iconName: "web_alert.svg"},
+        {type: "activity", label: "Активність", iconName: "activity.svg"},
+        {type: "online", label: "Онлайн / глядачі", iconName: "users.svg"},
+        {type: "top_likers", label: "Топ лайкерів", iconName: "heart.svg"},
+        {type: "top_gifters", label: "Топ GIFтерів", iconName: "gift.svg"},
+        {type: "king_of_live", label: "King of the Live", iconName: "web_crown.svg"},
+        {type: "battle_royale", label: "Battle Royale", iconName: "web_swords.svg"},
+        {type: "stream_pet", label: "Stream Pet", iconName: "web_paw.svg"},
+        {type: "community_world", label: "Community World", iconName: "web_globe.svg"},
+        {type: "stream_goal", label: "Stream Goal", iconName: "web_target.svg"},
+        {type: "live_leaderboard", label: "Live Leaderboard", iconName: "web_trophy.svg"},
+        {type: "social_rotator", label: "Social Rotator", iconName: "web_refresh.svg"},
+        {type: "webcam_frame", label: "Webcam Frame", iconName: "web_camera.svg"},
+        {type: "signal_system", label: "Signal System", iconName: "web_signal.svg"},
+        {type: "music", label: "Музика", iconName: "web_music.svg"}
     ]
 
     function defaultWidgetSize(type) {
@@ -123,7 +127,20 @@ Item {
         for (var i = 0; i < list.length; ++i) {
             if (list[i].type === type) return list[i];
         }
-        return {type: type, label: type, icon: "📦"};
+        return {type: type, label: type, iconName: "web_layout.svg"};
+    }
+
+    function filteredLayoutWidgetTypes() {
+        var query = String(root.layoutLibrarySearch || "").trim().toLowerCase();
+        if (!query) return root.layoutWidgetTypes;
+        return root.layoutWidgetTypes.filter(function(item) {
+            return String(item.label || "").toLowerCase().indexOf(query) !== -1
+                || String(item.type || "").toLowerCase().indexOf(query) !== -1;
+        });
+    }
+
+    function setLayoutCanvasZoom(value) {
+        root.layoutCanvasZoom = Math.max(0.5, Math.min(2.0, Math.round(value * 10) / 10));
     }
 
     // ---- Widget instances (Type -> Instances) state (root scope) ----
@@ -1004,6 +1021,8 @@ Item {
         root._undoStack = [];
         root._redoStack = [];
         root._snapGuides = [];
+        root.layoutCanvasZoom = 1.0;
+        root.layoutSaveSucceeded = true;
     }
 
     function selectedLayoutItem() {
@@ -1067,6 +1086,7 @@ Item {
                 saved = true;
             }
         }
+        root.layoutSaveSucceeded = saved;
         root.layoutRevision += 1;
         return saved;
     }
@@ -1155,6 +1175,19 @@ Item {
         root.saveLayoutEditor();
     }
 
+    function toggleWidgetVisibility(index) {
+        var items = (root.layoutDoc.widgets || []).slice();
+        if (index < 0 || index >= items.length) return;
+        root._pushUndo();
+        var item = Object.assign({}, items[index]);
+        item.visible = item.visible === false;
+        items[index] = item;
+        root._inspectorUpdating = true;
+        root.layoutDoc = Object.assign({}, root.layoutDoc, {widgets: items});
+        root._inspectorUpdating = false;
+        root.saveLayoutEditor();
+    }
+
     function applyLayoutPreset(width, height, name) {
         root._pushUndo();
         root._inspectorUpdating = true;
@@ -1178,6 +1211,34 @@ Item {
         else if (index === 2) root.applyLayoutPreset(1080, 1080, "Квадрат");
         else if (index === 3) root.applyLayoutPreset(1280, 720, "HD");
         else if (index === 0) root.applyLayoutPreset(1920, 1080, "Основна сцена");
+    }
+
+    component EditorIconButton: Button {
+        id: editorIconButton
+        property string iconName: ""
+        property string toolTipText: ""
+        property bool active: false
+        implicitWidth: 32
+        implicitHeight: 32
+        padding: 7
+        hoverEnabled: true
+        focusPolicy: Qt.NoFocus
+        contentItem: Image {
+            source: editorIconButton.iconName ? Qt.resolvedUrl("../assets/icons/" + editorIconButton.iconName) : ""
+            fillMode: Image.PreserveAspectFit
+            opacity: editorIconButton.enabled ? 1.0 : 0.35
+        }
+        background: Rectangle {
+            radius: 7
+            color: editorIconButton.active
+                ? root.accentSoft
+                : (editorIconButton.pressed ? "#263653" : (editorIconButton.hovered ? "#1c2b42" : "transparent"))
+            border.width: editorIconButton.active || editorIconButton.hovered ? 1 : 0
+            border.color: editorIconButton.active ? root.accent : root.cardEdgeStrong
+        }
+        ToolTip.visible: editorIconButton.hovered && editorIconButton.toolTipText !== ""
+        ToolTip.text: editorIconButton.toolTipText
+        ToolTip.delay: 450
     }
 
     component LayoutPrimaryButton: Button {
@@ -4120,152 +4181,192 @@ Item {
             Rectangle {
                 id: layoutEditorCard
                 Layout.fillWidth: true
-                radius: 14
-                color: cardBase
-                border.width: 1
-                border.color: cardEdge
+                Layout.fillHeight: true
+                Layout.minimumHeight: 680
+                radius: 0
+                color: "transparent"
+                border.width: 0
                 visible: root.layoutsOnly && root.layoutViewMode !== "list" && root.widgetMode === "layout"
-                implicitHeight: layoutEditorColumn.implicitHeight + 24
+                implicitHeight: layoutEditorColumn.implicitHeight
 
                 ColumnLayout {
                     id: layoutEditorColumn
                     anchors.fill: parent
-                    anchors.margins: 12
                     spacing: 10
 
-                    RowLayout {
+                    Rectangle {
                         Layout.fillWidth: true
-                        spacing: 8
-                        Text { text: "Конструктор layout"; color: ink; font.pixelSize: 18; font.bold: true }
+                        Layout.preferredHeight: 60
+                        radius: 10
+                        color: "#0d1320"
+                        border.width: 1
+                        border.color: cardEdge
 
-                        Item { Layout.fillWidth: true }
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 10
+                            anchors.rightMargin: 10
+                            spacing: 6
 
-                        PillButton {
-                            text: "↩ Скасувати"
-                            enabled: (root._undoStack || []).length > 0
-                            opacity: enabled ? 1.0 : 0.4
-                            onClicked: root.undo()
-                        }
-                        PillButton {
-                            text: "↪ Повторити"
-                            enabled: (root._redoStack || []).length > 0
-                            opacity: enabled ? 1.0 : 0.4
-                            onClicked: root.redo()
-                        }
-
-                        Rectangle { width: 1; height: 22; color: cardEdge }
-
-                        PillButton {
-                            text: "Показати preview"
-                            onClicked: {
-                                root.saveLayoutEditor();
-                                if (api) api.previewLayout(root.activeLayoutId);
-                            }
-                        }
-                        PillButton {
-                            text: "Зберегти"
-                            primary: true
-                            onClicked: {
-                                if (root.saveLayoutEditor())
-                                    root.showLayoutList();
-                            }
-                        }
-                        PillButton {
-                            visible: root.layoutsOnly
-                            text: root.loc("widgets.common.back")
-                            onClicked: root.showLayoutList()
-                        }
-                        PillButton {
-                            visible: !root.layoutsOnly
-                            text: "Назад"
-                            onClicked: root.widgetMode = "grid"
-                        }
-                    }
-
-                    Text {
-                        Layout.fillWidth: true
-                        text: "Перетягуйте та масштабуйте віджети на полотні (Shift для фіксації пропорцій, Alt для вимкнення прилипання, стрілки для точного руху)."
-                        color: muted
-                        font.pixelSize: 12
-                        wrapMode: Text.Wrap
-                    }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-                        Text { text: root.loc("widgets.layouts.scene"); color: muted; font.pixelSize: 12 }
-                        StyledComboBox {
-                            id: layoutSwitchBox
-                            Layout.preferredWidth: 240
-                            model: (root.layoutDocList || []).map(function(l) {
-                                return (l.id === root.activeLayoutId ? "★ " : "") + (l.name || l.id);
-                            })
-                            currentIndex: {
-                                var all = root.layoutDocList || [];
-                                for (var si = 0; si < all.length; ++si) {
-                                    if (all[si].id === root.activeLayoutId) return si;
-                                }
-                                return all.length ? 0 : -1;
-                            }
-                            onUserActivated: function(idx) { root.switchLayoutByIndex(idx); }
-                            onActivated: function(idx) { root.switchLayoutByIndex(idx); }
-                        }
-                        PillButton {
-                            text: root.loc("widgets.layouts.new")
-                            onClicked: {
-                                if (api) {
-                                    var nid = api.createLayout("");
-                                    root.loadLayoutEditor(nid || undefined);
-                                    try { api.setActiveLayoutId(root.activeLayoutId); } catch (e) {}
-                                }
-                            }
-                        }
-                        PillButton {
-                            text: root.loc("widgets.common.duplicate")
-                            onClicked: {
-                                if (api) {
-                                    var did = api.duplicateLayout(root.activeLayoutId);
-                                    if (did) {
-                                        root.loadLayoutEditor(did);
-                                        try { api.setActiveLayoutId(root.activeLayoutId); } catch (e2) {}
-                                    }
-                                }
-                            }
-                        }
-                        PillButton {
-                            text: root.loc("widgets.common.delete")
-                            enabled: (root.layoutDocList || []).length > 1
-                            opacity: enabled ? 1.0 : 0.4
-                            onClicked: {
-                                if (api && api.deleteLayout(root.activeLayoutId)) {
+                            EditorIconButton {
+                                iconName: "web_back.svg"
+                                toolTipText: root.loc("widgets.common.back")
+                                onClicked: {
                                     if (root.layoutsOnly) root.showLayoutList();
-                                    else root.loadLayoutEditor();
+                                    else root.widgetMode = "grid";
                                 }
                             }
-                        }
-                        TextField {
-                            id: layoutNameField
-                            Layout.preferredWidth: 200
-                            placeholderText: root.loc("widgets.layouts.name_placeholder")
-                            Binding {
-                                target: layoutNameField
-                                property: "text"
-                                value: root.layoutDoc.name || ""
-                                when: !layoutNameField.activeFocus
+
+                            Rectangle {
+                                Layout.preferredWidth: 36
+                                Layout.preferredHeight: 36
+                                radius: 9
+                                color: "#21104f"
+                                border.width: 1
+                                border.color: "#5b35b6"
+                                Image {
+                                    anchors.centerIn: parent
+                                    width: 19
+                                    height: 19
+                                    source: Qt.resolvedUrl("../assets/icons/web_layout.svg")
+                                }
                             }
-                            color: ink
-                            font.pixelSize: 12
-                            background: Rectangle { radius: 8; color: "#0b0f17"; border.width: 1; border.color: cardEdge }
-                            onEditingFinished: {
-                                var nm = text.trim();
-                                if (nm && nm !== (root.layoutDoc.name || "") && api) {
-                                    if (api.renameLayout(root.activeLayoutId, nm)) {
-                                        root._inspectorUpdating = true;
-                                        root.layoutDoc = Object.assign({}, root.layoutDoc, {name: nm});
-                                        root._inspectorUpdating = false;
-                                        root.saveLayoutEditor();
-                                        root.refreshLayouts();
+
+                            TextField {
+                                id: layoutNameField
+                                Layout.preferredWidth: 205
+                                Layout.preferredHeight: 34
+                                placeholderText: root.loc("widgets.layouts.name_placeholder")
+                                Binding {
+                                    target: layoutNameField
+                                    property: "text"
+                                    value: root.layoutDoc.name || ""
+                                    when: !layoutNameField.activeFocus
+                                }
+                                color: ink
+                                font.pixelSize: 14
+                                font.bold: true
+                                leftPadding: 8
+                                rightPadding: 8
+                                background: Rectangle {
+                                    radius: 7
+                                    color: layoutNameField.activeFocus ? fieldBg : "transparent"
+                                    border.width: layoutNameField.activeFocus ? 1 : 0
+                                    border.color: accent
+                                }
+                                onEditingFinished: {
+                                    var nm = text.trim();
+                                    if (nm && nm !== (root.layoutDoc.name || "") && api) {
+                                        if (api.renameLayout(root.activeLayoutId, nm)) {
+                                            root._inspectorUpdating = true;
+                                            root.layoutDoc = Object.assign({}, root.layoutDoc, {name: nm});
+                                            root._inspectorUpdating = false;
+                                            root.saveLayoutEditor();
+                                            root.refreshLayouts();
+                                        }
                                     }
+                                }
+                            }
+
+                            RowLayout {
+                                spacing: 5
+                                Image {
+                                    Layout.preferredWidth: 14
+                                    Layout.preferredHeight: 14
+                                    source: Qt.resolvedUrl("../assets/icons/" + (root.layoutSaveSucceeded ? "check.svg" : "x.svg"))
+                                }
+                                Text {
+                                    text: root.layoutSaveSucceeded ? "Збережено" : "Не збережено"
+                                    color: root.layoutSaveSucceeded ? muted : "#fca5a5"
+                                    font.pixelSize: 11
+                                }
+                            }
+
+                            Item { Layout.fillWidth: true }
+
+                            StyledComboBox {
+                                id: layoutSwitchBox
+                                Layout.preferredWidth: 150
+                                Layout.preferredHeight: 34
+                                model: (root.layoutDocList || []).map(function(l) { return l.name || l.id; })
+                                currentIndex: {
+                                    var all = root.layoutDocList || [];
+                                    for (var si = 0; si < all.length; ++si) {
+                                        if (all[si].id === root.activeLayoutId) return si;
+                                    }
+                                    return all.length ? 0 : -1;
+                                }
+                                onUserActivated: function(idx) { root.switchLayoutByIndex(idx); }
+                                onActivated: function(idx) { root.switchLayoutByIndex(idx); }
+                            }
+
+                            EditorIconButton {
+                                iconName: "web_plus.svg"
+                                toolTipText: root.loc("widgets.layouts.new")
+                                onClicked: {
+                                    if (api) {
+                                        var nid = api.createLayout("");
+                                        root.loadLayoutEditor(nid || undefined);
+                                        try { api.setActiveLayoutId(root.activeLayoutId); } catch (e) {}
+                                    }
+                                }
+                            }
+                            EditorIconButton {
+                                iconName: "copy.svg"
+                                toolTipText: root.loc("widgets.common.duplicate")
+                                onClicked: {
+                                    if (api) {
+                                        var did = api.duplicateLayout(root.activeLayoutId);
+                                        if (did) {
+                                            root.loadLayoutEditor(did);
+                                            try { api.setActiveLayoutId(root.activeLayoutId); } catch (e2) {}
+                                        }
+                                    }
+                                }
+                            }
+                            EditorIconButton {
+                                iconName: "web_trash.svg"
+                                toolTipText: root.loc("widgets.common.delete")
+                                enabled: (root.layoutDocList || []).length > 1
+                                onClicked: {
+                                    if (api && api.deleteLayout(root.activeLayoutId)) {
+                                        if (root.layoutsOnly) root.showLayoutList();
+                                        else root.loadLayoutEditor();
+                                    }
+                                }
+                            }
+
+                            Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 24; color: cardEdge }
+
+                            EditorIconButton {
+                                iconName: "editor_undo.svg"
+                                toolTipText: "Скасувати"
+                                enabled: (root._undoStack || []).length > 0
+                                onClicked: root.undo()
+                            }
+                            EditorIconButton {
+                                iconName: "editor_redo.svg"
+                                toolTipText: "Повторити"
+                                enabled: (root._redoStack || []).length > 0
+                                onClicked: root.redo()
+                            }
+
+                            LayoutCardButton {
+                                text: "Показати preview"
+                                iconName: "open-external.svg"
+                                implicitHeight: 34
+                                onClicked: {
+                                    root.saveLayoutEditor();
+                                    if (api) api.previewLayout(root.activeLayoutId);
+                                }
+                            }
+                            LayoutPrimaryButton {
+                                text: "Зберегти"
+                                iconName: "check.svg"
+                                implicitHeight: 34
+                                onClicked: {
+                                    if (root.saveLayoutEditor() && root.layoutsOnly)
+                                        root.showLayoutList();
                                 }
                             }
                         }
@@ -4273,12 +4374,14 @@ Item {
 
                     RowLayout {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 520
+                        Layout.fillHeight: true
+                        Layout.minimumHeight: 400
+                        Layout.preferredHeight: 560
                         spacing: 12
 
                         // Left panel: Widget library
                         Rectangle {
-                            Layout.preferredWidth: 215
+                            Layout.preferredWidth: 250
                             Layout.fillHeight: true
                             radius: 10
                             color: "#0d1320"
@@ -4290,8 +4393,48 @@ Item {
                                 anchors.margins: 10
                                 spacing: 6
 
-                                Text { text: "Додати віджет"; color: ink; font.pixelSize: 14; font.bold: true }
-                                Text { text: "Перетягніть на полотно або натисніть +"; color: muted; font.pixelSize: 11; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Text { text: "Додати віджет"; color: ink; font.pixelSize: 14; font.bold: true }
+                                    Item { Layout.fillWidth: true }
+                                    Text { text: root.filteredLayoutWidgetTypes().length; color: muted; font.pixelSize: 11 }
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "Перетягніть на полотно або натисніть +"
+                                    color: muted
+                                    font.pixelSize: 10
+                                    wrapMode: Text.Wrap
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 34
+                                    radius: 7
+                                    color: fieldBg
+                                    border.width: 1
+                                    border.color: librarySearchField.activeFocus ? accent : cardEdge
+                                    Image {
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 9
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: 15
+                                        height: 15
+                                        source: Qt.resolvedUrl("../assets/icons/web_search.svg")
+                                    }
+                                    TextField {
+                                        id: librarySearchField
+                                        anchors.fill: parent
+                                        leftPadding: 32
+                                        rightPadding: 8
+                                        placeholderText: "Пошук віджетів"
+                                        text: root.layoutLibrarySearch
+                                        color: ink
+                                        font.pixelSize: 12
+                                        background: Item {}
+                                        onTextChanged: root.layoutLibrarySearch = text
+                                    }
+                                }
 
                                 ScrollView {
                                     Layout.fillWidth: true
@@ -4303,11 +4446,11 @@ Item {
                                         spacing: 4
 
                                         Repeater {
-                                            model: root.layoutWidgetTypes
+                                            model: root.filteredLayoutWidgetTypes()
                                             delegate: Rectangle {
                                                 required property var modelData
                                                 Layout.fillWidth: true
-                                                implicitHeight: 38
+                                                implicitHeight: 42
                                                 radius: 7
                                                 color: libMouseArea.pressed ? "#162033" : (libMouseArea.containsMouse ? "#1e293b" : "#111726")
                                                 border.width: 1
@@ -4320,9 +4463,17 @@ Item {
                                                     spacing: 6
                                                     z: 2
 
-                                                    Text {
-                                                        text: modelData.icon || "📦"
-                                                        font.pixelSize: 14
+                                                    Rectangle {
+                                                        Layout.preferredWidth: 28
+                                                        Layout.preferredHeight: 28
+                                                        radius: 6
+                                                        color: "#182235"
+                                                        Image {
+                                                            anchors.centerIn: parent
+                                                            width: 16
+                                                            height: 16
+                                                            source: Qt.resolvedUrl("../assets/icons/" + (modelData.iconName || "web_layout.svg"))
+                                                        }
                                                     }
                                                     Text {
                                                         text: modelData.label
@@ -4332,11 +4483,11 @@ Item {
                                                         Layout.fillWidth: true
                                                         elide: Text.ElideRight
                                                     }
-                                                    PillButton {
-                                                        text: "+"
-                                                        pillFontSize: 13
-                                                        implicitWidth: 26
-                                                        implicitHeight: 26
+                                                    EditorIconButton {
+                                                        iconName: "web_plus.svg"
+                                                        toolTipText: "Додати віджет"
+                                                        implicitWidth: 28
+                                                        implicitHeight: 28
                                                         onClicked: root.addLayoutWidget(modelData.type, modelData.label)
                                                     }
                                                 }
@@ -4393,16 +4544,72 @@ Item {
                             clip: true
 
                             Rectangle {
+                                anchors.top: parent.top
+                                anchors.right: parent.right
+                                anchors.margins: 8
+                                width: canvasControlsRow.implicitWidth + 12
+                                height: 38
+                                radius: 8
+                                color: "#101722"
+                                border.width: 1
+                                border.color: cardEdge
+                                z: 200
+
+                                RowLayout {
+                                    id: canvasControlsRow
+                                    anchors.centerIn: parent
+                                    spacing: 2
+                                    EditorIconButton {
+                                        iconName: "editor_zoom_out.svg"
+                                        toolTipText: "Зменшити масштаб"
+                                        implicitWidth: 28
+                                        implicitHeight: 28
+                                        enabled: root.layoutCanvasZoom > 0.5
+                                        onClicked: root.setLayoutCanvasZoom(root.layoutCanvasZoom - 0.1)
+                                    }
+                                    Text {
+                                        Layout.preferredWidth: 42
+                                        text: Math.round(root.layoutCanvasZoom * 100) + "%"
+                                        color: inkSecondary
+                                        font.pixelSize: 11
+                                        horizontalAlignment: Text.AlignHCenter
+                                    }
+                                    EditorIconButton {
+                                        iconName: "editor_zoom_in.svg"
+                                        toolTipText: "Збільшити масштаб"
+                                        implicitWidth: 28
+                                        implicitHeight: 28
+                                        enabled: root.layoutCanvasZoom < 2.0
+                                        onClicked: root.setLayoutCanvasZoom(root.layoutCanvasZoom + 0.1)
+                                    }
+                                    LayoutCardButton {
+                                        text: "Вписати"
+                                        iconName: "editor_fit.svg"
+                                        implicitHeight: 28
+                                        onClicked: root.layoutCanvasZoom = 1.0
+                                    }
+                                    LayoutCardButton {
+                                        text: "Сітка"
+                                        iconName: "editor_grid.svg"
+                                        primary: root.layoutCanvasGridVisible
+                                        implicitHeight: 28
+                                        onClicked: root.layoutCanvasGridVisible = !root.layoutCanvasGridVisible
+                                    }
+                                }
+                            }
+
+                            Rectangle {
                                 id: layoutCanvas
                                 anchors.centerIn: parent
                                 property real documentWidth: Number(root.layoutDoc.width || 1920)
                                 property real documentHeight: Number(root.layoutDoc.height || 1080)
                                 property real aspect: documentWidth / Math.max(1, documentHeight)
-                                property real editorScale: width / Math.max(1, documentWidth)
+                                property real fitScale: Math.min((parent.width - 20) / Math.max(1, documentWidth), (parent.height - 20) / Math.max(1, documentHeight))
+                                property real editorScale: fitScale * root.layoutCanvasZoom
                                 property int selectedIndex: root.selectedLayoutWidget
 
-                                width: Math.min(parent.width - 20, (parent.height - 20) * aspect)
-                                height: width / aspect
+                                width: documentWidth * editorScale
+                                height: documentHeight * editorScale
                                 color: "#06080d"
                                 border.width: 1
                                 border.color: "#334155"
@@ -4568,6 +4775,32 @@ Item {
                                     return {x: nextX, y: nextY, w: nextW, h: nextH, guides: matchedGuides};
                                 }
 
+                                // Grid is document-space UI: it repaints only when dimensions, zoom, or visibility change.
+                                Repeater {
+                                    model: root.layoutCanvasGridVisible ? Math.max(0, Math.floor(layoutCanvas.documentWidth / 100) - 1) : 0
+                                    delegate: Rectangle {
+                                        required property int index
+                                        x: (index + 1) * 100 * layoutCanvas.editorScale
+                                        width: 1
+                                        height: layoutCanvas.height
+                                        color: root.canvasGrid
+                                        opacity: 0.75
+                                        z: -2
+                                    }
+                                }
+                                Repeater {
+                                    model: root.layoutCanvasGridVisible ? Math.max(0, Math.floor(layoutCanvas.documentHeight / 100) - 1) : 0
+                                    delegate: Rectangle {
+                                        required property int index
+                                        y: (index + 1) * 100 * layoutCanvas.editorScale
+                                        width: layoutCanvas.width
+                                        height: 1
+                                        color: root.canvasGrid
+                                        opacity: 0.75
+                                        z: -2
+                                    }
+                                }
+
                                 // Canvas background click
                                 MouseArea {
                                     anchors.fill: parent
@@ -4675,6 +4908,7 @@ Item {
                                         width: localW * layoutCanvas.editorScale
                                         height: localH * layoutCanvas.editorScale
                                         z: isSelected ? 50 : index
+                                        visible: modelData.visible !== false
 
                                         // Keep local interactive geometry in sync when model updates and not dragging
                                         Connections {
@@ -4794,10 +5028,18 @@ Item {
                                                 RowLayout {
                                                     Layout.fillWidth: true
                                                     spacing: 5
+                                                    Image {
+                                                        Layout.preferredWidth: 14
+                                                        Layout.preferredHeight: 14
+                                                        source: {
+                                                            var info = root.widgetTypeInfo(modelData.type);
+                                                            return Qt.resolvedUrl("../assets/icons/" + (info.iconName || "web_layout.svg"));
+                                                        }
+                                                    }
                                                     Text {
                                                         text: {
                                                             var info = root.widgetTypeInfo(modelData.type);
-                                                            return (info.icon || "📦") + " " + (info.label || modelData.type || "Віджет");
+                                                            return info.label || modelData.type || "Віджет";
                                                         }
                                                         color: layoutWidget.isSelected ? "#5eead4" : root.ink
                                                         font.pixelSize: Math.max(10, Math.min(13, layoutWidget.height * 0.2))
@@ -4805,10 +5047,10 @@ Item {
                                                         elide: Text.ElideRight
                                                         Layout.fillWidth: true
                                                     }
-                                                    Text {
-                                                        text: modelData.locked ? "🔒" : ""
-                                                        color: "#94a3b8"
-                                                        font.pixelSize: 11
+                                                    Image {
+                                                        Layout.preferredWidth: 13
+                                                        Layout.preferredHeight: 13
+                                                        source: Qt.resolvedUrl("../assets/icons/editor_lock.svg")
                                                         visible: modelData.locked
                                                     }
                                                 }
@@ -4924,11 +5166,17 @@ Item {
                                 anchors.margins: 10
                                 spacing: 8
 
-                                Text { text: "Шари та віджети"; color: ink; font.pixelSize: 14; font.bold: true }
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Text { text: "Шари"; color: ink; font.pixelSize: 14; font.bold: true }
+                                    Item { Layout.fillWidth: true }
+                                    Text { text: (root.layoutDoc.widgets || []).length; color: muted; font.pixelSize: 11 }
+                                }
                                 Text {
                                     Layout.fillWidth: true
-                                    text: "Вибирайте віджет, блокуйте або змінюйте порядок шарів."
-                                    color: muted; font.pixelSize: 11; wrapMode: Text.Wrap
+                                    text: "Порядок віджетів"
+                                    color: muted
+                                    font.pixelSize: 10
                                 }
 
                                 ListView {
@@ -4943,7 +5191,7 @@ Item {
                                         required property var modelData
                                         required property int index
                                         width: activeLayoutWidgets.width
-                                        height: 42
+                                        height: 44
                                         radius: 7
                                         color: index === root.selectedLayoutWidget ? "#134e4a" : (itemHover.hovered ? "#1b2537" : "#141c2c")
                                         border.width: index === root.selectedLayoutWidget ? 1 : 0
@@ -4957,47 +5205,57 @@ Item {
                                             anchors.rightMargin: 6
                                             spacing: 4
 
+                                            Image {
+                                                Layout.preferredWidth: 16
+                                                Layout.preferredHeight: 16
+                                                source: {
+                                                    var info = root.widgetTypeInfo(modelData.type);
+                                                    return Qt.resolvedUrl("../assets/icons/" + (info.iconName || "web_layout.svg"));
+                                                }
+                                                opacity: modelData.visible === false ? 0.4 : 1.0
+                                            }
                                             Text {
                                                 text: {
                                                     var info = root.widgetTypeInfo(modelData.type);
-                                                    return (info.icon || "📦") + "  " + (info.label || modelData.type);
+                                                    return info.label || modelData.type;
                                                 }
-                                                color: ink
-                                                font.pixelSize: 12
+                                                color: modelData.visible === false ? muted : ink
+                                                font.pixelSize: 11
                                                 font.weight: index === root.selectedLayoutWidget ? Font.Medium : Font.Normal
                                                 Layout.fillWidth: true
                                                 elide: Text.ElideRight
                                             }
 
-                                            // Move up layer
-                                            PillButton {
-                                                text: "▲"
-                                                pillFontSize: 10
-                                                implicitWidth: 22
-                                                implicitHeight: 22
-                                                enabled: index > 0
-                                                opacity: enabled ? 1.0 : 0.3
-                                                onClicked: root.moveWidgetLayer(index, index - 1)
-                                            }
-
-                                            // Move down layer
-                                            PillButton {
-                                                text: "▼"
-                                                pillFontSize: 10
-                                                implicitWidth: 22
-                                                implicitHeight: 22
-                                                enabled: index < (root.layoutDoc.widgets || []).length - 1
-                                                opacity: enabled ? 1.0 : 0.3
-                                                onClicked: root.moveWidgetLayer(index, index + 1)
-                                            }
-
-                                            // Lock toggle
-                                            PillButton {
-                                                text: modelData.locked ? "🔒" : "🔓"
-                                                pillFontSize: 11
+                                            EditorIconButton {
+                                                iconName: "chevron-up.svg"
+                                                toolTipText: "Підняти шар"
                                                 implicitWidth: 24
                                                 implicitHeight: 24
+                                                enabled: index > 0
+                                                onClicked: root.moveWidgetLayer(index, index - 1)
+                                            }
+                                            EditorIconButton {
+                                                iconName: "chevron-down.svg"
+                                                toolTipText: "Опустити шар"
+                                                implicitWidth: 24
+                                                implicitHeight: 24
+                                                enabled: index < (root.layoutDoc.widgets || []).length - 1
+                                                onClicked: root.moveWidgetLayer(index, index + 1)
+                                            }
+                                            EditorIconButton {
+                                                iconName: modelData.locked ? "editor_lock.svg" : "editor_unlock.svg"
+                                                toolTipText: modelData.locked ? "Розблокувати" : "Заблокувати"
+                                                implicitWidth: 24
+                                                implicitHeight: 24
+                                                active: modelData.locked
                                                 onClicked: root.toggleWidgetLock(index)
+                                            }
+                                            EditorIconButton {
+                                                iconName: modelData.visible === false ? "editor_eye_off.svg" : "editor_eye.svg"
+                                                toolTipText: modelData.visible === false ? "Показати" : "Сховати"
+                                                implicitWidth: 24
+                                                implicitHeight: 24
+                                                onClicked: root.toggleWidgetVisibility(index)
                                             }
                                         }
 
@@ -5031,20 +5289,20 @@ Item {
                         color: "#0d1320"
                         border.width: 1
                         border.color: cardEdge
-                        implicitHeight: layoutProperties.implicitHeight + 20
+                        implicitHeight: layoutProperties.implicitHeight + 16
 
                         ColumnLayout {
                             id: layoutProperties
                             anchors.fill: parent
-                            anchors.margins: 10
-                            spacing: 8
+                            anchors.margins: 8
+                            spacing: 6
 
                             RowLayout {
                                 Layout.fillWidth: true
-                                spacing: 8
-                                Text { text: "Полотно:"; color: ink; font.pixelSize: 13; font.bold: true }
+                                spacing: 6
+                                Text { text: "Полотно"; color: ink; font.pixelSize: 12; font.bold: true }
                                 StyledComboBox {
-                                    Layout.preferredWidth: 280
+                                    Layout.preferredWidth: 240
                                     model: ["1920 × 1080 · Горизонталь", "1080 × 1920 · TikTok вертикаль", "1080 × 1080 · Квадрат", "1280 × 720 · HD", "Вручну"]
                                     currentIndex: root.canvasPresetIndex
                                     onUserActivated: function(index) { root.selectCanvasPreset(index); }
@@ -5052,7 +5310,7 @@ Item {
                                 Text { visible: root.canvasPresetIndex === 4; text: "W:"; color: muted; font.pixelSize: 11 }
                                 StyledSpinBox {
                                     visible: root.canvasPresetIndex === 4
-                                    Layout.preferredWidth: 100
+                                    Layout.preferredWidth: 84
                                     from: 320; to: 10000
                                     value: Number(root.layoutDoc.width || 1920)
                                     onValueModified: {
@@ -5064,7 +5322,7 @@ Item {
                                 Text { visible: root.canvasPresetIndex === 4; text: "H:"; color: muted; font.pixelSize: 11 }
                                 StyledSpinBox {
                                     visible: root.canvasPresetIndex === 4
-                                    Layout.preferredWidth: 100
+                                    Layout.preferredWidth: 84
                                     from: 180; to: 10000
                                     value: Number(root.layoutDoc.height || 1080)
                                     onValueModified: {
@@ -5074,26 +5332,36 @@ Item {
                                     }
                                 }
                                 Item { Layout.fillWidth: true }
-                                PillButton {
-                                    text: "Видалити віджет"
+                                EditorIconButton {
+                                    iconName: "web_trash.svg"
+                                    toolTipText: "Видалити віджет"
                                     enabled: root.selectedLayoutItem() !== null
-                                    opacity: enabled ? 1.0 : 0.4
                                     onClicked: root.removeSelectedLayoutWidget()
                                 }
                             }
 
-                            Rectangle { Layout.fillWidth: true; height: 1; color: cardEdge }
+                            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: cardEdge }
 
                             RowLayout {
                                 Layout.fillWidth: true
-                                spacing: 10
+                                spacing: 6
 
+                                Image {
+                                    visible: root.selectedLayoutItem() !== null
+                                    Layout.preferredWidth: 16
+                                    Layout.preferredHeight: 16
+                                    source: {
+                                        var item = root.selectedLayoutItem();
+                                        var info = item ? root.widgetTypeInfo(item.type) : null;
+                                        return Qt.resolvedUrl("../assets/icons/" + ((info && info.iconName) || "web_layout.svg"));
+                                    }
+                                }
                                 Text {
                                     text: {
                                         var item = root.selectedLayoutItem();
-                                        if (!item) return "Виберіть віджет для редагування параметрів";
+                                        if (!item) return "Виберіть віджет для редагування";
                                         var info = root.widgetTypeInfo(item.type);
-                                        return "Віджет: " + (info.icon || "📦") + " " + (info.label || item.type);
+                                        return info.label || item.type;
                                     }
                                     color: root.selectedLayoutItem() ? "#5eead4" : muted
                                     font.pixelSize: 12
@@ -5104,12 +5372,12 @@ Item {
 
                                 RowLayout {
                                     visible: root.selectedLayoutItem() !== null
-                                    spacing: 8
+                                    spacing: 5
 
-                                    Text { text: "X:"; color: muted; font.pixelSize: 12 }
+                                    Text { text: "X"; color: muted; font.pixelSize: 11 }
                                     StyledSpinBox {
                                         id: layoutXSpin
-                                        Layout.preferredWidth: 110
+                                        Layout.preferredWidth: 86
                                         from: -5000; to: 10000
                                         Binding {
                                             target: layoutXSpin
@@ -5124,10 +5392,10 @@ Item {
                                         }
                                     }
 
-                                    Text { text: "Y:"; color: muted; font.pixelSize: 12 }
+                                    Text { text: "Y"; color: muted; font.pixelSize: 11 }
                                     StyledSpinBox {
                                         id: layoutYSpin
-                                        Layout.preferredWidth: 110
+                                        Layout.preferredWidth: 86
                                         from: -5000; to: 10000
                                         Binding {
                                             target: layoutYSpin
@@ -5142,10 +5410,10 @@ Item {
                                         }
                                     }
 
-                                    Text { text: "W:"; color: muted; font.pixelSize: 12 }
+                                    Text { text: "W"; color: muted; font.pixelSize: 11 }
                                     StyledSpinBox {
                                         id: layoutWSpin
-                                        Layout.preferredWidth: 110
+                                        Layout.preferredWidth: 86
                                         from: 1; to: 10000
                                         Binding {
                                             target: layoutWSpin
@@ -5160,10 +5428,10 @@ Item {
                                         }
                                     }
 
-                                    Text { text: "H:"; color: muted; font.pixelSize: 12 }
+                                    Text { text: "H"; color: muted; font.pixelSize: 11 }
                                     StyledSpinBox {
                                         id: layoutHSpin
-                                        Layout.preferredWidth: 110
+                                        Layout.preferredWidth: 86
                                         from: 1; to: 10000
                                         Binding {
                                             target: layoutHSpin
@@ -5187,7 +5455,7 @@ Item {
                                 Text { text: root.loc("widgets.layouts.instance"); color: muted; font.pixelSize: 12 }
                                 StyledComboBox {
                                     id: layoutInstBox
-                                    Layout.preferredWidth: 280
+                                    Layout.preferredWidth: 240
                                     model: root.layoutWidgetInstanceOptions(
                                         root.selectedLayoutItem() ? root.selectedLayoutItem().type : "").map(
                                         function(o) { return o.label; })
@@ -5209,19 +5477,42 @@ Item {
                         }
                     }
 
-                    RowLayout {
+                    Rectangle {
                         Layout.fillWidth: true
-                        TextField {
-                            Layout.fillWidth: true
-                            readOnly: true
-                            selectByMouse: true
-                            color: ink
-                            text: api ? api.layoutOverlayUrl(root.activeLayoutId || "default") : ""
-                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                        }
-                        PillButton {
-                            text: "Скопіювати URL"
-                            onClicked: if (api) api.copyLayoutOverlayUrl(root.activeLayoutId || "default")
+                        Layout.preferredHeight: 40
+                        radius: 9
+                        color: "#0d1320"
+                        border.width: 1
+                        border.color: cardEdge
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 10
+                            anchors.rightMargin: 6
+                            spacing: 8
+                            Image {
+                                Layout.preferredWidth: 15
+                                Layout.preferredHeight: 15
+                                source: Qt.resolvedUrl("../assets/icons/web_layout.svg")
+                            }
+                            Text { text: "Layout URL"; color: muted; font.pixelSize: 11; font.bold: true }
+                            TextField {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 28
+                                readOnly: true
+                                selectByMouse: true
+                                color: inkSecondary
+                                font.pixelSize: 11
+                                text: api ? api.layoutOverlayUrl(root.activeLayoutId || "default") : ""
+                                background: Rectangle { radius: 6; color: fieldBg }
+                            }
+                            EditorIconButton {
+                                iconName: "copy.svg"
+                                toolTipText: "Скопіювати URL"
+                                implicitWidth: 28
+                                implicitHeight: 28
+                                onClicked: if (api) api.copyLayoutOverlayUrl(root.activeLayoutId || "default")
+                            }
                         }
                     }
                 }
@@ -6109,7 +6400,7 @@ Item {
                 color: cardBase
                 border.width: 1
                 border.color: cardEdge
-                visible: root.widgetMode !== "grid" && !root.universalEditorActive
+                visible: root.widgetMode !== "grid" && root.widgetMode !== "layout" && !root.universalEditorActive
 
                 ScrollView {
                     anchors.fill: parent
