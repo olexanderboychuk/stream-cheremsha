@@ -61,7 +61,6 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QFontComboBox,
-    QFormLayout,
     QFrame,
     QGraphicsDropShadowEffect,
     QGridLayout,
@@ -228,6 +227,7 @@ from stream_cheremsha.ui.chat_formatting import (
     load_platform_icon_data_uris,
 )
 from stream_cheremsha.ui.chat_popout import ChatPopoutWindow
+from stream_cheremsha.ui.cheremsha_switch import CheremshaSwitch
 from stream_cheremsha.ui.docks_qml_api import DocksQmlApi
 from stream_cheremsha.ui.donations_qml_api import DonationsQmlApi
 from stream_cheremsha.ui.kick_analytics_api import KickAnalyticsApi
@@ -316,6 +316,14 @@ def _asset_path(name: str) -> Path:
     return _STREAM_ROOT / "assets" / name
 
 
+def _audio_asset_url(name: str) -> str:
+    """File URL for a bundled SVG asset (stylesheet ``image: url(...)``)."""
+    p = _asset_path(name)
+    if not p.is_file():
+        return ""
+    return QUrl.fromLocalFile(str(p.resolve())).toString()
+
+
 def _should_activate_window() -> bool:
     """
     Avoid stealing focus on Windows when the user is working in another app.
@@ -334,7 +342,6 @@ def _footer_richtext_img(name: str, px: int) -> str:
     return f"<img width='{px}' height='{px}' src={quoteattr(url)} /> "
 
 
-_MAX_LOG_DOCUMENT_BLOCKS = 3500
 _MAX_CHAT_DOCUMENT_BLOCKS = 450
 
 # Splash-phase QML warm-up budget: stop preloading lower-priority pages once
@@ -933,7 +940,7 @@ _POINTS_EARN_REASON_ORDER = ("gift", "like", "share", "follow", "watch")
 
 
 class MainWindow(FramelessWindow):
-    """MVP: stacked panes (connections, settings, chat, audio, logs) + status."""
+    """MVP: stacked panes (connections, settings, chat, audio) + status."""
 
     startup_finished = Signal()
 
@@ -942,13 +949,12 @@ class MainWindow(FramelessWindow):
     _IX_SETTINGS = 1
     _IX_CHAT = 2
     _IX_AUDIO = 3
-    _IX_LOGS = 4
-    _IX_DONATIONS = 5
-    _IX_WIDGETS = 6
-    _IX_DOCKS = 7
-    _IX_ACTIONS = 8
-    _IX_MUSIC = 9
-    _IX_BIG_PICTURE = 10
+    _IX_DONATIONS = 4
+    _IX_WIDGETS = 5
+    _IX_DOCKS = 6
+    _IX_ACTIONS = 7
+    _IX_MUSIC = 8
+    _IX_BIG_PICTURE = 9
     _QML_STACK_INDICES = frozenset(
         {_IX_CONN, _IX_DONATIONS, _IX_WIDGETS, _IX_DOCKS, _IX_ACTIONS},
     )
@@ -1639,12 +1645,6 @@ class MainWindow(FramelessWindow):
             fallback=QStyle.StandardPixmap.SP_MediaPlay,
             on_click=lambda: self._set_main_page(self._IX_MUSIC),
         )
-        self._btn_footer_logs = _make_nav_btn(
-            nav_id="navLogs",
-            asset_name="nav/logs.svg",
-            fallback=QStyle.StandardPixmap.SP_FileDialogDetailedView,
-            on_click=lambda: self._set_main_page(self._IX_LOGS),
-        )
         self._btn_footer_chat = _make_nav_btn(
             nav_id="navChat",
             asset_name="nav/chat.svg",
@@ -1669,7 +1669,7 @@ class MainWindow(FramelessWindow):
         )
         _add_group(
             "TOOLS",
-            [self._btn_footer_logs, self._btn_footer_chat, self._btn_footer_tts],
+            [self._btn_footer_chat, self._btn_footer_tts],
         )
         side_lay.addStretch(1)
 
@@ -1703,7 +1703,6 @@ class MainWindow(FramelessWindow):
         self._stack.addWidget(self._build_settings_tab())
         self._stack.addWidget(self._build_chat_tab())
         self._stack.addWidget(self._build_audio_tab())
-        self._stack.addWidget(self._build_logs_tab())
         self._stack.addWidget(self._qml_donations)
         self._stack.addWidget(self._qml_widgets)
         self._stack.addWidget(self._qml_docks)
@@ -2309,7 +2308,6 @@ class MainWindow(FramelessWindow):
         "_btn_footer_widgets": "#a78bfa",
         "_btn_footer_docks": "#c084fc",
         "_btn_footer_music": "#93c5fd",
-        "_btn_footer_logs": "#fdba74",
         "_btn_footer_chat": "#5eead4",
         "_btn_footer_tts": "#e879f9",
     }
@@ -2408,7 +2406,6 @@ class MainWindow(FramelessWindow):
         on_conn = self._stack.currentIndex() == self._IX_CONN
         on_chat = self._stack.currentIndex() == self._IX_CHAT
         on_tts = self._stack.currentIndex() == self._IX_AUDIO
-        on_logs = self._stack.currentIndex() == self._IX_LOGS
         on_don = self._stack.currentIndex() == self._IX_DONATIONS
         on_actions = self._stack.currentIndex() == self._IX_ACTIONS
         on_widgets = self._stack.currentIndex() == self._IX_WIDGETS
@@ -2421,7 +2418,6 @@ class MainWindow(FramelessWindow):
             (getattr(self, "_btn_footer_widgets", None), on_widgets),
             (getattr(self, "_btn_footer_docks", None), on_docks),
             (getattr(self, "_btn_footer_music", None), on_music),
-            (getattr(self, "_btn_footer_logs", None), on_logs),
             (self._btn_footer_chat, on_chat),
             (self._btn_footer_tts, on_tts),
         ):
@@ -2480,11 +2476,6 @@ class MainWindow(FramelessWindow):
             self._btn_footer_tts.setText(self._nav_text("ui.nav_tts"))
             self._btn_footer_chat.setToolTip(self._tr("ui.nav_chat_hint"))
             self._btn_footer_tts.setToolTip(self._tr("ui.nav_tts_hint"))
-        if hasattr(self, "_btn_footer_logs"):
-            tl = self._tr("ui.nav_logs")
-            self._btn_footer_logs.setText(self._nav_text("ui.nav_logs"))
-            self._btn_footer_logs.setToolTip(self._tr("ui.nav_logs_hint"))
-            self._btn_footer_logs.setAccessibleName(tl)
         if hasattr(self, "_btn_footer_donations"):
             td = self._tr("ui.nav_donations")
             self._btn_footer_donations.setText(self._nav_text("ui.nav_donations"))
@@ -2514,6 +2505,8 @@ class MainWindow(FramelessWindow):
             self._btn_side_settings.setToolTip(self._tr("ui.open_settings_hint"))
 
     def _apply_dark_chrome(self) -> None:
+        chevron_url = _audio_asset_url("icons/chevron-down.svg")
+        clear_url = _audio_asset_url("icons/x.svg")
         self.setStyleSheet(
             # Keep most widgets transparent; paint page roots explicitly for a cohesive backdrop.
             "MainWindow { background-color: #0d0f14; }"
@@ -2528,9 +2521,6 @@ class MainWindow(FramelessWindow):
             "background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
             "stop:0 #0f172a, stop:0.55 #0b1220, stop:1 #070910); }"
             "QWidget#musicPageRoot { "
-            "background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-            "stop:0 #0f172a, stop:0.55 #0b1220, stop:1 #070910); }"
-            "QWidget#logsPageRoot { "
             "background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
             "stop:0 #0f172a, stop:0.55 #0b1220, stop:1 #070910); }"
             "QWidget#settingsScrollBody { background-color: transparent; }"
@@ -2608,10 +2598,63 @@ class MainWindow(FramelessWindow):
             "QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { "
             "background: transparent; }"
             "QWidget#audioPageRoot { background-color: #0a0b0e; }"
-            "QFrame#audioCard { background-color: #121620; border: 1px solid #2a3142; "
-            "border-radius: 14px; }"
-            "QLabel#audioCardTitle { color: #e8eaed; font-size: 16px; font-weight: 600; }"
-            "QLabel#audioMutedCaption { color: #8b95a5; font-size: 12px; }"
+            "QFrame#audioCard { background-color: #10141f; border: 1px solid #2a3142; "
+            "border-radius: 12px; }"
+            "QLabel#audioCardTitle { color: #e8eaed; font-size: 14px; font-weight: 600; }"
+            "QLabel#audioCardIcon { background: transparent; }"
+            "QLabel#audioCardSub { color: #8b95a5; font-size: 11px; }"
+            "QLabel#audioMutedCaption { color: #8b95a5; font-size: 11px; }"
+            "QLabel#audioFieldLabel { color: #9aa5b8; font-size: 12px; }"
+            "QLabel#audioPageTitle { color: #f2f4f8; font-size: 26px; font-weight: 700; }"
+            "QLabel#audioPageSub { color: #8b95a5; font-size: 13px; }"
+            "QLabel#audioStatusBadge { color: #34d399; font-size: 12px; font-weight: 600; "
+            "background-color: #0e1a15; border: 1px solid #1f4d3f; border-radius: 10px; "
+            "padding: 3px 10px; }"
+            "QLabel#audioSummary { color: #7d8aa0; font-size: 12px; }"
+            "QLabel#audioValueBox { color: #e8eaed; font-size: 12px; font-weight: 600; "
+            "background-color: #10141c; border: 1px solid #2a3142; border-radius: 8px; "
+            "padding: 5px 10px; min-width: 56px; qproperty-alignment: AlignCenter; }"
+            "QLineEdit#audioTestInput { min-height: 40px; }"
+            'QComboBox#audioCombo::down-arrow { image: url("' + chevron_url + '"); '
+            "width: 14px; height: 14px; }"
+            'QLineEdit#audioTestInput::clear-button { image: url("' + clear_url + '"); '
+            "width: 14px; height: 14px; }"
+            "QPushButton#cheremshaPrimaryButton { background: qlineargradient(x1:0, y1:0, "
+            "x2:1, y2:0, stop:0 #7c3aed, stop:1 #4f46e5); border: 1px solid #8b5cf6; "
+            "border-radius: 10px; color: #ffffff; font-weight: 700; padding: 0px 16px; "
+            "min-height: 40px; }"
+            "QPushButton#cheremshaPrimaryButton:hover { background: qlineargradient(x1:0, "
+            "y1:0, x2:1, y2:0, stop:0 #8b5cf6, stop:1 #6366f1); border-color: #a78bfa; }"
+            "QPushButton#cheremshaPrimaryButton:pressed { background: #4c1d95; "
+            "border-color: #7c3aed; }"
+            "QPushButton#cheremshaPrimaryButton:disabled { background: #232b3d; "
+            "border-color: #2a3142; color: #8b95a5; }"
+            "QPushButton#cheremshaStopButton { background-color: #231419; "
+            "border: 1px solid #5b2b33; border-radius: 10px; color: #fda4af; "
+            "font-weight: 600; padding: 0px 16px; min-height: 40px; }"
+            "QPushButton#cheremshaStopButton:hover { background-color: #2e1a20; "
+            "border-color: #7f3540; }"
+            "QPushButton#cheremshaStopButton:pressed { background-color: #1a0f13; "
+            "border-color: #5b2b33; }"
+            "QPushButton#cheremshaQuietButton { background-color: #1a2130; "
+            "border: 1px solid #2f3a4d; border-radius: 8px; color: #c3cad7; "
+            "font-size: 12px; padding: 4px 12px; min-height: 30px; }"
+            "QPushButton#cheremshaQuietButton:hover { background-color: #202a3a; "
+            "border-color: #3b4458; color: #eef2f6; }"
+            "QPushButton#cheremshaQuietButton:pressed { background-color: #161c28; }"
+            "QSlider::groove:horizontal { height: 6px; background: #1a2130; "
+            "border: 1px solid #2a3142; border-radius: 3px; }"
+            "QSlider::sub-page:horizontal { background: #0f766e; border-radius: 3px; }"
+            "QSlider::handle:horizontal { width: 16px; height: 16px; margin: -6px 0; "
+            "background: #2dd4bf; border: 1px solid #5eead4; border-radius: 8px; }"
+            "QSlider::handle:horizontal:hover { background: #5eead4; }"
+            "QSlider#audioVolumeSlider::sub-page:horizontal, "
+            "QSlider#audioRateSlider::sub-page:horizontal { background: #7c3aed; }"
+            "QSlider#audioVolumeSlider::handle:horizontal, "
+            "QSlider#audioRateSlider::handle:horizontal { background: #8b5cf6; "
+            "border: 1px solid #c4b5fd; }"
+            "QSlider#audioVolumeSlider::handle:horizontal:hover, "
+            "QSlider#audioRateSlider::handle:horizontal:hover { background: #a78bfa; }"
             "QLineEdit, QComboBox, QSpinBox, QTextEdit, QPlainTextEdit {"
             " background: #10141c; color: #e6e6e6; border: 1px solid #2a3142; "
             "border-radius: 10px; padding: 7px 10px; min-height: 36px; }"
@@ -3720,7 +3763,6 @@ class MainWindow(FramelessWindow):
         self._apply_settings_tab_texts()
         self._apply_connections_tab_texts()
         self._apply_audio_tab_texts()
-        self._apply_logs_tab_texts()
         self._apply_chat_tab_texts()
         self._apply_music_tab_texts()
         self._apply_in_app_chrome_texts()
@@ -3878,30 +3920,6 @@ class MainWindow(FramelessWindow):
         self._apply_chat_tab_texts()
         return w
 
-    def _build_logs_tab(self) -> QWidget:
-        w = QWidget()
-        w.setObjectName("logsPageRoot")
-        lay = QVBoxLayout(w)
-        self._logs_hint = QLabel()
-        self._logs_hint.setWordWrap(True)
-        self._logs_hint.setTextFormat(Qt.TextFormat.RichText)
-        lay.addWidget(self._logs_hint)
-        bar = QHBoxLayout()
-        bar.addStretch(1)
-        self._btn_logs_clear = QPushButton()
-        bar.addWidget(self._btn_logs_clear)
-        lay.addLayout(bar)
-        self._log_view = QTextEdit()
-        self._btn_logs_clear.clicked.connect(self._log_view.clear)
-        self._log_view.setReadOnly(True)
-        self._log_view.setAcceptRichText(False)
-        lf = self._log_view.font()
-        lf.setFamilies(["monospace", "Consolas", "DejaVu Sans Mono"])
-        self._log_view.setFont(lf)
-        lay.addWidget(self._log_view, stretch=1)
-        self._apply_logs_tab_texts()
-        return w
-
     def _build_music_tab(self) -> QWidget:
         w = QWidget()
         w.setObjectName("musicPageRoot")
@@ -3956,10 +3974,6 @@ class MainWindow(FramelessWindow):
             self._btn_music_play_pause.setText(self._tr("music.play_pause"))
         if hasattr(self, "_btn_music_next"):
             self._btn_music_next.setText(self._tr("music.next"))
-
-    def _apply_logs_tab_texts(self) -> None:
-        self._logs_hint.setText(self._tr("logs.hint"))
-        self._btn_logs_clear.setText(self._tr("logs.clear"))
 
     def _apply_chat_tab_texts(self) -> None:
         if not hasattr(self, "_lbl_chat_font"):
@@ -4101,33 +4115,85 @@ class MainWindow(FramelessWindow):
         logging.getLogger("stream_cheremsha").removeHandler(self._log_handler)
         self._log_handler = None
 
-    def _make_audio_card(self, accent: str) -> tuple[QFrame, QVBoxLayout, QLabel]:
-        """Rounded dark card with accent bar and title (Audio tab)."""
+    @staticmethod
+    def _audio_icon_label(name: str, px: int = 17) -> QLabel:
+        """Small local SVG icon label (same loader as the existing icon assets)."""
+        lab = QLabel()
+        lab.setObjectName("audioCardIcon")
+        p = _asset_path(name)
+        if p.is_file():
+            pix = QPixmap(str(p))
+            if not pix.isNull():
+                lab.setPixmap(
+                    pix.scaled(
+                        px,
+                        px,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                )
+        return lab
+
+    @staticmethod
+    def _set_button_icon(btn: QPushButton, name: str, px: int = 14) -> None:
+        """Attach a local SVG icon to a button; text-only fallback if missing."""
+        p = _asset_path(name)
+        if not p.is_file():
+            return
+        ico = QIcon(str(p))
+        if ico.isNull():
+            return
+        btn.setIcon(ico)
+        btn.setIconSize(QSize(px, px))
+
+    def _make_audio_card(
+        self, accent: str, icon: str | None = None, subtitle_key: str | None = None
+    ) -> tuple[QFrame, QVBoxLayout, QLabel, QLabel | None]:
+        """Rounded dark card with accent bar, optional icon, title and subtitle."""
         card = QFrame()
         card.setObjectName("audioCard")
         root_lay = QVBoxLayout(card)
         root_lay.setContentsMargins(0, 0, 0, 0)
         root_lay.setSpacing(0)
         head_wrap = QWidget()
-        head = QHBoxLayout(head_wrap)
-        head.setContentsMargins(16, 14, 16, 10)
-        head.setSpacing(10)
+        head = QVBoxLayout(head_wrap)
+        head.setContentsMargins(0, 0, 0, 0)
+        head.setSpacing(4)
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(14, 10, 14, 0)
+        title_row.setSpacing(8)
         bar = QFrame()
-        bar.setFixedSize(3, 22)
+        bar.setFixedSize(2, 18)
         bar.setStyleSheet(f"background-color: {accent}; border-radius: 1px;")
         title_lab = QLabel()
         title_lab.setObjectName("audioCardTitle")
-        head.addWidget(bar, alignment=Qt.AlignmentFlag.AlignVCenter)
-        head.addWidget(title_lab, alignment=Qt.AlignmentFlag.AlignVCenter)
-        head.addStretch(1)
+        title_row.addWidget(bar, alignment=Qt.AlignmentFlag.AlignVCenter)
+        if icon:
+            title_row.addWidget(
+                self._audio_icon_label(icon),
+                alignment=Qt.AlignmentFlag.AlignVCenter,
+            )
+        title_row.addWidget(title_lab, alignment=Qt.AlignmentFlag.AlignVCenter)
+        title_row.addStretch(1)
+        head.addLayout(title_row)
+        sub_lab: QLabel | None = None
+        if subtitle_key is not None:
+            sub_lab = QLabel()
+            sub_lab.setObjectName("audioCardSub")
+            sub_lab.setWordWrap(True)
+            indent = 14 + 2 + 8 + (17 + 8 if icon else 0)
+            sub_lab.setContentsMargins(indent, 0, 14, 6)
+            head.addWidget(sub_lab)
+        else:
+            head.setContentsMargins(0, 0, 0, 6)
         root_lay.addWidget(head_wrap)
         body = QVBoxLayout()
-        body.setContentsMargins(16, 4, 16, 16)
-        body.setSpacing(10)
+        body.setContentsMargins(14, 2, 14, 12)
+        body.setSpacing(8)
         body_w = QWidget()
         body_w.setLayout(body)
         root_lay.addWidget(body_w)
-        return card, body, title_lab
+        return card, body, title_lab, sub_lab
 
     def _build_audio_tab(self) -> QWidget:
         scroll = QScrollArea()
@@ -4139,33 +4205,97 @@ class MainWindow(FramelessWindow):
         inner.setObjectName("audioPageRoot")
         main_lay = QVBoxLayout(inner)
         main_lay.setContentsMargins(16, 12, 16, 20)
-        main_lay.setSpacing(16)
+        main_lay.setSpacing(10)
+        self._tts_test_busy = False
+        self._tts_test_task: asyncio.Task[None] | None = None
 
-        # --- Test card ---
-        _t_card, t_body, self._lbl_audio_card_test_h = self._make_audio_card("#34d399")
+        # --- Page header: title + subtitle on the left, status + summary right ---
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(2, 0, 2, 0)
+        header_row.setSpacing(10)
+        title_bar = QFrame()
+        title_bar.setFixedSize(2, 26)
+        title_bar.setStyleSheet("background-color: #38bdf8; border-radius: 1px;")
+        header_row.addWidget(title_bar, alignment=Qt.AlignmentFlag.AlignVCenter)
+        title_col = QVBoxLayout()
+        title_col.setContentsMargins(0, 0, 0, 0)
+        title_col.setSpacing(2)
+        self._lbl_audio_page_title = QLabel()
+        self._lbl_audio_page_title.setObjectName("audioPageTitle")
+        self._lbl_audio_page_sub = QLabel()
+        self._lbl_audio_page_sub.setObjectName("audioPageSub")
+        title_col.addWidget(self._lbl_audio_page_title)
+        title_col.addWidget(self._lbl_audio_page_sub)
+        header_row.addLayout(title_col)
+        header_row.addStretch(1)
+        head_right = QVBoxLayout()
+        head_right.setContentsMargins(0, 0, 0, 0)
+        head_right.setSpacing(2)
+        self._lbl_audio_status_badge = QLabel()
+        self._lbl_audio_status_badge.setObjectName("audioStatusBadge")
+        head_right.addWidget(
+            self._lbl_audio_status_badge,
+            alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+        )
+        # --- Compact live summary: engine · language · voice ---
+        self._lbl_audio_summary = QLabel()
+        self._lbl_audio_summary.setObjectName("audioSummary")
+        self._lbl_audio_summary.setWordWrap(True)
+        self._lbl_audio_summary.setAlignment(Qt.AlignmentFlag.AlignRight)
+        head_right.addWidget(self._lbl_audio_summary, alignment=Qt.AlignmentFlag.AlignRight)
+        header_row.addLayout(head_right)
+        main_lay.addLayout(header_row)
+        main_lay.addSpacing(4)
+
+        # --- Row 1: test speech (left) | language & engine (right) ---
+        row1 = QHBoxLayout()
+        row1.setContentsMargins(0, 0, 0, 0)
+        row1.setSpacing(12)
+
+        # --- CARD 1: test speech ---
+        _t_card, t_body, self._lbl_audio_card_test_h, self._lbl_audio_test_sub = (
+            self._make_audio_card("#34d399", "icons/gear.svg", "audio.card_test_sub")
+        )
         self._lbl_audio_test = QLabel()
         self._lbl_audio_test.setObjectName("audioMutedCaption")
+        self._lbl_audio_test.setVisible(False)
         self._test_phrase = QLineEdit()
+        self._test_phrase.setObjectName("audioTestInput")
+        self._test_phrase.setClearButtonEnabled(True)
         self._btn_audio_speak = QPushButton()
+        self._btn_audio_speak.setObjectName("cheremshaPrimaryButton")
         self._btn_audio_speak.setAutoDefault(False)
         self._btn_audio_speak.setDefault(False)
-        self._btn_audio_speak.clicked.connect(lambda: asyncio.ensure_future(self._test_tts()))
+        self._btn_audio_speak.clicked.connect(self._on_speak_button_clicked)
+        self._btn_audio_flush_queues = QPushButton()
+        self._btn_audio_flush_queues.setObjectName("cheremshaQuietButton")
+        self._set_button_icon(self._btn_audio_flush_queues, "icons/stop.svg")
+        self._btn_audio_flush_queues.setAutoDefault(False)
+        self._btn_audio_flush_queues.setDefault(False)
+        self._btn_audio_flush_queues.clicked.connect(
+            lambda: asyncio.ensure_future(self._flush_tts_queues()),
+        )
         t_body.addWidget(self._lbl_audio_test)
         t_body.addWidget(self._test_phrase)
         t_body.addWidget(self._btn_audio_speak)
-        main_lay.addWidget(_t_card)
+        t_body.addWidget(self._btn_audio_flush_queues)
+        row1.addWidget(_t_card, stretch=45)
 
-        # --- TTS language & engine ---
-        self._frm_audio_tts, tts_body, self._lbl_audio_tts_card_h = self._make_audio_card(
-            "#38bdf8",
+        # --- CARD 2: TTS language & engine (two-column internals) ---
+        self._frm_audio_tts, tts_body, self._lbl_audio_tts_card_h, self._lbl_audio_lang_sub = (
+            self._make_audio_card("#38bdf8", "icons/globe.svg", "audio.card_lang_sub")
         )
         self._lbl_tts_lang = QLabel()
+        self._lbl_tts_lang.setObjectName("audioFieldLabel")
         self._combo_tts_lang = QComboBox()
+        self._combo_tts_lang.setObjectName("audioCombo")
         for tag in TTS_LANG_OPTIONS:
             self._combo_tts_lang.addItem("", tag)
         self._combo_tts_lang.currentIndexChanged.connect(self._on_tts_language_changed)
         self._lbl_tts_engine = QLabel()
+        self._lbl_tts_engine.setObjectName("audioFieldLabel")
         self._combo_tts_engine = QComboBox()
+        self._combo_tts_engine.setObjectName("audioCombo")
         self._combo_tts_engine.addItem("", _TTS_ENGINE_GOOGLE)
         self._combo_tts_engine.addItem("", _TTS_ENGINE_EDGE)
         self._combo_tts_engine.addItem("", _TTS_ENGINE_RESPEECHER)
@@ -4174,162 +4304,264 @@ class MainWindow(FramelessWindow):
         er = QHBoxLayout(self._engine_row)
         er.setContentsMargins(0, 0, 0, 0)
         er.addWidget(self._combo_tts_engine, stretch=1)
-        f_lang = QFormLayout()
-        f_lang.setContentsMargins(0, 0, 0, 0)
-        f_lang.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-        f_lang.setHorizontalSpacing(8)
-        f_lang.setVerticalSpacing(2)
-        f_lang.addRow(self._lbl_tts_lang, self._combo_tts_lang)
-        w_lang = QWidget()
-        w_lang.setLayout(f_lang)
-        f_eng = QFormLayout()
-        f_eng.setContentsMargins(0, 0, 0, 0)
-        f_eng.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-        f_eng.setHorizontalSpacing(8)
-        f_eng.setVerticalSpacing(2)
-        f_eng.addRow(self._lbl_tts_engine, self._engine_row)
-        w_eng = QWidget()
-        w_eng.setLayout(f_eng)
-        lang_engine = QWidget()
-        le = QHBoxLayout(lang_engine)
-        le.setContentsMargins(0, 0, 0, 0)
-        le.setSpacing(16)
-        le.addWidget(w_lang, stretch=1)
-        le.addWidget(w_eng, stretch=1)
-        tts_body.addWidget(lang_engine)
+        lang_col = QVBoxLayout()
+        lang_col.setContentsMargins(0, 0, 0, 0)
+        lang_col.setSpacing(6)
+        lang_col.addWidget(self._lbl_tts_lang)
+        lang_col.addWidget(self._combo_tts_lang)
+        eng_col = QVBoxLayout()
+        eng_col.setContentsMargins(0, 0, 0, 0)
+        eng_col.setSpacing(6)
+        eng_col.addWidget(self._lbl_tts_engine)
+        eng_col.addWidget(self._engine_row)
+        lang_engine = QHBoxLayout()
+        lang_engine.setContentsMargins(0, 0, 0, 0)
+        lang_engine.setSpacing(12)
+        lang_engine.addLayout(lang_col, stretch=1)
+        lang_engine.addLayout(eng_col, stretch=1)
+        tts_body.addLayout(lang_engine)
+        # Speech rate lives with the universal TTS settings (applies to all engines).
+        self._lbl_tts_rate = QLabel()
+        self._lbl_tts_rate.setObjectName("audioFieldLabel")
+        self._lbl_rate_value = QLabel()
+        self._lbl_rate_value.setObjectName("audioValueBox")
+        rate_head = QHBoxLayout()
+        rate_head.setContentsMargins(0, 0, 0, 0)
+        rate_head.setSpacing(8)
+        rate_head.addWidget(self._lbl_tts_rate, stretch=1)
+        rate_head.addWidget(self._lbl_rate_value)
+        tts_body.addLayout(rate_head)
+        self._rate_slider = QSlider()
+        self._rate_slider.setObjectName("audioRateSlider")
+        self._rate_slider.setOrientation(Qt.Orientation.Horizontal)
+        self._rate_slider.setRange(_TTS_RATE_MIN, _TTS_RATE_MAX)
+        self._rate_slider.setSingleStep(5)
+        self._rate_slider.setPageStep(25)
+        self._rate_slider.setValue(self._tts_rate_percent_from_settings())
+        self._rate_slider.valueChanged.connect(self._on_tts_rate_changed)
+        tts_body.addWidget(self._rate_slider)
+        row1.addWidget(self._frm_audio_tts, stretch=55)
+        main_lay.addLayout(row1)
 
-        self._btn_audio_flush_queues = QPushButton()
-        self._btn_audio_flush_queues.setAutoDefault(False)
-        self._btn_audio_flush_queues.setDefault(False)
-        self._btn_audio_flush_queues.clicked.connect(
-            lambda: asyncio.ensure_future(self._flush_tts_queues()),
+        # --- CARD 3: filtering & behavior (full width, two columns) ---
+        _f_card, f_body, self._lbl_audio_filter_card_h, self._lbl_audio_filter_sub = (
+            self._make_audio_card("#2dd4bf", "icons/filter.svg", "audio.card_filter_sub")
         )
-        tts_body.addWidget(self._btn_audio_flush_queues)
-        self._cb_tts_speak_author = QCheckBox()
+        self._cb_tts_speak_author = CheremshaSwitch()
         self._cb_tts_speak_author.stateChanged.connect(self._persist_tts_speak_author)
-        tts_body.addWidget(self._cb_tts_speak_author)
-        self._cb_tts_strip_non_alpha = QCheckBox()
+        self._lbl_tts_speak_author = QLabel()
+        self._lbl_tts_speak_author.setWordWrap(True)
+        self._lbl_tts_speak_author_hint = QLabel()
+        self._lbl_tts_speak_author_hint.setObjectName("audioMutedCaption")
+        self._lbl_tts_speak_author_hint.setWordWrap(True)
+        self._cb_tts_strip_non_alpha = CheremshaSwitch()
         self._cb_tts_strip_non_alpha.stateChanged.connect(self._persist_tts_strip_non_alpha)
-        tts_body.addWidget(self._cb_tts_strip_non_alpha)
+        self._lbl_tts_strip_non_alpha = QLabel()
+        self._lbl_tts_strip_non_alpha.setWordWrap(True)
+        self._lbl_tts_strip_non_alpha_hint = QLabel()
+        self._lbl_tts_strip_non_alpha_hint.setObjectName("audioMutedCaption")
+        self._lbl_tts_strip_non_alpha_hint.setWordWrap(True)
+        filt_left = QVBoxLayout()
+        filt_left.setContentsMargins(0, 0, 0, 0)
+        filt_left.setSpacing(8)
+        filt_left.addStretch(1)
+        for _switch, _label, _hint in (
+            (
+                self._cb_tts_speak_author,
+                self._lbl_tts_speak_author,
+                self._lbl_tts_speak_author_hint,
+            ),
+            (
+                self._cb_tts_strip_non_alpha,
+                self._lbl_tts_strip_non_alpha,
+                self._lbl_tts_strip_non_alpha_hint,
+            ),
+        ):
+            _tgl_row = QHBoxLayout()
+            _tgl_row.setContentsMargins(0, 0, 0, 0)
+            _tgl_row.setSpacing(10)
+            _tgl_row.addWidget(_switch, alignment=Qt.AlignmentFlag.AlignTop)
+            _txt_col = QVBoxLayout()
+            _txt_col.setContentsMargins(0, 0, 0, 0)
+            _txt_col.setSpacing(2)
+            _txt_col.addWidget(_label)
+            _txt_col.addWidget(_hint)
+            _tgl_row.addLayout(_txt_col, stretch=1)
+            filt_left.addLayout(_tgl_row)
+        filt_left.addStretch(1)
 
         self._lbl_tts_whitelist = QLabel()
+        self._lbl_tts_whitelist_cap = QLabel()
+        self._lbl_tts_whitelist_cap.setObjectName("audioMutedCaption")
+        self._lbl_tts_whitelist_cap.setWordWrap(True)
         self._edit_tts_whitelist = QTextEdit()
         self._edit_tts_whitelist.setPlaceholderText(self._tr("audio.tts_whitelist_ph"))
-        self._edit_tts_whitelist.setMaximumHeight(80)
+        self._edit_tts_whitelist.setFixedHeight(46)
         self._edit_tts_whitelist.textChanged.connect(self._schedule_persist_tts_whitelist)
-        whitelist_form = QFormLayout()
-        whitelist_form.setContentsMargins(0, 0, 0, 0)
-        whitelist_form.setHorizontalSpacing(10)
-        whitelist_form.setVerticalSpacing(8)
-        whitelist_form.addRow(self._lbl_tts_whitelist, self._edit_tts_whitelist)
-        tts_body.addLayout(whitelist_form)
+        self._lbl_tts_whitelist_ex = QLabel()
+        self._lbl_tts_whitelist_ex.setObjectName("audioMutedCaption")
+        filt_right = QVBoxLayout()
+        filt_right.setContentsMargins(0, 0, 0, 0)
+        filt_right.setSpacing(4)
+        filt_right.addStretch(1)
+        filt_right.addWidget(self._lbl_tts_whitelist)
+        filt_right.addWidget(self._lbl_tts_whitelist_cap)
+        filt_right.addWidget(self._edit_tts_whitelist)
+        filt_right.addWidget(self._lbl_tts_whitelist_ex)
+        filt_right.addStretch(1)
+        filt_row = QHBoxLayout()
+        filt_row.setContentsMargins(0, 0, 0, 0)
+        filt_row.setSpacing(16)
+        filt_row.addLayout(filt_left, stretch=1)
+        filt_row.addLayout(filt_right, stretch=1)
+        f_body.addLayout(filt_row)
+        main_lay.addWidget(_f_card)
 
-        self._lbl_tts_rate = QLabel()
-        self._tts_rate_spin = QSpinBox()
-        self._tts_rate_spin.setRange(_TTS_RATE_MIN, _TTS_RATE_MAX)
-        self._tts_rate_spin.setSingleStep(5)
-        self._tts_rate_spin.setSuffix(" %")
-        self._tts_rate_spin.setValue(self._tts_rate_percent_from_settings())
-        self._tts_rate_spin.valueChanged.connect(self._on_tts_rate_changed)
-        rate_form = QFormLayout()
-        rate_form.setContentsMargins(0, 0, 0, 0)
-        rate_form.setHorizontalSpacing(10)
-        rate_form.setVerticalSpacing(8)
-        rate_form.addRow(self._lbl_tts_rate, self._tts_rate_spin)
-        tts_body.addLayout(rate_form)
-        main_lay.addWidget(self._frm_audio_tts)
+        # --- Row 2: voice (left) | audio output (right) ---
+        row2 = QHBoxLayout()
+        row2.setContentsMargins(0, 0, 0, 0)
+        row2.setSpacing(12)
 
-        # --- Edge card (voice selection per language) ---
-        self._frm_edge_voice, edge_body, self._lbl_audio_edge_card_h = self._make_audio_card(
-            "#22c55e",
+        # --- Edge voice card (visible only for the Edge engine) ---
+        self._frm_edge_voice, edge_body, self._lbl_audio_edge_card_h, _ = self._make_audio_card(
+            "#22c55e", "icons/mic.svg", "audio.card_voice_sub"
         )
         self._lbl_edge_voice = QLabel()
+        self._lbl_edge_voice.setObjectName("audioFieldLabel")
         self._combo_edge_voice = QComboBox()
+        self._combo_edge_voice.setObjectName("audioCombo")
         self._combo_edge_voice.currentIndexChanged.connect(self._on_edge_voice_changed)
-        self._cb_edge_randomize = QCheckBox()
+        self._lbl_edge_randomize = QLabel()
+        self._lbl_edge_randomize.setWordWrap(True)
+        self._lbl_edge_randomize_hint = QLabel()
+        self._lbl_edge_randomize_hint.setObjectName("audioMutedCaption")
+        self._lbl_edge_randomize_hint.setWordWrap(True)
+        self._cb_edge_randomize = CheremshaSwitch()
         self._cb_edge_randomize.toggled.connect(self._on_edge_randomize_changed)
-        edge_form = QFormLayout()
-        edge_form.setContentsMargins(0, 0, 0, 0)
-        edge_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-        edge_form.setHorizontalSpacing(10)
-        edge_form.setVerticalSpacing(8)
-        edge_form.addRow(self._lbl_edge_voice, self._combo_edge_voice)
-        edge_form.addRow(self._tr("audio.tts_randomize_voice"), self._cb_edge_randomize)
-        edge_body.addLayout(edge_form)
-        main_lay.addWidget(self._frm_edge_voice)
+        edge_body.addWidget(self._lbl_edge_voice)
+        edge_body.addWidget(self._combo_edge_voice)
+        edge_rand_row = QHBoxLayout()
+        edge_rand_row.setContentsMargins(0, 0, 0, 0)
+        edge_rand_row.setSpacing(10)
+        edge_rand_row.addWidget(self._cb_edge_randomize, alignment=Qt.AlignmentFlag.AlignTop)
+        edge_rand_txt = QVBoxLayout()
+        edge_rand_txt.setContentsMargins(0, 0, 0, 0)
+        edge_rand_txt.setSpacing(2)
+        edge_rand_txt.addWidget(self._lbl_edge_randomize)
+        edge_rand_txt.addWidget(self._lbl_edge_randomize_hint)
+        edge_rand_row.addLayout(edge_rand_txt, stretch=1)
+        edge_body.addLayout(edge_rand_row)
 
-        # --- ReSpeecher card (voice selection per language) ---
-        self._frm_respeecher_voice, respeecher_body, self._lbl_audio_respeecher_card_h = (
-            self._make_audio_card(
-                "#a855f7",
-            )
-        )
+        # --- CARD 4: ReSpeecher voice (visible only for ReSpeecher engine) ---
+        (
+            self._frm_respeecher_voice,
+            respeecher_body,
+            self._lbl_audio_respeecher_card_h,
+            self._lbl_audio_voice_sub,
+        ) = self._make_audio_card("#a855f7", "icons/mic.svg", "audio.card_voice_sub")
         self._lbl_respeecher_voice = QLabel()
+        self._lbl_respeecher_voice.setObjectName("audioFieldLabel")
         self._combo_respeecher_voice = QComboBox()
+        self._combo_respeecher_voice.setObjectName("audioCombo")
         # Populate with the 13 Ukrainian voices
         for voice_id, voice_label in REPEECHER_VOICES.items():
             self._combo_respeecher_voice.addItem(voice_label, voice_id)
         self._combo_respeecher_voice.currentIndexChanged.connect(self._on_respeecher_voice_changed)
-        self._cb_respeecher_randomize = QCheckBox()
+        self._lbl_respeecher_randomize = QLabel()
+        self._lbl_respeecher_randomize.setWordWrap(True)
+        self._lbl_respeecher_randomize_hint = QLabel()
+        self._lbl_respeecher_randomize_hint.setObjectName("audioMutedCaption")
+        self._lbl_respeecher_randomize_hint.setWordWrap(True)
+        self._cb_respeecher_randomize = CheremshaSwitch()
         self._cb_respeecher_randomize.toggled.connect(self._on_respeecher_randomize_changed)
-        respeecher_form = QFormLayout()
-        respeecher_form.setContentsMargins(0, 0, 0, 0)
-        respeecher_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-        respeecher_form.setHorizontalSpacing(10)
-        respeecher_form.setVerticalSpacing(8)
-        respeecher_form.addRow(self._lbl_respeecher_voice, self._combo_respeecher_voice)
-        respeecher_form.addRow(self._tr("audio.tts_randomize_voice"), self._cb_respeecher_randomize)
-        respeecher_body.addLayout(respeecher_form)
-        main_lay.addWidget(self._frm_respeecher_voice)
+        respeecher_body.addWidget(self._lbl_respeecher_voice)
+        respeecher_body.addWidget(self._combo_respeecher_voice)
+        respeecher_rand_row = QHBoxLayout()
+        respeecher_rand_row.setContentsMargins(0, 0, 0, 0)
+        respeecher_rand_row.setSpacing(10)
+        respeecher_rand_row.addWidget(
+            self._cb_respeecher_randomize, alignment=Qt.AlignmentFlag.AlignTop
+        )
+        respeecher_rand_txt = QVBoxLayout()
+        respeecher_rand_txt.setContentsMargins(0, 0, 0, 0)
+        respeecher_rand_txt.setSpacing(2)
+        respeecher_rand_txt.addWidget(self._lbl_respeecher_randomize)
+        respeecher_rand_txt.addWidget(self._lbl_respeecher_randomize_hint)
+        respeecher_rand_row.addLayout(respeecher_rand_txt, stretch=1)
+        respeecher_body.addLayout(respeecher_rand_row)
 
-        # --- Output & levels card ---
-        _lv_card, lv_body, self._lbl_audio_levels_card_h = self._make_audio_card("#0ea5e9")
+        voice_col = QVBoxLayout()
+        voice_col.setContentsMargins(0, 0, 0, 0)
+        voice_col.setSpacing(12)
+        voice_col.addWidget(self._frm_edge_voice)
+        voice_col.addWidget(self._frm_respeecher_voice)
+        voice_col.addStretch(1)
+        row2.addLayout(voice_col, stretch=45)
+
+        # --- CARD 5: audio output (compact) ---
+        _o_card, out_body, self._lbl_audio_output_card_h, self._lbl_audio_output_sub = (
+            self._make_audio_card("#0ea5e9", "icons/web_volume.svg", "audio.card_output_sub")
+        )
         self._lbl_audio_output = QLabel()
+        self._lbl_audio_output.setObjectName("audioMutedCaption")
         self._audio_combo = QComboBox()
+        self._audio_combo.setObjectName("audioCombo")
         self._audio_combo.currentIndexChanged.connect(self._apply_audio_device_selection)
         self._btn_audio_refresh = QPushButton()
+        self._btn_audio_refresh.setObjectName("cheremshaQuietButton")
+        self._set_button_icon(self._btn_audio_refresh, "icons/web_refresh.svg")
         self._btn_audio_refresh.clicked.connect(self._refresh_audio_devices)
-        out_row = QHBoxLayout()
-        out_row.setSpacing(8)
-        out_row.addWidget(self._audio_combo, stretch=1)
-        out_row.addWidget(self._btn_audio_refresh)
-        out_wrap = QWidget()
-        out_wrap.setLayout(out_row)
-        out_form = QFormLayout()
-        out_form.setContentsMargins(0, 0, 0, 0)
-        out_form.setHorizontalSpacing(10)
-        out_form.setVerticalSpacing(8)
-        out_form.addRow(self._lbl_audio_output, out_wrap)
-        lv_body.addLayout(out_form)
+        out_body.addWidget(self._lbl_audio_output)
+        out_body.addWidget(self._audio_combo)
+        out_refresh_row = QHBoxLayout()
+        out_refresh_row.setContentsMargins(0, 0, 0, 0)
+        out_refresh_row.setSpacing(8)
+        out_refresh_row.addWidget(self._btn_audio_refresh)
+        out_refresh_row.addStretch(1)
+        out_body.addLayout(out_refresh_row)
+        row2.addWidget(_o_card, stretch=55)
+        main_lay.addLayout(row2)
 
+        # --- CARD 6: audio levels (separate full-width compact card) ---
+        _lv_card, lv_body, self._lbl_audio_levels_card_h, _ = self._make_audio_card(
+            "#0ea5e9", "icons/sliders.svg"
+        )
+        self._lbl_audio_volume = QLabel()
+        self._lbl_audio_volume.setObjectName("audioFieldLabel")
+        lv_body.addWidget(self._lbl_audio_volume)
+        vol_row = QHBoxLayout()
+        vol_row.setContentsMargins(0, 0, 0, 0)
+        vol_row.setSpacing(10)
         self._volume_slider = QSlider()
+        self._volume_slider.setObjectName("audioVolumeSlider")
         self._volume_slider.setOrientation(Qt.Orientation.Horizontal)
         self._volume_slider.setRange(0, 100)
         self._volume_slider.setValue(int(self._settings.value("audio/volume", 100)))
         self._volume_slider.valueChanged.connect(self._on_volume_changed)
-        self._lbl_audio_volume = QLabel()
-        vol_form = QFormLayout()
-        vol_form.setContentsMargins(0, 0, 0, 0)
-        vol_form.setHorizontalSpacing(10)
-        vol_form.setVerticalSpacing(8)
-        vol_form.addRow(self._lbl_audio_volume, self._volume_slider)
-        lv_body.addLayout(vol_form)
-
-        self._tts_gain_spin = QSpinBox()
-        self._tts_gain_spin.setRange(0, 36)
-        self._tts_gain_spin.setSuffix(" dB")
-        g0 = int(self._settings.value(_SETTINGS_TTS_GAIN_DB, 14))
-        self._tts_gain_spin.setValue(max(0, min(36, g0)))
-        self._tts_gain_spin.valueChanged.connect(self._on_tts_gain_changed)
+        self._lbl_volume_value = QLabel()
+        self._lbl_volume_value.setObjectName("audioValueBox")
+        vol_row.addWidget(self._volume_slider, stretch=1)
+        vol_row.addWidget(self._lbl_volume_value)
+        lv_body.addLayout(vol_row)
         self._lbl_audio_tts_gain = QLabel()
-        self._sink.set_tts_gain_db(self._tts_gain_spin.value())
-        gain_form = QFormLayout()
-        gain_form.setContentsMargins(0, 0, 0, 0)
-        gain_form.setHorizontalSpacing(10)
-        gain_form.setVerticalSpacing(8)
-        gain_form.addRow(self._lbl_audio_tts_gain, self._tts_gain_spin)
-        lv_body.addLayout(gain_form)
-
+        self._lbl_audio_tts_gain.setObjectName("audioFieldLabel")
+        lv_body.addWidget(self._lbl_audio_tts_gain)
+        gain_row = QHBoxLayout()
+        gain_row.setContentsMargins(0, 0, 0, 0)
+        gain_row.setSpacing(10)
+        self._gain_slider = QSlider()
+        self._gain_slider.setObjectName("audioGainSlider")
+        self._gain_slider.setOrientation(Qt.Orientation.Horizontal)
+        self._gain_slider.setRange(0, 36)
+        g0 = int(self._settings.value(_SETTINGS_TTS_GAIN_DB, 14))
+        self._gain_slider.setValue(max(0, min(36, g0)))
+        self._gain_slider.valueChanged.connect(self._on_tts_gain_changed)
+        self._sink.set_tts_gain_db(self._gain_slider.value())
+        self._lbl_gain_value = QLabel()
+        self._lbl_gain_value.setObjectName("audioValueBox")
+        gain_row.addWidget(self._gain_slider, stretch=1)
+        gain_row.addWidget(self._lbl_gain_value)
+        lv_body.addLayout(gain_row)
         main_lay.addWidget(_lv_card)
         main_lay.addStretch(1)
 
@@ -4338,8 +4570,14 @@ class MainWindow(FramelessWindow):
         return scroll
 
     def _apply_audio_tab_texts(self) -> None:
+        self._lbl_audio_page_title.setText(self._tr("ui.nav_tts"))
+        self._lbl_audio_page_sub.setText(self._tr("audio.page_subtitle"))
+        self._lbl_audio_status_badge.setText(f"● {self._tr('audio.status_ready')}")
+        self._lbl_audio_output_card_h.setText(self._tr("audio.card_output_title"))
+        self._lbl_audio_output_sub.setText(self._tr("audio.card_output_sub"))
         self._lbl_audio_output.setText(self._tr("audio.output"))
         self._btn_audio_refresh.setText(self._tr("audio.refresh"))
+        self._lbl_audio_levels_card_h.setText(self._tr("audio.levels_section"))
         self._lbl_tts_lang.setText(self._tr("audio.tts_language"))
         for i in range(self._combo_tts_lang.count()):
             tag = self._combo_tts_lang.itemData(i)
@@ -4353,37 +4591,62 @@ class MainWindow(FramelessWindow):
         self._btn_audio_flush_queues.setText(self._tr("audio.flush_queues"))
         self._btn_audio_flush_queues.setToolTip(self._tr("audio.flush_queues_hint"))
         self._lbl_audio_tts_card_h.setText(self._tr("audio.card_tts_title"))
+        self._lbl_audio_lang_sub.setText(self._tr("audio.card_lang_sub"))
+        self._lbl_audio_filter_card_h.setText(self._tr("audio.card_filter_title"))
+        self._lbl_audio_filter_sub.setText(self._tr("audio.card_filter_sub"))
+        self._lbl_tts_speak_author.setText(self._tr("audio.speak_author_name"))
+        _author_tip = self._tr("audio.speak_author_name_hint")
+        self._lbl_tts_speak_author.setToolTip(_author_tip)
+        self._lbl_tts_speak_author_hint.setText(self._tr("audio.speak_author_inline_hint"))
         self._cb_tts_speak_author.setText(self._tr("audio.speak_author_name"))
-        self._cb_tts_speak_author.setToolTip(self._tr("audio.speak_author_name_hint"))
+        self._cb_tts_speak_author.setToolTip(_author_tip)
+        self._lbl_tts_strip_non_alpha.setText(self._tr("audio.strip_non_alpha"))
+        _strip_tip = self._tr("audio.strip_non_alpha_hint")
+        self._lbl_tts_strip_non_alpha.setToolTip(_strip_tip)
+        self._lbl_tts_strip_non_alpha_hint.setText(self._tr("audio.strip_non_alpha_inline_hint"))
         self._cb_tts_strip_non_alpha.setText(self._tr("audio.strip_non_alpha"))
-        self._cb_tts_strip_non_alpha.setToolTip(self._tr("audio.strip_non_alpha_hint"))
+        self._cb_tts_strip_non_alpha.setToolTip(_strip_tip)
         self._lbl_tts_whitelist.setText(self._tr("audio.tts_whitelist"))
         self._lbl_tts_whitelist.setToolTip(self._tr("audio.tts_whitelist_hint"))
+        self._lbl_tts_whitelist_cap.setText(self._tr("audio.tts_whitelist_caption"))
+        self._lbl_tts_whitelist_ex.setText(self._tr("audio.tts_whitelist_example"))
         self._edit_tts_whitelist.setToolTip(self._tr("audio.tts_whitelist_hint"))
         self._edit_tts_whitelist.setPlaceholderText(self._tr("audio.tts_whitelist_ph"))
         self._lbl_tts_rate.setText(self._tr("audio.tts_rate"))
         _rate_tip = self._tr("audio.tts_rate_tip")
-        self._tts_rate_spin.setToolTip(_rate_tip)
+        self._rate_slider.setToolTip(_rate_tip)
         self._lbl_tts_rate.setToolTip(_rate_tip)
+        self._lbl_rate_value.setText(f"{int(self._rate_slider.value())} %")
         self._lbl_audio_edge_card_h.setText(self._tr("audio.edge_voice_group"))
         self._lbl_edge_voice.setText(self._tr("audio.edge_voice_label"))
+        self._lbl_edge_randomize.setText(self._tr("audio.tts_randomize_voice"))
+        self._lbl_edge_randomize.setToolTip(self._tr("audio.tts_randomize_voice_hint"))
+        self._lbl_edge_randomize_hint.setText(self._tr("audio.randomize_inline_hint"))
         self._cb_edge_randomize.setText(self._tr("audio.tts_randomize_voice"))
         self._cb_edge_randomize.setToolTip(self._tr("audio.tts_randomize_voice_hint"))
+        self._cb_edge_randomize.setAccessibleName(self._tr("audio.tts_randomize_voice"))
         self._lbl_audio_respeecher_card_h.setText(self._tr("audio.respeecher_voice_group"))
+        self._lbl_audio_voice_sub.setText(self._tr("audio.card_voice_sub"))
         self._lbl_respeecher_voice.setText(self._tr("audio.respeecher_voice_label"))
+        self._lbl_respeecher_randomize.setText(self._tr("audio.tts_randomize_voice"))
+        self._lbl_respeecher_randomize.setToolTip(self._tr("audio.tts_randomize_voice_hint"))
+        self._lbl_respeecher_randomize_hint.setText(self._tr("audio.randomize_inline_hint"))
         self._cb_respeecher_randomize.setText(self._tr("audio.tts_randomize_voice"))
         self._cb_respeecher_randomize.setToolTip(self._tr("audio.tts_randomize_voice_hint"))
+        self._cb_respeecher_randomize.setAccessibleName(self._tr("audio.tts_randomize_voice"))
         self._update_tts_engine_related_visibility()
         self._lbl_audio_volume.setText(self._tr("audio.volume"))
         self._lbl_audio_tts_gain.setText(self._tr("audio.tts_gain"))
         _gain_help = f"{self._tr('audio.tts_gain_tip')}\n\n{self._tr('audio.tts_hint')}"
-        self._tts_gain_spin.setToolTip(_gain_help)
+        self._gain_slider.setToolTip(_gain_help)
         self._lbl_audio_tts_gain.setToolTip(_gain_help)
+        self._lbl_gain_value.setText(f"{int(self._gain_slider.value())} dB")
         self._volume_slider.setToolTip(self._tr("audio.volume_tip"))
+        self._lbl_volume_value.setText(f"{int(self._volume_slider.value())} %")
         self._lbl_audio_card_test_h.setText(self._tr("audio.card_test_header"))
+        self._lbl_audio_test_sub.setText(self._tr("audio.card_test_sub"))
         self._lbl_audio_test.setText(self._tr("audio.test"))
-        self._btn_audio_speak.setText(self._tr("audio.speak_test"))
-        self._lbl_audio_levels_card_h.setText(self._tr("audio.card_levels_title"))
+        self._refresh_tts_test_button()
         if not self._test_phrase.text().strip():
             self._test_phrase.setText(self._tr("audio.test_phrase_default"))
         elif self._test_phrase.text().strip() in (
@@ -4391,6 +4654,84 @@ class MainWindow(FramelessWindow):
             l10n.tr("en", "audio.test_phrase_default"),
         ):
             self._test_phrase.setText(self._tr("audio.test_phrase_default"))
+        self._refresh_audio_summary()
+
+    @staticmethod
+    def _shorten_combo_label(text: str) -> str:
+        """'Олеся (розмова)' -> 'Олеся'; labels without a suffix pass through."""
+        short = (text or "").split(" (", 1)[0].strip()
+        return short or (text or "").strip()
+
+    def _refresh_audio_summary(self) -> None:
+        """Compact header summary: engine · language · voice (live, no polling)."""
+        if not hasattr(self, "_lbl_audio_summary"):
+            return
+        eng = self._combo_tts_engine.currentData() if hasattr(self, "_combo_tts_engine") else ""
+        engine_short = {
+            _TTS_ENGINE_GOOGLE: "Google",
+            _TTS_ENGINE_EDGE: "Edge",
+            _TTS_ENGINE_RESPEECHER: "ReSpeech",
+        }.get(str(eng or ""), "")
+        lang_short = ""
+        if hasattr(self, "_combo_tts_lang"):
+            lang_short = self._shorten_combo_label(self._combo_tts_lang.currentText())
+        voice_short = ""
+        edge_box = getattr(self, "_cb_edge_randomize", None)
+        randomize_edge = bool(edge_box is not None and edge_box.isChecked())
+        respeecher_box = getattr(self, "_cb_respeecher_randomize", None)
+        randomize_respeecher = bool(respeecher_box is not None and respeecher_box.isChecked())
+        if eng == _TTS_ENGINE_RESPEECHER and hasattr(self, "_combo_respeecher_voice"):
+            if randomize_respeecher:
+                voice_short = self._tr("audio.tts_randomize_voice")
+            else:
+                voice_short = self._shorten_combo_label(self._combo_respeecher_voice.currentText())
+        elif eng == _TTS_ENGINE_EDGE and hasattr(self, "_combo_edge_voice"):
+            if randomize_edge:
+                voice_short = self._tr("audio.tts_randomize_voice")
+            else:
+                voice_short = self._shorten_combo_label(self._combo_edge_voice.currentText())
+        parts = [p for p in (engine_short, lang_short, voice_short) if p.strip()]
+        self._lbl_audio_summary.setText(" · ".join(parts))
+
+    def _refresh_tts_test_button(self) -> None:
+        if not hasattr(self, "_btn_audio_speak"):
+            return
+        btn = self._btn_audio_speak
+        if getattr(self, "_tts_test_busy", False):
+            btn.setObjectName("cheremshaStopButton")
+            btn.setText(self._tr("audio.speak_stop"))
+        else:
+            btn.setObjectName("cheremshaPrimaryButton")
+            btn.setText(self._tr("audio.speak_test_primary"))
+        btn.style().unpolish(btn)
+        btn.style().polish(btn)
+        btn.update()
+
+    def _set_tts_test_busy(self, busy: bool) -> None:
+        self._tts_test_busy = bool(busy)
+        self._refresh_tts_test_button()
+
+    @Slot()
+    def _on_speak_button_clicked(self) -> None:
+        """Primary test-speech action: play when idle, stop when playing."""
+        task = getattr(self, "_tts_test_task", None)
+        if task is not None and not task.done():
+            task.cancel()
+            asyncio.ensure_future(self._flush_tts_queues())
+            return
+        self._set_tts_test_busy(True)
+        task = asyncio.ensure_future(self._test_tts())
+        self._tts_test_task = task
+
+        def _done(_t: asyncio.Task[None]) -> None:
+            try:
+                _t.result()
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
+            if getattr(self, "_tts_test_task", None) is _t:
+                self._set_tts_test_busy(False)
+
+        task.add_done_callback(_done)
 
     def _update_tts_engine_related_visibility(self) -> None:
         eng = self._combo_tts_engine.currentData()
@@ -4419,6 +4760,7 @@ class MainWindow(FramelessWindow):
         eng = self._combo_tts_engine.currentData()
         self._settings.setValue(_SETTINGS_TTS_ENGINE, eng)
         self._update_tts_engine_related_visibility()
+        self._refresh_audio_summary()
         if eng == _TTS_ENGINE_EDGE:
             asyncio.ensure_future(self._refresh_edge_voices_for_current_language())
         elif eng == _TTS_ENGINE_RESPEECHER:
@@ -4431,6 +4773,7 @@ class MainWindow(FramelessWindow):
         tag = self._combo_tts_lang.currentData()
         if isinstance(tag, str) and tag.strip():
             self._settings.setValue(_SETTINGS_TTS_LANG, tag.strip())
+        self._refresh_audio_summary()
         eng = self._combo_tts_engine.currentData()
         if eng == _TTS_ENGINE_EDGE:
             asyncio.ensure_future(self._refresh_edge_voices_for_current_language())
@@ -4525,6 +4868,7 @@ class MainWindow(FramelessWindow):
                 m[lang] = chosen.strip()
                 self._save_edge_voice_map(m)
             self._combo_edge_voice.setEnabled(self._combo_edge_voice.count() > 0)
+            self._refresh_audio_summary()
             self._on_user_status(prev_pipeline)
 
     @Slot(int)
@@ -4540,23 +4884,27 @@ class MainWindow(FramelessWindow):
         self._save_edge_voice_map(m)
         if self._combo_tts_engine.currentData() == _TTS_ENGINE_EDGE:
             asyncio.ensure_future(self._swap_tts_backend())
+        self._refresh_audio_summary()
 
     def _on_respeecher_voice_changed(self, _index: int) -> None:
         # When voice changes, swap the backend to use the new voice
         if self._combo_tts_engine.currentData() == _TTS_ENGINE_RESPEECHER:
             asyncio.ensure_future(self._swap_tts_backend())
+        self._refresh_audio_summary()
 
     @Slot(bool)
     def _on_edge_randomize_changed(self, checked: bool) -> None:
         self._settings.setValue(_SETTINGS_TTS_RANDOMIZE_EDGE, checked)
         if self._combo_tts_engine.currentData() == _TTS_ENGINE_EDGE:
             asyncio.ensure_future(self._swap_tts_backend())
+        self._refresh_audio_summary()
 
     @Slot(bool)
     def _on_respeecher_randomize_changed(self, checked: bool) -> None:
         self._settings.setValue(_SETTINGS_TTS_RANDOMIZE_RESPEECHER, checked)
         if self._combo_tts_engine.currentData() == _TTS_ENGINE_RESPEECHER:
             asyncio.ensure_future(self._swap_tts_backend())
+        self._refresh_audio_summary()
 
     def eventFilter(self, watched: QObject, event: QEvent | None) -> bool:  # noqa: N802
         if (
@@ -4731,17 +5079,19 @@ class MainWindow(FramelessWindow):
             if self._combo_tts_engine.currentData() == _TTS_ENGINE_EDGE:
                 asyncio.ensure_future(self._refresh_edge_voices_for_current_language())
 
-        if hasattr(self, "_tts_gain_spin"):
+        if hasattr(self, "_gain_slider"):
             gv = int(self._settings.value(_SETTINGS_TTS_GAIN_DB, 14))
-            self._tts_gain_spin.blockSignals(True)
-            self._tts_gain_spin.setValue(max(0, min(36, gv)))
-            self._tts_gain_spin.blockSignals(False)
-            self._sink.set_tts_gain_db(self._tts_gain_spin.value())
+            self._gain_slider.blockSignals(True)
+            self._gain_slider.setValue(max(0, min(36, gv)))
+            self._gain_slider.blockSignals(False)
+            self._sink.set_tts_gain_db(self._gain_slider.value())
+            if hasattr(self, "_lbl_gain_value"):
+                self._lbl_gain_value.setText(f"{int(self._gain_slider.value())} dB")
 
-        if hasattr(self, "_tts_rate_spin"):
-            self._tts_rate_spin.blockSignals(True)
-            self._tts_rate_spin.setValue(self._tts_rate_percent_from_settings())
-            self._tts_rate_spin.blockSignals(False)
+        if hasattr(self, "_rate_slider"):
+            self._rate_slider.blockSignals(True)
+            self._rate_slider.setValue(self._tts_rate_percent_from_settings())
+            self._rate_slider.blockSignals(False)
         self._load_chat_font_from_settings()
 
         obs_ws_on = bool(self._settings.value(constants.SETTINGS_OBS_WS_ENABLED, True, bool))
@@ -4838,6 +5188,8 @@ class MainWindow(FramelessWindow):
             self._edit_tts_whitelist.setPlainText(whitelist)
             self._edit_tts_whitelist.blockSignals(False)
 
+        self._refresh_audio_summary()
+
         backend = str(self._settings.value(_SETTINGS_MUSIC_BACKEND, "app", str) or "").strip()
         use_mpv = backend == "mpv"
         self._music_use_mpv.blockSignals(True)
@@ -4891,11 +5243,15 @@ class MainWindow(FramelessWindow):
     def _on_tts_gain_changed(self, value: int) -> None:
         self._settings.setValue(_SETTINGS_TTS_GAIN_DB, value)
         self._sink.set_tts_gain_db(value)
+        if hasattr(self, "_lbl_gain_value"):
+            self._lbl_gain_value.setText(f"{int(value)} dB")
 
     @Slot(int)
     def _on_tts_rate_changed(self, value: int) -> None:
         v = max(_TTS_RATE_MIN, min(_TTS_RATE_MAX, int(value)))
         self._settings.setValue(_SETTINGS_TTS_RATE_PERCENT, v)
+        if hasattr(self, "_lbl_rate_value"):
+            self._lbl_rate_value.setText(f"{int(v)} %")
         asyncio.ensure_future(self._swap_tts_backend())
 
     @Slot(int)
@@ -4997,14 +5353,10 @@ class MainWindow(FramelessWindow):
 
     @Slot(str)
     def _append_log_line(self, line: str) -> None:
-        self._log_view.append(line)
-        doc = self._log_view.document()
-        while doc.blockCount() > _MAX_LOG_DOCUMENT_BLOCKS:
-            c = QTextCursor(doc)
-            c.movePosition(QTextCursor.MoveOperation.Start)
-            c.select(QTextCursor.SelectionType.BlockUnderCursor)
-            c.removeSelectedText()
-            c.deleteChar()
+        # Logs tab was removed from the sidebar; keep the slot as a no-op so
+        # the logging bridge stays connected without requiring a log view.
+        _ = line
+        return
 
     @Slot()
     def _refresh_footer(self) -> None:
@@ -7149,6 +7501,8 @@ class MainWindow(FramelessWindow):
     def _on_volume_changed(self, value: int) -> None:
         self._sink.set_volume(value / 100.0)
         self._settings.setValue("audio/volume", value)
+        if hasattr(self, "_lbl_volume_value"):
+            self._lbl_volume_value.setText(f"{int(value)} %")
 
     async def announce_donation_tts(self, line: str, donor_name: str | None = None) -> None:
         """Speak one donation line (used by Donations live TTS). Errors are logged, not modal."""
@@ -7203,6 +7557,10 @@ class MainWindow(FramelessWindow):
 
     async def _flush_tts_queues(self) -> None:
         """Force-stop pending TTS work and current playback."""
+        # Cancel an in-flight test-speech task first so its play lock is released.
+        task = getattr(self, "_tts_test_task", None)
+        if task is not None and not task.done():
+            task.cancel()
         # Stop playback ASAP (even if synth is still running).
         try:
             self._sink.shutdown()
@@ -7211,6 +7569,7 @@ class MainWindow(FramelessWindow):
             pass
         # Cancel in-flight TTS processing + drop queued work.
         await self._coordinator.flush_tts()
+        self._set_tts_test_busy(False)
         self._on_user_status(self._tr("audio.flush_queues"))
 
     def _overlay_public_base_url(self) -> str:

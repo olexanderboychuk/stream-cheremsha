@@ -180,6 +180,10 @@ Item {
         }
     }
 
+    // ---- Global Donation Filter Properties ----
+    property string donFrom: defaultFrom()
+    property string donTo: defaultTo()
+
     // ---- Compact error alert (icon + message, red tint) ----
     component ErrorAlert: Rectangle {
         id: alertRoot
@@ -608,11 +612,11 @@ Item {
                                 ttsOn: donApi.donatikTtsNew
                                 liveLabel: { donApi.uiTick; return donApi.loc("donations.card_live_abbr") }
                                 ttsLabel: { donApi.uiTick; return donApi.loc("donations.card_tts_abbr") }
-                                onActionClicked: root.openDonatik(donFrom.text, donTo.text)
-                                onCardClicked: root.openDonatik(donFrom.text, donTo.text)
+                                onActionClicked: root.openDonatik(root.donFrom, root.donTo)
+                                onCardClicked: root.openDonatik(root.donFrom, root.donTo)
                                 onLiveToggled: function (on) {
                                     donApi.setDonatikLivePoll(on)
-                                    donApi.donatikSyncPollDates(donFrom.text, donTo.text)
+                                    donApi.donatikSyncPollDates(root.donFrom, root.donTo)
                                 }
                                 onTtsToggled: function (on) { donApi.setDonatikTtsNew(on) }
                             }
@@ -698,10 +702,12 @@ Item {
                             onSaveClicked: {
                                 if (donApi.donatikSaveToken(donatikTokenCard.tokenText)) {
                                     donatikTokenCard.clearToken()
-                                    donFrom.text = defaultFrom()
-                                    donTo.text = defaultTo()
-                                    donApi.donatikSyncPollDates(donFrom.text, donTo.text)
-                                    donApi.donatikFetch(donFrom.text, donTo.text, "1")
+                                    root.donFrom = defaultFrom()
+                                    root.donTo = defaultTo()
+                                    donatikHistory.fromDate = root.donFrom
+                                    donatikHistory.toDate = root.donTo
+                                    donApi.donatikSyncPollDates(root.donFrom, root.donTo)
+                                    donApi.donatikFetch(root.donFrom, root.donTo, "1")
                                 }
                             }
                         }
@@ -713,353 +719,108 @@ Item {
                             infoHtml: { donApi.uiTick; return donApi.loc("donations.setup_intro_html") }
                         }
 
-                        // ---- Filter toolbar (only while configured) ----
-                        Rectangle {
-                            visible: donApi.donatikConfigured
-                            Layout.fillWidth: true
-                            implicitHeight: donatikToolbarBody.implicitHeight + 32
-                            radius: 14
-                            color: cardBase
-                            border.width: 1
-                            border.color: cardEdge
-
-                            ColumnLayout {
-                                id: donatikToolbarBody
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.top: parent.top
-                                anchors.margins: 16
-                                spacing: 10
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 8
-                                    Image {
-                                        source: Qt.resolvedUrl("../assets/icons/web_calendar.svg")
-                                        Layout.preferredWidth: 16
-                                        Layout.preferredHeight: 16
-                                        Layout.alignment: Qt.AlignVCenter
-                                    }
-                                    Text {
-                                        text: { donApi.uiTick; return donApi.loc("donations.period") }
-                                        color: ink
-                                        font.pixelSize: 15
-                                        font.weight: Font.DemiBold
-                                        Layout.fillWidth: true
-                                        Layout.alignment: Qt.AlignVCenter
-                                    }
+                        // ---- Donatik history (universal ServiceHistoryPage) ----
+                        Component {
+                            id: donatikRowDelegate
+                            DonationRow {
+                                width: ListView.view.width
+                                amountText: {
+                                    var pay = modelData.payment || {}
+                                    return (pay.amount || "?") + " " + (pay.currency || "")
                                 }
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 10
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        Layout.minimumWidth: 110
-                                        spacing: 4
-                                        Text {
-                                            text: { donApi.uiTick; return donApi.loc("donations.from") }
-                                            color: muted
-                                            font.pixelSize: 11
-                                        }
-                                        TextField {
-                                            id: donFrom
-                                            Layout.fillWidth: true
-                                            color: ink
-                                            selectByMouse: true
-                                            leftPadding: 10
-                                            rightPadding: 10
-                                            topPadding: 9
-                                            bottomPadding: 9
-                                            font.pixelSize: 12
-                                            placeholderTextColor: muted
-                                            placeholderText: "YYYY-MM-DD"
-                                            background: Rectangle {
-                                                radius: 8
-                                                color: fieldBg
-                                                border.width: 1
-                                                border.color: donFrom.activeFocus ? "#8b5cf6" : cardEdge
-                                                Behavior on border.color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
-                                            }
-                                            Component.onCompleted: text = defaultFrom()
-                                            onEditingFinished: donApi.donatikSyncPollDates(donFrom.text, donTo.text)
-                                        }
-                                    }
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        Layout.minimumWidth: 110
-                                        spacing: 4
-                                        Text {
-                                            text: { donApi.uiTick; return donApi.loc("donations.to") }
-                                            color: muted
-                                            font.pixelSize: 11
-                                        }
-                                        TextField {
-                                            id: donTo
-                                            Layout.fillWidth: true
-                                            color: ink
-                                            selectByMouse: true
-                                            leftPadding: 10
-                                            rightPadding: 10
-                                            topPadding: 9
-                                            bottomPadding: 9
-                                            font.pixelSize: 12
-                                            placeholderTextColor: muted
-                                            placeholderText: "YYYY-MM-DD"
-                                            background: Rectangle {
-                                                radius: 8
-                                                color: fieldBg
-                                                border.width: 1
-                                                border.color: donTo.activeFocus ? "#8b5cf6" : cardEdge
-                                                Behavior on border.color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
-                                            }
-                                            Component.onCompleted: text = defaultTo()
-                                            onEditingFinished: donApi.donatikSyncPollDates(donFrom.text, donTo.text)
-                                        }
-                                    }
-                                    ColumnLayout {
-                                        spacing: 4
-                                        Item { Layout.preferredHeight: 18 }
-                                        PrimaryButton {
-                                            btnIcon: Qt.resolvedUrl("../assets/icons/web_refresh.svg")
-                                            text: {
-                                                if (donApi.donatikLoading)
-                                                    return "…"
-                                                donApi.uiTick
-                                                return donApi.loc("donations.refresh")
-                                            }
-                                            enabled: !donApi.donatikLoading
-                                            onClicked: {
-                                                donApi.donatikSyncPollDates(donFrom.text, donTo.text)
-                                                donApi.donatikFetch(donFrom.text, donTo.text, "1")
-                                            }
-                                        }
-                                    }
+                                donorName: modelData.name || "—"
+                                messageText: modelData.message || ""
+                                sourceText: {
+                                    var pr = (modelData.payment && modelData.payment.paymentProvider) || {}
+                                    return pr.name || ""
                                 }
-
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: 1
-                                    color: divider
+                                timeText: {
+                                    var raw = modelData.createdAt || ""
+                                    return raw.length > 22 ? raw.substring(0, 22) : raw
                                 }
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 8
-                                    Text {
-                                        text: { donApi.uiTick; return donApi.loc("donations.live_poll") }
-                                        color: muted
-                                        font.pixelSize: 12
-                                        Layout.alignment: Qt.AlignVCenter
-                                    }
-                                    ConnPrefSwitch {
-                                        id: swDonatikLive
-                                        Layout.alignment: Qt.AlignVCenter
-                                        checked: donApi.donatikLivePoll
-                                        onToggled: {
-                                            donApi.setDonatikLivePoll(swDonatikLive.checked)
-                                            donApi.donatikSyncPollDates(donFrom.text, donTo.text)
-                                        }
-                                    }
-                                    Image {
-                                        source: Qt.resolvedUrl("../assets/icons/web_volume.svg")
-                                        Layout.preferredWidth: 15
-                                        Layout.preferredHeight: 15
-                                        Layout.leftMargin: 10
-                                        Layout.alignment: Qt.AlignVCenter
-                                    }
-                                    Text {
-                                        text: { donApi.uiTick; return donApi.loc("donations.tts_new") }
-                                        color: muted
-                                        font.pixelSize: 12
-                                        Layout.alignment: Qt.AlignVCenter
-                                    }
-                                    ConnPrefSwitch {
-                                        id: swDonatikTts
-                                        Layout.alignment: Qt.AlignVCenter
-                                        checked: donApi.donatikTtsNew
-                                        onToggled: donApi.setDonatikTtsNew(swDonatikTts.checked)
-                                    }
-                                    Item { Layout.fillWidth: true }
+                                statusMain: modelData.verifyStatus || ""
+                                statusSub: {
+                                    var st = (modelData.payment && modelData.payment.status) || ""
+                                    return st
                                 }
-
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: 1
-                                    color: divider
-                                }
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 8
-                                    DangerButton {
-                                        text: { donApi.uiTick; return donApi.loc("donations.forget_token") }
-                                        onClicked: donApi.donatikForgetToken()
-                                    }
-                                    Item { Layout.fillWidth: true }
+                                statusSubColor: {
+                                    var st = (modelData.payment && modelData.payment.status) || ""
+                                    return st === "COMPLETED" ? "#4ade80" : "#c4b5fd"
                                 }
                             }
                         }
-
-                        ErrorAlert {
-                            visible: donApi.donatikConfigured && donApi.errorMessage.length > 0
-                            alertText: donApi.errorMessage
+                        Component {
+                            id: donatikFooterActions
+                            RowLayout {
+                                spacing: 8
+                                DangerButton {
+                                    text: { donApi.uiTick; return donApi.loc("donations.forget_token") }
+                                    onClicked: donApi.donatikForgetToken()
+                                }
+                                Item { Layout.fillWidth: true }
+                            }
                         }
-
-                        // ---- History list ----
-                        Rectangle {
+                        ServiceHistoryPage {
+                            id: donatikHistory
                             visible: donApi.donatikConfigured
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             Layout.minimumHeight: 240
-                            radius: 14
-                            color: cardBase
-                            border.width: 1
-                            border.color: cardEdge
 
-                            readonly property var rows: JSON.parse(donApi.donationsJson || "[]")
+                            showDateFilter: true
+                            showLive: true
+                            showTts: true
 
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.margins: 14
-                                spacing: 10
+                            livePoll: donApi.donatikLivePoll
+                            ttsNew: donApi.donatikTtsNew
+                            isLoading: donApi.donatikLoading
+                            errorMessage: donApi.errorMessage
+                            rows: JSON.parse(donApi.donationsJson || "[]")
+                            total: donApi.total
+                            page: donApi.page
+                            pageCount: donApi.pageCount
 
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 8
-                                    Image {
-                                        source: Qt.resolvedUrl("../assets/icons/donation.svg")
-                                        Layout.preferredWidth: 16
-                                        Layout.preferredHeight: 16
-                                        Layout.alignment: Qt.AlignVCenter
-                                    }
-                                    Text {
-                                        text: { donApi.uiTick; return donApi.loc("donations.history") }
-                                        color: ink
-                                        font.pixelSize: 15
-                                        font.weight: Font.DemiBold
-                                        Layout.fillWidth: true
-                                        Layout.alignment: Qt.AlignVCenter
-                                        elide: Text.ElideRight
-                                    }
-                                    Text {
-                                        text: { donApi.uiTick; return donApi.summaryLine }
-                                        color: muted
-                                        font.pixelSize: 11
-                                        Layout.alignment: Qt.AlignVCenter
-                                    }
-                                }
+                            periodLabel: { donApi.uiTick; return donApi.loc("donations.period") }
+                            fromLabel: { donApi.uiTick; return donApi.loc("donations.from") }
+                            toLabel: { donApi.uiTick; return donApi.loc("donations.to") }
+                            refreshLabel: { donApi.uiTick; return donApi.loc("donations.refresh") }
+                            liveLabel: { donApi.uiTick; return donApi.loc("donations.live_poll") }
+                            ttsLabel: { donApi.uiTick; return donApi.loc("donations.tts_new") }
+                            historyTitle: { donApi.uiTick; return donApi.loc("donations.history") }
+                            summaryText: { donApi.uiTick; return donApi.summaryLine }
+                            emptyTitle: { donApi.uiTick; return donApi.loc("donations.empty_title") }
+                            emptyHint: { donApi.uiTick; return donApi.loc("donations.empty_hint") }
+                            loadingText: { donApi.uiTick; return donApi.loc("donations.loading") }
+                            prevLabel: { donApi.uiTick; return donApi.loc("donations.prev") }
+                            nextLabel: { donApi.uiTick; return donApi.loc("donations.next") }
 
-                                Item {
-                                    Layout.fillWidth: true
-                                    Layout.fillHeight: true
+                            rowDelegate: donatikRowDelegate
+                            footerActions: donatikFooterActions
 
-                                    ListView {
-                                        anchors.fill: parent
-                                        clip: true
-                                        spacing: 6
-                                        visible: parent.parent.parent.rows.length > 0
-                                        model: parent.parent.parent.rows
-
-                                        ScrollBar.vertical: ScrollBar {
-                                            policy: ScrollBar.AsNeeded
-                                            width: 8
-                                        }
-
-                                        delegate: DonationRow {
-                                            width: ListView.view.width
-                                            amountText: {
-                                                var pay = modelData.payment || {}
-                                                return (pay.amount || "?") + " " + (pay.currency || "")
-                                            }
-                                            donorName: modelData.name || "—"
-                                            messageText: modelData.message || ""
-                                            sourceText: {
-                                                var pr = (modelData.payment && modelData.payment.paymentProvider) || {}
-                                                return pr.name || ""
-                                            }
-                                            timeText: {
-                                                var raw = modelData.createdAt || ""
-                                                return raw.length > 22 ? raw.substring(0, 22) : raw
-                                            }
-                                            statusMain: modelData.verifyStatus || ""
-                                            statusSub: {
-                                                var st = (modelData.payment && modelData.payment.status) || ""
-                                                return st
-                                            }
-                                            statusSubColor: {
-                                                var st = (modelData.payment && modelData.payment.status) || ""
-                                                return st === "COMPLETED" ? "#4ade80" : "#c4b5fd"
-                                            }
-                                        }
-                                    }
-
-                                    // Empty state
-                                    ColumnLayout {
-                                        anchors.centerIn: parent
-                                        width: Math.min(320, parent.width - 32)
-                                        spacing: 8
-                                        visible: parent.parent.parent.rows.length === 0 && !donApi.donatikLoading
-                                        Image {
-                                            source: Qt.resolvedUrl("../assets/icons/donation.svg")
-                                            Layout.preferredWidth: 44
-                                            Layout.preferredHeight: 44
-                                            Layout.alignment: Qt.AlignHCenter
-                                            opacity: 0.85
-                                        }
-                                        Text {
-                                            text: { donApi.uiTick; return donApi.loc("donations.empty_title") }
-                                            color: ink
-                                            font.pixelSize: 15
-                                            font.weight: Font.DemiBold
-                                            Layout.fillWidth: true
-                                            horizontalAlignment: Text.AlignHCenter
-                                        }
-                                        Text {
-                                            text: { donApi.uiTick; return donApi.loc("donations.empty_hint") }
-                                            color: muted
-                                            font.pixelSize: 12
-                                            wrapMode: Text.Wrap
-                                            Layout.fillWidth: true
-                                            horizontalAlignment: Text.AlignHCenter
-                                        }
-                                    }
-
-                                    // Loading state (only when there is nothing to show yet)
-                                    Text {
-                                        anchors.centerIn: parent
-                                        visible: parent.parent.parent.rows.length === 0 && donApi.donatikLoading
-                                        text: { donApi.uiTick; return donApi.loc("donations.loading") }
-                                        color: muted
-                                        font.pixelSize: 13
-                                        opacity: 1.0
-                                        SequentialAnimation on opacity {
-                                            running: visible
-                                            loops: Animation.Infinite
-                                            NumberAnimation { from: 1.0; to: 0.45; duration: 700; easing.type: Easing.InOutSine }
-                                            NumberAnimation { from: 0.45; to: 1.0; duration: 700; easing.type: Easing.InOutSine }
-                                        }
-                                    }
-                                }
+                            Component.onCompleted: {
+                                donatikHistory.fromDate = root.donFrom
+                                donatikHistory.toDate = root.donTo
                             }
-                        }
-
-                        // ---- Pagination ----
-                        RowLayout {
-                            Layout.fillWidth: true
-                            visible: donApi.donatikConfigured && donApi.pageCount > 1
-                            spacing: 8
-                            SecondaryButton {
-                                text: { donApi.uiTick; return donApi.loc("donations.prev") }
-                                enabled: !donApi.donatikLoading && donApi.page > 1
-                                onClicked: donApi.donatikFetch(donFrom.text, donTo.text, String(donApi.page - 1))
+                            onFromDateChanged: {
+                                root.donFrom = donatikHistory.fromDate
+                                donApi.donatikSyncPollDates(root.donFrom, root.donTo)
                             }
-                            Item { Layout.fillWidth: true }
-                            SecondaryButton {
-                                text: { donApi.uiTick; return donApi.loc("donations.next") }
-                                enabled: !donApi.donatikLoading && donApi.page < donApi.pageCount
-                                onClicked: donApi.donatikFetch(donFrom.text, donTo.text, String(donApi.page + 1))
+                            onToDateChanged: {
+                                root.donTo = donatikHistory.toDate
+                                donApi.donatikSyncPollDates(root.donFrom, root.donTo)
                             }
+                            onRefreshRequested: {
+                                donApi.donatikSyncPollDates(donatikHistory.fromDate, donatikHistory.toDate)
+                                donApi.donatikFetch(donatikHistory.fromDate, donatikHistory.toDate, "1")
+                            }
+                            onPageRequested: function (p) {
+                                donApi.donatikFetch(root.donFrom, root.donTo, String(p))
+                            }
+                            onLiveToggled: function (on) {
+                                donApi.setDonatikLivePoll(on)
+                                donApi.donatikSyncPollDates(root.donFrom, root.donTo)
+                            }
+                            onTtsToggled: function (on) { donApi.setDonatikTtsNew(on) }
                         }
                     }
                 }
@@ -1093,251 +854,84 @@ Item {
                             infoHtml: { donApi.uiTick; return donApi.loc("donations.setup_intro_donatello_html") }
                         }
 
-                        // ---- Controls toolbar (only while configured) ----
-                        Rectangle {
-                            visible: donApi.donatelloConfigured
-                            Layout.fillWidth: true
-                            implicitHeight: donatelloToolbarBody.implicitHeight + 32
-                            radius: 14
-                            color: cardBase
-                            border.width: 1
-                            border.color: cardEdge
-
-                            ColumnLayout {
-                                id: donatelloToolbarBody
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.top: parent.top
-                                anchors.margins: 16
-                                spacing: 10
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 8
-                                    PrimaryButton {
-                                        btnIcon: Qt.resolvedUrl("../assets/icons/web_refresh.svg")
-                                        text: {
-                                            if (donApi.donatelloLoading)
-                                                return "…"
-                                            donApi.uiTick
-                                            return donApi.loc("donations.refresh")
-                                        }
-                                        enabled: !donApi.donatelloLoading
-                                        onClicked: donApi.donatelloFetch(String(donApi.donatelloPage))
-                                    }
-                                    Item { Layout.fillWidth: true }
+                        // ---- Donatello history (universal ServiceHistoryPage) ----
+                        Component {
+                            id: donatelloRowDelegate
+                            DonationRow {
+                                width: ListView.view.width
+                                amountText: (modelData.amount || "?") + " " + (modelData.currency || "")
+                                donorName: modelData.clientName || "—"
+                                messageText: modelData.message || ""
+                                sourceText: modelData.goal || ""
+                                timeText: modelData.createdAt || ""
+                                statusMain: {
+                                    donApi.uiTick
+                                    if (modelData.isPublished)
+                                        return donApi.loc("donations.donatello_published")
+                                    return donApi.loc("donations.donatello_draft")
                                 }
-
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: 1
-                                    color: divider
-                                }
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 8
-                                    Text {
-                                        text: { donApi.uiTick; return donApi.loc("donations.live_poll") }
-                                        color: muted
-                                        font.pixelSize: 12
-                                        Layout.alignment: Qt.AlignVCenter
-                                    }
-                                    ConnPrefSwitch {
-                                        id: swDonatelloLive
-                                        Layout.alignment: Qt.AlignVCenter
-                                        checked: donApi.donatelloLivePoll
-                                        onToggled: donApi.setDonatelloLivePoll(swDonatelloLive.checked)
-                                    }
-                                    Image {
-                                        source: Qt.resolvedUrl("../assets/icons/web_volume.svg")
-                                        Layout.preferredWidth: 15
-                                        Layout.preferredHeight: 15
-                                        Layout.leftMargin: 10
-                                        Layout.alignment: Qt.AlignVCenter
-                                    }
-                                    Text {
-                                        text: { donApi.uiTick; return donApi.loc("donations.tts_new") }
-                                        color: muted
-                                        font.pixelSize: 12
-                                        Layout.alignment: Qt.AlignVCenter
-                                    }
-                                    ConnPrefSwitch {
-                                        id: swDonatelloTts
-                                        Layout.alignment: Qt.AlignVCenter
-                                        checked: donApi.donatelloTtsNew
-                                        onToggled: donApi.setDonatelloTtsNew(swDonatelloTts.checked)
-                                    }
-                                    Item { Layout.fillWidth: true }
-                                }
-
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: 1
-                                    color: divider
-                                }
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 8
-                                    DangerButton {
-                                        text: { donApi.uiTick; return donApi.loc("donations.forget_token") }
-                                        onClicked: donApi.donatelloForgetToken()
-                                    }
-                                    Item { Layout.fillWidth: true }
-                                }
+                                statusMainColor: modelData.isPublished ? "#4ade80" : "#8b95a5"
+                                statusSub: modelData.pubId || ""
                             }
                         }
-
-                        ErrorAlert {
-                            visible: donApi.donatelloConfigured && donApi.errorMessage.length > 0
-                            alertText: donApi.errorMessage
+                        Component {
+                            id: donatelloFooterActions
+                            RowLayout {
+                                spacing: 8
+                                DangerButton {
+                                    text: { donApi.uiTick; return donApi.loc("donations.forget_token") }
+                                    onClicked: donApi.donatelloForgetToken()
+                                }
+                                Item { Layout.fillWidth: true }
+                            }
                         }
-
-                        // ---- History list ----
-                        Rectangle {
+                        ServiceHistoryPage {
+                            id: donatelloHistory
                             visible: donApi.donatelloConfigured
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             Layout.minimumHeight: 240
-                            radius: 14
-                            color: cardBase
-                            border.width: 1
-                            border.color: cardEdge
 
-                            readonly property var rows: JSON.parse(donApi.donatelloJson || "[]")
+                            showDateFilter: false
+                            showLive: true
+                            showTts: true
 
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.margins: 14
-                                spacing: 10
+                            livePoll: donApi.donatelloLivePoll
+                            ttsNew: donApi.donatelloTtsNew
+                            isLoading: donApi.donatelloLoading
+                            errorMessage: donApi.errorMessage
+                            rows: JSON.parse(donApi.donatelloJson || "[]")
+                            total: donApi.donatelloTotal
+                            page: donApi.donatelloPage + 1
+                            pageCount: (!donApi.donatelloFirst || !donApi.donatelloLast) ? Math.max(2, donApi.donatelloPages) : 1
+                            prevEnabled: !donApi.donatelloFirst
+                            nextEnabled: !donApi.donatelloLast
 
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 8
-                                    Image {
-                                        source: Qt.resolvedUrl("../assets/icons/donation.svg")
-                                        Layout.preferredWidth: 16
-                                        Layout.preferredHeight: 16
-                                        Layout.alignment: Qt.AlignVCenter
-                                    }
-                                    Text {
-                                        text: { donApi.uiTick; return donApi.loc("donations.history") }
-                                        color: ink
-                                        font.pixelSize: 15
-                                        font.weight: Font.DemiBold
-                                        Layout.fillWidth: true
-                                        Layout.alignment: Qt.AlignVCenter
-                                        elide: Text.ElideRight
-                                    }
-                                    Text {
-                                        text: { donApi.uiTick; return donApi.donatelloSummaryLine }
-                                        color: muted
-                                        font.pixelSize: 11
-                                        Layout.alignment: Qt.AlignVCenter
-                                    }
-                                }
+                            periodLabel: { donApi.uiTick; return donApi.loc("donations.period") }
+                            fromLabel: { donApi.uiTick; return donApi.loc("donations.from") }
+                            toLabel: { donApi.uiTick; return donApi.loc("donations.to") }
+                            refreshLabel: { donApi.uiTick; return donApi.loc("donations.refresh") }
+                            liveLabel: { donApi.uiTick; return donApi.loc("donations.live_poll") }
+                            ttsLabel: { donApi.uiTick; return donApi.loc("donations.tts_new") }
+                            historyTitle: { donApi.uiTick; return donApi.loc("donations.history") }
+                            summaryText: { donApi.uiTick; return donApi.donatelloSummaryLine }
+                            emptyTitle: { donApi.uiTick; return donApi.loc("donations.empty_title") }
+                            emptyHint: { donApi.uiTick; return donApi.loc("donations.empty_hint") }
+                            loadingText: { donApi.uiTick; return donApi.loc("donations.loading") }
+                            prevLabel: { donApi.uiTick; return donApi.loc("donations.prev") }
+                            nextLabel: { donApi.uiTick; return donApi.loc("donations.next") }
 
-                                Item {
-                                    Layout.fillWidth: true
-                                    Layout.fillHeight: true
+                            rowDelegate: donatelloRowDelegate
+                            footerActions: donatelloFooterActions
 
-                                    ListView {
-                                        anchors.fill: parent
-                                        clip: true
-                                        spacing: 6
-                                        visible: parent.parent.parent.rows.length > 0
-                                        model: parent.parent.parent.rows
-
-                                        ScrollBar.vertical: ScrollBar {
-                                            policy: ScrollBar.AsNeeded
-                                            width: 8
-                                        }
-
-                                        delegate: DonationRow {
-                                            width: ListView.view.width
-                                            amountText: (modelData.amount || "?") + " " + (modelData.currency || "")
-                                            donorName: modelData.clientName || "—"
-                                            messageText: modelData.message || ""
-                                            sourceText: modelData.goal || ""
-                                            timeText: modelData.createdAt || ""
-                                            statusMain: {
-                                                donApi.uiTick
-                                                if (modelData.isPublished)
-                                                    return donApi.loc("donations.donatello_published")
-                                                return donApi.loc("donations.donatello_draft")
-                                            }
-                                            statusMainColor: modelData.isPublished ? "#4ade80" : "#8b95a5"
-                                            statusSub: modelData.pubId || ""
-                                        }
-                                    }
-
-                                    // Empty state
-                                    ColumnLayout {
-                                        anchors.centerIn: parent
-                                        width: Math.min(320, parent.width - 32)
-                                        spacing: 8
-                                        visible: parent.parent.parent.rows.length === 0 && !donApi.donatelloLoading
-                                        Image {
-                                            source: Qt.resolvedUrl("../assets/icons/donation.svg")
-                                            Layout.preferredWidth: 44
-                                            Layout.preferredHeight: 44
-                                            Layout.alignment: Qt.AlignHCenter
-                                            opacity: 0.85
-                                        }
-                                        Text {
-                                            text: { donApi.uiTick; return donApi.loc("donations.empty_title") }
-                                            color: ink
-                                            font.pixelSize: 15
-                                            font.weight: Font.DemiBold
-                                            Layout.fillWidth: true
-                                            horizontalAlignment: Text.AlignHCenter
-                                        }
-                                        Text {
-                                            text: { donApi.uiTick; return donApi.loc("donations.empty_hint") }
-                                            color: muted
-                                            font.pixelSize: 12
-                                            wrapMode: Text.Wrap
-                                            Layout.fillWidth: true
-                                            horizontalAlignment: Text.AlignHCenter
-                                        }
-                                    }
-
-                                    // Loading state (only when there is nothing to show yet)
-                                    Text {
-                                        anchors.centerIn: parent
-                                        visible: parent.parent.parent.rows.length === 0 && donApi.donatelloLoading
-                                        text: { donApi.uiTick; return donApi.loc("donations.loading") }
-                                        color: muted
-                                        font.pixelSize: 13
-                                        opacity: 1.0
-                                        SequentialAnimation on opacity {
-                                            running: visible
-                                            loops: Animation.Infinite
-                                            NumberAnimation { from: 1.0; to: 0.45; duration: 700; easing.type: Easing.InOutSine }
-                                            NumberAnimation { from: 0.45; to: 1.0; duration: 700; easing.type: Easing.InOutSine }
-                                        }
-                                    }
-                                }
+                            onRefreshRequested: {
+                                donApi.donatelloFetch(String(donApi.donatelloPage))
                             }
-                        }
-
-                        // ---- Pagination ----
-                        RowLayout {
-                            Layout.fillWidth: true
-                            visible: donApi.donatelloConfigured && (!donApi.donatelloFirst || !donApi.donatelloLast)
-                            spacing: 8
-                            SecondaryButton {
-                                text: { donApi.uiTick; return donApi.loc("donations.prev") }
-                                enabled: !donApi.donatelloLoading && !donApi.donatelloFirst
-                                onClicked: donApi.donatelloFetch(String(Math.max(0, donApi.donatelloPage - 1)))
+                            onPageRequested: function (p) {
+                                donApi.donatelloFetch(String(p - 1))
                             }
-                            Item { Layout.fillWidth: true }
-                            SecondaryButton {
-                                text: { donApi.uiTick; return donApi.loc("donations.next") }
-                                enabled: !donApi.donatelloLoading && !donApi.donatelloLast
-                                onClicked: donApi.donatelloFetch(String(donApi.donatelloPage + 1))
-                            }
+                            onLiveToggled: function (on) { donApi.setDonatelloLivePoll(on) }
+                            onTtsToggled: function (on) { donApi.setDonatelloTtsNew(on) }
                         }
                     }
                 }
@@ -1347,8 +941,8 @@ Item {
                 target: donApi
                 function onDonatikConfiguredChanged() {
                     if (root.screen === "donatik" && donApi.donatikConfigured
-                            && donFrom.text.length && donTo.text.length) {
-                        donApi.donatikFetch(donFrom.text, donTo.text, "1")
+                            && root.donFrom.length && root.donTo.length) {
+                        donApi.donatikFetch(root.donFrom, root.donTo, "1")
                     }
                 }
                 function onDonatelloConfiguredChanged() {

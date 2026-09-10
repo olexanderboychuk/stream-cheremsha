@@ -963,7 +963,7 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "donations.from": {"uk": "Від", "en": "From"},
     "donations.to": {"uk": "До", "en": "To"},
     "donations.refresh": {"uk": "Оновити", "en": "Refresh"},
-    "donations.live_poll": {"uk": "Оновлення кожні 5 с", "en": "Live refresh (5s)"},
+    "donations.live_poll": {"uk": "Live", "en": "Live"},
     "donations.tts_new": {"uk": "Озвучувати нові", "en": "TTS for new"},
     "donations.tts_announce": {
         "uk": "Новий донат від {author}: {amount} {currency}. Текст: {message}",
@@ -1276,7 +1276,8 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "audio.test_phrase_default": {"uk": "Привіт, це тест.", "en": "Hello, this is a test."},
     "audio.speak_test": {"uk": "Відтворити тестову фразу", "en": "Speak test phrase"},
     "audio.card_test_header": {"uk": "Тест озвучення", "en": "TTS test"},
-    "audio.card_tts_title": {"uk": "Мова та рушій TTS", "en": "TTS language & engine"},
+    "audio.card_tts_title": {"uk": "Мова та рушій", "en": "Language & engine"},
+    "audio.card_filter_title": {"uk": "Фільтрація та поведінка", "en": "Filtering & behavior"},
     "audio.openai_moderate": {
         "uk": "Перевіряти текст через OpenAI Moderation",
         "en": "Validate text with OpenAI Moderation",
@@ -1308,8 +1309,8 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "([heart]), and other symbols are removed. OpenAI moderation replacement lines are left unchanged.",
     },
     "audio.tts_whitelist": {
-        "uk": "Білий список TTS (нікнейми)",
-        "en": "TTS whitelist (usernames)",
+        "uk": "Білий список TTS",
+        "en": "TTS whitelist",
     },
     "audio.tts_whitelist_hint": {
         "uk": "Ніки / @хендли через кому або з нового рядка. Якщо список не порожній — озвучуються лише ці користувачі "
@@ -1322,6 +1323,53 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "user1, @user2, kodi_the_cat",
     },
     "audio.card_levels_title": {"uk": "Вихід і рівні", "en": "Output & levels"},
+    "audio.page_subtitle": {"uk": "Озвучення повідомлень чату", "en": "Chat message speech"},
+    "audio.status_ready": {"uk": "Готово", "en": "Ready"},
+    "audio.speak_test_primary": {"uk": "▶ Відтворити тестову фразу", "en": "▶ Play test phrase"},
+    "audio.speak_stop": {"uk": "■ Зупинити озвучення", "en": "■ Stop speech"},
+    "audio.card_output_title": {"uk": "Аудіовихід", "en": "Audio output"},
+    "audio.card_audio_levels": {"uk": "Рівні звуку", "en": "Audio levels"},
+    "audio.card_test_sub": {
+        "uk": "Введіть текст, щоб перевірити озвучення",
+        "en": "Enter text to check the speech synthesis",
+    },
+    "audio.card_lang_sub": {
+        "uk": "Виберіть мову озвучення та TTS рушій",
+        "en": "Choose the speech language and TTS engine",
+    },
+    "audio.card_filter_sub": {
+        "uk": "Налаштуйте що саме озвучувати",
+        "en": "Configure what exactly to speak",
+    },
+    "audio.card_voice_sub": {
+        "uk": "Виберіть голос для озвучення",
+        "en": "Choose the voice for speech synthesis",
+    },
+    "audio.card_output_sub": {
+        "uk": "Налаштуйте пристрій відтворення",
+        "en": "Configure the playback device",
+    },
+    "audio.speak_author_inline_hint": {
+        "uk": "Додавати ім'я користувача перед повідомленням",
+        "en": "Add the username before the message",
+    },
+    "audio.strip_non_alpha_inline_hint": {
+        "uk": "Автоматично видаляти емодзі та спеціальні символи",
+        "en": "Automatically remove emoji and special characters",
+    },
+    "audio.randomize_inline_hint": {
+        "uk": "Голос обирається випадково для кожного повідомлення",
+        "en": "A random voice is picked for each message",
+    },
+    "audio.tts_whitelist_example": {
+        "uk": "Приклад: user1, @user2, kodi_the_cat",
+        "en": "Example: user1, @user2, kodi_the_cat",
+    },
+    "audio.levels_section": {"uk": "Рівні гучності", "en": "Volume levels"},
+    "audio.tts_whitelist_caption": {
+        "uk": "Користувачі, яких можна озвучувати (нікнейми через кому)",
+        "en": "Users allowed for speech synthesis (nicknames, comma-separated)",
+    },
     "settings.ai_shield_group": {"uk": "AI Shield", "en": "AI Shield"},
     "settings.ai_shield_section_tts": {
         "uk": "Чат і голос (TTS)",
