@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.20.0] - 2026-09-10
+
+### Added
+
+- New layouts navigation with migration support for legacy scenes.
+- Redesigned layouts editor controls and visual presentation.
+- Refreshed Actions, Widgets, Docks, and service-card UI with new assets.
+
+### Changed
+
+- Updated TikTokLive dependency and refreshed related Actions UI.
+
 ## [0.19.1] - 2026-09-08
 
 ### Fixed
