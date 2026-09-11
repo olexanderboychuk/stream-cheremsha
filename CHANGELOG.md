@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.21.0] - 2026-09-11
+
+### Added
+
+- Added a standalone Windows updater executable that waits for Cheremsha to exit before launching the installer.
+- Added visible updater progress, cancellation, localized status messages, and updater startup error handling.
+
+### Changed
+
+- Windows update downloads now use atomic `.part` files, report progress, support cancellation, and validate the downloaded artifact before installation.
+- Windows builds package the independent updater alongside the main application.
+- AppImage creation no longer passes the unsupported `--mksquashfs-opt` option.
+
 ## [0.20.0] - 2026-09-10
 
 ### Added

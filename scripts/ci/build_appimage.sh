@@ -56,7 +56,6 @@ rm -f "$appimage_path"
 
 ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 \
   "$APPIMAGETOOL" \
-  --mksquashfs-opt -no-xattrs \
   "$appdir" \
   "$appimage_path"
 

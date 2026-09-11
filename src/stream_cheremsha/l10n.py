@@ -92,6 +92,15 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Для цього релізу немає Windows інсталятора.",
         "en": "This release has no Windows installer asset.",
     },
+    "updates.preparing": {"uk": "Підготовка засобу оновлення…", "en": "Preparing updater…"},
+    "updates.updater_start_failed": {
+        "uk": "Не вдалося запустити засіб оновлення. Програма залишиться відкритою.\n\n{error}",
+        "en": "Unable to start the updater. The application will remain open.\n\n{error}",
+    },
+    "updates.updater_requires_installed_app": {
+        "uk": "Автоматичне оновлення доступне лише для встановленої версії Cheremsha.",
+        "en": "Automatic updates are only available for an installed Cheremsha build.",
+    },
     "updates.downloading": {"uk": "Завантаження інсталятора…", "en": "Downloading installer…"},
     "updates.ready_to_install": {"uk": "Готово до встановлення.", "en": "Ready to install."},
     "updates.sha_mismatch": {

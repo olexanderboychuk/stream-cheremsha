@@ -254,6 +254,66 @@ def _nuitka_cmd(
     return cmd
 
 
+def _updater_nuitka_cmd(*, out_dir: Path, jobs: str) -> tuple[list[str], Path]:
+    """Build the small updater as an independent GUI one-file executable."""
+    updater_out = out_dir / "updater"
+    updater_out.mkdir(parents=True, exist_ok=True)
+    assets_dir = _ROOT / "assets"
+    icon_png = assets_dir / "icon.png"
+    icon_ico = assets_dir / "icon.ico"
+    if not icon_ico.is_file():
+        icon_ico = out_dir / "icon.ico"
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "nuitka",
+        "--onefile",
+        "--follow-imports",
+        "--python-flag=isolated",
+        "--python-flag=safe_path",
+        "--enable-plugin=pyside6",
+        "--include-qt-plugins=platforms,imageformats",
+        f"--output-dir={updater_out}",
+        "--output-filename=CheremshaUpdater.exe",
+        "--windows-console-mode=disable",
+        "--assume-yes-for-downloads",
+    ]
+    if jobs:
+        cmd.append(f"--jobs={jobs}")
+    if icon_ico.is_file():
+        cmd.append(f"--windows-icon-from-ico={icon_ico}")
+    if icon_png.is_file():
+        cmd.append(
+            f"--include-data-file={icon_png}=stream_cheremsha/assets/icon.png",
+        )
+    if find_spec("certifi") is not None:
+        import certifi  # type: ignore[import-not-found]
+
+        cacert = Path(certifi.where()).resolve()
+        cmd.extend(
+            [
+                "--include-package=certifi",
+                f"--include-data-file={cacert}=certifi/cacert.pem",
+            ]
+        )
+    cmd.append(str((_ROOT / "updates" / "updater.py").resolve()))
+    return cmd, updater_out / "CheremshaUpdater.exe"
+
+
+def _main_dist_dir(out_dir: Path) -> Path:
+    matches = [
+        child
+        for child in out_dir.iterdir()
+        if child.is_dir() and child.suffix == ".dist" and (child / "cheremsha.exe").is_file()
+    ]
+    if len(matches) != 1:
+        raise SystemExit(
+            f"Expected one Nuitka app dist containing cheremsha.exe, found {len(matches)}"
+        )
+    return matches[0]
+
+
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(
         prog="cheremsha-build",
@@ -311,6 +371,11 @@ def main(argv: list[str] | None = None) -> None:
         help="Build with a specific MSVC version, e.g. 14.3 (Nuitka: --msvc=...).",
     )
     p.add_argument(
+        "--skip-updater",
+        action="store_true",
+        help="Skip the independent Windows updater build (local build troubleshooting only).",
+    )
+    p.add_argument(
         "--clean",
         action="store_true",
         help=(
@@ -356,6 +421,13 @@ def main(argv: list[str] | None = None) -> None:
     )
     try:
         _run(cmd)
+        if sys.platform.startswith("win") and not ns.skip_updater:
+            updater_cmd, updater_exe = _updater_nuitka_cmd(out_dir=out, jobs=str(ns.jobs))
+            _run(updater_cmd)
+            if not updater_exe.is_file():
+                raise SystemExit(f"Updater output not found: {updater_exe}")
+            package_dir = out if ns.onefile else _main_dist_dir(out)
+            shutil.copy2(updater_exe, package_dir / updater_exe.name)
     finally:
         _remove_embedded_local(embedded_written)
 

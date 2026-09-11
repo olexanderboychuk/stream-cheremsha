@@ -3237,6 +3237,7 @@ class MainWindow(FramelessWindow):
             return
 
         if sys.platform.startswith("win"):
+            logger.info("Update detected: current=%s target=%s", current, latest)
             await self._prompt_and_update_windows(manifest, current=current, latest=latest)
         else:
             rel = (
@@ -3265,7 +3266,7 @@ class MainWindow(FramelessWindow):
             return "0.0.0"
 
     async def _prompt_and_update_windows(self, manifest, current: str, latest: str) -> None:
-        from stream_cheremsha.updates.downloader import download_file, sha256_file
+        from stream_cheremsha.updates.launcher import start_updater
 
         title = self._tr("dlg.update")
         msg = self._tr(
@@ -3311,55 +3312,42 @@ class MainWindow(FramelessWindow):
             QMessageBox.warning(self, title, self._tr("updates.no_windows_asset"))
             return
 
-        local_app_data = (os.getenv("LOCALAPPDATA") or "").strip()
-        base = Path(local_app_data) if local_app_data else Path.home()
-        updates_dir = base / "stream-cheremsha" / "updates"
-        installer_path = updates_dir / f"Cheremsha-Setup-{manifest.tag}.exe"
-
         try:
-            self._btn_updates_check_now.setEnabled(False)
-            self._lbl_updates_status.setText(self._tr("updates.downloading"))
-            await asyncio.to_thread(download_file, win.installer.url, installer_path)
-            got = await asyncio.to_thread(sha256_file, installer_path)
-            if got.lower() != win.installer.sha256.lower():
-                try:
-                    installer_path.unlink(missing_ok=True)
-                except OSError:
-                    pass
-                QMessageBox.critical(self, title, self._tr("updates.sha_mismatch"))
-                return
+            app_exe = Path(sys.executable).resolve()
+        except OSError as exc:
+            QMessageBox.critical(self, title, self._tr("updates.updater_start_failed", error=exc))
+            return
+        if app_exe.name.lower() != "cheremsha.exe":
+            QMessageBox.warning(self, title, self._tr("updates.updater_requires_installed_app"))
+            return
 
-            if _UPDATES_REQUIRE_SIGNATURE and not self._verify_windows_installer_signature(
-                str(installer_path),
-            ):
-                try:
-                    installer_path.unlink(missing_ok=True)
-                except OSError:
-                    pass
-                QMessageBox.critical(self, title, self._tr("updates.signature_invalid"))
-                return
-
-            self._lbl_updates_status.setText(self._tr("updates.ready_to_install"))
-        finally:
-            self._btn_updates_check_now.setEnabled(True)
-
-        # Silent in-place update: pass the running install dir explicitly via /D
-        # (must be the last arg, no quotes even with spaces). Relying only on
-        # the registry breaks custom install paths when the key is missing or
-        # read from another HKCU context -> second copy in %LOCALAPPDATA%.
-        # Nuitka standalone: sys.executable is cheremsha.exe inside $INSTDIR.
+        self._btn_updates_check_now.setEnabled(False)
+        self._lbl_updates_status.setText(self._tr("updates.preparing"))
         try:
-            _exe = Path(sys.executable).resolve()
-            _exe_dir = str(_exe.parent) if _exe.name.lower() == "cheremsha.exe" else ""
-        except OSError:
-            _exe_dir = ""
-        if _exe_dir:
-            subprocess.Popen(
-                [str(installer_path), "/S", f"/D={_exe_dir}"],
-                close_fds=True,
+            await asyncio.to_thread(
+                start_updater,
+                url=win.installer.url,
+                sha256=win.installer.sha256,
+                version=latest,
+                install_dir=app_exe.parent,
+                app=app_exe,
+                locale=self._locale,
+                require_signature=_UPDATES_REQUIRE_SIGNATURE,
+                expected_publisher=_UPDATES_EXPECTED_PUBLISHER_SUBJECT_CONTAINS,
             )
-        else:  # dev/portable fallback: registry-based detection in the installer
-            subprocess.Popen([str(installer_path), "/S"], close_fds=True)
+        except (OSError, RuntimeError, ValueError) as exc:
+            logger.exception("Unable to start updater")
+            self._btn_updates_check_now.setEnabled(True)
+            self._lbl_updates_status.setText("")
+            QMessageBox.critical(
+                self,
+                title,
+                self._tr("updates.updater_start_failed", error=exc),
+            )
+            return
+
+        # The independent updater is alive before shutdown begins. It waits for this PID
+        # to exit before invoking NSIS, while the normal async close path releases all files.
         self.close()
 
     def _verify_windows_installer_signature(self, exe_path: str) -> bool:
