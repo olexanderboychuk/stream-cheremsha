@@ -219,7 +219,6 @@ from stream_cheremsha.tts.edge_tts import (
 )
 from stream_cheremsha.tts.google_translate_tts import GoogleTranslateTts
 from stream_cheremsha.tts.respeecher_tts import REPEECHER_VOICES, ReSpeecherTts
-from stream_cheremsha.ui.actions_qml_api import ActionsQmlApi
 from stream_cheremsha.ui.chat_formatting import (
     CHAT_DEFAULT_FONT_FAMILY,
     chat_font_stack_css,
@@ -253,6 +252,7 @@ if TYPE_CHECKING:
     # Static names for linters/type-checkers; the real imports run post-show
     # via _ensure_telegram_libs() (never at application startup).
     from stream_cheremsha.telegram.bot_service import RiskyDecisionResult, TelegramBotService
+    from stream_cheremsha.ui.actions_qml_api import ActionsQmlApi
     from stream_cheremsha.telegram.tiktok_song_filter import (
         TikTokLyricsCheckError,
         analyze_lyrics_with_groq,
@@ -344,10 +344,6 @@ def _footer_richtext_img(name: str, px: int) -> str:
 
 _MAX_CHAT_DOCUMENT_BLOCKS = 450
 
-# Splash-phase QML warm-up budget: stop preloading lower-priority pages once
-# the hidden time spent compiling exceeds this. Measured first-open costs:
-# Widgets ~0.8s, Actions ~0.2s, Donations ~0.05s, Docks ~0.02s.
-_QML_WARMUP_BUDGET_SEC = 1.5
 _SETTINGS_CHAT_FONT_PT = "ui/chat_font_pt"
 _SETTINGS_CHAT_FONT_FAMILY = "ui/chat_font_family"
 
@@ -1040,6 +1036,7 @@ class MainWindow(FramelessWindow):
             private_key_pem=embedded.OVERLAY_PRIVATE_KEY,
         )
         self._overlay_tunnel = OverlayTunnel()
+        self._overlay_server_started = False
         self._asyncio_loop: asyncio.AbstractEventLoop | None = None
         self._music_queue = MusicQueueController(instance="main")
         self._music_player: MusicPlayer | None = None
@@ -1245,7 +1242,10 @@ class MainWindow(FramelessWindow):
         self._points_enabled_cb = QCheckBox()
         self._btn_points_configure = QPushButton()
         self._lbl_points_hint = QLabel()
-        self._actions_qml_api = ActionsQmlApi(self)
+        # Actions tab is lazy like other heavy QML tabs: the API object and
+        # the QQuickWidget shell are created on first open (see
+        # _ensure_actions_widgets), never on the startup path.
+        self._actions_qml_api: ActionsQmlApi | None = None
         self._qml_actions: QQuickWidget | None = None
         self._widgets_qml_api: WidgetsQmlApi | None = None
         self._docks_qml_api: DocksQmlApi | None = None
@@ -1511,17 +1511,15 @@ class MainWindow(FramelessWindow):
         self._qml_layouts.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._qml_layouts.setClearColor(QColor(10, 11, 14))
         _setup_qml_import_path(self._qml_layouts)
-        self._docks_qml_api = DocksQmlApi()
+        self._docks_qml_api = DocksQmlApi(locale=self._locale)
         self._qml_docks = QQuickWidget(self)
         self._qml_docks.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
         self._qml_docks.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._qml_docks.setClearColor(QColor(10, 11, 14))
         _setup_qml_import_path(self._qml_docks)
-        self._qml_actions = QQuickWidget(self)
-        self._qml_actions.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
-        self._qml_actions.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self._qml_actions.setClearColor(QColor(10, 11, 14))
-        _setup_qml_import_path(self._qml_actions)
+        # Placeholder keeps the stacked index stable; the real QQuickWidget
+        # is built lazily in _ensure_actions_widgets on first open/warm-up.
+        self._qml_actions_placeholder = QWidget(self)
         root = QVBoxLayout(self)
         root.setSpacing(0)
         # qframelesswindow title bar is drawn on top of the client area
@@ -1725,14 +1723,14 @@ class MainWindow(FramelessWindow):
         self._stack.addWidget(self._qml_widgets)
         self._stack.addWidget(self._qml_layouts)
         self._stack.addWidget(self._qml_docks)
-        self._stack.addWidget(self._qml_actions)
+        self._stack.addWidget(self._qml_actions_placeholder)
         self._stack.addWidget(self._build_music_tab())
         self._stack.addWidget(self._build_big_picture_tab())
 
         # Lightweight first-open placeholder for heavy QML pages: a static
         # centered label (no spinner, no animation, no CPU use). Shown only
         # while a never-loaded page compiles on the next loop iteration.
-        self._qml_loading_veil = QLabel("Завантаження…", self._stack)
+        self._qml_loading_veil = QLabel(self.tr("splash.loading"), self._stack)
         self._qml_loading_veil.setObjectName("qmlLoadingVeil")
         self._qml_loading_veil.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._qml_loading_veil.setStyleSheet(
@@ -2094,14 +2092,55 @@ class MainWindow(FramelessWindow):
         else:
             self.showMaximized()
 
+    def _ensure_actions_widgets(self) -> QQuickWidget:
+        """Lazily build the Actions API + QQuickWidget shell (first open only)."""
+        if self._qml_actions is not None:
+            return self._qml_actions
+        from stream_cheremsha.ui.actions_qml_api import ActionsQmlApi
+
+        if self._actions_qml_api is None:
+            self._actions_qml_api = ActionsQmlApi(self)
+        widget = QQuickWidget(self)
+        widget.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
+        widget.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        widget.setClearColor(QColor(10, 11, 14))
+        _setup_qml_import_path(widget)
+        self._qml_actions = widget
+        placeholder = getattr(self, "_qml_actions_placeholder", None)
+        if placeholder is not None and hasattr(self, "_stack"):
+            idx = self._stack.indexOf(placeholder)
+            if idx == self._IX_ACTIONS:
+                # Remove first, then insert: insert-then-remove shifts
+                # currentIndex onto the neighbour (music tab). Restore the
+                # actions page explicitly so navigation stays put.
+                showing_placeholder = self._stack.currentIndex() == idx
+                current_widget = self._stack.currentWidget()
+                self._stack.removeWidget(placeholder)
+                placeholder.setParent(None)
+                placeholder.deleteLater()
+                self._stack.insertWidget(self._IX_ACTIONS, widget)
+                if showing_placeholder:
+                    self._stack.setCurrentIndex(self._IX_ACTIONS)
+                elif current_widget is not None:
+                    self._stack.setCurrentWidget(current_widget)
+                self._qml_actions_placeholder = None
+            else:
+                self._stack.addWidget(widget)
+        return widget
+
     def _qml_widget_for_stack_index(self, index: int) -> QQuickWidget | None:
+        if index == self._IX_ACTIONS:
+            try:
+                return self._ensure_actions_widgets()
+            except Exception:
+                logger.debug("Lazy actions widget creation failed", exc_info=True)
+                return getattr(self, "_qml_actions", None)
         attr = {
             self._IX_CONN: "_qml_conn",
             self._IX_DONATIONS: "_qml_donations",
             self._IX_WIDGETS: "_qml_widgets",
             self._IX_LAYOUTS: "_qml_layouts",
             self._IX_DOCKS: "_qml_docks",
-            self._IX_ACTIONS: "_qml_actions",
         }.get(index)
         if attr is None:
             return None
@@ -2242,42 +2281,87 @@ class MainWindow(FramelessWindow):
         self._hide_qml_loading_veil()
         self._play_enter_pulse(qml_index)
 
+    async def warm_overlay_server(
+        self,
+        status_cb: Callable[..., None] | None = None,
+    ) -> None:
+        """Start the overlay server during the splash phase.
+
+        Same work run_startup() used to do (TLS certs, aiohttp bind, overlay
+        controllers), moved earlier so OBS browser sources can connect ASAP
+        and the QML warm-up below bakes in real overlay URLs. Idempotent:
+        run_startup() skips this block once it has run here. The tunnel
+        (network, settings-dependent) stays in run_startup().
+        """
+        if self._overlay_server_started or self._closing:
+            return
+        if status_cb is not None:
+            try:
+                status_cb(self.tr("splash.overlay"), -1.0)
+            except RuntimeError:
+                pass
+        await asyncio.sleep(0)
+        if self._closing:
+            return
+        self._asyncio_loop = asyncio.get_running_loop()
+        self._music_queue.set_loop(self._asyncio_loop)
+        cert_paths = await asyncio.to_thread(ensure_valid_ssl)
+        if self._closing:
+            return
+        if cert_paths is not None:
+            self._overlay_server.set_tls_files(*cert_paths)
+        await self._overlay_server.start()
+        if self._closing:
+            await self._overlay_server.stop()
+            return
+        logger.info("Overlay server: %s", self._overlay_server.base_url())
+        for ctl in (
+            self._stream_pet,
+            self._stream_goal,
+            self._live_leaderboard,
+            self._social_rotator,
+            self._community_world,
+            self._webcam_frame,
+            self._signal_system,
+        ):
+            ctl.set_pubsub(self._overlay_server.pubsub())
+            ctl.set_event_loop(self._asyncio_loop)
+            ctl.start()
+        self._overlay_server_started = True
+
     async def warm_secondary_pages(
         self,
-        status_cb: Callable[[str], None] | None = None,
+        status_cb: Callable[..., None] | None = None,
     ) -> None:
         """Staged splash-phase preload of heavy QML pages into the navigation cache.
 
-        Priority order starts with the related Widgets and Layouts pages,
-        followed by Actions, Donations, and Docks. Each load is the same
+        Priority order is Widgets, then Actions (so the Actions tab is ready
+        early), then Layouts, Donations, and Docks. Layouts goes after
+        Actions deliberately: it compiles the same giant WidgetsView.qml a
+        second time (separate engine per QQuickWidget), so the more
+        frequently used page is ready first. Each load is the same
         _load_qml_page() navigation uses — exactly one instance per page, kept
         alive, never unloaded afterwards. Yields to the event loop around every
-        load so the splash keeps rendering; stops early if the hidden-time
-        budget is exceeded (lower-priority pages then load lazily on first
-        open as before). No network, no WebEngine, no Big Picture scenes.
+        load so the splash keeps rendering; every page is always warmed (no
+        time budget — the splash takes whatever it needs). No network, no
+        WebEngine, no Big Picture scenes.
         """
         order = (
-            (self._IX_WIDGETS, "Завантаження віджетів…"),
-            (self._IX_LAYOUTS, "Завантаження макетів…"),
-            (self._IX_ACTIONS, "Завантаження дій…"),
-            (self._IX_DONATIONS, "Завантаження донатів…"),
-            (self._IX_DOCKS, "Завантаження доків…"),
+            (self._IX_WIDGETS, "splash.widgets"),
+            (self._IX_ACTIONS, "splash.actions"),
+            (self._IX_LAYOUTS, "splash.layouts"),
+            (self._IX_DONATIONS, "splash.donations"),
+            (self._IX_DOCKS, "splash.docks"),
         )
-        spent = 0.0
-        for qml_index, label in order:
+        total = len(order)
+        for pos, (qml_index, key) in enumerate(order):
             if self._closing:
                 return
             if qml_index in self._qml_pages_loaded:
                 continue
-            if spent >= _QML_WARMUP_BUDGET_SEC:
-                logger.info(
-                    "QML warm-up budget exhausted (%.2fs); remaining pages load lazily",
-                    spent,
-                )
-                return
             if status_cb is not None:
                 try:
-                    status_cb(label)
+                    status_cb(self.tr(key), pos / total)
                 except RuntimeError:
                     pass
             # Let the splash paint the status (and settle the previous page)
@@ -2285,11 +2369,19 @@ class MainWindow(FramelessWindow):
             await asyncio.sleep(0)
             if self._closing:
                 return
-            started = time.perf_counter()
-            self._load_qml_page(qml_index)
-            spent += time.perf_counter() - started
+            try:
+                self._load_qml_page(qml_index)
+            except Exception:
+                # One page must never abort the rest of the warm-up; the
+                # failed page loads lazily on first open as before.
+                logger.exception("QML warm-up failed for page %s", qml_index)
             # Let the splash repaint and the fresh page run its init timers.
             await asyncio.sleep(0)
+            if status_cb is not None:
+                try:
+                    status_cb(self.tr(key), (pos + 1) / total)
+                except RuntimeError:
+                    pass
 
     def _play_enter_pulse(self, qml_index: int) -> None:
         """Retrigger the QML-side micro fade (120ms root opacity, GPU-cheap).
@@ -3791,6 +3883,9 @@ class MainWindow(FramelessWindow):
             self._qml_api.refresh()
         if hasattr(self, "_donations_qml_api"):
             self._donations_qml_api.refreshUi()
+        if getattr(self, "_docks_qml_api", None) is not None:
+            self._docks_qml_api.set_locale(self._locale)
+            self._docks_qml_api.refreshUi()
         if self._chat_popout is not None:
             self._chat_popout.apply_texts()
 
@@ -7693,35 +7788,10 @@ class MainWindow(FramelessWindow):
             self._on_user_status(self._tr("startup.workers"))
             self._asyncio_loop = asyncio.get_running_loop()
             self._music_queue.set_loop(self._asyncio_loop)
-            cert_paths = ensure_valid_ssl()
-            if cert_paths is not None:
-                self._overlay_server.set_tls_files(*cert_paths)
-            await self._overlay_server.start()
-            if self._closing:
-                await self._overlay_server.stop()
-                return
-            logger.info("Overlay server: %s", self._overlay_server.base_url())
-            self._stream_pet.set_pubsub(self._overlay_server.pubsub())
-            self._stream_pet.set_event_loop(self._asyncio_loop)
-            self._stream_pet.start()
-            self._stream_goal.set_pubsub(self._overlay_server.pubsub())
-            self._stream_goal.set_event_loop(self._asyncio_loop)
-            self._stream_goal.start()
-            self._live_leaderboard.set_pubsub(self._overlay_server.pubsub())
-            self._live_leaderboard.set_event_loop(self._asyncio_loop)
-            self._live_leaderboard.start()
-            self._social_rotator.set_pubsub(self._overlay_server.pubsub())
-            self._social_rotator.set_event_loop(self._asyncio_loop)
-            self._social_rotator.start()
-            self._community_world.set_pubsub(self._overlay_server.pubsub())
-            self._community_world.set_event_loop(self._asyncio_loop)
-            self._community_world.start()
-            self._webcam_frame.set_pubsub(self._overlay_server.pubsub())
-            self._webcam_frame.set_event_loop(self._asyncio_loop)
-            self._webcam_frame.start()
-            self._signal_system.set_pubsub(self._overlay_server.pubsub())
-            self._signal_system.set_event_loop(self._asyncio_loop)
-            self._signal_system.start()
+            if not self._overlay_server_started:
+                await self.warm_overlay_server()
+                if self._closing:
+                    return
             await self.apply_overlay_tunnel()
             self._schedule_king_overlay_publish()
             self._publish_battle_overlay_patch_sync()

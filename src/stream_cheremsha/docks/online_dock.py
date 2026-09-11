@@ -2,13 +2,50 @@ from __future__ import annotations
 
 import json
 
+from stream_cheremsha import l10n
+
 
 def _json_for_script(value: object) -> str:
     s = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
     return s.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
 
 
-def render_online_dock_html() -> str:
+_DOCK_I18N_KEYS = (
+    "dock.online.title",
+    "dock.connected",
+    "dock.connecting",
+    "dock.disconnected",
+    "dock.error",
+    "dock.reconnecting_in",
+    "dock.current",
+    "dock.peak",
+    "dock.total",
+    "dock.gifts",
+    "dock.diamonds",
+    "dock.messages",
+    "dock.unique",
+    "dock.super",
+    "dock.members",
+    "dock.follows",
+    "dock.subs",
+    "dock.gift_subs",
+    "dock.kicks",
+    "dock.updated_at",
+)
+
+
+def dock_i18n_bundle() -> dict[str, dict[str, str]]:
+    out: dict[str, dict[str, str]] = {"uk": {}, "en": {}}
+    for key in _DOCK_I18N_KEYS:
+        short = key.removeprefix("dock.")
+        out["uk"][short] = l10n.tr("uk", key)
+        out["en"][short] = l10n.tr("en", key)
+    return out
+
+
+def render_online_dock_html(locale: str | None = None) -> str:
+    loc = l10n.normalize_locale(str(locale or l10n.DEFAULT_LOCALE))
+    i18n = dock_i18n_bundle()
     subscribe_msg = {"op": "subscribe", "type": "online", "instance": "main", "params": {}}
     return f"""<!doctype html>
 <html>
@@ -153,7 +190,7 @@ def render_online_dock_html() -> str:
     <div class="wrap">
       <div class="top">
         <div>
-          <div class="title" id="title">Online</div>
+          <div class="title" id="title">{l10n.tr(loc, "dock.online.title")}</div>
           <div class="hint" id="status">connecting…</div>
         </div>
       </div>
@@ -279,57 +316,34 @@ def render_online_dock_html() -> str:
 
     <script>
       (function() {{
-        const isUk = String((navigator && navigator.language) || '').toLowerCase().startsWith('uk');
-        const T = isUk ? {{
-          title: 'Онлайн',
-          connected: 'підключено',
-          connecting: 'підключення…',
-          disconnected: 'відключено',
-          error: 'помилка',
-          reconnectingIn: (s) => 'перепідключення через ' + s + 'с…',
+        const I18N = {_json_for_script(i18n)};
+        const LOCALE = {_json_for_script(loc)};
+        const pack = (I18N[LOCALE] || I18N.uk || {{}});
+        const T = {{
+          title: pack['online.title'],
+          connected: pack.connected,
+          connecting: pack.connecting,
+          disconnected: pack.disconnected,
+          error: pack.error,
+          reconnectingIn: (s) => String(pack.reconnecting_in || '').split('{{s}}').join(String(s)),
           twitch: 'Twitch',
           youtube: 'YouTube',
           tiktok: 'TikTok',
           kick: 'Kick',
-          current: 'Зараз',
-          peak: 'Пік',
-          total: 'Всього',
-          gifts: 'Подарунки',
-          diamonds: 'Діаманти',
-          messages: 'Повідомлення',
-          unique: 'Унікальні',
-          super: 'Суперчати',
-          members: 'Підписки',
-          follows: 'Фолови',
-          subs: 'Саби',
-          giftSubs: 'Подарункові саби',
-          kicks: 'KICKS',
-          updatedAt: (s) => 'оновлено: ' + s,
-        }} : {{
-          title: 'Online',
-          connected: 'connected',
-          connecting: 'connecting…',
-          disconnected: 'disconnected',
-          error: 'error',
-          reconnectingIn: (s) => 'reconnecting in ' + s + 's…',
-          twitch: 'Twitch',
-          youtube: 'YouTube',
-          tiktok: 'TikTok',
-          kick: 'Kick',
-          current: 'Current',
-          peak: 'Peak',
-          total: 'Total',
-          gifts: 'Gifts',
-          diamonds: 'Diamonds',
-          messages: 'Messages',
-          unique: 'Unique',
-          super: 'Super Chats',
-          members: 'Memberships',
-          follows: 'Follows',
-          subs: 'Subs',
-          giftSubs: 'Gift subs',
-          kicks: 'KICKS',
-          updatedAt: (s) => 'updated: ' + s,
+          current: pack.current,
+          peak: pack.peak,
+          total: pack.total,
+          gifts: pack.gifts,
+          diamonds: pack.diamonds,
+          messages: pack.messages,
+          unique: pack.unique,
+          super: pack.super,
+          members: pack.members,
+          follows: pack.follows,
+          subs: pack.subs,
+          giftSubs: pack.gift_subs,
+          kicks: pack.kicks,
+          updatedAt: (s) => String(pack.updated_at || '').split('{{s}}').join(String(s)),
         }};
 
         const titleEl = document.getElementById('title');

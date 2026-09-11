@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+from stream_cheremsha import l10n
+
 
 def _json_for_script(value: object) -> str:
     """JSON safe for embedding into <script> (avoid closing tags / entity injection)."""
@@ -9,7 +11,29 @@ def _json_for_script(value: object) -> str:
     return s.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
 
 
-def render_multichat_dock_html() -> str:
+_DOCK_I18N_KEYS = (
+    "dock.multichat.title",
+    "dock.connected",
+    "dock.connecting",
+    "dock.disconnected",
+    "dock.error",
+    "dock.reconnecting_in",
+    "dock.jump",
+)
+
+
+def dock_i18n_bundle() -> dict[str, dict[str, str]]:
+    out: dict[str, dict[str, str]] = {"uk": {}, "en": {}}
+    for key in _DOCK_I18N_KEYS:
+        short = key.removeprefix("dock.")
+        out["uk"][short] = l10n.tr("uk", key)
+        out["en"][short] = l10n.tr("en", key)
+    return out
+
+
+def render_multichat_dock_html(locale: str | None = None) -> str:
+    loc = l10n.normalize_locale(str(locale or l10n.DEFAULT_LOCALE))
+    i18n = dock_i18n_bundle()
     subscribe_msg = {"op": "subscribe", "type": "chat", "instance": "main", "params": {}}
     return f"""<!doctype html>
 <html>
@@ -126,7 +150,7 @@ def render_multichat_dock_html() -> str:
     <div class="wrap">
       <div class="top">
         <div>
-          <div class="title">MultiChat</div>
+          <div class="title" id="title">{l10n.tr(loc, "dock.multichat.title")}</div>
           <div class="hint" id="status">connecting…</div>
         </div>
         <div class="spacer"></div>
@@ -137,26 +161,24 @@ def render_multichat_dock_html() -> str:
 
     <script>
       (function() {{
-        const isUk = String((navigator && navigator.language) || '').toLowerCase().startsWith('uk');
-        const T = isUk ? {{
-          connected: 'підключено',
-          connecting: 'підключення…',
-          disconnected: 'відключено',
-          error: 'помилка',
-          reconnectingIn: (s) => 'перепідключення через ' + s + 'с…',
-          jump: 'До останніх',
-        }} : {{
-          connected: 'connected',
-          connecting: 'connecting…',
-          disconnected: 'disconnected',
-          error: 'error',
-          reconnectingIn: (s) => 'reconnecting in ' + s + 's…',
-          jump: 'Jump to latest',
+        const I18N = {_json_for_script(i18n)};
+        const LOCALE = {_json_for_script(loc)};
+        const pack = (I18N[LOCALE] || I18N.uk || {{}});
+        const T = {{
+          title: pack['multichat.title'],
+          connected: pack.connected,
+          connecting: pack.connecting,
+          disconnected: pack.disconnected,
+          error: pack.error,
+          reconnectingIn: (s) => String(pack.reconnecting_in || '').split('{{s}}').join(String(s)),
+          jump: pack.jump,
         }};
 
         const statusEl = document.getElementById('status');
         const listEl = document.getElementById('list');
         const jumpBtn = document.getElementById('jumpBtn');
+        const titleEl = document.getElementById('title');
+        if (titleEl) titleEl.textContent = T.title;
         jumpBtn.textContent = T.jump;
 
         const MAX_ITEMS = 400;

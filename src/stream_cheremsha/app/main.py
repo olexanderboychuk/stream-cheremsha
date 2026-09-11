@@ -104,6 +104,25 @@ def main() -> None:
     splash.setColor(Qt.GlobalColor.transparent)
     splash_qml = pkg_root / "qml" / "SplashScreen.qml"
     splash.setSource(QUrl.fromLocalFile(str(splash_qml)))
+    # Localize the initial loader text (QSettings persists ui/locale; default uk).
+    try:
+        from PySide6.QtCore import QSettings
+
+        from stream_cheremsha import l10n
+
+        saved = str(
+            QSettings("stream-cheremsha", "Stream Cheremsha").value(
+                l10n.SETTINGS_UI_LOCALE, l10n.DEFAULT_LOCALE
+            )
+            or l10n.DEFAULT_LOCALE
+        )
+        _locale = l10n.normalize_locale(saved)
+        _root = splash.rootObject()
+        if _root is not None:
+            _root.setProperty("statusText", l10n.tr(_locale, "splash.starting"))
+            _root.setProperty("progress", 0.0)
+    except Exception:
+        logger.debug("Splash l10n init failed; using QML defaults", exc_info=True)
     screen = app.primaryScreen()
     if screen is not None:
         ag = screen.availableGeometry()
@@ -144,14 +163,20 @@ def main() -> None:
         deferred in run_startup() afterwards.
         """
 
-        def _set_splash_status(text: str) -> None:
+        def _set_splash_status(text: str, progress: float = -1.0) -> None:
             try:
                 root = splash.rootObject()
                 if root is not None:
                     root.setProperty("statusText", text)
+                    if progress >= 0:
+                        root.setProperty("progress", float(progress))
             except RuntimeError:
                 pass
 
+        try:
+            await window.warm_overlay_server(status_cb=_set_splash_status)
+        except Exception:
+            logger.exception("Overlay server warm-up failed; retrying post-show")
         try:
             await window.warm_secondary_pages(status_cb=_set_splash_status)
         except Exception:

@@ -59,6 +59,14 @@ Item {
     readonly property int radiusXL: 14
     property var layoutDoc: ({})
     property int selectedLayoutWidget: -1
+    // Inspector spin refs (registered by the spins themselves: ids inside
+    // `Component { id: gatedUi }` are invisible from root scope).
+    property var _spinX: null
+    property var _spinY: null
+    property var _spinW: null
+    property var _spinH: null
+    onLayoutDocChanged: root._syncInspectorSpins()
+    onSelectedLayoutWidgetChanged: root._syncInspectorSpins()
     property int layoutRevision: 0
     property int canvasPresetIndex: 0
 
@@ -1031,6 +1039,35 @@ Item {
             ? items[root.selectedLayoutWidget] : null;
     }
 
+    // Explicit one-way sync of the X/Y/W/H inspector spins. Live Binding
+    // elements race with stepping (resetting the value to 0 / stale data),
+    // so spins are plain values synced here whenever the doc or selection
+    // changes. Focused spin is skipped so typing is never disturbed.
+    // NOTE: the whole editor UI lives inside `Component { id: gatedUi }`,
+    // so spin ids are NOT visible from root scope. Spins register
+    // themselves into _spinX/_spinY/_spinW/_spinH on completion.
+    function _syncInspectorSpins() {
+        var item = root.selectedLayoutItem();
+        if (!item) return;
+        if (root._spinX && !root._spinX.activeFocus) root._spinX.value = Number(item.x || 0);
+        if (root._spinY && !root._spinY.activeFocus) root._spinY.value = Number(item.y || 0);
+        if (root._spinW && !root._spinW.activeFocus) root._spinW.value = Number(item.width || 320);
+        if (root._spinH && !root._spinH.activeFocus) root._spinH.value = Number(item.height || 180);
+    }
+
+    // Live mirror of canvas drag/resize into the X/Y/W/H spins. During a
+    // drag only the delegate-local geometry changes (layoutDoc commits on
+    // release), so without this the inspector numbers stay frozen while
+    // the cursor moves. Model is untouched here; the release commit is
+    // still the source of truth.
+    function _syncInspectorLive(index, x, y, w, h) {
+        if (index !== root.selectedLayoutWidget) return;
+        if (root._spinX && !root._spinX.activeFocus) root._spinX.value = Math.round(x);
+        if (root._spinY && !root._spinY.activeFocus) root._spinY.value = Math.round(y);
+        if (root._spinW && !root._spinW.activeFocus) root._spinW.value = Math.max(1, Math.round(w));
+        if (root._spinH && !root._spinH.activeFocus) root._spinH.value = Math.max(1, Math.round(h));
+    }
+
     function updateLayoutItem(key, value) {
         if (root._inspectorUpdating) return;
         var doc = root.layoutDoc;
@@ -1463,19 +1500,27 @@ Item {
         implicitWidth: 140
 
         function _stepBy(delta) {
-            var step = sb.stepSize > 0 ? sb.stepSize : 1;
-            var next = sb.value + delta * step;
-            if (next < sb.from)
-                next = sb.from;
-            if (next > sb.to)
-                next = sb.to;
-            if (next === sb.value)
-                return;
-            sb.value = next;
+            // Assign + emit synchronously so the consumer's onValueModified
+            // handler observes the fresh value before any resync can run.
+            // (increase()/decrease() from JS do not reliably emit
+            // valueModified, and a deferred emit races with focus loss.)
+            var v = sb.value + delta;
+            if (v < sb.from) v = sb.from;
+            if (v > sb.to) v = sb.to;
+            if (v === sb.value) return;
+            sb.forceActiveFocus();
+            sb.value = v;
+            sb.valueModified();
         }
 
         contentItem: TextInput {
             id: sbInput
+            // Keep the text strictly between the -/+ indicator buttons.
+            // Without these margins the editor spans the full width, slides
+            // under the buttons and even steals their edge clicks.
+            anchors.fill: parent
+            anchors.leftMargin: 37
+            anchors.rightMargin: 37
             text: sb.displayText
             color: root.ink
             selectionColor: root.accentSoft
@@ -1491,19 +1536,22 @@ Item {
             }
             onEditingFinished: {
                 var t = (text || "").trim();
-                if (!t.length) {
-                    text = sb.displayText;
-                    return;
-                }
                 var v = sb.valueFromText(t, sb.locale);
-                if (v === undefined || v === null || isNaN(v)) {
-                    text = sb.displayText;
-                    return;
+                if (t.length && v !== undefined && v !== null && !isNaN(v)) {
+                    if (v < sb.from) v = sb.from;
+                    if (v > sb.to) v = sb.to;
+                    if (v !== sb.value) {
+                        sb.value = v;
+                        sb.valueModified();
+                    }
                 }
-                if (v < sb.from) v = sb.from;
-                if (v > sb.to) v = sb.to;
-                sb.value = v;
-                text = sb.displayText;
+                // Re-establish the live text binding. A direct `text = ...`
+                // assignment freezes the editor: the field keeps showing a
+                // stale number and the next focus loss parses it back,
+                // reverting/committing a wrong value (e.g. X regressed after
+                // touching W). The binding keeps the display in sync and
+                // resets any invalid typed text to displayText.
+                text = Qt.binding(function() { return sb.displayText; });
             }
         }
 
@@ -3494,9 +3542,22 @@ Item {
                                             return firstInstId();
                                         }
                                         function galleryCardUrl() {
+                                            // Depend on overlayBaseUrl so the binding
+                                            // re-evaluates once the overlay server is up
+                                            // (same pattern as docks/layouts). Without
+                                            // this, Slot-only calls evaluate once while
+                                            // the base is still empty and stay "" forever.
+                                            var _baseDep = (typeof api !== "undefined" && api) ? api.overlayBaseUrl : "";
+                                            void _baseDep;
+                                            var tid = (wtype && wtype.type_id) || "";
                                             var id = viewId();
-                                            if (!id || typeof api === "undefined" || !api) return "";
-                                            return api.widgetInstanceUrl(id) || "";
+                                            if (typeof api === "undefined" || !api) return "";
+                                            if (id) return api.widgetInstanceUrl(id) || "";
+                                            // No instance yet (fallback card): show the
+                                            // type-level URL so every card displays its URL.
+                                            if (tid && api.layoutWidgetPreviewUrl)
+                                                return api.layoutWidgetPreviewUrl(tid, "main") || "";
+                                            return "";
                                         }
                                         function ensureInstId() {
                                             if (instance && instance.id) return instance.id;
@@ -3828,9 +3889,6 @@ Item {
                             )
 
                             Repeater {
-                                // Delegates are siblings in Grid; hide only the zero-size
-                                // generator so it cannot participate in positioning.
-                                visible: false
                                 model: (root.layoutDocList || []).concat([{__create: true}])
                                 delegate: Rectangle {
                                 id: layoutCard
@@ -4054,7 +4112,7 @@ Item {
                                             Image { Layout.preferredWidth: 14; Layout.preferredHeight: 14; source: Qt.resolvedUrl("../assets/icons/web_globe.svg") }
                                             Text {
                                                 Layout.fillWidth: true
-                                                text: api ? api.layoutOverlayUrl(layoutModel.id) : ""
+                                                text: (api && api.overlayBaseUrl) ? api.layoutOverlayUrl(layoutModel.id) : ""
                                                 color: muted
                                                 font.pixelSize: 10
                                                 elide: Text.ElideRight
@@ -5003,6 +5061,7 @@ Item {
                                             layoutWidget.localY = rawY;
                                             layoutWidget.localW = rawW;
                                             layoutWidget.localH = rawH;
+                                            root._syncInspectorLive(index, rawX, rawY, rawW, rawH);
                                         }
 
                                         function finishResize() {
@@ -5124,6 +5183,7 @@ Item {
 
                                                 layoutWidget.localX = targetX;
                                                 layoutWidget.localY = targetY;
+                                                root._syncInspectorLive(index, targetX, targetY, layoutWidget.localW, layoutWidget.localH);
                                                 mouse.accepted = true;
                                             }
 
@@ -5377,14 +5437,11 @@ Item {
                                     Text { text: "X"; color: muted; font.pixelSize: 11 }
                                     StyledSpinBox {
                                         id: layoutXSpin
-                                        Layout.preferredWidth: 86
+                                        Layout.preferredWidth: 124
+                                        implicitWidth: 124
                                         from: -5000; to: 10000
-                                        Binding {
-                                            target: layoutXSpin
-                                            property: "value"
-                                            value: root.selectedLayoutItem() ? Number(root.selectedLayoutItem().x || 0) : 0
-                                            when: !layoutXSpin.activeFocus
-                                        }
+                                        Component.onCompleted: { root._spinX = layoutXSpin; root._syncInspectorSpins(); }
+                                        Component.onDestruction: { if (root._spinX === layoutXSpin) root._spinX = null; }
                                         onValueModified: {
                                             if (root.selectedLayoutItem() && value !== Number(root.selectedLayoutItem().x || 0)) {
                                                 root.updateLayoutItem("x", value);
@@ -5395,14 +5452,11 @@ Item {
                                     Text { text: "Y"; color: muted; font.pixelSize: 11 }
                                     StyledSpinBox {
                                         id: layoutYSpin
-                                        Layout.preferredWidth: 86
+                                        Layout.preferredWidth: 124
+                                        implicitWidth: 124
                                         from: -5000; to: 10000
-                                        Binding {
-                                            target: layoutYSpin
-                                            property: "value"
-                                            value: root.selectedLayoutItem() ? Number(root.selectedLayoutItem().y || 0) : 0
-                                            when: !layoutYSpin.activeFocus
-                                        }
+                                        Component.onCompleted: { root._spinY = layoutYSpin; root._syncInspectorSpins(); }
+                                        Component.onDestruction: { if (root._spinY === layoutYSpin) root._spinY = null; }
                                         onValueModified: {
                                             if (root.selectedLayoutItem() && value !== Number(root.selectedLayoutItem().y || 0)) {
                                                 root.updateLayoutItem("y", value);
@@ -5413,14 +5467,11 @@ Item {
                                     Text { text: "W"; color: muted; font.pixelSize: 11 }
                                     StyledSpinBox {
                                         id: layoutWSpin
-                                        Layout.preferredWidth: 86
+                                        Layout.preferredWidth: 124
+                                        implicitWidth: 124
                                         from: 1; to: 10000
-                                        Binding {
-                                            target: layoutWSpin
-                                            property: "value"
-                                            value: root.selectedLayoutItem() ? Number(root.selectedLayoutItem().width || 320) : 320
-                                            when: !layoutWSpin.activeFocus
-                                        }
+                                        Component.onCompleted: { root._spinW = layoutWSpin; root._syncInspectorSpins(); }
+                                        Component.onDestruction: { if (root._spinW === layoutWSpin) root._spinW = null; }
                                         onValueModified: {
                                             if (root.selectedLayoutItem() && value !== Number(root.selectedLayoutItem().width || 320)) {
                                                 root.updateLayoutItem("width", value);
@@ -5431,14 +5482,11 @@ Item {
                                     Text { text: "H"; color: muted; font.pixelSize: 11 }
                                     StyledSpinBox {
                                         id: layoutHSpin
-                                        Layout.preferredWidth: 86
+                                        Layout.preferredWidth: 124
+                                        implicitWidth: 124
                                         from: 1; to: 10000
-                                        Binding {
-                                            target: layoutHSpin
-                                            property: "value"
-                                            value: root.selectedLayoutItem() ? Number(root.selectedLayoutItem().height || 180) : 180
-                                            when: !layoutHSpin.activeFocus
-                                        }
+                                        Component.onCompleted: { root._spinH = layoutHSpin; root._syncInspectorSpins(); }
+                                        Component.onDestruction: { if (root._spinH === layoutHSpin) root._spinH = null; }
                                         onValueModified: {
                                             if (root.selectedLayoutItem() && value !== Number(root.selectedLayoutItem().height || 180)) {
                                                 root.updateLayoutItem("height", value);
@@ -5503,7 +5551,10 @@ Item {
                                 selectByMouse: true
                                 color: inkSecondary
                                 font.pixelSize: 11
-                                text: api ? api.layoutOverlayUrl(root.activeLayoutId || "default") : ""
+                                // Depends on api.overlayBaseUrl so the URL appears
+                                // once the overlay server has started (Slot
+                                // calls alone never re-evaluate the binding).
+                                text: (api && api.overlayBaseUrl) ? api.layoutOverlayUrl(root.activeLayoutId || "default") : ""
                                 background: Rectangle { radius: 6; color: fieldBg }
                             }
                             EditorIconButton {

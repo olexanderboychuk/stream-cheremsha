@@ -2,13 +2,49 @@ from __future__ import annotations
 
 import json
 
+from stream_cheremsha import l10n
+
 
 def _json_for_script(value: object) -> str:
     s = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
     return s.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
 
 
-def render_activity_dock_html() -> str:
+_DOCK_I18N_KEYS = (
+    "dock.activity.title",
+    "dock.connected",
+    "dock.connecting",
+    "dock.disconnected",
+    "dock.error",
+    "dock.reconnecting_in",
+    "dock.jump",
+    "dock.follow",
+    "dock.sub",
+    "dock.resub",
+    "dock.gift",
+    "dock.join",
+    "dock.like",
+    "dock.share",
+    "dock.superchat",
+    "dock.supersticker",
+    "dock.member",
+    "dock.event",
+    "dock.sep",
+)
+
+
+def dock_i18n_bundle() -> dict[str, dict[str, str]]:
+    out: dict[str, dict[str, str]] = {"uk": {}, "en": {}}
+    for key in _DOCK_I18N_KEYS:
+        short = key.removeprefix("dock.")
+        out["uk"][short] = l10n.tr("uk", key)
+        out["en"][short] = l10n.tr("en", key)
+    return out
+
+
+def render_activity_dock_html(locale: str | None = None) -> str:
+    loc = l10n.normalize_locale(str(locale or l10n.DEFAULT_LOCALE))
+    i18n = dock_i18n_bundle()
     subscribe_msg = {"op": "subscribe", "type": "activity", "instance": "main", "params": {}}
     return f"""<!doctype html>
 <html>
@@ -180,7 +216,7 @@ def render_activity_dock_html() -> str:
     <div class="wrap">
       <div class="top">
         <div>
-          <div class="title" id="title">Activity</div>
+          <div class="title" id="title">{l10n.tr(loc, "dock.activity.title")}</div>
           <div class="hint" id="status">connecting…</div>
         </div>
         <div class="spacer"></div>
@@ -196,47 +232,29 @@ def render_activity_dock_html() -> str:
 
     <script>
       (function() {{
-        const isUk = String((navigator && navigator.language) || '').toLowerCase().startsWith('uk');
-        const T = isUk ? {{
-          title: 'Активність',
-          connected: 'підключено',
-          connecting: 'підключення…',
-          disconnected: 'відключено',
-          error: 'помилка',
-          reconnectingIn: (s) => 'перепідключення через ' + s + 'с…',
-          jump: 'До останніх',
-          follow: 'підписка',
-          sub: 'підписка (sub)',
-          resub: 'повторна підписка',
-          gift: 'подарунок',
-          join: 'зайшов(ла)',
-          like: (n) => 'лайки' + (n > 1 ? (' × ' + String(n)) : ''),
-          share: (n) => 'шер' + (n > 1 ? (' × ' + String(n)) : ''),
-          superchat: 'суперчат',
-          supersticker: 'стікер',
-          member: 'учасник',
-          event: 'подія',
-          sep: ' · ',
-        }} : {{
-          title: 'Activity',
-          connected: 'connected',
-          connecting: 'connecting…',
-          disconnected: 'disconnected',
-          error: 'error',
-          reconnectingIn: (s) => 'reconnecting in ' + s + 's…',
-          jump: 'Jump to latest',
-          follow: 'follow',
-          sub: 'sub',
-          resub: 'resub',
-          gift: 'gift',
-          join: 'joined',
-          like: (n) => 'likes' + (n > 1 ? (' × ' + String(n)) : ''),
-          share: (n) => 'shares' + (n > 1 ? (' × ' + String(n)) : ''),
-          superchat: 'super chat',
-          supersticker: 'sticker',
-          member: 'member',
-          event: 'event',
-          sep: ' · ',
+        const I18N = {_json_for_script(i18n)};
+        const LOCALE = {_json_for_script(loc)};
+        const pack = (I18N[LOCALE] || I18N.uk || {{}});
+        const T = {{
+          title: pack['activity.title'],
+          connected: pack.connected,
+          connecting: pack.connecting,
+          disconnected: pack.disconnected,
+          error: pack.error,
+          reconnectingIn: (s) => String(pack.reconnecting_in || '').split('{{s}}').join(String(s)),
+          jump: pack.jump,
+          follow: pack.follow,
+          sub: pack.sub,
+          resub: pack.resub,
+          gift: pack.gift,
+          join: pack.join,
+          like: (n) => String(pack.like||'') + (n>1 ? ' × '+String(n) : ''),
+          share: (n) => String(pack.share||'') + (n>1 ? ' × '+String(n) : ''),
+          superchat: pack.superchat,
+          supersticker: pack.supersticker,
+          member: pack.member,
+          event: pack.event,
+          sep: pack.sep,
         }};
 
         const titleEl = document.getElementById('title');

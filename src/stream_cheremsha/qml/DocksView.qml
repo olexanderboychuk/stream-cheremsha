@@ -197,7 +197,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
             }
             Text {
-                text: statusPill.active ? "Увімкнено" : "Вимкнено"
+                text: statusPill.active ? (dockApi.strings.enabled || "Увімкнено") : (dockApi.strings.disabled || "Вимкнено")
                 color: statusPill.active ? "#7ee2b8" : "#9aa4b2"
                 font.pixelSize: 12
                 font.weight: Font.DemiBold
@@ -256,7 +256,7 @@ Item {
     Text {
         anchors.centerIn: parent
         visible: !apiGate.active
-        text: "Docks API is not available yet."
+        text: dockApi.strings.not_available || "Docks API is not available yet."
         color: muted
         font.pixelSize: 13
     }
@@ -284,7 +284,7 @@ Item {
                 spacing: 8
 
                 Text {
-                    text: "Доки"
+                    text: dockApi.strings.header_title || "Доки"
                     color: ink
                     font.pixelSize: 32
                     font.bold: true
@@ -292,7 +292,7 @@ Item {
                 }
 
                 Text {
-                    text: "Веб-доки для стримінгу"
+                    text: dockApi.strings.header_subtitle || "Веб-доки для стримінгу"
                     color: ink
                     font.pixelSize: 18
                     font.weight: Font.DemiBold
@@ -300,7 +300,7 @@ Item {
                 }
 
                 Text {
-                    text: "Використовуйте ці посилання у будь-якому стрімінговому софті або відкрийте у браузері."
+                    text: dockApi.strings.header_hint || "Використовуйте ці посилання у будь-якому стрімінговому софті або відкрийте у браузері."
                     color: muted
                     font.pixelSize: 13
                     Layout.fillWidth: true
@@ -362,7 +362,7 @@ Item {
                             spacing: 8
 
                             Text {
-                                text: "Публічний доступ"
+                                text: dockApi.strings.public_access || "Публічний доступ"
                                 color: ink
                                 font.pixelSize: 18
                                 font.weight: Font.DemiBold
@@ -377,7 +377,7 @@ Item {
                         }
 
                         Text {
-                            text: "Дозволяє використовувати ваші веб-доки через зовнішню мережу."
+                            text: dockApi.strings.public_hint || "Дозволяє використовувати ваші веб-доки через зовнішню мережу."
                             color: muted
                             font.pixelSize: 12
                             Layout.fillWidth: true
@@ -424,7 +424,7 @@ Item {
 
                     PrimaryButton {
                         Layout.alignment: Qt.AlignVCenter
-                        text: "Копіювати URL"
+                        text: dockApi.strings.copy_url || "Копіювати URL"
                         btnIcon: Qt.resolvedUrl("../assets/icons/web_copy.svg")
                         onClicked: if (tunnelApi && tunnelApi.tunnelStatusText) dockApi.copyText(tunnelApi.tunnelStatusText)
                     }
@@ -443,7 +443,7 @@ Item {
                     spacing: 8
 
                     Text {
-                        text: "Доступні веб-доки"
+                        text: dockApi.strings.available_title || "Доступні веб-доки"
                         color: ink
                         font.pixelSize: 20
                         font.bold: true
@@ -461,7 +461,7 @@ Item {
                         Text {
                             id: countLabel
                             anchors.centerIn: parent
-                            text: "3 доки"
+                            text: dockApi.countText(3)
                             color: root.muted
                             font.pixelSize: 11
                         }
@@ -469,7 +469,7 @@ Item {
                 }
 
                 Text {
-                    text: "Готові джерела для вашого стріму. Скопіюйте URL і додайте у ваш стрімінговий софт."
+                    text: dockApi.strings.available_hint || "Готові джерела для вашого стріму. Скопіюйте URL і додайте у ваш стрімінговий софт."
                     color: muted
                     font.pixelSize: 13
                     Layout.fillWidth: true
@@ -483,12 +483,14 @@ Item {
                 Layout.fillWidth: true
                 spacing: 12
                 CheremshaSourceCard {
-                    title: "MultiChat"
-                    description: "Чат з усіх підключених платформ в одному вікні. Підтримує Twitch, YouTube, TikTok, Kick та інші."
+                    title: { dockApi.strings; return dockApi.tr("dock.multichat.title") || "MultiChat"; }
+                    description: dockApi.strings.multichat_desc || "Чат з усіх підключених платформ в одному вікні. Підтримує Twitch, YouTube, TikTok, Kick та інші."
                     url: dockApi ? dockApi.multichatDockUrlValue : ""
                     iconSource: Qt.resolvedUrl("../assets/icons/web_multichat.svg")
                     accentColor: primaryPurple
-                    statusText: "Веб-док"
+                    statusText: dockApi.strings.web_dock_badge || "Веб-док"
+                    copyButtonText: dockApi.strings.copy_url || "Копіювати URL"
+                    openButtonText: dockApi.strings.open || "Відкрити"
                     onCopyClicked: dockApi.copyMultichatDockUrl()
                     onOpenClicked: dockApi.openMultichatDockUrl()
                     Layout.fillWidth: true
@@ -556,12 +558,14 @@ Item {
                 }
 
                 CheremshaSourceCard {
-                    title: "Активність"
-                    description: "Останні події: підписки, донати, подарунки, рейди та інша активність у реальному часі."
+                    title: { dockApi.strings; return dockApi.tr("dock.activity.title") || "Активність"; }
+                    description: dockApi.strings.activity_desc || "Останні події: підписки, донати, подарунки, рейди та інша активність у реальному часі."
                     url: dockApi ? dockApi.activityDockUrlValue : ""
                     iconSource: Qt.resolvedUrl("../assets/icons/web_activity.svg")
                     accentColor: accentAmber
-                    statusText: "Веб-док"
+                    statusText: dockApi.strings.web_dock_badge || "Веб-док"
+                    copyButtonText: dockApi.strings.copy_url || "Копіювати URL"
+                    openButtonText: dockApi.strings.open || "Відкрити"
                     onCopyClicked: dockApi.copyActivityDockUrl()
                     onOpenClicked: dockApi.openActivityDockUrl()
                     Layout.fillWidth: true
@@ -588,7 +592,7 @@ Item {
                                         Layout.preferredWidth: 13
                                         Layout.preferredHeight: 13
                                     }
-                                    Text { text: "Підписка"; color: "#dbe2ec"; font.pixelSize: 10; font.weight: Font.DemiBold }
+                                    Text { text: dockApi.strings.preview_sub || "Підписка"; color: "#dbe2ec"; font.pixelSize: 10; font.weight: Font.DemiBold }
                                     Text { text: "luna"; color: "#9aa7bc"; font.pixelSize: 10; Layout.fillWidth: true; elide: Text.ElideRight }
                                     Text { text: "2 хв"; color: root.muted; font.pixelSize: 9 }
                                 }
@@ -601,7 +605,7 @@ Item {
                                         Layout.preferredWidth: 13
                                         Layout.preferredHeight: 13
                                     }
-                                    Text { text: "Донат $5"; color: "#dbe2ec"; font.pixelSize: 10; font.weight: Font.DemiBold }
+                                    Text { text: dockApi.strings.preview_donation || "Донат $5"; color: "#dbe2ec"; font.pixelSize: 10; font.weight: Font.DemiBold }
                                     Text { text: "darkness"; color: "#9aa7bc"; font.pixelSize: 10; Layout.fillWidth: true; elide: Text.ElideRight }
                                     Text { text: "5 хв"; color: root.muted; font.pixelSize: 9 }
                                 }
@@ -614,7 +618,7 @@ Item {
                                         Layout.preferredWidth: 13
                                         Layout.preferredHeight: 13
                                     }
-                                    Text { text: "Подарунок"; color: "#dbe2ec"; font.pixelSize: 10; font.weight: Font.DemiBold }
+                                    Text { text: dockApi.strings.preview_gift || "Подарунок"; color: "#dbe2ec"; font.pixelSize: 10; font.weight: Font.DemiBold }
                                     Text { text: "sakura"; color: "#9aa7bc"; font.pixelSize: 10; Layout.fillWidth: true; elide: Text.ElideRight }
                                     Text { text: "9 хв"; color: root.muted; font.pixelSize: 9 }
                                 }
@@ -627,7 +631,7 @@ Item {
                                         Layout.preferredWidth: 13
                                         Layout.preferredHeight: 13
                                     }
-                                    Text { text: "Рейд ×42"; color: "#dbe2ec"; font.pixelSize: 10; font.weight: Font.DemiBold }
+                                    Text { text: dockApi.strings.preview_raid || "Рейд ×42"; color: "#dbe2ec"; font.pixelSize: 10; font.weight: Font.DemiBold }
                                     Text { text: "void"; color: "#9aa7bc"; font.pixelSize: 10; Layout.fillWidth: true; elide: Text.ElideRight }
                                     Text { text: "12 хв"; color: root.muted; font.pixelSize: 9 }
                                 }
@@ -637,12 +641,14 @@ Item {
                 }
 
                 CheremshaSourceCard {
-                    title: "Онлайн"
-                    description: "Показує поточний онлайн, глядачів з усіх платформ та загальну статистику стріму."
+                    title: { dockApi.strings; return dockApi.tr("dock.online.title") || "Онлайн"; }
+                    description: dockApi.strings.online_desc || "Показує поточний онлайн, глядачів з усіх платформ та загальну статистику стріму."
                     url: dockApi ? dockApi.onlineDockUrlValue : ""
                     iconSource: Qt.resolvedUrl("../assets/icons/web_online.svg")
                     accentColor: secondaryCyan
-                    statusText: "Веб-док"
+                    statusText: dockApi.strings.web_dock_badge || "Веб-док"
+                    copyButtonText: dockApi.strings.copy_url || "Копіювати URL"
+                    openButtonText: dockApi.strings.open || "Відкрити"
                     onCopyClicked: dockApi.copyOnlineDockUrl()
                     onOpenClicked: dockApi.openOnlineDockUrl()
                     Layout.fillWidth: true
@@ -668,7 +674,7 @@ Item {
                                     Layout.fillWidth: true
                                     spacing: 3
                                     Text { text: "01:24:17"; color: root.ink; font.pixelSize: 13; font.bold: true }
-                                    Text { text: "Онлайн"; color: root.muted; font.pixelSize: 9 }
+                                    Text { text: dockApi.strings.preview_online || "Онлайн"; color: root.muted; font.pixelSize: 9 }
                                     Rectangle {
                                         Layout.fillWidth: true
                                         Layout.preferredHeight: 3
@@ -689,7 +695,7 @@ Item {
                                     Layout.fillWidth: true
                                     spacing: 3
                                     Text { text: "1 247"; color: root.ink; font.pixelSize: 13; font.bold: true }
-                                    Text { text: "Глядачі"; color: root.muted; font.pixelSize: 9 }
+                                    Text { text: dockApi.strings.preview_viewers || "Глядачі"; color: root.muted; font.pixelSize: 9 }
                                     Rectangle {
                                         Layout.fillWidth: true
                                         Layout.preferredHeight: 3
@@ -710,7 +716,7 @@ Item {
                                     Layout.fillWidth: true
                                     spacing: 3
                                     Text { text: "892"; color: root.ink; font.pixelSize: 13; font.bold: true }
-                                    Text { text: "Підписники"; color: root.muted; font.pixelSize: 9 }
+                                    Text { text: dockApi.strings.preview_followers || "Підписники"; color: root.muted; font.pixelSize: 9 }
                                     Rectangle {
                                         Layout.fillWidth: true
                                         Layout.preferredHeight: 3
@@ -765,7 +771,7 @@ Item {
                         }
 
                         Text {
-                            text: "Як це працює?"
+                            text: dockApi.strings.how_title || "Як це працює?"
                             color: ink
                             font.pixelSize: 17
                             font.weight: Font.DemiBold
@@ -774,7 +780,7 @@ Item {
                     }
 
                     Text {
-                        text: "Коротка інструкція з використання веб-доків."
+                        text: dockApi.strings.how_hint || "Коротка інструкція з використання веб-доків."
                         color: muted
                         font.pixelSize: 13
                     }
@@ -790,14 +796,14 @@ Item {
                             StepBadge { step: "01" }
 
                             Text {
-                                text: "Скопіюйте URL"
+                                text: dockApi.strings.step1_title || "Скопіюйте URL"
                                 color: ink
                                 font.pixelSize: 13
                                 font.weight: Font.DemiBold
                             }
 
                             Text {
-                                text: "Натисніть кнопку «Копіювати URL» біля потрібного доку."
+                                text: dockApi.strings.step1_hint || "Натисніть кнопку «Копіювати URL» біля потрібного доку."
                                 color: muted
                                 font.pixelSize: 11
                                 Layout.fillWidth: true
@@ -815,14 +821,14 @@ Item {
                             StepBadge { step: "02" }
 
                             Text {
-                                text: "Додайте у стрімінговий софт"
+                                text: dockApi.strings.step2_title || "Додайте у стрімінговий софт"
                                 color: ink
                                 font.pixelSize: 13
                                 font.weight: Font.DemiBold
                             }
 
                             Text {
-                                text: "Вставте URL як Browser Source у ваш софт."
+                                text: dockApi.strings.step2_hint || "Вставте URL як Browser Source у ваш софт."
                                 color: muted
                                 font.pixelSize: 11
                                 Layout.fillWidth: true
@@ -840,14 +846,14 @@ Item {
                             StepBadge { step: "03" }
 
                             Text {
-                                text: "Готово!"
+                                text: dockApi.strings.step3_title || "Готово!"
                                 color: ink
                                 font.pixelSize: 13
                                 font.weight: Font.DemiBold
                             }
 
                             Text {
-                                text: "Док буде автоматично оновлюватися в реальному часі."
+                                text: dockApi.strings.step3_hint || "Док буде автоматично оновлюватися в реальному часі."
                                 color: muted
                                 font.pixelSize: 11
                                 Layout.fillWidth: true

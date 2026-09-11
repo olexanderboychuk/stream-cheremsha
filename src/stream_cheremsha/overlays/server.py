@@ -259,17 +259,23 @@ class OverlayServer:
 
     async def _dock_multichat(self, _req: web.Request) -> web.Response:
         _ensure_aiohttp()
-        html = render_multichat_dock_html()
+        from stream_cheremsha.overlays.ui_locale import load_ui_locale
+
+        html = render_multichat_dock_html(load_ui_locale())
         return web.Response(text=html, content_type="text/html", charset="utf-8")
 
     async def _dock_activity(self, _req: web.Request) -> web.Response:
         _ensure_aiohttp()
-        html = render_activity_dock_html()
+        from stream_cheremsha.overlays.ui_locale import load_ui_locale
+
+        html = render_activity_dock_html(load_ui_locale())
         return web.Response(text=html, content_type="text/html", charset="utf-8")
 
     async def _dock_online(self, _req: web.Request) -> web.Response:
         _ensure_aiohttp()
-        html = render_online_dock_html()
+        from stream_cheremsha.overlays.ui_locale import load_ui_locale
+
+        html = render_online_dock_html(load_ui_locale())
         return web.Response(text=html, content_type="text/html", charset="utf-8")
 
     async def _ws(self, req: web.Request) -> web.WebSocketResponse:

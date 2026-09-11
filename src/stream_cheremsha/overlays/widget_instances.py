@@ -560,6 +560,29 @@ def migrate_legacy_to_instances(settings: QSettings | None = None) -> list[Widge
         )
         instances.append(inst)
         created.append(inst)
+    # Types without a legacy singleton (e.g. activity, music) never got an
+    # instance above, so their gallery cards rendered with an empty URL.
+    # Ensure exactly one default instance per such type (stable id, so the
+    # by-id URL is stable across restarts).
+    existing_types = {x.type_id for x in instances}
+    for type_id, meta in WIDGET_TYPES.items():
+        if meta.get("legacy_key", ""):
+            continue
+        if type_id in existing_types:
+            continue
+        if any(x.type_id == type_id for x in instances):
+            continue
+        inst = WidgetInstance(
+            id=_stable_legacy_id(type_id),
+            type_id=type_id,
+            name=widget_type_name(type_id),
+            settings=default_settings_for(type_id),
+            enabled=True,
+            legacy_key="main",
+        )
+        instances.append(inst)
+        created.append(inst)
+        existing_types.add(type_id)
     if created:
         save_instances(instances, s)
     s.setValue(_MIGRATED_FLAG_KEY, "1")

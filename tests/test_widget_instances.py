@@ -163,7 +163,7 @@ def test_no_static_type_cards_duplicate_instance_list() -> None:
         "createLayout",
         "duplicateLayout",
         "deleteLayout",
-        "widgets.layouts.scene",
+        "widgets.layouts.description",
         "widgets.layouts.new",
         "widgets.layouts.instance",
     ):
@@ -500,6 +500,7 @@ def test_sync_store_from_legacy_singleton() -> None:
 
 
 def test_all_type_editors_route_through_instances() -> None:
+    import re
     from pathlib import Path
 
     src = (
@@ -526,7 +527,8 @@ def test_all_type_editors_route_through_instances() -> None:
         "signal_system",
     ):
         assert f'_load_cfg_or_instance("{t}")' in src, t
-        assert f'_save_cfg_to_instance("{t}"' in src, t
+        # save call may wrap across lines, so match loosely
+        assert re.search(rf'_save_cfg_to_instance\(\s*"{t}"', src), t
 
 
 def test_edit_routing_load_save_instance(monkeypatch) -> None:

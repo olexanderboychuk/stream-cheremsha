@@ -272,12 +272,14 @@ class WidgetsQmlApi(QObject):
 
     chatOverlayUrlChanged = Signal()
     layoutsChanged = Signal()
+    overlayBaseUrlChanged = Signal()
 
     def set_overlay_base_url(self, base_url: str) -> None:
         base = str(base_url or "").rstrip("/")
         if base == self._base:
             return
         self._base = base
+        self.overlayBaseUrlChanged.emit()
         self.chatOverlayUrlChanged.emit()
         self.actionsOverlayUrlChanged.emit()
         self.onlineOverlayUrlChanged.emit()
@@ -296,6 +298,15 @@ class WidgetsQmlApi(QObject):
     @Property(str, notify=chatOverlayUrlChanged)
     def chatOverlayUrlValue(self) -> str:  # noqa: ANN201 - PySide pattern
         return self.chatOverlayUrl()
+
+    @Property(str, notify=overlayBaseUrlChanged)
+    def overlayBaseUrl(self) -> str:  # noqa: ANN201 - PySide pattern
+        """Overlay server base URL. Empty until the server has started.
+
+        QML bindings that call url-building Slots (e.g. layoutOverlayUrl)
+        must also read this property so they refresh once the server is up.
+        """
+        return self._base
 
     @Slot(result=str)
     def chatOverlayUrl(self) -> str:
