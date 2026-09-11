@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.22.0] - 2026-09-11
+
+### Fixed
+
+- Fixed WebSocket event delivery for non-main widget instances: all widget instances in layouts and standalone browser sources now properly receive stream events (chat, activity, stream goals, online viewers, likes, pet updates, etc.).
+- Fixed live reload of widget settings when saving custom instances in the UI.
+- Fixed layout preview to trigger preview events for specific widget instances present in the layout.
+
+### Changed
+
+- Redesigned Docks and UI components with enhanced layouts, activity dock, and navigation styling.
+
 ## [0.21.0] - 2026-09-11
 
 ### Added

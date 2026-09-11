@@ -546,6 +546,25 @@ class WidgetsQmlApi(QObject):
         ):
             self.previewLayoutWidget(widget_type)
 
+        try:
+            from stream_cheremsha.overlays.layout import load_layouts
+            from stream_cheremsha.overlays.widget_instances import get_instance, ws_token_for
+
+            layouts = load_layouts()
+            target_id = layout_id or "default"
+            lay = next((x for x in layouts if x.id == target_id), None)
+            if lay is not None:
+                for w in lay.widgets:
+                    if not w.visible or not w.widget_instance_id:
+                        continue
+                    b = get_instance(w.widget_instance_id)
+                    if b is not None:
+                        token = ws_token_for(b)
+                        if token != "main":
+                            self.previewLayoutWidget(w.type, token)
+        except Exception:
+            pass
+
     @Slot(str)
     def copyLayoutOverlayUrl(self, layout_id: str) -> None:
         url = self.layoutOverlayUrl(layout_id)
@@ -2454,11 +2473,10 @@ class WidgetsQmlApi(QObject):
             return False
         ok = _wi.update_instance_settings(inst.id, new_settings) is not None
         if ok:
-            # Live-reload legacy topic so existing OBS sources update.
-            if (inst.legacy_key or "") == "main":
-                self._publish_patch(
-                    topic=f"overlay:{inst.type_id}:main",
-                    patch={"config": dict(new_settings), "timestamp": time.time()},
-                )
+            # Live-reload instance topic so active OBS sources update.
+            self._publish_patch(
+                topic=f"overlay:{inst.type_id}:{_wi.ws_token_for(inst)}",
+                patch={"config": dict(new_settings), "timestamp": time.time()},
+            )
             self.widgetInstancesChanged.emit()
         return ok

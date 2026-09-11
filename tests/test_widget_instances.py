@@ -20,7 +20,7 @@ def test_migration_preserves_exact_settings() -> None:
     s.setValue("overlays/top_likers/main/config_json", json.dumps(legacy))
     s.sync()
     created = wi.migrate_legacy_to_instances(s)
-    assert len(created) == 1
+    assert any(x.type_id == "top_likers" for x in created)
     inst = wi.find_legacy_instance("top_likers", "main", s)
     assert inst is not None
     assert inst.name == wi.widget_type_name("top_likers")

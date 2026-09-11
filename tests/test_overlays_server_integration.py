@@ -134,6 +134,57 @@ async def test_chat_overlay_ws_receives_append_patch() -> None:
 
 
 @pytest.mark.asyncio
+async def test_custom_instance_overlay_ws_receives_main_events() -> None:
+    reg = OverlayRegistry()
+    ps = OverlayPubSub()
+    srv = OverlayServer(registry=reg, pubsub=ps, host="127.0.0.1", port=0)
+    await srv.start()
+    try:
+        ws_url = srv.base_url().replace("http://", "ws://") + "/ws"
+        timeout = aiohttp.ClientTimeout(total=2.0)
+        async with aiohttp.ClientSession(timeout=timeout) as s:
+            # Custom instance subscription (such as an instance in a layout or standalone)
+            async with s.ws_connect(ws_url) as ws:
+                await ws.send_str(
+                    json.dumps(
+                        {
+                            "op": "subscribe",
+                            "type": "chat",
+                            "instance": "custom_instance_id_999",
+                            "params": {},
+                        }
+                    )
+                )
+                msg = await _ws_next_text(ws)
+                obj = json.loads(msg.data)
+                assert obj["op"] == "initial_state"
+
+                # Backend publishes to main topic
+                await ps.publish(
+                    "overlay:chat:main",
+                    {
+                        "append": {
+                            "author": "streamer",
+                            "text": "testing custom instance",
+                            "platform": "tiktok",
+                            "received_at": "now",
+                        }
+                    },
+                )
+                while True:
+                    m2 = await _ws_next_text(ws)
+                    o2 = json.loads(m2.data)
+                    if (
+                        o2.get("op") == "patch"
+                        and o2.get("patch", {}).get("append", {}).get("text")
+                        == "testing custom instance"
+                    ):
+                        break
+    finally:
+        await srv.stop()
+
+
+@pytest.mark.asyncio
 async def test_actions_overlay_ws_initial_state_has_config() -> None:
     reg = OverlayRegistry()
     ps = OverlayPubSub()
