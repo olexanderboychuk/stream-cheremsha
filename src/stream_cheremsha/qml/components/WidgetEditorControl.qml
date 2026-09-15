@@ -17,10 +17,36 @@ ColumnLayout {
     property bool wide: false
     signal changed(string field, var value)
 
+    component PlatField: TextField {
+        implicitHeight: 36
+        color: "#e8eaed"
+        font.pixelSize: 13
+        padding: 9
+        hoverEnabled: true
+        selectByMouse: true
+        background: Rectangle { radius: 8; color: "#0f172a"; border.width: 1; border.color: parent.activeFocus ? "#14b8a6" : (parent.hovered ? "#2d3748" : "#242b36"); Behavior on border.color { ColorAnimation { duration: 160 } } }
+    }
+    component IconBtn: Rectangle {
+        property string glyph: ""
+        property bool disabled: false
+        signal clicked()
+        implicitWidth: 36
+        implicitHeight: 36
+        radius: 8
+        opacity: disabled ? 0.35 : 1.0
+        color: btnArea.pressed ? "#0f766e" : (btnArea.containsMouse && !disabled ? "#2d3748" : "#0f172a")
+        border.width: 1
+        border.color: btnArea.containsMouse && !disabled ? "#2d3748" : "#242b36"
+        Behavior on color { ColorAnimation { duration: 160 } }
+        Text { anchors.centerIn: parent; text: parent.glyph; color: "#e8eaed"; font.pixelSize: 14; verticalAlignment: Text.AlignVCenter; horizontalAlignment: Text.AlignHCenter }
+        MouseArea { id: btnArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; enabled: !parent.disabled; onClicked: parent.clicked() }
+    }
+
     Layout.fillWidth: true
     spacing: 8
 
     RowLayout {
+        visible: root.type !== "social_platforms"
         Layout.fillWidth: true
         spacing: 12
         ColumnLayout {
@@ -60,7 +86,7 @@ ColumnLayout {
             Layout.minimumWidth: 124
             Layout.maximumWidth: 124
             from: root.minimum; to: root.maximum
-            value: Number(root.value || root.minimum)
+            value: Number(root.value === undefined || root.value === null || root.value === "" ? root.minimum : root.value)
              function stepBy(delta) {
                  value = Math.max(from, Math.min(to, value + delta * stepSize));
                  root.changed(root.field, value);
@@ -92,7 +118,7 @@ ColumnLayout {
             Layout.minimumWidth: 150
             Layout.maximumWidth: 150
             from: root.minimum; to: root.maximum
-            value: Number(root.value || root.minimum)
+            value: Number(root.value === undefined || root.value === null || root.value === "" ? root.minimum : root.value)
             onMoved: root.changed(root.field, value)
         }
         Switch {
@@ -200,6 +226,234 @@ ColumnLayout {
                     listPopup.open()
                 } else {
                     root.changed(root.field, root.value)
+                }
+            }
+        }
+    }
+
+    ColumnLayout {
+        id: platEditor
+        visible: root.type === "social_platforms"
+        Layout.fillWidth: true
+        spacing: 8
+        property var platformOptions: root.options && root.options.length ? root.options : ["twitch", "youtube", "kick", "telegram", "tiktok", "instagram", "discord", "x", "facebook"]
+        property var entries: []
+        function syncFromValue() {
+            var v = root.value;
+            if (typeof v === "string") {
+                try { v = JSON.parse(v); } catch (e) { v = []; }
+            }
+            if (!Array.isArray(v)) v = [];
+            var out = [];
+            for (var i = 0; i < v.length; ++i) {
+                var r = v[i] || {};
+                out.push({id: r.id || "", platform: String(r.platform || "twitch").toLowerCase(), username: String(r.username || ""), url: String(r.url || ""), enabled: r.enabled !== false, order: i});
+            }
+            entries = out;
+        }
+        Component.onCompleted: syncFromValue()
+        onVisibleChanged: if (visible) syncFromValue()
+        Connections { target: root; function onValueChanged() { platEditor.syncFromValue(); } }
+        function commit(list) {
+            var out = [];
+            for (var i = 0; i < list.length; ++i) {
+                var r = list[i] || {};
+                out.push({id: r.id || "", platform: String(r.platform || "twitch").toLowerCase(), username: String(r.username || ""), url: String(r.url || ""), enabled: r.enabled !== false, order: i});
+            }
+            entries = JSON.parse(JSON.stringify(out));
+            root.changed(root.field, out);
+        }
+        function currentList() { return entries; }
+        function cloneList() { return JSON.parse(JSON.stringify(entries)); }
+        Text {
+            visible: platEditor.entries.length === 0
+            text: "No platforms yet — pick one below and press + Add platform."
+            color: "#8b95a5"
+            font.pixelSize: 11
+            wrapMode: Text.WordWrap
+            Layout.fillWidth: true
+        }
+        Repeater {
+            model: platEditor.entries
+            delegate: Rectangle {
+                required property int index
+                required property var modelData
+                Layout.fillWidth: true
+                implicitHeight: platCol.implicitHeight + 20
+                radius: 12
+                color: "#10141a"
+                border.width: 1
+                border.color: "#242b36"
+                ColumnLayout {
+                    id: platCol
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    spacing: 8
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        Text {
+                            text: String(index + 1).padStart(2, "0")
+                            color: "#5eead4"
+                            font.pixelSize: 11
+                            font.weight: Font.DemiBold
+                            Layout.preferredWidth: 22
+                        }
+                        ComboBox {
+                            id: platCombo
+                            Layout.preferredWidth: 140
+                            Layout.minimumWidth: 140
+                            Layout.maximumWidth: 140
+                            implicitHeight: 36
+                            hoverEnabled: true
+                            model: platEditor.platformOptions
+                            currentIndex: Math.max(0, platEditor.platformOptions.indexOf(String(modelData.platform || "").toLowerCase()))
+                            contentItem: Text { text: platCombo.displayText; color: "#e8eaed"; font.pixelSize: 13; font.capitalization: Font.Capitalize; verticalAlignment: Text.AlignVCenter; leftPadding: 10; elide: Text.ElideRight }
+                            background: Rectangle { radius: 8; color: "#0f172a"; border.width: 1; border.color: platCombo.hovered ? "#2d3748" : "#242b36"; Behavior on border.color { ColorAnimation { duration: 160 } } }
+                            indicator: Text { x: platCombo.width - width - 10; y: platCombo.height / 2 - height / 2; text: "⌄"; color: platCombo.popup.visible ? "#5eead4" : "#8b95a5"; font.pixelSize: 14 }
+                            delegate: ItemDelegate {
+                                required property int index
+                                width: platCombo.width - 8
+                                implicitHeight: 35
+                                highlighted: platCombo.currentIndex === index
+                                hoverEnabled: true
+                                contentItem: Text { text: platCombo.textAt(index); color: "#e8eaed"; font.pixelSize: 12; font.capitalization: Font.Capitalize; verticalAlignment: Text.AlignVCenter; leftPadding: 10; elide: Text.ElideRight }
+                                background: Rectangle { radius: 6; color: highlighted ? "#14b8a620" : (hovered ? "#2d3748" : "transparent"); border.width: highlighted ? 1 : 0; border.color: "#14b8a6" }
+                            }
+                            popup: Popup {
+                                y: platCombo.height + 4
+                                width: platCombo.width
+                                padding: 4
+                                implicitHeight: Math.min(240, contentItem.implicitHeight + 8)
+                                contentItem: ListView {
+                                    clip: true
+                                    implicitHeight: contentHeight
+                                    model: platCombo.popup.visible ? platCombo.delegateModel : null
+                                    currentIndex: platCombo.highlightedIndex
+                                    ScrollIndicator.vertical: ScrollIndicator { width: 5 }
+                                }
+                                background: Rectangle { radius: 8; color: "#10141a"; border.width: 1; border.color: "#242b36" }
+                            }
+                            onActivated: function(idx) {
+                                var list = platEditor.cloneList();
+                                list[index].platform = platEditor.platformOptions[idx];
+                                platEditor.commit(list);
+                            }
+                        }
+                        PlatField {
+                            Layout.fillWidth: true
+                            placeholderText: "@username"
+                            text: modelData.username || ""
+                            onEditingFinished: {
+                                var list = platEditor.cloneList();
+                                list[index].username = text;
+                                platEditor.commit(list);
+                            }
+                        }
+                        Switch {
+                            leftPadding: 0
+                            rightPadding: 0
+                            implicitWidth: 46
+                            implicitHeight: 26
+                            Layout.preferredWidth: 46
+                            Layout.minimumWidth: 46
+                            Layout.maximumWidth: 46
+                            checked: modelData.enabled !== false
+                            indicator: Rectangle {
+                                x: 0
+                                y: parent.height / 2 - height / 2
+                                width: 46; height: 24; radius: 12
+                                color: parent.checked ? "#134e4a" : "#0a0d12"
+                                border.width: 1
+                                border.color: parent.checked ? "#14b8a6" : "#2d3748"
+                                Behavior on color { ColorAnimation { duration: 160 } }
+                                Rectangle {
+                                    x: parent.parent.checked ? parent.width - width - 3 : 3
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 18; height: 18; radius: 9
+                                    color: parent.parent.checked ? "#5eead4" : "#8b95a5"
+                                    Behavior on x { NumberAnimation { duration: 160 } }
+                                }
+                            }
+                            onClicked: {
+                                var list = platEditor.cloneList();
+                                list[index].enabled = checked;
+                                platEditor.commit(list);
+                            }
+                        }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        Item { Layout.preferredWidth: 22; Layout.minimumWidth: 22; Layout.maximumWidth: 22 }
+                        PlatField {
+                            Layout.fillWidth: true
+                            placeholderText: "https://… (optional URL override)"
+                            font.pixelSize: 12
+                            text: modelData.url || ""
+                            onEditingFinished: {
+                                var list = platEditor.cloneList();
+                                list[index].url = text;
+                                platEditor.commit(list);
+                            }
+                        }
+                        IconBtn { glyph: "↑"; disabled: index <= 0; onClicked: { var l = platEditor.cloneList(); var t = l[index-1]; l[index-1] = l[index]; l[index] = t; platEditor.commit(l); } }
+                        IconBtn { glyph: "↓"; disabled: index >= platEditor.currentList().length - 1; onClicked: { var l = platEditor.cloneList(); var t = l[index+1]; l[index+1] = l[index]; l[index] = t; platEditor.commit(l); } }
+                        IconBtn { glyph: "✕"; onClicked: { var l = platEditor.cloneList(); l.splice(index, 1); platEditor.commit(l); } }
+                    }
+                }
+            }
+        }
+        Rectangle {
+            Layout.fillWidth: true
+            implicitHeight: addRow.implicitHeight + 20
+            radius: 12
+            color: "transparent"
+            border.width: 1
+            border.color: "#2d3748"
+            RowLayout {
+                id: addRow
+                anchors.fill: parent
+                anchors.margins: 10
+                spacing: 8
+                Text { text: "+"; color: "#5eead4"; font.pixelSize: 14; font.weight: Font.DemiBold }
+                ComboBox {
+                    id: platAddBox
+                    Layout.preferredWidth: 140
+                    Layout.minimumWidth: 140
+                    Layout.maximumWidth: 140
+                    implicitHeight: 36
+                    hoverEnabled: true
+                    model: platEditor.platformOptions
+                    contentItem: Text { text: platAddBox.displayText; color: "#e8eaed"; font.pixelSize: 13; font.capitalization: Font.Capitalize; verticalAlignment: Text.AlignVCenter; leftPadding: 10; elide: Text.ElideRight }
+                    background: Rectangle { radius: 8; color: "#0f172a"; border.width: 1; border.color: platAddBox.hovered ? "#2d3748" : "#242b36" }
+                    indicator: Text { x: platAddBox.width - width - 10; y: platAddBox.height / 2 - height / 2; text: "⌄"; color: "#8b95a5"; font.pixelSize: 14 }
+                    popup: Popup {
+                        y: platAddBox.height + 4
+                        width: platAddBox.width
+                        padding: 4
+                        contentItem: ListView {
+                            clip: true
+                            implicitHeight: Math.min(240, contentHeight)
+                            model: platAddBox.popup.visible ? platAddBox.delegateModel : null
+                            ScrollIndicator.vertical: ScrollIndicator { width: 5 }
+                        }
+                        background: Rectangle { radius: 8; color: "#10141a"; border.width: 1; border.color: "#242b36" }
+                    }
+                }
+                Button {
+                    Layout.fillWidth: true
+                    implicitHeight: 36
+                    text: "Add platform"
+                    hoverEnabled: true
+                    contentItem: Text { text: "Add platform"; color: "#041615"; font.pixelSize: 12; font.weight: Font.DemiBold; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    background: Rectangle { radius: 8; color: parent.hovered ? "#0d9488" : "#14b8a6"; Behavior on color { ColorAnimation { duration: 160 } } }
+                    onClicked: {
+                        var list = platEditor.cloneList();
+                        var v = platEditor.platformOptions[platAddBox.currentIndex] || "twitch";
+                        list.push({id: "", platform: v, username: "", url: "", enabled: true, order: list.length});
+                        platEditor.commit(list);
+                    }
                 }
             }
         }

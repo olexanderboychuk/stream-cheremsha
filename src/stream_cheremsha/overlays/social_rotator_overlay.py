@@ -15,6 +15,7 @@ from stream_cheremsha.overlays.social_rotator_overlay_config import (
 from stream_cheremsha.overlays.social_rotator_rotation import (
     SocialRotatorRotationEngine,
     enabled_rotation_entries,
+    entry_public_dict,
 )
 from stream_cheremsha.overlays.social_rotator_stats import SocialRotatorStatsSession
 from stream_cheremsha.overlays.ui_locale import load_ui_locale
@@ -79,16 +80,7 @@ class SocialRotatorOverlayType:
         initial = {
             "config": cfg_dict,
             "rotation": rotation.presentation_dict(),
-            "platforms_enabled": [
-                {
-                    "id": e.entry_id,
-                    "platform": e.platform,
-                    "username": e.username,
-                    "url": e.url,
-                    "order": i,
-                }
-                for i, e in enumerate(entries)
-            ],
+            "platforms_enabled": [entry_public_dict(e, order=i) for i, e in enumerate(entries)],
             "stats": SocialRotatorStatsSession().to_public_dict(),
             "locale": locale,
         }
@@ -216,11 +208,12 @@ class SocialRotatorOverlayType:
         position: relative; z-index: 2;
         flex: 1 1 auto;
         min-height: 0;
+        min-width: 0;
         width: 100%;
         display: grid;
-        grid-template-columns: minmax(0, 1.35fr) auto minmax(0, 1.2fr);
-        gap: calc((8px + 0.35vw) * var(--sr-u) * var(--sr-read));
-        align-items: center;
+        grid-template-columns: minmax(0, 53fr) minmax(60px, 14fr) minmax(0, 33fr);
+        gap: clamp(8px, 1vw, 12px);
+        align-items: stretch;
       }}
       .hero {{
         display: flex; align-items: center;
@@ -282,61 +275,75 @@ class SocialRotatorOverlayType:
         50% {{ filter: brightness(1.12); }}
       }}
       .hero-icon svg {{ width: 58%; height: 58%; z-index: 1; }}
-      .hero-text {{ min-width: 0; flex: 1; }}
+      .hero-text {{ min-width: 0; flex: 1 1 auto; overflow: hidden; }}
       /* Fluid px+vw — no low max caps (those made banner text tiny). */
       .kicker {{
         font-family: var(--sr-font-display);
-        font-size: calc((12px + 0.45vw) * var(--sr-u) * var(--sr-read));
+        font-size: clamp(9px, calc((10px + 0.35vw) * var(--sr-u)), 14px);
         color: var(--sr-accent);
         letter-spacing: 0.1em;
         text-shadow: 0 0 8px color-mix(in srgb, var(--sr-accent) 60%, transparent);
-        margin-bottom: calc(4px * var(--sr-u) * var(--sr-read));
+        margin-bottom: 4px;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }}
       .platform-name {{
         font-family: var(--sr-font-display);
-        font-size: calc((15px + 0.55vw) * var(--sr-u) * var(--sr-read));
+        font-size: clamp(11px, calc((12px + 0.45vw) * var(--sr-u)), 17px);
         color: var(--sr-platform);
         text-shadow: 0 0 10px color-mix(in srgb, var(--sr-platform) 70%, transparent);
-        margin-bottom: calc(5px * var(--sr-u) * var(--sr-read));
+        margin-bottom: 4px;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }}
       .username {{
         font-family: var(--sr-font-display);
-        font-size: calc((20px + 1.05vw) * var(--sr-u) * var(--sr-read));
+        font-size: clamp(15px, calc((17px + 0.9vw) * var(--sr-u)), 26px);
         color: #fff;
-        line-height: 1.25;
-        word-break: break-word;
-        text-shadow: 0 0 12px rgba(255,255,255,0.25);
-        margin-bottom: calc(4px * var(--sr-u) * var(--sr-read));
-      }}
-      .url {{
-        font-family: 'VT323', monospace;
-        font-size: calc((18px + 0.7vw) * var(--sr-u) * var(--sr-read));
-        color: var(--sr-magenta);
-        opacity: 0.95;
+        line-height: 1.2;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        text-shadow: 0 0 12px rgba(255,255,255,0.25);
+        margin-bottom: 3px;
+        min-width: 0;
+      }}
+      .username.is-long {{ font-size: clamp(13px, calc((14px + 0.7vw) * var(--sr-u)), 21px); }}
+      .username.is-xlong {{ font-size: clamp(12px, calc((12px + 0.55vw) * var(--sr-u)), 17px); }}
+      .url {{
+        font-family: 'VT323', monospace;
+        font-size: clamp(13px, calc((14px + 0.5vw) * var(--sr-u)), 20px);
+        color: var(--sr-magenta);
+        opacity: 0.85;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
       }}
       .root.hide-url .url {{ display: none; }}
       .next-box {{
         display: flex; flex-direction: column; align-items: center; justify-content: center;
-        min-width: calc((58px + 1.2vw) * var(--sr-u) * var(--sr-read));
-        padding: calc(4px * var(--sr-u) * var(--sr-read)) calc(8px * var(--sr-u) * var(--sr-read));
+        flex: 0 0 auto;
+        min-width: 0;
+        width: 100%;
+        max-width: 118px;
+        margin: 0 auto;
+        padding: 6px 4px;
         border-left: 1px solid color-mix(in srgb, var(--sr-accent) 40%, transparent);
         border-right: 1px solid color-mix(in srgb, var(--sr-accent) 40%, transparent);
         color: var(--sr-accent);
         text-shadow: 0 0 8px color-mix(in srgb, var(--sr-accent) 55%, transparent);
         align-self: stretch;
+        overflow: hidden;
       }}
       .root.hide-countdown .next-box {{ display: none; }}
       .next-label, .next-sec {{
         font-family: var(--sr-font-display);
-        font-size: calc((11px + 0.35vw) * var(--sr-u) * var(--sr-read));
+        font-size: clamp(9px, calc((9px + 0.25vw) * var(--sr-u)), 12px);
         letter-spacing: 0.06em;
+        white-space: nowrap;
       }}
       .next-num {{
         font-family: 'VT323', monospace;
-        font-size: calc((42px + 1.4vw) * var(--sr-u) * var(--sr-read));
+        font-size: clamp(30px, calc((32px + 1vw) * var(--sr-u)), 48px);
         line-height: 1;
         margin: 2px 0;
       }}
@@ -351,31 +358,37 @@ class SocialRotatorOverlayType:
       }}
       .root.hide-secondary .secondary-wrap {{ display: none; }}
       .secondary {{
-        display: flex; gap: calc((8px + 0.35vw) * var(--sr-u) * var(--sr-read));
+        display: flex; gap: 8px;
         overflow-x: auto; overflow-y: hidden;
         scrollbar-width: none;
         padding-bottom: 2px;
         align-items: stretch;
+        align-content: center;
         height: 100%;
+        min-width: 0;
       }}
       .secondary::-webkit-scrollbar {{ display: none; }}
       .sec-card {{
         flex: 1 1 0;
-        min-width: calc((80px + 1.5vw) * var(--sr-u) * var(--sr-read));
+        min-width: 0;
         max-width: none;
-        text-align: center;
+        text-align: left;
         opacity: 0.82;
         transition: opacity 0.35s ease, transform 0.35s ease;
         display: flex;
-        flex-direction: column;
+        flex-direction: row;
         align-items: center;
-        justify-content: center;
+        justify-content: flex-start;
+        gap: 8px;
+        min-width: 0;
+        overflow: hidden;
       }}
       .sec-card.active {{ opacity: 1; transform: translateY(-2px); }}
       .sec-icon {{
-        width: calc((46px + 1.3vw) * var(--sr-u) * var(--sr-read));
-        height: calc((46px + 1.3vw) * var(--sr-u) * var(--sr-read));
-        margin: 0 auto 6px;
+        width: clamp(34px, calc((34px + 1vw) * var(--sr-u)), 48px);
+        height: clamp(34px, calc((34px + 1vw) * var(--sr-u)), 48px);
+        flex: 0 0 auto;
+        margin: 0;
         border-radius: 10px;
         border: 2px solid var(--sec-accent, var(--sr-accent));
         display: flex; align-items: center; justify-content: center;
@@ -383,20 +396,21 @@ class SocialRotatorOverlayType:
         box-shadow: 0 0 10px color-mix(in srgb, var(--sec-accent, var(--sr-accent)) 45%, transparent);
       }}
       .sec-icon svg {{ width: 55%; height: 55%; }}
+      .sec-text {{ min-width: 0; flex: 1 1 auto; overflow: hidden; }}
       .sec-name {{
         font-family: var(--sr-font-display);
-        font-size: calc((11px + 0.32vw) * var(--sr-u) * var(--sr-read));
+        font-size: clamp(9px, calc((9px + 0.25vw) * var(--sr-u)), 12px);
         color: #fff;
-        margin-bottom: 3px;
+        margin-bottom: 2px;
         line-height: 1.2;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }}
       .sec-user {{
         font-family: 'VT323', monospace;
-        font-size: calc((16px + 0.55vw) * var(--sr-u) * var(--sr-read));
+        font-size: clamp(14px, calc((14px + 0.45vw) * var(--sr-u)), 19px);
         color: rgba(255,255,255,0.88);
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         max-width: 100%;
-        padding: 0 2px;
         line-height: 1.1;
       }}
       .pager-dots {{
@@ -411,10 +425,10 @@ class SocialRotatorOverlayType:
       .panel-stats {{
         position: relative; z-index: 2;
         flex: 0 0 auto;
-        margin-top: calc((6px + 0.25vw) * var(--sr-u) * var(--sr-read));
+        margin-top: clamp(6px, 0.8vw, 10px);
         display: grid;
-        grid-template-columns: repeat(5, minmax(0, 1fr));
-        gap: calc((5px + 0.25vw) * var(--sr-u) * var(--sr-read));
+        grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.35fr) minmax(0, 1.15fr) minmax(0, 1.35fr) minmax(0, 0.7fr);
+        gap: clamp(6px, 0.7vw, 8px);
         width: 100%;
       }}
       .stat-cell {{
@@ -427,24 +441,32 @@ class SocialRotatorOverlayType:
       .stat-cell.hidden {{ display: none; }}
       .stat-label {{
         font-family: var(--sr-font-display);
-        font-size: calc((11px + 0.32vw) * var(--sr-u) * var(--sr-read));
+        font-size: clamp(8px, calc((8px + 0.25vw) * var(--sr-u)), 11px);
         color: var(--sr-accent);
-        margin-bottom: 4px;
+        margin-bottom: 3px;
         letter-spacing: 0.03em;
-        line-height: 1.25;
+        line-height: 1.3;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }}
       .stat-value {{
         font-family: 'VT323', monospace;
-        font-size: calc((20px + 0.7vw) * var(--sr-u) * var(--sr-read));
+        font-size: clamp(16px, calc((16px + 0.55vw) * var(--sr-u)), 23px);
         color: #fff;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         line-height: 1.1;
+        min-width: 0;
       }}
       .stat-value.big {{
         color: var(--sr-accent);
-        font-size: calc((26px + 0.95vw) * var(--sr-u) * var(--sr-read));
+        font-size: clamp(19px, calc((20px + 0.7vw) * var(--sr-u)), 28px);
         text-shadow: 0 0 10px color-mix(in srgb, var(--sr-accent) 50%, transparent);
       }}
+      .stat-value.is-empty {{
+        opacity: 0.55;
+        text-align: left;
+        letter-spacing: 0.15em;
+      }}
+      .stat-cell[data-stat="stream_time"] .stat-value {{ font-variant-numeric: tabular-nums; }}
       .root.short .hud-frame {{
         padding: calc((5px + 0.2vw) * var(--sr-u) * var(--sr-read));
       }}
@@ -575,14 +597,41 @@ class SocialRotatorOverlayType:
         justify-content: center;
       }}
       .root.hide-countdown .panel-top {{
-        grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.15fr);
+        grid-template-columns: minmax(0, 60fr) minmax(0, 40fr);
       }}
       .root.hide-secondary .panel-top {{
-        grid-template-columns: minmax(0, 1.4fr) auto;
+        grid-template-columns: minmax(0, 78fr) minmax(60px, 22fr);
       }}
       .root.hide-countdown.hide-secondary .panel-top {{
         grid-template-columns: 1fr;
       }}
+      /* Width-driven breakpoints (set from JS measuring the widget box —
+         reliable inside OBS browser sources where viewport queries misfire). */
+      .root.w-sm .panel-top,
+      .root.w-sm.hide-countdown .panel-top,
+      .root.w-sm.hide-secondary .panel-top,
+      .root.w-sm.hide-countdown.hide-secondary .panel-top {{
+        grid-template-columns: minmax(0, 1fr) minmax(60px, 100px);
+        grid-template-rows: minmax(0, 1fr) auto;
+      }}
+      .root.w-sm .secondary-wrap {{ grid-column: 1 / -1; height: auto; min-height: 0; }}
+      .root.w-sm .secondary {{ height: auto; }}
+      .root.w-sm .panel-stats {{
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }}
+      .root.w-xs .panel-top,
+      .root.w-xs.hide-countdown .panel-top,
+      .root.w-xs.hide-secondary .panel-top,
+      .root.w-xs.hide-countdown.hide-secondary .panel-top {{
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(0, 1fr) auto auto;
+      }}
+      .root.w-xs .next-box {{
+        flex-direction: row; gap: 8px; border: 0;
+        min-width: 0; width: 100%; max-width: none;
+        justify-content: center;
+      }}
+      .root.w-xs .panel-stats {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
       @media (max-width: 720px) {{
         .panel-top,
         .root.hide-countdown .panel-top,
@@ -593,7 +642,7 @@ class SocialRotatorOverlayType:
         }}
         .next-box {{
           flex-direction: row; gap: 8px; border: 0;
-          min-width: 0; width: 100%;
+          min-width: 0; width: 100%; max-width: none;
           justify-content: center;
         }}
         .panel-stats {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
@@ -771,6 +820,8 @@ class SocialRotatorOverlayType:
           rootEl.classList.toggle('short', h > 0 && h < 300);
           rootEl.classList.toggle('banner', w > 0 && h > 0 && (h / w) < 0.28);
           rootEl.classList.toggle('narrow-xs', w > 0 && w < 420);
+          rootEl.classList.toggle('w-sm', w > 0 && w < 1000);
+          rootEl.classList.toggle('w-xs', w > 0 && w < 640);
           rootEl.style.setProperty('--sr-read', String(read));
         }}
 
@@ -865,6 +916,9 @@ class SocialRotatorOverlayType:
           heroIcon.innerHTML = iconSvg(pid);
           platformName.textContent = meta.name || pid.toUpperCase();
           usernameEl.textContent = entry.username || '—';
+          var unameLen = String(entry.username || '').length;
+          usernameEl.classList.toggle('is-long', unameLen > 14 && unameLen <= 22);
+          usernameEl.classList.toggle('is-xlong', unameLen > 22);
           urlEl.textContent = displayUrl(entry);
           urlEl.style.display = config.show_url === false ? 'none' : '';
         }}
@@ -882,8 +936,8 @@ class SocialRotatorOverlayType:
             const activeCls = (p.id === activeId) ? ' active' : '';
             return '<div class="sec-card' + activeCls + '" style="--sec-accent:' + esc(meta.accent) + '">' +
               '<div class="sec-icon">' + iconSvg(p.platform) + '</div>' +
-              '<div class="sec-name">' + esc(meta.name || p.platform) + '</div>' +
-              '<div class="sec-user">' + esc(p.username) + '</div></div>';
+              '<div class="sec-text"><div class="sec-name">' + esc(meta.name || p.platform) + '</div>' +
+              '<div class="sec-user">' + esc(p.username) + '</div></div></div>';
           }}).join('');
           let dots = '';
           for (let i = 0; i < pages; i++) {{
@@ -907,15 +961,31 @@ class SocialRotatorOverlayType:
           return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
         }}
 
+        function setStat(el, text, isEmpty) {{
+          el.textContent = text;
+          el.classList.toggle('is-empty', !!isEmpty);
+        }}
         function renderStats() {{
           const st = stats || {{}};
-          document.getElementById('statFollow').textContent =
-            (st.latest_follower && st.latest_follower.name) ? st.latest_follower.name : '—';
-          document.getElementById('statDonation').innerHTML =
-            st.latest_donation ? fmtDiamond(st.latest_donation.name, st.latest_donation.value) : '—';
-          document.getElementById('statTop').innerHTML =
-            st.top_donator ? fmtDiamond(st.top_donator.name, st.top_donator.value) : '—';
-          document.getElementById('statOnline').textContent = String(st.viewers_total || 0);
+          const followName = (st.latest_follower && st.latest_follower.name) ? st.latest_follower.name : '';
+          setStat(document.getElementById('statFollow'), followName || '—', !followName);
+          const donationEl = document.getElementById('statDonation');
+          if (st.latest_donation) {{
+            donationEl.innerHTML = fmtDiamond(st.latest_donation.name, st.latest_donation.value);
+            donationEl.classList.remove('is-empty');
+          }} else {{
+            donationEl.textContent = '—';
+            donationEl.classList.add('is-empty');
+          }}
+          const topEl = document.getElementById('statTop');
+          if (st.top_donator) {{
+            topEl.innerHTML = fmtDiamond(st.top_donator.name, st.top_donator.value);
+            topEl.classList.remove('is-empty');
+          }} else {{
+            topEl.textContent = '—';
+            topEl.classList.add('is-empty');
+          }}
+          setStat(document.getElementById('statOnline'), String(st.viewers_total || 0), !st.viewers_total);
           document.getElementById('statTime').textContent = fmtTime(st.stream_started_at_ms);
           const map = {{
             latest_follower: config.show_latest_follower !== false,
@@ -1116,16 +1186,7 @@ class SocialRotatorOverlayType:
         return {
             "config": social_rotator_overlay_config_to_public_dict(cfg),
             "rotation": rotation.presentation_dict(),
-            "platforms_enabled": [
-                {
-                    "id": e.entry_id,
-                    "platform": e.platform,
-                    "username": e.username,
-                    "url": e.url,
-                    "order": i,
-                }
-                for i, e in enumerate(entries)
-            ],
+            "platforms_enabled": [entry_public_dict(e, order=i) for i, e in enumerate(entries)],
             "stats": SocialRotatorStatsSession().to_public_dict(),
             "locale": load_ui_locale(),
         }

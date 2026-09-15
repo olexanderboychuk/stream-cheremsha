@@ -15,7 +15,7 @@ Provides a Telegram bot interface for remote requests and an internal API for th
 
 ## Internal Structure
 - **Queue Controller**: Manages the list of pending songs and current playback state.
-- **Player**: Handles the actual audio stream using `ffmpeg` or other backends.
+- **Player**: Handles the actual audio stream using `i` or other backends.
 - **yt_dlp Resolver**: Downloads music from YouTube URLs.
 - **MusicBrainz**: Filters out specific artists/countries (e.g., blocking Russian performers).
 

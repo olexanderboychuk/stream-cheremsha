@@ -126,12 +126,12 @@ def test_widget_preview_updates_only_the_explicitly_opened_instance() -> None:
 
 
 def test_preview_config_reads_authoritative_instance_settings() -> None:
-    instance = SimpleNamespace(id="instance-1")
+    instance = SimpleNamespace(id="instance-1", type_id="test_widget")
     current = {"title": "new value", "color": "#14b8a6"}
 
     with (
         patch(
-            "stream_cheremsha.overlays.widget_instances.find_by_ws_token",
+            "stream_cheremsha.overlays.widget_instances.get_instance",
             return_value=instance,
         ),
         patch(

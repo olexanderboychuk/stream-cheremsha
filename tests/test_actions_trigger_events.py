@@ -113,6 +113,20 @@ def test_merge_platform_change_resets_incompatible_kind_to_chat() -> None:
     assert merged.get("platform") == "kick"
 
 
+def test_merge_platform_change_to_donatik_resets_to_donate() -> None:
+    current = build_trigger_event("chat_keyword", "all", existing_params={"text": "hi"})
+    merged = merge_platform_change(current, "donatik")
+    assert merged["type"] == "donate"
+    assert merged.get("platform") == "donatik"
+
+
+def test_merge_platform_change_from_donate_to_kick_resets_to_chat() -> None:
+    current = build_trigger_event("donate", "donatik")
+    merged = merge_platform_change(current, "kick")
+    assert merged["type"] == "chat_keyword"
+    assert merged.get("platform") == "kick"
+
+
 def test_kick_follow_ruleset_roundtrip() -> None:
     rule = RuleV1(
         id="r-kick",

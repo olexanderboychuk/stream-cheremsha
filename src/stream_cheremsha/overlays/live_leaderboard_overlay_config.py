@@ -401,18 +401,10 @@ def load_live_leaderboard_overlay_config(
             except (ValueError, TypeError, json.JSONDecodeError):
                 pass
         return live_leaderboard_overlay_config_defaults()
-    # Persist migration (legacy optional sources / missing sequence steps).
+    # Persist repair (optional sources / missing sequence steps).
     repaired = live_leaderboard_overlay_config_to_json_text(cfg)
     if repaired.strip() != raw:
         save_live_leaderboard_overlay_config(cfg, s)
-        try:
-            from stream_cheremsha.overlays.widget_instances import (
-                sync_store_from_legacy_singleton,
-            )
-
-            sync_store_from_legacy_singleton("live_leaderboard", s)
-        except Exception:
-            pass
     return cfg
 
 

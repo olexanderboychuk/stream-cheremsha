@@ -548,7 +548,7 @@ class WidgetsQmlApi(QObject):
 
         try:
             from stream_cheremsha.overlays.layout import load_layouts
-            from stream_cheremsha.overlays.widget_instances import get_instance, ws_token_for
+            from stream_cheremsha.overlays.widget_instances import get_instance
 
             layouts = load_layouts()
             target_id = layout_id or "default"
@@ -559,9 +559,7 @@ class WidgetsQmlApi(QObject):
                         continue
                     b = get_instance(w.widget_instance_id)
                     if b is not None:
-                        token = ws_token_for(b)
-                        if token != "main":
-                            self.previewLayoutWidget(w.type, token)
+                        self.previewLayoutWidget(w.type, b.id)
         except Exception:
             pass
 
@@ -1297,9 +1295,11 @@ class WidgetsQmlApi(QObject):
         parser: Any,
     ) -> Any:
         """Build preview payload config from the persisted instance, not a singleton."""
-        from stream_cheremsha.overlays.widget_instances import find_by_ws_token, merged_settings
+        from stream_cheremsha.overlays.widget_instances import get_instance, merged_settings
 
-        inst = find_by_ws_token(type_id, str(instance or ""))
+        inst = get_instance(str(instance or ""))
+        if inst is not None and inst.type_id != type_id:
+            inst = None
         if inst is not None:
             try:
                 return parser(json.dumps(merged_settings(inst), ensure_ascii=False))
@@ -2286,10 +2286,7 @@ class WidgetsQmlApi(QObject):
         — otherwise controllers would keep publishing the stale singleton and
         the overlay would visibly revert seconds after saving.
         """
-        from stream_cheremsha.overlays.widget_instances import (
-            update_instance_settings,
-            ws_token_for,
-        )
+        from stream_cheremsha.overlays.widget_instances import update_instance_settings
 
         inst = self._editing_instance_for(type_id)
         if inst is None:
@@ -2297,10 +2294,8 @@ class WidgetsQmlApi(QObject):
         _LOG.info("saving type=%s into instance %r (%r)", type_id, inst.id[:12], inst.name)
         update_instance_settings(inst.id, dict(cfg_dict))
         self.widgetInstancesChanged.emit()
-        if (inst.legacy_key or "") == "main":
-            return False
         self._publish_patch(
-            topic=f"overlay:{type_id}:{ws_token_for(inst)}",
+            topic=f"overlay:{type_id}:{inst.id}",
             patch={"config": dict(cfg_dict), "timestamp": time.time()},
         )
         self.widgetInstancesChanged.emit()
@@ -2342,12 +2337,8 @@ class WidgetsQmlApi(QObject):
 
     @Slot(result=str)
     def widgetInstancesJson(self) -> str:
-        from stream_cheremsha.overlays.widget_instances import (
-            list_instances,
-            migrate_legacy_to_instances,
-        )
+        from stream_cheremsha.overlays.widget_instances import list_instances
 
-        migrate_legacy_to_instances()
         items = [
             {
                 "id": x.id,
@@ -2357,7 +2348,6 @@ class WidgetsQmlApi(QObject):
                 "enabled": bool(x.enabled),
                 "created_at": x.created_at,
                 "updated_at": x.updated_at,
-                "legacy_key": x.legacy_key,
             }
             for x in list_instances()
         ]
@@ -2442,12 +2432,12 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     def previewWidgetInstance(self, instance_id: str) -> None:
         """Send a representative preview event for the given widget instance."""
-        from stream_cheremsha.overlays.widget_instances import get_instance, ws_token_for
+        from stream_cheremsha.overlays.widget_instances import get_instance
 
         inst = get_instance(str(instance_id or ""))
         if inst is None:
             return
-        self.previewLayoutWidget(inst.type_id, ws_token_for(inst))
+        self.previewLayoutWidget(inst.type_id, inst.id)
 
     @Slot(str, result=str)
     def loadWidgetInstanceSettingsJson(self, instance_id: str) -> str:
@@ -2475,7 +2465,7 @@ class WidgetsQmlApi(QObject):
         if ok:
             # Live-reload instance topic so active OBS sources update.
             self._publish_patch(
-                topic=f"overlay:{inst.type_id}:{_wi.ws_token_for(inst)}",
+                topic=f"overlay:{inst.type_id}:{inst.id}",
                 patch={"config": dict(new_settings), "timestamp": time.time()},
             )
             self.widgetInstancesChanged.emit()

@@ -10,6 +10,8 @@ class ChatPlatform(StrEnum):
     YOUTUBE = "youtube"
     TIKTOK = "tiktok"
     KICK = "kick"
+    DONATIK = "donatik"
+    DONATELLO = "donatello"
 
 
 @dataclass(slots=True)

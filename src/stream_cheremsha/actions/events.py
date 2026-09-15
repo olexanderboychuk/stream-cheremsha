@@ -208,6 +208,19 @@ class KickGiftEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class DonateReceivedEvent:
+    """Donation via Donatik / Donatello. `amount` is in major currency units."""
+
+    platform: ChatPlatform
+    user: str
+    amount: float
+    currency: str
+    message: str
+    received_at: datetime
+    profile_picture_url: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class YouTubeMemberEvent:
     """YouTube membership (newSponsorEvent / memberMilestoneChatEvent).
 

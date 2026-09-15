@@ -125,20 +125,18 @@ def test_layout_overlay_renders_by_id_when_bound(monkeypatch) -> None:
     QSettings("t-org-lay", "t-app-lay").clear()
 
     inst = wi.create_instance("chat", "Bound Chat", None)
-    legacy_w = L.LayoutWidget("w1", "chat", "main", 0, 0, 100, 100)
     bound_w = L.LayoutWidget("w2", "chat", "main", 0, 0, 100, 100, widget_instance_id=inst.id)
     lay = L.StreamLayout(
-        id="default", name="X", width=1920, height=1080, widgets=(legacy_w, bound_w)
+        id="default", name="X", width=1920, height=1080, widgets=(bound_w,)
     )
     L.save_layouts([lay])
 
     html = LayoutOverlayType().render_html({"instance": "main", "layout": "default"})
-    assert "/overlay/chat?instance=main" in html  # legacy URL intact
     assert f"/overlay/by-id/{inst.id}" in html  # bound instance URL
 
-    # unknown instance id falls back to legacy URL, never breaks render
+    # unknown instance id is skipped, never breaks render
     ghost = L.LayoutWidget("w3", "chat", "main", 0, 0, 100, 100, widget_instance_id="nope")
     lay2 = L.StreamLayout(id="default", name="X", width=1920, height=1080, widgets=(ghost,))
     L.save_layouts([lay2])
     html2 = LayoutOverlayType().render_html({"instance": "main", "layout": "default"})
-    assert "/overlay/chat?instance=main" in html2
+    assert "<iframe" not in html2

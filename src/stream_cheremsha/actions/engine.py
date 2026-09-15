@@ -19,6 +19,7 @@ from stream_cheremsha.actions.actions_simulate_keystrokes import run_simulate_ke
 from stream_cheremsha.actions.actions_write_file import write_text_to_file
 from stream_cheremsha.actions.events import (
     ChatMessageEvent,
+    DonateReceivedEvent,
     GiftReceivedEvent,
     KickFollowEvent,
     KickGiftEvent,
@@ -45,6 +46,7 @@ from stream_cheremsha.actions.registry import match_chat_keyword
 from stream_cheremsha.actions.tiktok_gifts import TIKTOK_GIFTS, tiktok_catalog_gift_image_url
 from stream_cheremsha.actions.trigger_meta import (
     trigger_platform_applies_to_chat,
+    trigger_platform_applies_to_donate,
     trigger_platform_applies_to_gift,
     trigger_platform_applies_to_kick_channel_events,
     trigger_platform_applies_to_tiktok_likes,
@@ -123,7 +125,7 @@ def _show_overlay_platform_slug(ev: object) -> str:
         return str(p.value)
     if isinstance(p, str):
         s = p.strip().lower()
-        if s in ("tiktok", "twitch", "youtube"):
+        if s in ("tiktok", "twitch", "youtube", "kick", "donatik", "donatello"):
             return s
     return ""
 
@@ -323,6 +325,61 @@ def _youtube_amount_trigger_matches(
     if not _tiktok_simple_user_matches(params.get("user", ""), actual_user):
         return False
     return _micros_to_major(amount_micros) >= min_amount
+
+
+def _donate_trigger_matches(
+    ev_blob: Mapping[str, Any],
+    ev: DonateReceivedEvent,
+    *,
+    rule_id: str,
+    status: StatusCallback,
+) -> bool:
+    """Match a `donate` trigger (Donatik / Donatello) by provider, user, amount, message."""
+    if ev_blob.get("type") != "donate":
+        return False
+    ev_plat = getattr(ev.platform, "value", str(ev.platform or "")).strip().lower()
+    if not trigger_platform_applies_to_donate(ev_blob, ev_plat):
+        return False
+    params: Any = ev_blob.get("params")
+    if not isinstance(params, dict):
+        status(f"Rule {rule_id}: event.params must be an object")
+        return False
+    try:
+        min_amount = float(str(params.get("min_amount", 0)).replace(",", "."))
+    except (TypeError, ValueError):
+        status(f"Rule {rule_id}: min_amount must be a number")
+        return False
+    if min_amount < 0:
+        min_amount = 0.0
+    try:
+        max_amount = float(str(params.get("max_amount", 0)).replace(",", "."))
+    except (TypeError, ValueError):
+        status(f"Rule {rule_id}: max_amount must be a number")
+        return False
+    if max_amount < 0:
+        max_amount = 0.0
+    if max_amount > 0 and max_amount < min_amount:
+        status(f"Rule {rule_id}: max_amount must be >= min_amount (or 0 for no limit)")
+        return False
+    if not _tiktok_simple_user_matches(params.get("user", ""), ev.user):
+        return False
+    cur_filter = params.get("currency", "")
+    if isinstance(cur_filter, str) and cur_filter.strip():
+        if (ev.currency or "").strip().casefold() != cur_filter.strip().casefold():
+            return False
+    msg_filter = params.get("message_contains", "")
+    if isinstance(msg_filter, str) and msg_filter.strip():
+        if msg_filter.strip().casefold() not in (ev.message or "").casefold():
+            return False
+    try:
+        amt = float(ev.amount)
+    except (TypeError, ValueError):
+        return False
+    if amt < min_amount:
+        return False
+    if max_amount > 0 and amt > max_amount:
+        return False
+    return True
 
 
 def _tiktok_share_trigger_matches(
@@ -1298,6 +1355,25 @@ class PlatformActionsEngine:
             )
             await self._dispatch_actions(rule, ev)
 
+    async def on_donate_received(self, ev: DonateReceivedEvent) -> None:
+        """Dispatch `donate` triggers for a new Donatik / Donatello donation."""
+        for rule in self._rules:
+            if not rule.enabled:
+                continue
+            matched = False
+            for ev_blob in rule.events:
+                if _donate_trigger_matches(
+                    ev_blob, ev, rule_id=rule.id, status=self._status_callback
+                ):
+                    matched = True
+                    break
+            if matched:
+                await self._dispatch_actions(rule, ev)
+
+        # Update activity score if an activity engine is configured.
+        if self._activity_engine is not None:
+            await self._activity_engine.handle_event("gift")
+
     async def on_chat_message(self, ev: ChatMessageEvent) -> None:
         if ev.platform == ChatPlatform.TIKTOK:
             await self._maybe_dispatch_tiktok_first_activity(
@@ -1824,6 +1900,7 @@ class PlatformActionsEngine:
                             YouTubeSuperChatEvent,
                             YouTubeSuperStickerEvent,
                             YouTubeMemberEvent,
+                            DonateReceivedEvent,
                         ),
                     ):
                         profile_picture_url = str(

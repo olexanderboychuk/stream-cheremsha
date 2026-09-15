@@ -17,6 +17,7 @@ from stream_cheremsha.overlays.social_rotator_overlay_config import (
 from stream_cheremsha.overlays.social_rotator_rotation import (
     SocialRotatorRotationEngine,
     enabled_rotation_entries,
+    entry_public_dict,
 )
 from stream_cheremsha.overlays.social_rotator_stats import SocialRotatorStatsSession
 
@@ -200,14 +201,7 @@ class SocialRotatorController(QObject):
             "config": social_rotator_overlay_config_to_public_dict(cfg),
             "rotation": self._rotation.presentation_dict(server_now_ms=now_ms),
             "platforms_enabled": [
-                {
-                    "id": e.entry_id,
-                    "platform": e.platform,
-                    "username": e.username,
-                    "url": e.url,
-                    "order": i,
-                }
-                for i, e in enumerate(enabled)
+                entry_public_dict(e, order=i) for i, e in enumerate(enabled)
             ],
             "stats": self._stats.to_public_dict(),
             "locale": str(self._get_locale() or "uk"),

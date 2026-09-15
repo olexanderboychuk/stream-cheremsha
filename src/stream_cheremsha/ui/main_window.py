@@ -69,6 +69,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -1207,7 +1208,6 @@ class MainWindow(FramelessWindow):
         self._qml_pages_loaded: set[int] = set()
         self._active_qml_stack_index: int | None = None
         self._last_synced_nav_index: int | None = None
-        self._widget_instances_migrated = False
         self._bp_qml_ready = False
         self._audio_devices_ready = False
         self._pending_qml_token = 0
@@ -1332,6 +1332,24 @@ class MainWindow(FramelessWindow):
 
     def _tr(self, key: str, **kwargs: object) -> str:
         return l10n.tr(self._locale, key, **kwargs)
+
+    def _show_nonmodal_message_box(
+        self,
+        icon: QMessageBox.Icon,
+        title: str,
+        text: str,
+    ) -> None:
+        """Show an OK message box without starting a nested event loop.
+
+        Static ``QMessageBox.warning/information/critical`` run a nested (modal) loop.
+        Called from inside a coroutine, the nested Qt loop keeps dispatching qasync
+        timers/sockets, which steps other asyncio tasks reentrantly and crashes with
+        ``RuntimeError: Cannot enter into task ... while another task ...``.
+        A modeless box returns immediately and is safe from anywhere.
+        """
+        box = QMessageBox(icon, title, text, QMessageBox.StandardButton.Ok, self)
+        box.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        box.open()
 
     # Fixed icon→text gap for sidebar QToolButtons (QSS can't set it).
     # Non-breaking spaces: identical width for every item, so labels stay X-aligned.
@@ -2191,18 +2209,6 @@ class MainWindow(FramelessWindow):
         elif index == self._IX_DONATIONS:
             qml_path = _qml_path("DonationsView.qml")
         elif index in (self._IX_WIDGETS, self._IX_LAYOUTS):
-            if not self._widget_instances_migrated:
-                self._widget_instances_migrated = True
-                try:
-                    from stream_cheremsha.overlays.widget_instances import (
-                        migrate_legacy_to_instances,
-                        reconcile_legacy_singletons,
-                    )
-
-                    migrate_legacy_to_instances()
-                    reconcile_legacy_singletons()
-                except Exception:
-                    pass
             qml_path = _qml_path("WidgetsView.qml")
         elif index == self._IX_DOCKS:
             qml_path = _qml_path("DocksView.qml")
@@ -3197,11 +3203,185 @@ class MainWindow(FramelessWindow):
         upd_outer.addLayout(upd_grid)
         lay.addWidget(self._gb_updates)
 
-        scroll.setWidget(body)
-        center_row.addWidget(scroll)
-        page_lay.addLayout(center_row, stretch=1)
+        # --- Settings Center restructure: left nav + stacked categories ---
+        # Detach group boxes from the single-column layout; each category gets
+        # its own scroll page so only the right content area scrolls.
+        for _gb in (
+            self._gb_settings_general,
+            self._gb_obs,
+            self._gb_telegram,
+            self._gb_ai_shield,
+            self._gb_music,
+            self._gb_updates,
+        ):
+            lay.removeWidget(_gb)
+            _gb.setParent(body)
+            _gb.setStyleSheet(
+                "QGroupBox { background-color: #0F1626; border: 1px solid #1e2534;"
+                " border-radius: 10px; margin-top: 8px; padding: 12px 14px;"
+                " font-size: 13px; font-weight: 700; color: #eef2f6; }"
+                "QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 4px; }"
+            )
+        categories: list[tuple[str, str, list]] = [
+            ("general", self._tr("settings.general_group"),
+             [self._gb_settings_general]),
+            ("obs", self._tr("settings.obs_group"), [self._gb_obs]),
+            ("telegram", self._tr("settings.telegram_group"), [self._gb_telegram]),
+            ("ai", self._tr("settings.ai_shield_group"), [self._gb_ai_shield]),
+            ("music", self._tr("settings.music_group"), [self._gb_music]),
+            ("updates", self._tr("settings.updates_group"), [self._gb_updates]),
+        ]
+        # Clear old single-scroll hierarchy
+        scroll.setWidget(QWidget())
+        while center_row.count():
+            _item = center_row.takeAt(0)
+            if _item is not None and _item.widget() is not None:
+                _item.widget().setParent(page)
+        while page_lay.count():
+            _item = page_lay.takeAt(0)
+            if _item is not None and _item.layout() is not None:
+                pass
+
+        header = QHBoxLayout()
+        header.setContentsMargins(16, 14, 16, 6)
+        header.setSpacing(10)
+        hdr_icon = QLabel()
+        hdr_icon.setFixedSize(36, 36)
+        hdr_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        _gear_pm = QPixmap(str(_asset_path("icons/gear.svg")))
+        if not _gear_pm.isNull():
+            hdr_icon.setPixmap(
+                _gear_pm.scaled(
+                    24, 24,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                ),
+            )
+        hdr_icon.setStyleSheet(
+            "background: #0F1626; border: 1px solid #1e2534; border-radius: 8px;")
+        header.addWidget(hdr_icon, alignment=Qt.AlignmentFlag.AlignTop)
+        title_col = QVBoxLayout()
+        title_col.setSpacing(0)
+        lbl_title = QLabel(self._tr("tab.settings"))
+        lbl_title.setStyleSheet("color: #f3f4f6; font-size: 21px; font-weight: 800;")
+        lbl_sub = QLabel(self._settings_intro.text())
+        lbl_sub.setStyleSheet("color: #8b95a5; font-size: 12px;")
+        lbl_sub.setWordWrap(True)
+        title_col.addWidget(lbl_title)
+        title_col.addWidget(lbl_sub)
+        header.addLayout(title_col, stretch=1)
+        self._settings_search = QLineEdit()
+        self._settings_search.setPlaceholderText(self._tr("settings.search_ph"))
+        self._settings_search.setClearButtonEnabled(True)
+        self._settings_search.setMaximumWidth(260)
+        self._settings_search.setMinimumHeight(32)
+        self._settings_search.setStyleSheet(
+            "QLineEdit { background: #0F1626; border: 1px solid #1e2534;"
+            " border-radius: 8px; padding: 6px 10px; color: #eef2f6; font-size: 12px; }"
+        )
+        header.addWidget(self._settings_search)
+        saved_dot = QLabel(self._tr("settings.saved"))
+        saved_dot.setStyleSheet(
+            "color: #2dd4bf; font-size: 11px; background: rgba(45,212,191,0.08);"
+            " border: 1px solid rgba(45,212,191,0.35); border-radius: 8px; padding: 3px 10px;")
+        saved_dot.setStyleSheet("color: #2dd4bf; font-size: 11px;")
+        header.addWidget(saved_dot, alignment=Qt.AlignmentFlag.AlignVCenter)
+        page_lay.addLayout(header)
+
+        split = QHBoxLayout()
+        split.setContentsMargins(16, 6, 16, 12)
+        split.setSpacing(12)
+
+        nav = QListWidget()
+        nav.setObjectName("settingsNav")
+        nav.setFixedWidth(232)
+        nav.setSpacing(2)
+        nav.setStyleSheet(
+            "QListWidget#settingsNav { background: #0a0e18; border: 1px solid #1e2534;"
+            " border-radius: 10px; padding: 8px; }"
+            "QListWidget#settingsNav::item { height: 38px; border-radius: 8px;"
+            " padding: 0 10px; color: #c3cad7; font-size: 13px; font-weight: 600; }"
+            "QListWidget#settingsNav::item:hover { background: rgba(139,92,246,0.12);"
+            " color: #eef2f6; }"
+            "QListWidget#settingsNav::item:selected { background:"
+            " qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 rgba(34,211,238,0.16),"
+            " stop:1 rgba(76,53,171,0.28));"
+            " border: 1px solid rgba(139,92,246,0.55); color: #ffffff; }"
+        )
+        stack = QStackedWidget()
+        stack.setStyleSheet("QStackedWidget { background: transparent; }")
+        nav_icons = ("icons/settings_general.svg", "icons/settings_obs.svg",
+                     "icons/settings_telegram.svg", "icons/settings_ai.svg",
+                     "icons/settings_music.svg", "icons/settings_updates.svg")
+        for _idx, (_key, _label, _boxes) in enumerate(categories):
+            _item = QListWidgetItem(_label)
+            _ipm = QPixmap(str(_asset_path(nav_icons[_idx % len(nav_icons)])))
+            if not _ipm.isNull():
+                _item.setIcon(QIcon(_ipm))
+            nav.addItem(_item)
+            cat_scroll = QScrollArea()
+            cat_scroll.setWidgetResizable(True)
+            cat_scroll.setFrameShape(QFrame.Shape.NoFrame)
+            cat_scroll.setHorizontalScrollBarPolicy(
+                Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            cat_page = QWidget()
+            cat_lay = QVBoxLayout(cat_page)
+            cat_lay.setContentsMargins(2, 2, 2, 2)
+            cat_lay.setSpacing(12)
+            for _b in _boxes:
+                _b.setParent(cat_page)
+                _b.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                 QSizePolicy.Policy.Maximum)
+                cat_lay.addWidget(_b)
+            cat_lay.addStretch(1)
+            cat_scroll.setWidget(cat_page)
+            stack.addWidget(cat_scroll)
+        nav.setCurrentRow(0)
+        nav.currentRowChanged.connect(stack.setCurrentIndex)
+
+        def _filter_settings(text: str) -> None:
+            needle = (text or "").strip().lower()
+            for _i, (_key, _label, _boxes) in enumerate(categories):
+                if not needle:
+                    nav.setRowHidden(_i, False)
+                    continue
+                hay = (_label + " " + _key).lower()
+                match = needle in hay
+                for _b in _boxes:
+                    try:
+                        hay += " " + _b.title().lower() + " " + _b.text().lower() \
+                            if hasattr(_b, "text") else " " + _b.title().lower()
+                    except Exception:
+                        pass
+                    for _child in _b.findChildren((QLabel, QCheckBox, QPushButton)):
+                        try:
+                            hay += " " + _child.text().lower()
+                        except Exception:
+                            pass
+                nav.setRowHidden(_i, needle not in hay)
+                if match and needle:
+                    pass
+            # jump to first visible on typing
+            if needle:
+                for _i in range(nav.count()):
+                    if not nav.isRowHidden(_i):
+                        nav.setCurrentRow(_i)
+                        break
+
+        self._settings_search.textChanged.connect(_filter_settings)
+        split.addWidget(nav)
+        split.addWidget(stack, stretch=1)
+        page_lay.addLayout(split, stretch=1)
 
         self._apply_settings_tab_texts()
+        # refresh nav labels after retranslate hook runs
+        try:
+            for _i, (_k, _l, _b) in enumerate(categories):
+                nav.item(_i).setText(_l)
+        except Exception:
+            pass
+        self._settings_nav = nav
+        self._settings_stack = stack
         return page
 
     def _persist_obs_ws_host(self) -> None:
@@ -3300,7 +3480,7 @@ class MainWindow(FramelessWindow):
             manifest = await asyncio.to_thread(fetch_latest_manifest)
         except (OSError, ValueError, httpx.HTTPError, RuntimeError, TypeError) as e:
             if interactive:
-                QMessageBox.warning(self, title, str(e))
+                self._show_nonmodal_message_box(QMessageBox.Icon.Warning, title, str(e))
             return
 
         latest = manifest.version
@@ -3319,8 +3499,8 @@ class MainWindow(FramelessWindow):
 
         if not newer:
             if interactive:
-                QMessageBox.information(
-                    self,
+                self._show_nonmodal_message_box(
+                    QMessageBox.Icon.Information,
                     title,
                     self._tr("updates.up_to_date", version=current),
                 )
@@ -3340,7 +3520,9 @@ class MainWindow(FramelessWindow):
             if interactive and rel:
                 QDesktopServices.openUrl(QUrl(rel))
             elif interactive:
-                QMessageBox.information(self, title, self._tr("updates.redirect_releases"))
+                self._show_nonmodal_message_box(
+                    QMessageBox.Icon.Information, title, self._tr("updates.redirect_releases")
+                )
 
     def _app_version(self) -> str:
         try:
@@ -3401,16 +3583,26 @@ class MainWindow(FramelessWindow):
 
         win = manifest.platforms.windows
         if win is None:
-            QMessageBox.warning(self, title, self._tr("updates.no_windows_asset"))
+            self._show_nonmodal_message_box(
+                QMessageBox.Icon.Warning, title, self._tr("updates.no_windows_asset")
+            )
             return
 
         try:
             app_exe = Path(sys.executable).resolve()
         except OSError as exc:
-            QMessageBox.critical(self, title, self._tr("updates.updater_start_failed", error=exc))
+            self._show_nonmodal_message_box(
+                QMessageBox.Icon.Critical,
+                title,
+                self._tr("updates.updater_start_failed", error=exc),
+            )
             return
         if app_exe.name.lower() != "cheremsha.exe":
-            QMessageBox.warning(self, title, self._tr("updates.updater_requires_installed_app"))
+            self._show_nonmodal_message_box(
+                QMessageBox.Icon.Warning,
+                title,
+                self._tr("updates.updater_requires_installed_app"),
+            )
             return
 
         self._btn_updates_check_now.setEnabled(False)
@@ -3431,8 +3623,8 @@ class MainWindow(FramelessWindow):
             logger.exception("Unable to start updater")
             self._btn_updates_check_now.setEnabled(True)
             self._lbl_updates_status.setText("")
-            QMessageBox.critical(
-                self,
+            self._show_nonmodal_message_box(
+                QMessageBox.Icon.Critical,
                 title,
                 self._tr("updates.updater_start_failed", error=exc),
             )
@@ -5869,10 +6061,44 @@ class MainWindow(FramelessWindow):
         self._youtube_analytics.enqueue_viewers(int(n))
         self._social_rotator.on_viewers("youtube", int(n))
 
-    def _on_external_donation(self, name: str, amount: float, source: str) -> None:
+    def _on_external_donation(
+        self,
+        name: str,
+        amount: float,
+        source: str,
+        currency: str = "",
+        message: str = "",
+    ) -> None:
         if self._closing:
             return
         self._social_rotator.on_donation(name=name, amount=amount, source=source)
+        # Route new Donatik / Donatello donations into the Actions engine
+        # (rules stored under tiktok/app, trigger platform donatik/donatello/all).
+        try:
+            from stream_cheremsha.actions.events import DonateReceivedEvent
+            from stream_cheremsha.domain.models import ChatPlatform as _CP
+
+            src = (source or "").strip().lower()
+            plat = _CP.DONATIK if src == "donatik" else _CP.DONATELLO
+            try:
+                amt = max(0.0, float(amount))
+            except (TypeError, ValueError):
+                amt = 0.0
+            eng = self._get_actions_engine(
+                ChatPlatform.TIKTOK.value,
+                constants.TIKTOK_ACTIONS_ACCOUNT_KEY,
+            )
+            ev = DonateReceivedEvent(
+                platform=plat,
+                user=(name or "").strip() or "—",
+                amount=amt,
+                currency=(currency or "").strip(),
+                message=(message or "").strip(),
+                received_at=datetime.now(UTC),
+            )
+            asyncio.ensure_future(eng.on_donate_received(ev))
+        except (OSError, RuntimeError, ValueError) as e:
+            logger.debug("donation actions dispatch failed: %s", e)
 
     def _on_tiktok_join_any(self, user: str, stable_key: str = "", avatar_url: str = "") -> None:
         if self._closing:
@@ -6808,20 +7034,20 @@ class MainWindow(FramelessWindow):
             res.setText(msg)
             res.setStyleSheet("color: #fca5a5;")
             self._on_user_status(msg)
-            QMessageBox.warning(self, title, msg)
+            self._show_nonmodal_message_box(QMessageBox.Icon.Warning, title, msg)
         except (OSError, ValueError, TypeError) as e:
             logger.exception("OBS WebSocket test failed")
             msg = self._tr("obs.test_fail", detail=str(e))
             res.setText(msg)
             res.setStyleSheet("color: #fca5a5;")
             self._on_user_status(msg)
-            QMessageBox.warning(self, title, msg)
+            self._show_nonmodal_message_box(QMessageBox.Icon.Warning, title, msg)
         else:
             msg = self._tr("obs.test_ok", version=ver)
             res.setText(msg)
             res.setStyleSheet("color: #86efac;")
             self._on_user_status(msg)
-            QMessageBox.information(self, title, msg)
+            self._show_nonmodal_message_box(QMessageBox.Icon.Information, title, msg)
         finally:
             btn.setEnabled(True)
             btn.setText(old_btn_text)
@@ -7693,7 +7919,7 @@ class MainWindow(FramelessWindow):
 
     def _overlay_public_base_url(self) -> str:
         local_url = self._overlay_server.base_url()
-        if not bool(self._settings.value(constants.SETTINGS_OVERLAY_TUNNEL_ENABLED, False, bool)):
+        if not bool(self._settings.value(constants.SETTINGS_OVERLAY_TUNNEL_ENABLED, True, bool)):
             return local_url
         return f"https://{embedded.OVERLAY_PUBLIC_HOSTNAME}:17171"
 
@@ -7769,7 +7995,7 @@ class MainWindow(FramelessWindow):
         except RuntimeError:
             return
 
-        enabled = bool(self._settings.value(constants.SETTINGS_OVERLAY_TUNNEL_ENABLED, False, bool))
+        enabled = bool(self._settings.value(constants.SETTINGS_OVERLAY_TUNNEL_ENABLED, True, bool))
         if enabled:
             await self._overlay_tunnel.stop()
             if self._overlay_tunnel_qml_api is not None:

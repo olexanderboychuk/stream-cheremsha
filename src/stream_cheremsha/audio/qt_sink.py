@@ -6,12 +6,22 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QUrl
 from PySide6.QtMultimedia import QAudioOutput, QMediaDevices, QMediaPlayer
 
 logger = logging.getLogger(__name__)
+
+# Qt6 Multimedia on PipeWire (pw_thread_loop_lock + protocol-native event
+# handling) segfaults when two threads race inside backend creation, and can
+# also crash on first QAudioOutput construction while the PipeWire registry is
+# still changing. All QAudioOutput/QMediaPlayer constructions below are
+# serialized through this lock so Python never has two concurrent contenders
+# for the PipeWire thread loop. This cannot fix the upstream Qt/PipeWire bug
+# itself (see note in ensure_ready), it only removes our own trigger.
+_BACKEND_LOCK = threading.Lock()
 
 # Google Translate MP3 is often very quiet; ffmpeg applies gain before playback.
 _DEFAULT_TTS_GAIN_DB = 14
@@ -117,6 +127,25 @@ def _try_louder_mp3(data: bytes, gain_db: int) -> bytes:
     return data
 
 
+def _try_apply_volume(data: bytes, linear: float) -> bytes:
+    """Return ``data`` scaled by ``linear`` (0.0–1.0) gain, or original if ffmpeg can't help.
+
+    Identity is returned by reference when ``linear`` is ~1.0 so callers can detect
+    "no DSP needed" via ``out is data``. Returns a *new* bytes object on success,
+    ``data`` itself when ffmpeg is unavailable.
+    """
+    if not data:
+        return data
+    v = max(0.0, min(1.0, float(linear)))
+    if v >= 0.999:
+        return data
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        return data
+    out = _ffmpeg_try_filter_encodings(data, f"volume={v:.3f}")
+    return out if out is not None else data
+
+
 def _write_temp_audio(data: bytes) -> Path:
     if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WAVE":
         suffix = ".wav"
@@ -150,16 +179,24 @@ class QtAudioSink(QObject):
         """Create QtMultimedia backends if needed. Idempotent; post-show only."""
         if self._player is not None and self._audio is not None:
             return
-        player = QMediaPlayer(self)
-        audio = QAudioOutput(self)
-        player.setAudioOutput(audio)
-        player.errorOccurred.connect(self._on_player_error)
-        player.mediaStatusChanged.connect(self._on_media_status)
-        self._player = player
-        self._audio = audio
-        if self._pending_volume is not None:
-            audio.setVolume(self._pending_volume)
-            self._pending_volume = None
+        # NOTE: first QAudioOutput construction can still SEGV inside
+        # libpipewire-module-protocol-native (upstream Qt6/PipeWire race, not
+        # catchable from Python). Serializing here removes concurrent creation
+        # from our side; if the crash persists, workarounds are: update
+        # pipewire + Qt6, or run with QT_MEDIA_BACKEND=gstreamer.
+        with _BACKEND_LOCK:
+            if self._player is not None and self._audio is not None:
+                return
+            player = QMediaPlayer(self)
+            audio = QAudioOutput(self)
+            player.setAudioOutput(audio)
+            player.errorOccurred.connect(self._on_player_error)
+            player.mediaStatusChanged.connect(self._on_media_status)
+            self._player = player
+            self._audio = audio
+            if self._pending_volume is not None:
+                audio.setVolume(self._pending_volume)
+                self._pending_volume = None
 
     def set_tts_gain_db(self, db: int) -> None:
         """Base dB boost for ffmpeg TTS chain (0–36)."""
@@ -219,15 +256,21 @@ class QtAudioSink(QObject):
         except RuntimeError:
             return
 
-    async def _play_mp3_locked(self, data: bytes) -> None:
+    async def _play_mp3_locked(self, data: bytes, *, tts_boost: bool = True) -> None:
         self.ensure_ready()
         assert self._player is not None
         loop = asyncio.get_running_loop()
         fut: asyncio.Future[None] = loop.create_future()
         self._pending_fut = fut
 
-        boosted = await asyncio.to_thread(_try_louder_mp3, data, self._tts_gain_db)
-        if boosted is data:
+        if tts_boost:
+            boosted = await asyncio.to_thread(_try_louder_mp3, data, self._tts_gain_db)
+        else:
+            # SFX: play as-authored (caller already applied user volume); never run the
+            # TTS loudness chain (gain + dynaudnorm/loudnorm) which would normalize away
+            # the user's volume setting.
+            boosted = data
+        if boosted is data and tts_boost:
             ff = shutil.which("ffmpeg")
             logger.warning(
                 "TTS: підсилення ffmpeg не застосовано (%s B, base=%s dB, ffmpeg=%r). "
@@ -284,45 +327,64 @@ class QtAudioSink(QObject):
             if k in self._sound_dedupe_keys:
                 return False
             self._sound_dedupe_keys.add(k)
-        self.ensure_ready()
-        assert self._audio is not None
         try:
-            async with self._play_lock:
-                prev = float(self._audio.volume())
-                self._audio.setVolume(max(0.0, min(1.0, float(linear))))
-                try:
-                    await self._play_mp3_locked(data)
-                finally:
-                    self._audio.setVolume(prev)
+            await self.play_mp3_with_volume(data, linear)
             return True
         finally:
             async with self._sound_dedupe_lock:
                 self._sound_dedupe_keys.discard(k)
 
-    async def play_mp3_with_volume(self, data: bytes, linear: float) -> None:
-        """Play one clip at the given volume (atomic with playback lock)."""
+    async def _play_sequential_with_volume(self, data: bytes, linear: float) -> None:
+        """Sequential SFX playback: volume is baked into the audio via ffmpeg.
+
+        Falls back to the legacy QAudioOutput volume switch only when ffmpeg cannot
+        scale (missing/failed) — the DSP path is backend-independent and immune to
+        output-volume races.
+        """
+        v = max(0.0, min(1.0, float(linear)))
+        scaled = await asyncio.to_thread(_try_apply_volume, data, v)
+        if scaled is not data:
+            self.ensure_ready()
+            async with self._play_lock:
+                await self._play_mp3_locked(scaled, tts_boost=False)
+            return
         self.ensure_ready()
         assert self._audio is not None
         async with self._play_lock:
             prev = float(self._audio.volume())
-            self._audio.setVolume(max(0.0, min(1.0, float(linear))))
+            self._audio.setVolume(v)
             try:
-                await self._play_mp3_locked(data)
+                await self._play_mp3_locked(data, tts_boost=False)
             finally:
                 self._audio.setVolume(prev)
+
+    async def play_mp3_with_volume(self, data: bytes, linear: float) -> None:
+        """Play one clip at the given volume (atomic with playback lock)."""
+        await self._play_sequential_with_volume(data, linear)
 
     async def _play_mp3_parallel(self, data: bytes, linear: float) -> None:
         """Play one clip without waiting on the FIFO lock (allows overlap)."""
         loop = asyncio.get_running_loop()
         fut: asyncio.Future[None] = loop.create_future()
 
-        boosted = await asyncio.to_thread(_try_louder_mp3, data, self._tts_gain_db)
-        file_path = await asyncio.to_thread(_write_temp_audio, boosted)
+        v = max(0.0, min(1.0, float(linear)))
+        scaled = await asyncio.to_thread(_try_apply_volume, data, v)
+        if scaled is data:
+            # No DSP scaling (volume ~100% or ffmpeg unavailable): keep legacy behavior
+            # of putting the level on this clip's own QAudioOutput.
+            file_path = await asyncio.to_thread(_write_temp_audio, data)
+            out_volume = v
+        else:
+            # Volume already baked into the bytes; play at unity output volume.
+            # SFX must not go through the TTS loudness chain.
+            file_path = await asyncio.to_thread(_write_temp_audio, scaled)
+            out_volume = 1.0
 
-        player = QMediaPlayer(self)
-        audio = QAudioOutput(self)
-        player.setAudioOutput(audio)
-        audio.setVolume(max(0.0, min(1.0, float(linear))))
+        with _BACKEND_LOCK:
+            player = QMediaPlayer(self)
+            audio = QAudioOutput(self)
+            player.setAudioOutput(audio)
+            audio.setVolume(max(0.0, min(1.0, float(out_volume))))
 
         def _done_ok() -> None:
             if not fut.done():

@@ -170,6 +170,8 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "Check for updates on startup",
     },
     "settings.updates_check_now": {"uk": "Перевірити оновлення", "en": "Check for updates"},
+    "settings.search_ph": {"uk": "Пошук налаштувань…", "en": "Search settings…"},
+    "settings.saved": {"uk": "Збережено", "en": "Saved"},
     "updates.up_to_date": {
         "uk": "У вас остання версія ({version}).",
         "en": "You're up to date ({version}).",
@@ -645,8 +647,8 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "actions.btn": {"uk": "Дії", "en": "Actions"},
     "actions.title": {"uk": "Дії", "en": "Actions"},
     "actions.window_title": {"uk": "Дії — Stream Cheremsha", "en": "Actions — Stream Cheremsha"},
-    "actions.add_rule": {"uk": "+ Додати правило", "en": "+ Add rule"},
-    "actions.add_folder": {"uk": "+ Папка", "en": "+ Folder"},
+    "actions.add_rule": {"uk": "Додати правило", "en": "Add rule"},
+    "actions.add_folder": {"uk": "Папка", "en": "Folder"},
     "actions.folder_default_name": {"uk": "Нова папка", "en": "New folder"},
     "actions.folder_delete": {"uk": "Видалити папку", "en": "Delete folder"},
     "actions.drag_handle_tt": {"uk": "Перетягнути", "en": "Drag to reorder"},
@@ -683,8 +685,8 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "Create a rule that automatically reacts to chat events, gifts, subscriptions and other events.",
     },
     "actions.empty_create_rule": {
-        "uk": "+ Створити перше правило",
-        "en": "+ Create first rule",
+        "uk": "Створити перше правило",
+        "en": "Create first rule",
     },
     "actions.when_title": {"uk": "Коли відбувається?", "en": "When does it happen?"},
     "actions.when_subtitle": {
@@ -699,7 +701,7 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Додайте одну або декілька дій, які виконуватимуться після спрацювання правила",
         "en": "Add one or more actions to run after the rule is triggered",
     },
-    "actions.add_action_short": {"uk": "+ Додати дію", "en": "+ Add action"},
+    "actions.add_action_short": {"uk": "Додати дію", "en": "Add action"},
     "actions.advanced_params": {
         "uk": "Додаткові параметри",
         "en": "Advanced parameters",
@@ -746,7 +748,7 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "Simulates key presses",
     },
     "actions.then_empty_title": {"uk": "Що зробити?", "en": "What to do?"},
-    "actions.then_empty_cta": {"uk": "+ Додати першу дію", "en": "+ Add first action"},
+    "actions.then_empty_cta": {"uk": "Додати першу дію", "en": "Add first action"},
     "actions.then_empty_hint": {
         "uk": "Оберіть, що Cheremsha має зробити після спрацювання цього правила",
         "en": "Choose what Cheremsha should do after this rule triggers",
@@ -774,6 +776,8 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "actions.trigger_platform_twitch": {"uk": "Twitch", "en": "Twitch"},
     "actions.trigger_platform_youtube": {"uk": "YouTube", "en": "YouTube"},
     "actions.trigger_platform_kick": {"uk": "Kick", "en": "Kick"},
+    "actions.trigger_platform_donatik": {"uk": "Donatik", "en": "Donatik"},
+    "actions.trigger_platform_donatello": {"uk": "Donatello", "en": "Donatello"},
     "actions.event.chat_keyword": {"uk": "Певне слово в чаті", "en": "Chat keyword"},
     "actions.event.gift_received": {"uk": "Певний подарунок", "en": "Gift received"},
     "actions.event.tiktok_any_gift_received": {
@@ -820,6 +824,24 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "actions.event.kick_subscription": {"uk": "Підписка (Kick)", "en": "Subscription (Kick)"},
     "actions.event.kick_gift_sub": {"uk": "Подарунковий саб (Kick)", "en": "Gift sub (Kick)"},
     "actions.event.kick_gift": {"uk": "KICKS (Kick)", "en": "KICKS gifted (Kick)"},
+    "actions.event.donate": {"uk": "Донат (Donatik / Donatello)", "en": "Donate (Donatik / Donatello)"},
+    "actions.donate_min_amount": {
+        "uk": "Мін. сума доната",
+        "en": "Min donation amount",
+    },
+    "actions.donate_max_amount": {
+        "uk": "Макс. сума доната (0 = без ліміту)",
+        "en": "Max donation amount (0 = no limit)",
+    },
+    "actions.donate_currency_filter": {
+        "uk": "Валюта (опційно, напр. UAH)",
+        "en": "Currency (optional, e.g. UAH)",
+    },
+    "actions.donate_message_filter": {
+        "uk": "Текст повідомлення містить (опційно)",
+        "en": "Message contains (optional)",
+    },
+    "actions.donate_message_ph": {"uk": "текст…", "en": "text…"},
     "actions.twitch_min_bits": {"uk": "Мін. бітів", "en": "Min bits"},
     "actions.twitch_min_viewers": {"uk": "Мін. глядачів у рейді", "en": "Min raid viewers"},
     "actions.twitch_raider_filter": {
@@ -1001,11 +1023,20 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         ),
     },
     "actions.pick_file": {"uk": "Оберіть файл…", "en": "Pick file…"},
+    "actions.placeholders_reference_btn": {
+        "uk": "{…} Усі змінні",
+        "en": "{…} All variables",
+    },
+    "actions.placeholders_reference_title": {
+        "uk": "Усі доступні змінні",
+        "en": "All available variables",
+    },
+    "actions.placeholders_reference_close": {"uk": "Закрити", "en": "Close"},
     "actions.write_text": {"uk": "Текст", "en": "Text"},
     "actions.write_text_ph": {"uk": "що записати…", "en": "text to append…"},
     "actions.browse": {"uk": "Огляд…", "en": "Browse…"},
     "actions.clear": {"uk": "Очистити", "en": "Clear"},
-    "actions.add_action": {"uk": "+ Додати дію", "en": "+ Add action"},
+    "actions.add_action": {"uk": "Додати дію", "en": "Add action"},
     "actions.show_overlay": {"uk": "Показати в оверлеї Actions", "en": "Show on Actions overlay"},
     "actions.show_overlay_text": {"uk": "Текст", "en": "Text"},
     "actions.show_overlay_text_ph": {
@@ -1023,22 +1054,15 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Показати/сховати джерело у сцені",
         "en": "Show/hide source in scene",
     },
-    "actions.obs_scene_name": {"uk": "Назва сцени", "en": "Scene name"},
-    "actions.obs_scene_name_ph": {"uk": "наприклад: Game", "en": "e.g. Game"},
-    "actions.obs_source_name": {
-        "uk": "Назва джерела (у списку сцени)",
-        "en": "Source name (in scene list)",
-    },
-    "actions.obs_source_name_ph": {"uk": "наприклад: Alert", "en": "e.g. Alert"},
     "actions.obs_visible": {"uk": "Видимо", "en": "Visible"},
     "actions.obs_canvas": {"uk": "Полотно (canvas)", "en": "Canvas"},
     "actions.obs_canvas_default": {"uk": "Головне полотно", "en": "Main canvas"},
     "actions.obs_refresh_from_obs": {"uk": "Оновити списки з OBS", "en": "Refresh lists from OBS"},
     "actions.obs_scene_pick": {"uk": "Сцена з OBS", "en": "Scene from OBS"},
     "actions.obs_source_pick": {"uk": "Джерело з OBS", "en": "Source from OBS"},
-    "actions.obs_manual_names_hint": {
-        "uk": "Нижче можна ввести назви вручну (підтримуються плейсхолдери).",
-        "en": "You can still type names below (placeholders supported).",
+    "actions.obs_pick_hint": {
+        "uk": "Обери полотно, сцену та джерело зі списків OBS вище.",
+        "en": "Pick the canvas, scene and source from the OBS lists above.",
     },
     "actions.obs_revert_checkbox": {
         "uk": "Повернути попередній стан видимості (як до дії)",
@@ -2846,7 +2870,7 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "widgets.common.enable": {"uk": "Увімкнути", "en": "Enable"},
     "widgets.common.disable": {"uk": "Вимкнути", "en": "Disable"},
     # Widget instances (Type -> Instances)
-    "widgets.instances.create_button": {"uk": "+ Створити віджет", "en": "+ Create widget"},
+    "widgets.instances.create_button": {"uk": "Створити віджет", "en": "Create widget"},
     "widgets.instances.active": {"uk": "● Активний", "en": "● Active"},
     "widgets.instances.disabled": {"uk": "○ Вимкнено", "en": "○ Disabled"},
     "widgets.instances.new_title": {"uk": "Новий віджет", "en": "New widget"},
@@ -2862,7 +2886,7 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     },
     # Composed layouts (scenes)
     "widgets.layouts.scene": {"uk": "Сцена:", "en": "Scene:"},
-    "widgets.layouts.new": {"uk": "+ Нова", "en": "+ New"},
+    "widgets.layouts.new": {"uk": "Нова", "en": "New"},
     "widgets.layouts.name_placeholder": {"uk": "Назва сцени", "en": "Scene name"},
     "widgets.layouts.untitled": {"uk": "Сцена", "en": "Scene"},
     "widgets.layouts.default_name": {"uk": "Основна сцена", "en": "Main scene"},
@@ -2873,7 +2897,7 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Збирайте кілька віджетів в одну сцену та використовуйте одне посилання у стрімінговому софті.",
         "en": "Combine several widgets into one scene and use a single link in your streaming software.",
     },
-    "widgets.layouts.create": {"uk": "+ Створити layout", "en": "+ Create layout"},
+    "widgets.layouts.create": {"uk": "Створити layout", "en": "Create layout"},
     "widgets.layouts.stat_layouts": {"uk": "Layout-ів", "en": "Layouts"},
     "widgets.layouts.stat_widgets": {"uk": "Віджетів загалом", "en": "Widgets total"},
     "widgets.layouts.stat_active": {"uk": "Активний", "en": "Active"},
@@ -2888,9 +2912,9 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Створіть layout, додайте кілька віджетів та використовуйте одне посилання для всієї сцени.",
         "en": "Create a layout, add several widgets, and use one link for the whole scene.",
     },
-    "widgets.layouts.default_instance": {
-        "uk": "За замовчуванням (main)",
-        "en": "Default (main)",
+    "widgets.layouts.no_instance": {
+        "uk": "Немає інстансів — створіть у вкладці віджетів",
+        "en": "No instances — create one in the widgets tab",
     },
     "widgets.layouts.instance": {"uk": "Інстанс:", "en": "Instance:"},
     # Widget type names / descriptions
@@ -3066,7 +3090,7 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "social_rotator.empty": {"uk": "ОЧІКУЄМО ПЛАТФОРМИ", "en": "AWAITING PLATFORMS"},
     "social_rotator.ui.platforms": {"uk": "ПЛАТФОРМИ", "en": "PLATFORMS"},
     "social_rotator.ui.url_override": {"uk": "URL (опційно)", "en": "URL override"},
-    "social_rotator.ui.add_platform": {"uk": "+ ДОДАТИ ПЛАТФОРМУ", "en": "+ ADD PLATFORM"},
+    "social_rotator.ui.add_platform": {"uk": "ДОДАТИ ПЛАТФОРМУ", "en": "ADD PLATFORM"},
     "social_rotator.ui.rotation_ms": {"uk": "Ротація (мс)", "en": "Rotation (ms)"},
     "social_rotator.ui.rotation_hint": {"uk": "8000 = 8 секунд", "en": "8000 = 8 seconds"},
     "social_rotator.ui.transition": {"uk": "Перехід", "en": "Transition"},

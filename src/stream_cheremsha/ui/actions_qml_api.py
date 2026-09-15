@@ -303,6 +303,14 @@ def pick_preview_trigger_for_rule(
             if t == "kick_gift" and ("amount" in tokens or "count" in tokens):
                 score += 30
 
+        elif t == "donate":
+            if tp not in ("all", "donatik", "donatello"):
+                continue
+            if {"amount", "amount_value", "currency"} & tokens:
+                score += 30
+            elif hints.engagement_no_count:
+                score += 10
+
         else:
             score = 0
 
@@ -442,6 +450,39 @@ class ActionsQmlApi(QObject):
     def kindValuesForPlatformJson(self, platform: str) -> str:
         """JSON array of event type ids allowed for a trigger platform."""
         return json.dumps(list(kind_values_for_platform(platform)))
+
+    @Slot(result=str)
+    def placeholderReferenceJson(self) -> str:
+        """Localized categorized `{variable}` reference for the Actions editor."""
+        from stream_cheremsha.actions.action_placeholders import (  # noqa: PLC0415
+            placeholder_reference,
+        )
+
+        w = self._win()
+        try:
+            locale = w._get_locale() if w is not None else "uk"  # noqa: SLF001
+        except (AttributeError, RuntimeError):
+            locale = "uk"
+        lc = "en" if str(locale or "").strip().lower().startswith("en") else "uk"
+        out: list[dict[str, object]] = []
+        for cat in placeholder_reference(lc):
+            title = cat.get(f"title_{lc}") or cat.get("title_en") or ""
+            rows: list[dict[str, object]] = []
+            for v in cat.get("vars", []):
+                if not isinstance(v, dict):
+                    continue
+                names = v.get("names", [])
+                desc = v.get(lc) or v.get("en") or ""
+                rows.append({"names": list(names), "desc": desc})
+            out.append(
+                {"title": title, "triggers": cat.get("triggers", ""), "vars": rows}
+            )
+        dialog_title = (
+            "All available variables" if lc == "en" else "Усі доступні змінні"
+        )
+        return json.dumps(
+            {"title": dialog_title, "categories": out}, ensure_ascii=False
+        )
 
     @Slot(str, str, str)
     def saveRulesJson(self, platform: str, accountKey: str, rulesJson: str) -> None:
@@ -1036,6 +1077,52 @@ class ActionsQmlApi(QObject):
             if isinstance(params, dict):
                 u = str(params.get("user") or "preview").strip() or "preview"
             _schedule_preview_task(eng.on_youtube_member(u, 1, "Member", now))
+            msg = ""
+            if wants_overlay and ps is None:
+                msg = "Overlay preview unavailable (overlay server missing)."
+            return msg
+
+        if ev_type == "donate":
+            from stream_cheremsha.actions.events import DonateReceivedEvent as _DonateEv
+            from stream_cheremsha.domain.models import ChatPlatform as _CP
+
+            params = ev0.get("params") or {}
+            min_amount = 0.0
+            max_amount = 0.0
+            u = "preview"
+            if isinstance(params, dict):
+                try:
+                    min_amount = float(str(params.get("min_amount", 0)).replace(",", "."))
+                except (TypeError, ValueError):
+                    min_amount = 0.0
+                try:
+                    max_amount = float(str(params.get("max_amount", 0)).replace(",", "."))
+                except (TypeError, ValueError):
+                    max_amount = 0.0
+                u = str(params.get("user") or "preview").strip() or "preview"
+            if min_amount < 0:
+                min_amount = 0.0
+            if max_amount < 0:
+                max_amount = 0.0
+            tp_d = trigger_platform_effective(ev0)
+            plat = _CP.DONATIK if tp_d == "donatik" else (
+                _CP.DONATELLO if tp_d == "donatello" else _CP.DONATIK
+            )
+            # Pick a preview amount inside [min, max] so the preview matches the rule.
+            amount = max(min_amount, 10.0)
+            if max_amount > 0:
+                amount = min(amount, max_amount)
+                if amount < min_amount:
+                    amount = max_amount
+            dev = _DonateEv(
+                platform=plat,
+                user=u,
+                amount=amount,
+                currency="UAH",
+                message="preview donation",
+                received_at=now,
+            )
+            _schedule_preview_task(eng.on_donate_received(dev))
             msg = ""
             if wants_overlay and ps is None:
                 msg = "Overlay preview unavailable (overlay server missing)."

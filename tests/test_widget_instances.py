@@ -14,40 +14,32 @@ def _fresh_settings() -> QSettings:
     return s
 
 
-def test_migration_preserves_exact_settings() -> None:
+def test_create_preserves_exact_settings() -> None:
     s = _fresh_settings()
-    legacy = {"schema_version": 1, "limit": 7, "theme": "custom", "show_avatars": False}
-    s.setValue("overlays/top_likers/main/config_json", json.dumps(legacy))
-    s.sync()
-    created = wi.migrate_legacy_to_instances(s)
-    assert any(x.type_id == "top_likers" for x in created)
-    inst = wi.find_legacy_instance("top_likers", "main", s)
+    saved = {"schema_version": 1, "limit": 7, "theme": "custom", "show_avatars": False}
+    inst = wi.create_instance("top_likers", "Top Likers", dict(saved), s)
     assert inst is not None
-    assert inst.name == wi.widget_type_name("top_likers")
-    assert inst.settings == legacy
-    assert inst.legacy_key == "main"
+    for k, v in saved.items():
+        assert inst.settings[k] == v
 
 
-def test_migration_is_idempotent() -> None:
+def test_create_is_isolated_per_id() -> None:
     s = _fresh_settings()
-    s.setValue("overlays/chat/main/config_json", json.dumps({"schema_version": 1, "max_items": 12}))
-    s.sync()
-    wi.migrate_legacy_to_instances(s)
-    wi.migrate_legacy_to_instances(s)
-    wi.migrate_legacy_to_instances(s)
+    a = wi.create_instance("chat", "Chat A", {"schema_version": 1, "max_items": 12}, s)
+    b = wi.create_instance("chat", "Chat B", {"schema_version": 1, "max_items": 34}, s)
+    assert a.id != b.id
     items = [x for x in wi.list_instances(s) if x.type_id == "chat"]
-    assert len(items) == 1
+    assert len(items) == 2
 
 
-def test_legacy_url_resolves() -> None:
+def test_by_id_resolves() -> None:
     s = _fresh_settings()
-    s.setValue("overlays/chat/main/config_json", json.dumps({"schema_version": 1, "max_items": 5}))
-    s.sync()
-    wi.migrate_legacy_to_instances(s)
-    resolved = wi.resolve_legacy_params("chat", "main", s)
+    inst = wi.create_instance("chat", "Chat", {"schema_version": 1, "max_items": 5}, s)
+    resolved = wi.resolve_ws_params("chat", inst.id, s)
     assert resolved is not None
     assert resolved["max_items"] == 5
-    assert wi.resolve_legacy_params("chat", "main", s) is not None
+    assert wi.resolve_ws_params("online", inst.id, s) is None  # wrong type
+    assert wi.resolve_ws_params("chat", "nope", s) is None
 
 
 def test_instances_coexist_and_isolated() -> None:
@@ -222,7 +214,7 @@ def test_new_strings_translated_uk_en() -> None:
         "widgets.layouts.default_name",
         "widgets.layouts.new_name",
         "widgets.layouts.copy_suffix",
-        "widgets.layouts.default_instance",
+        "widgets.layouts.no_instance",
         "widgets.layouts.instance",
     ]
     for t in sorted(wimod.WIDGET_TYPES):
@@ -320,11 +312,10 @@ INST_ROUTING_CASES = [
 ]
 
 
-def test_slot_routing_all_types_legacy_untouched(monkeypatch) -> None:
+def test_slot_routing_all_types_instance_only(monkeypatch) -> None:
     """Full QML-equivalent flow per type: create -> edit -> load -> save.
 
-    The instance must receive the new values; the legacy singleton blob
-    must stay byte-identical (the reported 'save changed my default' bug).
+    The instance must receive the new values.
     """
     import importlib
 
@@ -343,11 +334,6 @@ def test_slot_routing_all_types_legacy_untouched(monkeypatch) -> None:
         QSettings("t-org-route", scope).clear()
 
         api = WidgetsQmlApi(overlay_base_url="")
-        # seed legacy singleton with marker values through the real slot
-        legacy_before = getattr(api, load_slot)()
-        getattr(api, save_slot)(json.dumps(legacy_before))
-        legacy_key = wimod.WIDGET_TYPES[type_id]["legacy_key"]
-        blob_before = str(QSettings("t-org-route", scope).value(legacy_key, "", str) or "")
 
         iid = api.createWidgetInstance(type_id, f"Test {type_id}")
         assert iid, type_id
@@ -371,41 +357,24 @@ def test_slot_routing_all_types_legacy_untouched(monkeypatch) -> None:
         # (from_json normalization like clamping applies to both equally).
         assert getattr(api, load_slot)() == wimod.merged_settings(inst), type_id
         assert inst.settings.get(key) == getattr(api, load_slot)().get(key), (type_id, key)
-        blob_after = str(QSettings("t-org-route", scope).value(legacy_key, "", str) or "")
-        assert blob_after == blob_before, (type_id, "legacy singleton was modified")
         api.clearEditingInstance()
 
 
-def test_ws_tokens_isolate_legacy_and_new() -> None:
-    """Old migrated widget and new instances must never share a WS topic/config.
-
-    Regression: by-id pages subscribed with a truncated token that the WS
-    handler could not resolve, so every new instance rendered the legacy
-    singleton config (instances 'overlapping' each other).
-    """
+def test_ws_tokens_isolate_instances() -> None:
+    """Instances must never share a WS topic/config."""
     s = _fresh_settings()
-    legacy = {"schema_version": 1, "max_items": 5}
-    s.setValue("overlays/chat/main/config_json", json.dumps(legacy))
-    s.sync()
-    wi.migrate_legacy_to_instances(s)
+    a = wi.create_instance("chat", "Chat A", {"max_items": 5}, s)
     new_inst = wi.create_instance("chat", "New Chat", {"max_items": 99}, s)
 
-    legacy_inst = wi.find_legacy_instance("chat", "main", s)
-    assert legacy_inst is not None
-    assert wi.ws_token_for(legacy_inst) == "main"
-    assert wi.ws_token_for(new_inst) == new_inst.id
+    assert a.id != new_inst.id
     assert len(new_inst.id) <= 64
 
     # WS subscription resolution (what server._ws injects into initial_state)
-    assert wi.resolve_ws_params("chat", "main", s)["max_items"] == 5
-    assert wi.resolve_ws_params("chat", "default", s)["max_items"] == 5
+    assert wi.resolve_ws_params("chat", a.id, s)["max_items"] == 5
     resolved_new = wi.resolve_ws_params("chat", new_inst.id, s)
     assert resolved_new is not None and resolved_new["max_items"] == 99
     assert wi.resolve_ws_params("chat", "nope", s) is None
     assert wi.resolve_ws_params("online", new_inst.id, s) is None  # wrong type
-
-    # Old truncated-token pages (rendered before full-id tokens) still resolve
-    assert wi.find_by_ws_token("chat", new_inst.id[:24], s).id == new_inst.id
 
 
 def test_by_id_page_subscribes_with_full_id_token() -> None:
@@ -415,22 +384,16 @@ def test_by_id_page_subscribes_with_full_id_token() -> None:
     inst = wi.create_instance("chat", "Full Token", {"max_items": 7}, s)
     html = ChatOverlayType().render_html(
         {
-            "instance": wi.ws_token_for(inst),
+            "instance": inst.id,
             "instance_id": inst.id,
             "instance_settings": wi.merged_settings(inst),
         }
     )
     assert inst.id in html  # subscribe carries the full token, not a prefix
-    assert "?instance=main" not in html
 
 
-def test_legacy_edit_writes_through_to_singleton(monkeypatch) -> None:
-    """Editing the migrated default must update BOTH store and singleton.
-
-    Regression: the save skipped the singleton while controllers
-    (social_rotator ticks every 250ms) kept publishing it, so the overlay
-    flashed the new config for a second and then reverted.
-    """
+def test_instance_edit_persists(monkeypatch) -> None:
+    """Editing an instance must persist into the store."""
     import stream_cheremsha.overlays.social_rotator_overlay_config as srmod
     import stream_cheremsha.overlays.widget_instances as wimod
     from stream_cheremsha.ui.widgets_qml_api import WidgetsQmlApi
@@ -440,13 +403,9 @@ def test_legacy_edit_writes_through_to_singleton(monkeypatch) -> None:
     QSettings("t-org-wt", "t-app-wt").clear()
 
     api = WidgetsQmlApi(overlay_base_url="")
-    seed = api.loadSocialRotatorOverlayConfigMap()
-    api.saveSocialRotatorOverlayConfigJson(json.dumps(seed))
-    wimod.migrate_legacy_to_instances()
+    iid = api.createWidgetInstance("social_rotator", "SR")
 
-    legacy = wimod.find_legacy_instance("social_rotator", "main")
-    assert legacy is not None
-    api.setEditingInstanceId(legacy.id)
+    api.setEditingInstanceId(iid)
 
     loaded = api.loadSocialRotatorOverlayConfigMap()
     int_keys = [
@@ -460,43 +419,16 @@ def test_legacy_edit_writes_through_to_singleton(monkeypatch) -> None:
     loaded["enabled"] = not bool(loaded.get("enabled", True))
     api.saveSocialRotatorOverlayConfigJson(json.dumps(loaded))
 
-    # controller path (legacy singleton) agrees with the store: no revert.
-    # (from_json normalization such as clamping applies to both equally.)
-    fresh_singleton = srmod.load_social_rotator_overlay_config()
-    stored = wimod.get_instance(legacy.id).settings.get(key)
-    assert getattr(fresh_singleton, key) == stored
+    stored = wimod.get_instance(iid).settings.get(key)
     assert api.loadSocialRotatorOverlayConfigMap()[key] == stored
-    assert bool(fresh_singleton.enabled) is False
-    assert wimod.get_instance(legacy.id).settings.get("enabled") is False
     api.clearEditingInstance()
 
 
-def test_reconcile_heals_diverged_singleton() -> None:
+def test_instance_update_roundtrip() -> None:
     s = _fresh_settings()
-    s.setValue("overlays/chat/main/config_json", json.dumps({"schema_version": 1, "max_items": 5}))
-    s.sync()
-    wi.migrate_legacy_to_instances(s)
-    # simulate divergence: editor saves went only to the store
-    inst = wi.find_legacy_instance("chat", "main", s)
+    inst = wi.create_instance("chat", "Chat", {"schema_version": 1, "max_items": 5}, s)
     wi.update_instance_settings(inst.id, {"schema_version": 1, "max_items": 42}, s)
-
-    synced = wi.reconcile_legacy_singletons(s)
-    assert synced == ["chat"]
-    assert json.loads(str(s.value("overlays/chat/main/config_json", "", str)))["max_items"] == 42
-    # second run is a no-op
-    assert wi.reconcile_legacy_singletons(s) == []
-
-
-def test_sync_store_from_legacy_singleton() -> None:
-    s = _fresh_settings()
-    s.setValue("overlays/chat/main/config_json", json.dumps({"schema_version": 1, "max_items": 5}))
-    s.sync()
-    wi.migrate_legacy_to_instances(s)
-    # direct singleton rewrite (repair path) syncs back into the store
-    s.setValue("overlays/chat/main/config_json", json.dumps({"schema_version": 1, "max_items": 9}))
-    s.sync()
-    assert wi.sync_store_from_legacy_singleton("chat", s) is True
-    assert wi.find_legacy_instance("chat", "main", s).settings["max_items"] == 9
+    assert wi.get_instance(inst.id, s).settings["max_items"] == 42
 
 
 def test_all_type_editors_route_through_instances() -> None:

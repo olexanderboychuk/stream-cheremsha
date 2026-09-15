@@ -8,7 +8,7 @@ from typing import Any
 from stream_cheremsha.domain.models import ChatPlatform
 
 ALLOWED_TRIGGER_PLATFORMS: frozenset[str] = frozenset(
-    {"all", "tiktok", "twitch", "youtube", "kick"}
+    {"all", "tiktok", "twitch", "youtube", "kick", "donatik", "donatello"}
 )
 
 
@@ -29,6 +29,8 @@ def default_trigger_platform_for_event_type(event_type: str) -> str:
         return "youtube"
     if t.startswith("kick_"):
         return "kick"
+    if t == "donate":
+        return "all"
     return "tiktok"
 
 
@@ -73,6 +75,14 @@ def trigger_platform_applies_to_youtube_channel_events(ev_blob: Mapping[str, Any
 def trigger_platform_applies_to_kick_channel_events(ev_blob: Mapping[str, Any]) -> bool:
     tp = trigger_platform_effective(ev_blob)
     return tp in frozenset({"all", "kick"})
+
+
+def trigger_platform_applies_to_donate(ev_blob: Mapping[str, Any], donate_platform: str) -> bool:
+    """Donation triggers: explicit `donatik`/`donatello` or `all` matches any provider."""
+    tp = trigger_platform_effective(ev_blob)
+    if tp == "all":
+        return True
+    return tp == (donate_platform or "").strip().lower()
 
 
 def chat_platform_for_preview(trigger_platform: str, *, store_platform: str) -> ChatPlatform:

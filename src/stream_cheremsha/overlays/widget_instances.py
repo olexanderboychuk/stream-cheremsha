@@ -1,8 +1,7 @@
 """Widget-Type -> Widget-Instance system.
 
-Backward-compatible layer over the existing per-widget QSettings blobs
-(``overlays/<type>/main/config_json``). Instances live in the SAME
-QSettings mechanism under ``overlays/widget_instances/config_json``.
+Instances live in QSettings under ``overlays/widget_instances/config_json``.
+Each instance is addressed only by its id (``/overlay/by-id/{id}``).
 """
 
 from __future__ import annotations
@@ -22,15 +21,14 @@ _LOG = logging.getLogger(__name__)
 
 INSTANCES_QSETTINGS_KEY = "overlays/widget_instances/config_json"
 _INSTANCES_BACKUP_KEY = "overlays/widget_instances/config_json_backup"
-_MIGRATED_FLAG_KEY = "overlays/widget_instances/migrated_v1"
 SCHEMA_VERSION = 1
 
-# type_id -> meta (legacy key, display name, description, icon, platforms).
+# type_id -> meta (display name, description, icon, platforms).
 # platforms: list of "tiktok" | "twitch" | "kick" | "youtube" | "all".
 # A widget may list several platforms; "all" means platform-agnostic.
 # accent: card accent color (hex) for the shared CheremshaSourceCard.
 # icon_svg: local SVG asset (relative to src/stream_cheremsha/assets/) used
-#   by the shared card instead of the legacy emoji `icon`.
+#   by the shared card instead of the emoji `icon`.
 WIDGET_TYPES: dict[str, dict[str, Any]] = {
     "chat": {
         "name": "Чат",
@@ -38,7 +36,6 @@ WIDGET_TYPES: dict[str, dict[str, Any]] = {
         "icon": "💬",
         "icon_svg": "icons/web_multichat.svg",
         "accent": "#8b5cf6",
-        "legacy_key": "overlays/chat/main/config_json",
         "platforms": ["tiktok", "twitch", "kick", "youtube"],
     },
     "actions": {
@@ -47,7 +44,6 @@ WIDGET_TYPES: dict[str, dict[str, Any]] = {
         "icon": "⚡",
         "icon_svg": "icons/web_bolt.svg",
         "accent": "#fb923c",
-        "legacy_key": "overlays/actions/main/config_json",
         "platforms": ["all"],
     },
     "activity": {
@@ -56,7 +52,6 @@ WIDGET_TYPES: dict[str, dict[str, Any]] = {
         "icon": "📊",
         "icon_svg": "icons/web_activity.svg",
         "accent": "#f59e0b",
-        "legacy_key": "",
         "platforms": ["all"],
     },
     "online": {
@@ -65,7 +60,6 @@ WIDGET_TYPES: dict[str, dict[str, Any]] = {
         "icon": "👥",
         "icon_svg": "icons/web_online.svg",
         "accent": "#06b6d4",
-        "legacy_key": "overlays/online/main/config_json",
         "platforms": ["all"],
     },
     "top_likers": {
@@ -74,7 +68,6 @@ WIDGET_TYPES: dict[str, dict[str, Any]] = {
         "icon": "👍",
         "icon_svg": "icons/heart.svg",
         "accent": "#f472b6",
-        "legacy_key": "overlays/top_likers/main/config_json",
         "platforms": ["tiktok"],
     },
     "top_gifters": {
@@ -83,7 +76,6 @@ WIDGET_TYPES: dict[str, dict[str, Any]] = {
         "icon": "🎁",
         "icon_svg": "icons/web_event_gift.svg",
         "accent": "#fb7185",
-        "legacy_key": "overlays/top_gifters/main/config_json",
         "platforms": ["tiktok"],
     },
     "king_of_live": {
@@ -92,7 +84,6 @@ WIDGET_TYPES: dict[str, dict[str, Any]] = {
         "icon": "👑",
         "icon_svg": "icons/web_crown.svg",
         "accent": "#eab308",
-        "legacy_key": "overlays/king_of_live/main/config_json",
         "platforms": ["tiktok"],
     },
     "battle_royale": {
@@ -101,7 +92,6 @@ WIDGET_TYPES: dict[str, dict[str, Any]] = {
         "icon": "⚔️",
         "icon_svg": "icons/web_swords.svg",
         "accent": "#ef4444",
-        "legacy_key": "overlays/battle_royale/main/config_json",
         "platforms": ["tiktok"],
     },
     "stream_pet": {
@@ -110,7 +100,6 @@ WIDGET_TYPES: dict[str, dict[str, Any]] = {
         "icon": "🐾",
         "icon_svg": "icons/web_paw.svg",
         "accent": "#10b981",
-        "legacy_key": "overlays/stream_pet/main/config_json",
         "platforms": ["all"],
     },
     "community_world": {
@@ -119,7 +108,6 @@ WIDGET_TYPES: dict[str, dict[str, Any]] = {
         "icon": "🏘️",
         "icon_svg": "icons/web_globe.svg",
         "accent": "#60a5fa",
-        "legacy_key": "overlays/community_world/main/config_json",
         "platforms": ["all"],
     },
     "stream_goal": {
@@ -128,7 +116,6 @@ WIDGET_TYPES: dict[str, dict[str, Any]] = {
         "icon": "🎯",
         "icon_svg": "icons/web_target.svg",
         "accent": "#34d399",
-        "legacy_key": "overlays/stream_goal/main/config_json",
         "platforms": ["all"],
     },
     "live_leaderboard": {
@@ -137,7 +124,6 @@ WIDGET_TYPES: dict[str, dict[str, Any]] = {
         "icon": "🏆",
         "icon_svg": "icons/web_trophy.svg",
         "accent": "#a78bfa",
-        "legacy_key": "overlays/live_leaderboard/main/config_json",
         "platforms": ["all"],
     },
     "social_rotator": {
@@ -146,7 +132,6 @@ WIDGET_TYPES: dict[str, dict[str, Any]] = {
         "icon": "🔄",
         "icon_svg": "icons/web_refresh.svg",
         "accent": "#38bdf8",
-        "legacy_key": "overlays/social_rotator/main/config_json",
         "platforms": ["all"],
     },
     "webcam_frame": {
@@ -155,7 +140,6 @@ WIDGET_TYPES: dict[str, dict[str, Any]] = {
         "icon": "📷",
         "icon_svg": "icons/web_camera.svg",
         "accent": "#94a3b8",
-        "legacy_key": "overlays/webcam_frame/main/config_json",
         "platforms": ["all"],
     },
     "signal_system": {
@@ -164,7 +148,6 @@ WIDGET_TYPES: dict[str, dict[str, Any]] = {
         "icon": "📡",
         "icon_svg": "icons/web_signal.svg",
         "accent": "#2dd4bf",
-        "legacy_key": "overlays/signal_system/main/config_json",
         "platforms": ["all"],
     },
     "music": {
@@ -173,12 +156,11 @@ WIDGET_TYPES: dict[str, dict[str, Any]] = {
         "icon": "🎵",
         "icon_svg": "icons/web_music.svg",
         "accent": "#e879f9",
-        "legacy_key": "",
         "platforms": ["all"],
     },
 }
 
-_LEGACY_DEFAULTS_LOADERS: dict[str, str] = {
+_DEFAULTS_LOADERS: dict[str, str] = {
     "chat": "stream_cheremsha.overlays.chat_config:chat_config_defaults:chat_config_to_json_text",
     "actions": "stream_cheremsha.overlays.actions_config:actions_config_defaults:actions_config_to_json_text",
     "online": "stream_cheremsha.overlays.online_overlay_config:online_overlay_config_defaults:online_overlay_config_to_json_text",
@@ -226,10 +208,6 @@ def _new_id() -> str:
     return uuid.uuid4().hex
 
 
-def _stable_legacy_id(type_id: str) -> str:
-    return uuid.uuid5(uuid.NAMESPACE_URL, f"cheremsha:legacy:{type_id}:main").hex
-
-
 @dataclass(slots=True)
 class WidgetInstance:
     id: str
@@ -239,7 +217,6 @@ class WidgetInstance:
     enabled: bool = True
     created_at: str = field(default_factory=_utcnow)
     updated_at: str = field(default_factory=_utcnow)
-    legacy_key: str | None = None  # "main" for migrated legacy widgets
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -250,7 +227,6 @@ class WidgetInstance:
             "enabled": bool(self.enabled),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
-            "legacy_key": self.legacy_key,
         }
 
     @staticmethod
@@ -263,7 +239,6 @@ class WidgetInstance:
             enabled=bool(raw.get("enabled", True)),
             created_at=str(raw.get("created_at") or _utcnow()),
             updated_at=str(raw.get("updated_at") or _utcnow()),
-            legacy_key=raw.get("legacy_key"),
         )
 
 
@@ -273,7 +248,7 @@ def _settings_obj(settings: QSettings | None) -> QSettings:
 
 def default_settings_for(type_id: str) -> dict[str, Any]:
     """Deep-copied defaults for a type; {} if type has no config module."""
-    spec = _LEGACY_DEFAULTS_LOADERS.get(type_id)
+    spec = _DEFAULTS_LOADERS.get(type_id)
     if not spec:
         return {}
     try:
@@ -327,22 +302,11 @@ def get_instance(instance_id: str, settings: QSettings | None = None) -> WidgetI
     return None
 
 
-def find_legacy_instance(
-    type_id: str, legacy: str = "main", settings: QSettings | None = None
-) -> WidgetInstance | None:
-    found = [
-        x
-        for x in list_instances(settings)
-        if x.type_id == type_id and (x.legacy_key or "") == legacy
-    ]
-    if len(found) > 1:
-        _LOG.warning(
-            "multiple legacy instances for type=%r legacy=%r; using %r",
-            type_id,
-            legacy,
-            found[0].id[:12],
-        )
-    return found[0] if found else None
+def get_by_id(instance_id: str, settings: QSettings | None = None) -> WidgetInstance | None:
+    token = (instance_id or '').strip()
+    if not token:
+        return None
+    return get_instance(token, settings)
 
 
 def merged_settings(inst: WidgetInstance) -> dict[str, Any]:
@@ -350,6 +314,15 @@ def merged_settings(inst: WidgetInstance) -> dict[str, Any]:
     merged = default_settings_for(inst.type_id)
     merged.update(copy.deepcopy(inst.settings))
     return merged
+
+
+def resolve_ws_params(
+    type_id: str, instance: str, settings: QSettings | None = None
+) -> dict[str, Any] | None:
+    inst = get_by_id(instance, settings)
+    if inst is None or inst.type_id != type_id:
+        return None
+    return merged_settings(inst)
 
 
 def create_instance(
@@ -420,7 +393,6 @@ def _duplicate_name(base: str, taken: list[str]) -> str:
     """Numbered duplicate name: ``<base> 2``, ``<base> 3``, ..."""
     import re
 
-    # Strip a previous " N" / " Copy" / " Копія" tail so re-duplicates increment.
     clean = re.sub(r"\s+(?:\d+|Copy|Копія)$", "", (base or "").strip(), flags=re.IGNORECASE) or base
     used = set(taken)
     n = 2
@@ -442,7 +414,6 @@ def duplicate_instance(
                 name=_duplicate_name(inst.name, [x.name for x in instances]),
                 settings=copy.deepcopy(inst.settings),
                 enabled=inst.enabled,
-                legacy_key=None,
             )
             instances.append(dup)
             save_instances(instances, s)
@@ -460,192 +431,6 @@ def delete_instance(instance_id: str, settings: QSettings | None = None) -> bool
     return True
 
 
-def sync_store_from_legacy_singleton(type_id: str, settings: QSettings | None = None) -> bool:
-    """Copy the raw legacy singleton blob into the legacy instance store.
-
-    Used after repair paths that rewrite the singleton directly
-    (e.g. live_leaderboard migrate-on-load). Returns True when synced.
-    """
-    s = _settings_obj(settings)
-    meta = WIDGET_TYPES.get(type_id, {})
-    legacy_qkey = meta.get("legacy_key", "")
-    if not legacy_qkey:
-        return False
-    inst = find_legacy_instance(type_id, "main", s)
-    if inst is None:
-        return False
-    raw = str(s.value(legacy_qkey, "", str) or "").strip()
-    if not raw:
-        return False
-    try:
-        saved = json.loads(raw)
-    except (ValueError, TypeError, json.JSONDecodeError):
-        return False
-    if not isinstance(saved, dict):
-        return False
-    instances = list_instances(s)
-    for x in instances:
-        if x.id == inst.id:
-            x.settings = copy.deepcopy(saved)
-            x.updated_at = _utcnow()
-    save_instances(instances, s)
-    return True
-
-
-def reconcile_legacy_singletons(settings: QSettings | None = None) -> list[str]:
-    """Heal diverged machines: instance store is the source of truth.
-
-    Rewrites a legacy singleton from its legacy instance's merged settings
-    when both parse but differ (e.g. saves that previously skipped the
-    singleton while controllers kept reading it). Returns synced type ids.
-    Never touches the store; never creates instances (see migrate_...).
-    """
-    s = _settings_obj(settings)
-    synced: list[str] = []
-    for type_id, meta in WIDGET_TYPES.items():
-        legacy_qkey = meta.get("legacy_key", "")
-        if not legacy_qkey:
-            continue
-        inst = find_legacy_instance(type_id, "main", s)
-        if inst is None:
-            continue
-        raw = str(s.value(legacy_qkey, "", str) or "").strip()
-        try:
-            singleton = json.loads(raw) if raw else None
-        except (ValueError, TypeError, json.JSONDecodeError):
-            continue
-        merged = merged_settings(inst)
-        if isinstance(singleton, dict) and singleton == merged:
-            continue
-        if not isinstance(singleton, dict) and not raw:
-            pass  # missing singleton: restore from store below
-        elif not isinstance(singleton, dict):
-            continue
-        text = json.dumps(merged, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-        s.setValue(legacy_qkey, text)
-        s.setValue(legacy_qkey + "_backup", text)
-        synced.append(type_id)
-    if synced:
-        s.sync()
-        _LOG.info("reconciled legacy singletons from instance store: %s", synced)
-    return synced
-
-
-def migrate_legacy_to_instances(settings: QSettings | None = None) -> list[WidgetInstance]:
-    """Idempotent: creates exactly one legacy instance per type that has stored config."""
-    s = _settings_obj(settings)
-    instances = list_instances(s)
-    created: list[WidgetInstance] = []
-    for type_id, meta in WIDGET_TYPES.items():
-        legacy_qkey = meta.get("legacy_key", "")
-        if not legacy_qkey:
-            continue
-        if find_legacy_instance(type_id, "main", s) is not None:
-            continue
-        raw = str(s.value(legacy_qkey, "", str) or "").strip()
-        if not raw:
-            continue
-        try:
-            saved = json.loads(raw)
-            saved_dict = saved if isinstance(saved, dict) else {}
-        except (ValueError, TypeError, json.JSONDecodeError):
-            continue
-        inst = WidgetInstance(
-            id=_stable_legacy_id(type_id),
-            type_id=type_id,
-            name=widget_type_name(type_id),
-            settings=copy.deepcopy(saved_dict),
-            enabled=True,
-            legacy_key="main",
-        )
-        instances.append(inst)
-        created.append(inst)
-    # Types without a legacy singleton (e.g. activity, music) never got an
-    # instance above, so their gallery cards rendered with an empty URL.
-    # Ensure exactly one default instance per such type (stable id, so the
-    # by-id URL is stable across restarts).
-    existing_types = {x.type_id for x in instances}
-    for type_id, meta in WIDGET_TYPES.items():
-        if meta.get("legacy_key", ""):
-            continue
-        if type_id in existing_types:
-            continue
-        if any(x.type_id == type_id for x in instances):
-            continue
-        inst = WidgetInstance(
-            id=_stable_legacy_id(type_id),
-            type_id=type_id,
-            name=widget_type_name(type_id),
-            settings=default_settings_for(type_id),
-            enabled=True,
-            legacy_key="main",
-        )
-        instances.append(inst)
-        created.append(inst)
-        existing_types.add(type_id)
-    if created:
-        save_instances(instances, s)
-    s.setValue(_MIGRATED_FLAG_KEY, "1")
-    s.sync()
-    return created
-
-
-def resolve_legacy_params(
-    type_id: str, instance: str, settings: QSettings | None = None
-) -> dict[str, Any] | None:
-    """Legacy URL compat: (type, 'main'|'default') -> merged settings dict, or None."""
-    if instance not in ("main", "default"):
-        return None
-    inst = find_legacy_instance(type_id, "main", settings)
-    if inst is None:
-        return None
-    return merged_settings(inst)
-
-
-def ws_token_for(inst: WidgetInstance) -> str:
-    """WS topic token for an instance.
-
-    Legacy (migrated) instances keep the historic ``main`` token so existing
-    OBS sources and topics are untouched; new instances use their full id
-    (32 hex chars, fits the 64-char instance limit), so topics never collide
-    between the old migrated widget and new ones of the same type.
-    """
-    if (inst.legacy_key or "") == "main":
-        return "main"
-    return inst.id
-
-
-def find_by_ws_token(
-    type_id: str, token: str, settings: QSettings | None = None
-) -> WidgetInstance | None:
-    """Resolve a WS subscribe token to its instance (legacy or by-id)."""
-    token = (token or "").strip()
-    if not token:
-        return None
-    if token in ("main", "default"):
-        return find_legacy_instance(type_id, "main", settings)
-    s = _settings_obj(settings)
-    for inst in list_instances(s):
-        if inst.type_id == type_id and inst.id == token:
-            return inst
-    # Backward compat with pages rendered while the token was id[:24].
-    if len(token) >= 8:
-        cands = [x for x in list_instances(s) if x.type_id == type_id and x.id.startswith(token)]
-        if len(cands) == 1:
-            return cands[0]
-    return None
-
-
-def resolve_ws_params(
-    type_id: str, instance: str, settings: QSettings | None = None
-) -> dict[str, Any] | None:
-    """Settings dict for a WS subscription (legacy token or by-id token)."""
-    inst = find_by_ws_token(type_id, instance, settings)
-    if inst is None:
-        return None
-    return merged_settings(inst)
-
-
 def typed_config_for_type(
     type_id: str,
     params: dict[str, Any],
@@ -656,7 +441,7 @@ def typed_config_for_type(
 
     Prefers instance settings injected by the server (merged over defaults,
     then parsed through the legacy ``*_from_json_text`` so validation stays
-    identical); falls back to the legacy singleton loader.
+    identical); falls back to the type singleton loader.
     """
     injected = params.get("instance_settings")
     if isinstance(injected, dict) and injected:
@@ -676,7 +461,7 @@ def config_for_type(
     legacy_loader: Callable[[], Any],
     legacy_to_json: Callable[[Any], str],
 ) -> dict[str, Any]:
-    """Renderer helper: prefers instance settings injected by server, else legacy singleton."""
+    """Renderer helper: prefers instance settings injected by server, else type defaults loader."""
     injected = params.get("instance_settings")
     if isinstance(injected, dict) and injected:
         defaults: dict[str, Any] = {}

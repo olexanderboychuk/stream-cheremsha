@@ -122,16 +122,30 @@ class DonationsQmlApi(QObject):
         self._poll_timer.timeout.connect(self._on_poll_timer_tick)
         self._refresh_poll_timer()
 
-    def set_donation_listener(self, cb: typing.Callable[[str, float, str], None] | None) -> None:
+    def set_donation_listener(self, cb: typing.Callable[..., None] | None) -> None:
         self._donation_listener = cb
 
-    def _notify_donation(self, name: str, amount: float, source: str) -> None:
+    def _notify_donation(
+        self,
+        name: str,
+        amount: float,
+        source: str,
+        *,
+        currency: str = "",
+        message: str = "",
+    ) -> None:
         cb = self._donation_listener
         if cb is None:
             return
         try:
-            cb(name, amount, source)
-        except (AttributeError, RuntimeError, TypeError, ValueError) as e:
+            cb(name, amount, source, currency, message)
+        except TypeError:
+            # Back-compat with 3-arg listeners.
+            try:
+                cb(name, amount, source)
+            except (AttributeError, RuntimeError, TypeError, ValueError) as e:
+                logger.debug("donation listener failed: %s", e)
+        except (AttributeError, RuntimeError, ValueError) as e:
             logger.debug("donation listener failed: %s", e)
 
     def _settings_store(self):
@@ -284,7 +298,13 @@ class DonationsQmlApi(QObject):
                     if row is None:
                         continue
                     name, amount = donation_row_amount_name_donatik(row)
-                    self._notify_donation(name, amount, "donatik")
+                    self._notify_donation(
+                        name,
+                        amount,
+                        "donatik",
+                        currency=_donatik_currency(row),
+                        message=str(row.get("message") or "").strip(),
+                    )
                     if self._donatik_tts_new:
                         donor = str(row.get("name") or "—").strip() or "—"
                         tts_lines.append((_donatik_tts_line(self._win(), row), donor))
@@ -333,7 +353,13 @@ class DonationsQmlApi(QObject):
                     if row is None:
                         continue
                     name, amount = donation_row_amount_name_donatello(row)
-                    self._notify_donation(name, amount, "donatello")
+                    self._notify_donation(
+                        name,
+                        amount,
+                        "donatello",
+                        currency=str(row.get("currency") or "").strip(),
+                        message=str(row.get("message") or "").strip(),
+                    )
                     if self._donatello_tts_new:
                         donor = str(row.get("clientName") or "—").strip() or "—"
                         tts_lines.append((_donatello_tts_line(self._win(), row), donor))
@@ -722,6 +748,13 @@ class DonationsQmlApi(QObject):
         self.donatelloLivePollChanged.emit()
         self.donatelloTtsNewChanged.emit()
         self._refresh_poll_timer()
+
+
+def _donatik_currency(row: dict) -> str:
+    pay = row.get("payment") if isinstance(row.get("payment"), dict) else {}
+    if isinstance(pay, dict):
+        return str(pay.get("currency") or "").strip()
+    return ""
 
 
 def _donatik_ids_ordered(rows: list[dict]) -> list[str]:

@@ -192,7 +192,7 @@ Rectangle {
                                              optionLabels: modelData.optionLabels || []
                                              minimum: modelData.minimum || 0
                                             maximum: modelData.maximum || 100
-                                            wide: modelData.wide !== undefined ? modelData.wide : ["slider", "textarea", "url", "list", "repeater", "draggable", "file", "image"].indexOf(type) >= 0
+                                             wide: modelData.wide !== undefined ? modelData.wide : ["slider", "textarea", "url", "list", "social_platforms", "repeater", "draggable", "file", "image"].indexOf(type) >= 0
                                             onChanged: function(field, value) { root.settingChanged(field, value); root.saveState = "dirty" }
                                         }
                                     }

@@ -11,9 +11,10 @@ from stream_cheremsha.actions.trigger_meta import (
 
 _CHAT = "chat_keyword"
 _GIFT = "gift_received"
+_DONATE = "donate"
 
 _KIND_VALUES: dict[str, tuple[str, ...]] = {
-    "all": (_CHAT,),
+    "all": (_CHAT, _DONATE),
     "kick": (
         _CHAT,
         "kick_follow",
@@ -47,6 +48,8 @@ _KIND_VALUES: dict[str, tuple[str, ...]] = {
         "tiktok_paid_subscribed",
         "tiktok_first_activity",
     ),
+    "donatik": (_DONATE,),
+    "donatello": (_DONATE,),
 }
 
 _SIMPLE_USER_TYPES = frozenset(
@@ -96,6 +99,14 @@ def _int_param(params: dict[str, Any], key: str, default: int) -> int:
     raw = params.get(key, default)
     try:
         return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def _float_param(params: dict[str, Any], key: str, default: float) -> float:
+    raw = params.get(key, default)
+    try:
+        return float(str(raw).replace(",", "."))
     except (TypeError, ValueError):
         return default
 
@@ -194,6 +205,19 @@ def build_trigger_event(
             },
         }
 
+    if t == _DONATE:
+        return {
+            "type": t,
+            "platform": plat,
+            "params": {
+                "min_amount": max(0.0, _float_param(ep, "min_amount", 0.0)),
+                "max_amount": max(0.0, _float_param(ep, "max_amount", 0.0)),
+                "user": _str_param(ep, "user"),
+                "currency": _str_param(ep, "currency"),
+                "message_contains": _str_param(ep, "message_contains"),
+            },
+        }
+
     if t in _SIMPLE_USER_TYPES:
         return {
             "type": t,
@@ -205,7 +229,7 @@ def build_trigger_event(
 
 
 def merge_platform_change(current: dict[str, Any], new_platform: str) -> dict[str, Any]:
-    """Keep event kind when still valid on ``new_platform``, else reset to chat keyword."""
+    """Keep event kind when still valid on ``new_platform``, else reset to its first kind."""
     cur_type = str(current.get("type") or _CHAT).strip()
     cur_params = current.get("params")
     if not isinstance(cur_params, dict):
@@ -215,4 +239,6 @@ def merge_platform_change(current: dict[str, Any], new_platform: str) -> dict[st
         out = dict(current)
         out["platform"] = plat
         return out
-    return build_trigger_event(_CHAT, plat)
+    kinds = kind_values_for_platform(plat)
+    fallback = kinds[0] if kinds else _CHAT
+    return build_trigger_event(fallback, plat)

@@ -66,7 +66,7 @@ Item {
     property var _spinW: null
     property var _spinH: null
     onLayoutDocChanged: root._syncInspectorSpins()
-    onSelectedLayoutWidgetChanged: root._syncInspectorSpins()
+    onSelectedLayoutWidgetChanged: { root._syncInspectorSpins(); root.ensureLayoutWidgetInstance(); }
     property int layoutRevision: 0
     property int canvasPresetIndex: 0
 
@@ -721,7 +721,7 @@ Item {
             behavior = [c("Likers", "enable_likers", "toggle", true), c("Gifters", "enable_gifters", "toggle", true), c("Sharers", "enable_sharers", "toggle", true), c("Commenters", "enable_commenters", "toggle", true), c("Contributors", "enable_contributors", "toggle", true), c("Hall of fame", "enable_hall_of_fame", "toggle", true), c("Arena", "enable_arena", "toggle", true), c("Energy network", "enable_energy_network", "toggle", true)];
             animation = [c("Transition", "transition", "select", "glitch_morph", {options: ["glitch_morph", "digital_dissolve", "scan", "fade"]}), c("Animation intensity", "animation_intensity", "select", "medium", {options: ["low", "medium", "high"]}), c("Scale", "scale_percent", "number", 100, {minimum: 40, maximum: 250}), c("Rank change animation", "enable_rank_change_anim", "toggle", true), c("Particles", "enable_particles", "toggle", true), c("CRT", "enable_crt", "toggle", true)];
         } else if (typeId === "social_rotator") {
-            general = [c("Enabled", "enabled", "toggle", true), c("Platforms", "platforms", "list", ""), c("Rotation interval", "rotation_interval_ms", "number", 8000, {minimum: 1000, maximum: 120000})];
+            general = [c("Enabled", "enabled", "toggle", true), c("Platforms", "platforms", "social_platforms", "", {options: ["twitch", "youtube", "kick", "telegram", "tiktok", "instagram", "discord", "x", "facebook"]}), c("Rotation interval", "rotation_interval_ms", "number", 8000, {minimum: 1000, maximum: 120000})];
             appearance = [c("Transition", "transition", "select", "glitch_morph", {options: ["glitch_morph", "data_stream", "energy_burst", "scan", "pixel_dissolve", "fade"]}), c("Theme", "theme", "select", "neon_cyber", {options: ["neon_cyber", "synthwave", "toxic", "ice", "amber"]}), c("Background opacity", "background_opacity_percent", "slider", 85, {minimum: 0, maximum: 100}), c("Scale", "scale_percent", "number", 100, {minimum: 40, maximum: 250})];
             behavior = [c("Show URL", "show_url", "toggle", true), c("Secondary platforms", "show_secondary_platforms", "toggle", true), c("Countdown", "show_countdown", "toggle", true), c("Glow", "enable_glow", "toggle", true), c("Particles", "enable_particles", "toggle", true), c("CRT", "enable_crt", "toggle", true), c("Latest follower", "show_latest_follower", "toggle", true), c("Latest donation", "show_latest_donation", "toggle", true), c("Stream time", "show_stream_time", "toggle", true), c("Top donator", "show_top_donator", "toggle", true), c("Online count", "show_online", "toggle", true), c("TikTok coin rate", "tiktok_coin_to_value_rate", "text", 1.0)];
         } else if (typeId === "webcam_frame") {
@@ -969,8 +969,16 @@ Item {
         root.loadLayoutEditor(all[idx].id);
     }
 
+    function firstWidgetInstanceId(type) {
+        var list = root.widgetInstanceList || [];
+        for (var i = 0; i < list.length; ++i) {
+            if (list[i].type_id === type) return list[i].id;
+        }
+        return "";
+    }
+
     function layoutWidgetInstanceOptions(type) {
-        var opts = [{id: "", label: root.loc("widgets.layouts.default_instance")}];
+        var opts = [];
         var list = root.widgetInstanceList || [];
         for (var i = 0; i < list.length; ++i) {
             if (list[i].type_id === type)
@@ -986,13 +994,13 @@ Item {
 
     function layoutWidgetInstanceIndex() {
         var item = root.selectedLayoutItem();
-        if (!item) return 0;
+        if (!item) return -1;
         var opts = root.layoutWidgetInstanceOptions(item.type);
         var cur = item.widget_instance_id || "";
         for (var i = 0; i < opts.length; ++i) {
             if (opts[i].id === cur) return i;
         }
-        return 0;
+        return -1;
     }
 
     function applyLayoutWidgetInstance(index) {
@@ -1038,6 +1046,15 @@ Item {
         return (items.length && root.selectedLayoutWidget >= 0 && root.selectedLayoutWidget < items.length)
             ? items[root.selectedLayoutWidget] : null;
     }
+
+    function ensureLayoutWidgetInstance() {
+        var item = root.selectedLayoutItem();
+        if (!item || (item.widget_instance_id || "")) return;
+        var opts = root.layoutWidgetInstanceOptions(item.type);
+        if (opts.length) root.updateLayoutItemStr("widget_instance_id", opts[0].id);
+    }
+
+    onWidgetInstanceListChanged: root.ensureLayoutWidgetInstance()
 
     // Explicit one-way sync of the X/Y/W/H inspector spins. Live Binding
     // elements race with stepping (resetting the value to 0 / stale data),
@@ -1164,7 +1181,8 @@ Item {
             height: defaultH,
             z_index: n + 1,
             visible: true,
-            locked: false
+            locked: false,
+            widget_instance_id: root.firstWidgetInstanceId(type)
         });
         root._inspectorUpdating = true;
         root.layoutDoc = Object.assign({}, doc, {widgets: items});
@@ -3295,46 +3313,6 @@ Item {
                                     text: root.loc("widgets.common.cancel")
                                     onClicked: root.showCreateWidget = false
                                 }
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        radius: 12
-                        color: "#111827"
-                        border.width: 1
-                        border.color: cardEdge
-                        visible: typeof tunnelApi !== "undefined" && tunnelApi !== null
-                        implicitHeight: tunnelPanel.implicitHeight + 16
-
-                        ColumnLayout {
-                            id: tunnelPanel
-                            anchors.fill: parent
-                            anchors.margins: 12
-                            spacing: 8
-
-                            StyledCheckBox {
-                                text: tunnelApi ? tunnelApi.tunnelEnabledLabel : ""
-                                checked: tunnelApi ? tunnelApi.tunnelEnabled : false
-                                onToggled: if (tunnelApi) tunnelApi.setTunnelEnabled(checked)
-                            }
-
-                            Text {
-                                Layout.fillWidth: true
-                                text: tunnelApi ? tunnelApi.tunnelHelpText : ""
-                                color: muted
-                                font.pixelSize: 12
-                                wrapMode: Text.Wrap
-                            }
-
-                            Text {
-                                Layout.fillWidth: true
-                                visible: tunnelApi && tunnelApi.tunnelEnabled
-                                text: tunnelApi ? tunnelApi.tunnelStatusText : ""
-                                color: ink
-                                font.pixelSize: 12
-                                wrapMode: Text.Wrap
                             }
                         }
                     }
@@ -5508,6 +5486,17 @@ Item {
                                         root.selectedLayoutItem() ? root.selectedLayoutItem().type : "").map(
                                         function(o) { return o.label; })
                                     currentIndex: root.layoutWidgetInstanceIndex()
+                                    displayText: {
+                                        var idx = root.layoutWidgetInstanceIndex();
+                                        if (idx >= 0) {
+                                            var opts = root.layoutWidgetInstanceOptions(
+                                                root.selectedLayoutItem() ? root.selectedLayoutItem().type : "");
+                                            return opts[idx].label;
+                                        }
+                                        return root.loc("widgets.layouts.no_instance");
+                                    }
+                                    enabled: root.layoutWidgetInstanceOptions(
+                                        root.selectedLayoutItem() ? root.selectedLayoutItem().type : "").length > 0
                                     onUserActivated: function(idx) { root.applyLayoutWidgetInstance(idx); }
                                     onActivated: function(idx) { root.applyLayoutWidgetInstance(idx); }
                                 }

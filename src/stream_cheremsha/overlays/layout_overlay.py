@@ -32,10 +32,9 @@ class LayoutOverlayType:
                 if (_get_inst and widget.widget_instance_id)
                 else None
             )
-            if bound is not None:
-                src = f"/overlay/by-id/{quote(bound.id, safe='')}"
-            else:
-                src = f"/overlay/{quote(widget.type, safe='')}?instance={widget_instance}"
+            if bound is None:
+                continue
+            src = f"/overlay/by-id/{quote(bound.id, safe='')}"
             frames.append(
                 f'<iframe class="widget" title="{html.escape(widget.id)}" '
                 f'style="left:{widget.x}px;top:{widget.y}px;width:{widget.width}px;'
@@ -84,7 +83,7 @@ addEventListener('resize', scale); scale();
             var w = widgets[i];
             try {{
               var wSrc = w.getAttribute('src') || '';
-              if (wSrc.indexOf('/overlay/signal_system') === 0) {{
+              if (wSrc.indexOf('/overlay/by-id/') === 0) {{
                 try {{ w.contentWindow.postMessage({{op: 'patch', patch: msg.patch}}, '*'); forwarded = true; }} catch(e) {{}}
               }}
             }} catch(e) {{}}

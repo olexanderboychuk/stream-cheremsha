@@ -5,7 +5,12 @@ from typing import Any
 
 from stream_cheremsha.actions.events import (
     ChatMessageEvent,
+    DonateReceivedEvent,
     GiftReceivedEvent,
+    KickFollowEvent,
+    KickGiftEvent,
+    KickGiftSubscriptionEvent,
+    KickSubscriptionEvent,
     TikTokFirstActivityEvent,
     TikTokFollowedEvent,
     TikTokJoinedEvent,
@@ -360,6 +365,74 @@ def build_placeholder_context(ev: object) -> dict[str, str]:
             "level": lvl,
             "platform": _platform_str(ev.platform),
         }
+    if isinstance(ev, DonateReceivedEvent):
+        u = ev.user or ""
+        try:
+            amt = float(ev.amount)
+        except (TypeError, ValueError):
+            amt = 0.0
+        disp = f"{amt:g}"
+        cur = ev.currency or ""
+        msg = ev.message or ""
+        return {
+            "sender": u,
+            "user": u,
+            "username": u,
+            "nickname": u,
+            "donor": u,
+            "amount": disp,
+            "amount_value": disp,
+            "currency": cur,
+            "message": msg,
+            "text": msg,
+            "platform": _platform_str(ev.platform),
+        }
+    if isinstance(ev, KickFollowEvent):
+        u = ev.user or ""
+        return {
+            "sender": u,
+            "user": u,
+            "username": u,
+            "nickname": u,
+            "platform": _platform_str(ev.platform),
+        }
+    if isinstance(ev, KickSubscriptionEvent):
+        u = ev.user or ""
+        mo = str(int(ev.months))
+        return {
+            "sender": u,
+            "user": u,
+            "username": u,
+            "nickname": u,
+            "months": mo,
+            "submonth": mo,
+            "platform": _platform_str(ev.platform),
+        }
+    if isinstance(ev, KickGiftSubscriptionEvent):
+        u = ev.user or ""
+        c = str(int(ev.count))
+        return {
+            "sender": u,
+            "user": u,
+            "username": u,
+            "nickname": u,
+            "count": c,
+            "giftcount": c,
+            "platform": _platform_str(ev.platform),
+        }
+    if isinstance(ev, KickGiftEvent):
+        u = ev.user or ""
+        a = str(int(ev.amount))
+        return {
+            "sender": u,
+            "user": u,
+            "username": u,
+            "nickname": u,
+            "amount": a,
+            "amount_value": a,
+            "count": a,
+            "platform": _platform_str(ev.platform),
+        }
     return {}
 
 
@@ -405,3 +478,228 @@ def strip_unresolved_placeholders(text: str) -> str:
         return text
     # Replace any `{...}` chunk with empty string.
     return _PLACEHOLDER_RE.sub("", text)
+
+
+def _ref_var(names: list[str], uk: str, en: str) -> dict[str, object]:
+    return {"names": list(names), "uk": uk, "en": en}
+
+
+def _ref_cat(title_uk: str, title_en: str, triggers: str, rows: list[dict[str, object]]) -> dict[str, object]:
+    return {"title_uk": title_uk, "title_en": title_en, "triggers": triggers, "vars": rows}
+
+
+def placeholder_reference(locale: str = "uk") -> list[dict[str, object]]:
+    """Categorized `{variable}` reference for the Actions editor (single source of truth).
+
+    Each category mirrors one ``build_placeholder_context`` branch. ``names`` lists all
+    aliases with identical values; the first name is the canonical one.
+    """
+    _ = locale
+    user_names = ["sender", "user", "username", "nickname"]
+    user_row = _ref_var(
+        user_names,
+        "нік користувача (усі варіанти — синоніми)",
+        "user nickname (all variants are synonyms)",
+    )
+    platform_row = _ref_var(
+        ["platform"],
+        "платформа події: tiktok, twitch, youtube, kick, donatik, donatello",
+        "event platform: tiktok, twitch, youtube, kick, donatik, donatello",
+    )
+    return [
+        _ref_cat(
+            "Чат (ключове слово)",
+            "Chat (keyword)",
+            "chat_keyword",
+            [
+                _ref_var(["author"], "автор повідомлення", "message author"),
+                _ref_var(["text", "comment"], "текст повідомлення", "message text"),
+                _ref_var(["username", "nickname"], "автор (синоніми)", "author (synonyms)"),
+                platform_row,
+            ],
+        ),
+        _ref_cat(
+            "Подарунок TikTok",
+            "TikTok gift",
+            "gift_received, tiktok_any_gift_received",
+            [
+                _ref_var(
+                    ["giftcount", "gift_count", "count", "repeatcount"],
+                    "кількість подарунків",
+                    "gift count",
+                ),
+                _ref_var(["giftname", "gift_name"], "назва подарунка", "gift name"),
+                _ref_var(["giftid", "gift_id"], "id подарунка", "gift id"),
+                user_row,
+                platform_row,
+            ],
+        ),
+        _ref_cat(
+            "Лайки TikTok",
+            "TikTok likes",
+            "tiktok_likes_received",
+            [
+                _ref_var(
+                    ["likebatch", "likes_batch", "likecount", "count"],
+                    "лайків у цій пачці",
+                    "likes in this batch",
+                ),
+                _ref_var(
+                    ["liketotal", "likes_total", "totallikecount"],
+                    "сумарні лайки (за обраним охопленням)",
+                    "total likes (for the chosen scope)",
+                ),
+                user_row,
+                platform_row,
+            ],
+        ),
+        _ref_cat(
+            "Вступ / фолов / саб без лічильника",
+            "Join / follow / sub (no counter)",
+            "tiktok_joined, tiktok_followed, tiktok_paid_subscribed, twitch_follow, twitch_subscribe, "
+            "twitch_sub_gift, kick_follow",
+            [user_row, platform_row],
+        ),
+        _ref_cat(
+            "Підписки з місяцями",
+            "Subscriptions with months",
+            "twitch_subscribe, twitch_resub, twitch_sub_gift, youtube_member, kick_subscription",
+            [
+                user_row,
+                _ref_var(["months", "submonth"], "місяців підписки", "subscription months"),
+                _ref_var(
+                    ["level"],
+                    "рівень (тільки YouTube member)",
+                    "tier level (YouTube member only)",
+                ),
+                _ref_var(
+                    ["message", "text"],
+                    "повідомлення (тільки Twitch resub)",
+                    "message (Twitch resub only)",
+                ),
+                platform_row,
+            ],
+        ),
+        _ref_cat(
+            "Шер TikTok",
+            "TikTok share",
+            "tiktok_shared",
+            [
+                user_row,
+                _ref_var(["count"], "кількість шерів", "share count"),
+                platform_row,
+            ],
+        ),
+        _ref_cat(
+            "Перша активність TikTok",
+            "TikTok first activity",
+            "tiktok_first_activity",
+            [
+                user_row,
+                _ref_var(["count"], "кількість", "count"),
+                _ref_var(
+                    ["kind"],
+                    "тип активності: join, comment, gift, like, follow, share, paid_sub",
+                    "activity kind: join, comment, gift, like, follow, share, paid_sub",
+                ),
+                platform_row,
+            ],
+        ),
+        _ref_cat(
+            "Cheer / біти Twitch",
+            "Twitch cheer / bits",
+            "twitch_cheer",
+            [
+                user_row,
+                _ref_var(["bits", "count"], "кількість бітів", "bits count"),
+                platform_row,
+            ],
+        ),
+        _ref_cat(
+            "Рейд Twitch",
+            "Twitch raid",
+            "twitch_raid",
+            [
+                _ref_var(["raider"], "канал рейдера", "raider channel"),
+                _ref_var(["viewers", "count"], "глядачів у рейді", "raid viewers"),
+                user_row,
+                platform_row,
+            ],
+        ),
+        _ref_cat(
+            "Super Chat / Super Sticker YouTube",
+            "YouTube Super Chat / Super Sticker",
+            "youtube_superchat, youtube_supersticker",
+            [
+                user_row,
+                _ref_var(
+                    ["amount"],
+                    "сума як на екрані (з валютою, напр. $5)",
+                    "amount as displayed (with currency, e.g. $5)",
+                ),
+                _ref_var(
+                    ["amount_value"],
+                    "числове значення суми (без валюти)",
+                    "numeric amount value (no currency)",
+                ),
+                _ref_var(["currency"], "валюта (USD, UAH…)", "currency (USD, UAH…)"),
+                _ref_var(
+                    ["message", "text"],
+                    "повідомлення (тільки Super Chat)",
+                    "message (Super Chat only)",
+                ),
+                platform_row,
+            ],
+        ),
+        _ref_cat(
+            "Донат Donatik / Donatello",
+            "Donatik / Donatello donation",
+            "donate",
+            [
+                _ref_var(
+                    ["donor", "sender", "user", "username", "nickname"],
+                    "нік донатера",
+                    "donor nickname",
+                ),
+                _ref_var(
+                    ["amount", "amount_value"],
+                    "сума донату числом",
+                    "donation amount as a number",
+                ),
+                _ref_var(["currency"], "валюта", "currency"),
+                _ref_var(["message", "text"], "повідомлення донатера", "donor message"),
+                platform_row,
+            ],
+        ),
+        _ref_cat(
+            "Подарункові саби / KICKs (Kick)",
+            "Kick gift subs / KICKs",
+            "kick_gift_sub, kick_gift",
+            [
+                user_row,
+                _ref_var(
+                    ["count", "giftcount"],
+                    "кількість гіфт-сабів (kick_gift_sub)",
+                    "gift sub count (kick_gift_sub)",
+                ),
+                _ref_var(
+                    ["amount", "amount_value", "count"],
+                    "кількість KICKs (kick_gift)",
+                    "KICKs amount (kick_gift)",
+                ),
+                platform_row,
+            ],
+        ),
+        _ref_cat(
+            "Математика в дужках",
+            "Math inside braces",
+            "будь-який тригер з числовою змінною",
+            [
+                _ref_var(
+                    ["{giftcount-1}", "{liketotal+5}", "{count*2}"],
+                    "цілочисельні вирази: + - * / % і дужки",
+                    "integer expressions: + - * / % and parentheses",
+                ),
+            ],
+        ),
+    ]

@@ -4,6 +4,21 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.23.0] - 2026-09-15
+
+### Added
+
+- Added action message placeholders with preview and validation in the Actions editor.
+- Added per-action SFX volume control in the audio sink.
+- Added settings section icons (general, AI, music, OBS, Telegram, updates).
+
+### Changed
+
+- Improved music player queue handling and yt-dlp stream URL resolving.
+- Reworked social rotator overlay (rotation logic, controller, layout handling).
+- Enhanced Actions and Widgets views, widget editor controls, and main window navigation.
+- Extended localization strings.
+
 ## [0.22.0] - 2026-09-11
 
 ### Fixed

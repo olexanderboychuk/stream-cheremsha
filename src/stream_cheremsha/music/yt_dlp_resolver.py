@@ -159,8 +159,43 @@ def _ytdlp_cookie_opts() -> dict[str, object]:
     return out
 
 
+def _default_ytdlp_opts() -> dict[str, object]:
+    """Baseline opts that reduce YouTube 403s (web client is most often blocked)."""
+    return {
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        # Mobile API clients are currently far less likely to return 403 than `web`.
+        "extractor_args": {"youtube": {"player_client": ["android", "ios", "web"]}},
+        "retries": 3,
+        "fragment_retries": 3,
+        "socket_timeout": 15,
+    }
+
+
+# Clients to try one-by-one when YouTube answers 403 (most blocked first).
+_CLIENT_FALLBACK = ("android", "ios", "web_embedded", "web")
+
+
+def _is_403(exc: BaseException) -> bool:
+    t = str(exc).lower()
+    return "403" in t or "forbidden" in t
+
+
+def _with_player_client(opts: dict[str, object], client: str) -> dict[str, object]:
+    out = dict(opts)
+    ea = dict(out.get("extractor_args") or {})
+    if isinstance(ea, dict):
+        yt = dict(ea.get("youtube") or {})
+        yt["player_client"] = [client]
+        ea["youtube"] = yt
+        out["extractor_args"] = ea
+    return out
+
+
 def _merge_ytdlp_opts(base: dict[str, object]) -> dict[str, object]:
-    merged = dict(base)
+    merged = _default_ytdlp_opts()
+    merged.update(base)
     merged.update(_ytdlp_cookie_opts())
     return merged
 
@@ -168,15 +203,30 @@ def _merge_ytdlp_opts(base: dict[str, object]) -> dict[str, object]:
 def _extract_info(url: str, ydl_opts: dict[str, object], *, download: bool) -> dict:
     _ensure_yt_dlp()
     opts = _merge_ytdlp_opts(ydl_opts)
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            return ydl.extract_info(url, download=download) or {}
-    except DownloadError as e:
-        _log_age_gate_hint(e)
-        raise RuntimeError(str(e)) from e
-    except CookieLoadError as e:
-        logger.error("yt-dlp: cookie load failed: %s", e)
-        raise RuntimeError("yt-dlp: failed to load cookies") from e
+    last_err: BaseException | None = None
+    # If caller explicitly pinned extractor_args, respect it (single attempt);
+    # otherwise rotate through fallback clients on 403.
+    if "extractor_args" in ydl_opts:
+        clients: list[str | None] = [None]
+    else:
+        clients = list(_CLIENT_FALLBACK)
+    for client in clients:
+        attempt = _with_player_client(opts, client) if client else opts
+        try:
+            with yt_dlp.YoutubeDL(attempt) as ydl:
+                return ydl.extract_info(url, download=download) or {}
+        except DownloadError as e:
+            _log_age_gate_hint(e)
+            last_err = e
+            if client is not None and _is_403(e) and client != clients[-1]:
+                logger.info("yt-dlp: 403 with player_client=%s, retrying…", client)
+                continue
+            raise RuntimeError(str(e)) from e
+        except CookieLoadError as e:
+            logger.error("yt-dlp: cookie load failed: %s", e)
+            raise RuntimeError("yt-dlp: failed to load cookies") from e
+    assert last_err is not None
+    raise RuntimeError(str(last_err)) from last_err
 
 
 @dataclass(slots=True)
@@ -285,39 +335,49 @@ def resolve_youtube_audio_bytes(video_id_or_url: str) -> YtDlpResolveResult:
             ],
         }
         opts = _merge_ytdlp_opts(ydl_opts)
-        with yt_dlp.YoutubeDL(opts) as ydl:
+        opts.pop("extractor_args", None)  # rotate clients below on 403
+        _ensure_yt_dlp()
+        info: dict | None = None
+        fp_from_ydl = ""
+        last_err: BaseException | None = None
+        for client in _CLIENT_FALLBACK:
+            attempt = _with_player_client(opts, client)
             try:
-                info = ydl.extract_info(url, download=True)
+                with yt_dlp.YoutubeDL(attempt) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                    rds = (info or {}).get("requested_downloads") or []
+                    if isinstance(rds, list) and rds and isinstance(rds[0], dict):
+                        fp_from_ydl = str(rds[0].get("filepath") or "").strip()
+                    if not fp_from_ydl:
+                        try:
+                            fp_from_ydl = str(ydl.prepare_filename(info))
+                        except Exception:
+                            fp_from_ydl = ""
+                        if fp_from_ydl:
+                            fp_from_ydl = str(Path(fp_from_ydl).with_suffix(".wav"))
+                    break
             except DownloadError as e:
                 _log_age_gate_hint(e)
+                last_err = e
+                if _is_403(e) and client != _CLIENT_FALLBACK[-1]:
+                    logger.info("yt-dlp: 403 with player_client=%s, retrying…", client)
+                    continue
                 raise RuntimeError(str(e)) from e
             except CookieLoadError as e:
                 logger.error("yt-dlp: cookie load failed: %s", e)
                 raise RuntimeError("yt-dlp: failed to load cookies") from e
-            title = str((info or {}).get("title") or "").strip()
+        if info is None:
+            assert last_err is not None
+            raise RuntimeError(str(last_err)) from last_err
+        title = str((info or {}).get("title") or "").strip()
+        fp = fp_from_ydl
+        if not fp:
+            raise RuntimeError("yt-dlp: could not determine output file path")
 
-            # yt-dlp surfaces exact paths here in newer versions.
-            fp = ""
-            rds = (info or {}).get("requested_downloads") or []
-            if isinstance(rds, list) and rds:
-                rd0 = rds[0] if isinstance(rds[0], dict) else {}
-                fp = str(rd0.get("filepath") or "").strip()
-            if not fp:
-                # Fallback: compute from template and expected codec.
-                try:
-                    fp = str(ydl.prepare_filename(info))
-                except Exception:
-                    fp = ""
-                if fp:
-                    fp = str(Path(fp).with_suffix(".wav"))
-
-            if not fp:
-                raise RuntimeError("yt-dlp: could not determine output file path")
-
-            data = Path(fp).read_bytes()
-            if not data:
-                raise RuntimeError("yt-dlp: empty audio output")
-            return YtDlpResolveResult(title=title, audio_bytes=data)
+        data = Path(fp).read_bytes()
+        if not data:
+            raise RuntimeError("yt-dlp: empty audio output")
+        return YtDlpResolveResult(title=title, audio_bytes=data)
 
 
 def fetch_youtube_title(video_id_or_url: str) -> str:

@@ -39,7 +39,7 @@ class OverlayTunnelQmlApi(QObject):
     def __init__(self, main: MainWindow) -> None:
         super().__init__(parent=main)
         self._m: weakref.ref[MainWindow] = weakref.ref(main)
-        self._tunnel_enabled = False
+        self._tunnel_enabled = True
         self._tunnel_status_text = ""
         self._tunnel_provider = TunnelProvider.NGROK.value
         self._tunnel_custom_url = ""
@@ -64,7 +64,7 @@ class OverlayTunnelQmlApi(QObject):
         if w is None:
             return
         s = w._settings  # noqa: SLF001
-        self._tunnel_enabled = bool(s.value(constants.SETTINGS_OVERLAY_TUNNEL_ENABLED, False, bool))
+        self._tunnel_enabled = bool(s.value(constants.SETTINGS_OVERLAY_TUNNEL_ENABLED, True, bool))
         self._tunnel_provider = TunnelProvider.CLOUDFLARE.value
         self._tunnel_custom_url = str(
             s.value(constants.SETTINGS_OVERLAY_TUNNEL_CUSTOM_URL, "", str) or ""

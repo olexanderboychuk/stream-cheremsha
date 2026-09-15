@@ -175,3 +175,117 @@ def test_youtube_member_placeholders() -> None:
     assert (
         apply_action_placeholders("{user} {months} {level} {platform}", ev) == "bob 3 Gold youtube"
     )
+
+
+def test_kick_placeholders() -> None:
+    from stream_cheremsha.actions.events import (
+        KickFollowEvent,
+        KickGiftEvent,
+        KickGiftSubscriptionEvent,
+        KickSubscriptionEvent,
+    )
+
+    now = datetime.now(tz=UTC)
+    assert (
+        apply_action_placeholders(
+            "{user} {platform}",
+            KickFollowEvent(platform=ChatPlatform.KICK, user="k", received_at=now),
+        )
+        == "k kick"
+    )
+    assert (
+        apply_action_placeholders(
+            "{user} {months} {submonth}",
+            KickSubscriptionEvent(platform=ChatPlatform.KICK, user="k", months=2, received_at=now),
+        )
+        == "k 2 2"
+    )
+    assert (
+        apply_action_placeholders(
+            "{user} {count}",
+            KickGiftSubscriptionEvent(platform=ChatPlatform.KICK, user="k", count=3, received_at=now),
+        )
+        == "k 3"
+    )
+    assert (
+        apply_action_placeholders(
+            "{user} {amount} {count}",
+            KickGiftEvent(platform=ChatPlatform.KICK, user="k", amount=50, received_at=now),
+        )
+        == "k 50 50"
+    )
+
+
+def test_placeholder_reference_covers_all_context_branches() -> None:
+    from stream_cheremsha.actions import action_placeholders as ap
+    from stream_cheremsha.actions.events import (
+        DonateReceivedEvent,
+        KickFollowEvent,
+        TikTokJoinedEvent,
+        TikTokSharedEvent,
+        TwitchRaidEvent,
+        TwitchResubscribeEvent,
+        TwitchSubscribeEvent,
+    )
+
+    ref = ap.placeholder_reference("uk")
+    assert len(ref) >= 10
+    triggers_text = " ".join(str(c["triggers"]) for c in ref)
+    for token in (
+        "chat_keyword",
+        "gift_received",
+        "tiktok_likes_received",
+        "twitch_cheer",
+        "twitch_raid",
+        "youtube_superchat",
+        "donate",
+        "kick_gift",
+    ):
+        assert token in triggers_text
+    # Every key produced by build_placeholder_context must be documented.
+    documented: set[str] = set()
+    for cat in ref:
+        for v in cat["vars"]:
+            assert isinstance(v, dict) and v["names"] and (v.get("uk") or v.get("en"))
+            documented.update(str(n).strip("{}") for n in v["names"])
+    now = datetime.now(tz=UTC)
+    samples = [
+        ChatMessageEvent(platform=ChatPlatform.TIKTOK, author="a", text="t", received_at=now),
+        GiftReceivedEvent(
+            platform=ChatPlatform.TIKTOK,
+            sender="s",
+            gift_id="g",
+            gift_name="n",
+            count=1,
+            gift_icon_url="",
+            received_at=now,
+        ),
+        TikTokLikesReceivedEvent(
+            platform=ChatPlatform.TIKTOK,
+            user="u",
+            likes_in_batch=1,
+            likes_total_for_scope=2,
+            received_at=now,
+        ),
+        TikTokJoinedEvent(platform=ChatPlatform.TIKTOK, user="u", received_at=now),
+        TikTokSharedEvent(platform=ChatPlatform.TIKTOK, user="u", count=1, received_at=now),
+        TwitchSubscribeEvent(
+            platform=ChatPlatform.TWITCH, user="u", months=1, received_at=now
+        ),
+        TwitchResubscribeEvent(
+            platform=ChatPlatform.TWITCH, user="u", months=1, message="m", received_at=now
+        ),
+        TwitchRaidEvent(platform=ChatPlatform.TWITCH, raider="r", viewers=5, received_at=now),
+        DonateReceivedEvent(
+            platform=ChatPlatform.DONATIK,
+            user="u",
+            amount=10.0,
+            currency="UAH",
+            message="m",
+            received_at=now,
+        ),
+        KickFollowEvent(platform=ChatPlatform.KICK, user="u", received_at=now),
+    ]
+    for ev in samples:
+        missing = set(ap.build_placeholder_context(ev)) - documented
+        assert not missing, f"undocumented placeholders for {type(ev).__name__}: {missing}"

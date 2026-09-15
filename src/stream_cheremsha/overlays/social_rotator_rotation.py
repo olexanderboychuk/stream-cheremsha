@@ -55,6 +55,21 @@ def enabled_rotation_entries(platforms: list[dict[str, object]]) -> list[SocialR
     return [e for _, e in rows]
 
 
+def entry_public_dict(entry: SocialRotationEntry, *, order: int) -> dict[str, Any]:
+    p = get_platform(entry.platform)
+    return {
+        "id": entry.entry_id,
+        "platform": entry.platform,
+        "platform_name": p.name if p is not None else entry.platform.upper(),
+        "name": p.name if p is not None else entry.platform.upper(),
+        "username": entry.username,
+        "url": entry.url,
+        "accent": p.accent if p is not None else "#00ffff",
+        "icon_key": p.icon_key if p is not None else entry.platform,
+        "order": int(order),
+    }
+
+
 @dataclass(slots=True)
 class SocialRotatorRotationEngine:
     entries: list[SocialRotationEntry]
@@ -158,17 +173,24 @@ class SocialRotatorRotationEngine:
             return {
                 "active_index": -1,
                 "platform_id": "",
+                "platform_name": "",
                 "entry_id": "",
+                "username": "",
+                "url": "",
                 "started_at_ms": int(self.started_at_ms),
                 "interval_ms": int(self.interval_ms),
                 "transition_token": int(self.transition_token),
                 "remaining_ms": 0,
                 "server_now_ms": now,
             }
+        p = get_platform(entry.platform)
         return {
             "active_index": int(self.active_index),
             "platform_id": entry.platform,
+            "platform_name": p.name if p is not None else entry.platform.upper(),
             "entry_id": entry.entry_id,
+            "username": entry.username,
+            "url": entry.url,
             "started_at_ms": int(self.started_at_ms),
             "interval_ms": int(self.interval_ms),
             "transition_token": int(self.transition_token),

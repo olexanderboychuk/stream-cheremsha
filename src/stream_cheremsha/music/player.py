@@ -3,9 +3,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
+import socket
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from collections.abc import Callable
@@ -51,6 +54,52 @@ def _build_mpv_argv(*, mpv: str, volume_percent: int, ipc_pipe: str) -> list[str
         ]
     )
     return argv
+
+
+def _mpv_is_windows() -> bool:
+    return sys.platform.startswith("win")
+
+
+def _make_mpv_ipc_path() -> str:
+    if _mpv_is_windows():
+        return rf"\\.\pipe\cheremsha-mpv-{uuid.uuid4()}"
+    return os.path.join(tempfile.gettempdir(), f"cheremsha-mpv-{uuid.uuid4()}.sock")
+
+
+def _open_ipc_connection(path: str) -> BinaryIO:
+    """Connect to mpv IPC server; Windows named pipe or POSIX unix socket."""
+    if _mpv_is_windows():
+        return open(path, "r+b", buffering=0)  # noqa: PTH123
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        sock.connect(path)
+    except OSError:
+        sock.close()
+        raise
+    # Detach socket lifetime to the file object.
+    f = sock.makefile("rwb", buffering=0)
+    return f  # type: ignore[return-value]
+
+
+def _probe_ipc(path: str) -> bool:
+    try:
+        f = _open_ipc_connection(path)
+    except OSError:
+        return False
+    try:
+        f.close()
+    except OSError:
+        pass
+    return True
+
+
+def _cleanup_ipc_path(path: str) -> None:
+    if _mpv_is_windows() or not path:
+        return
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
 
 
 def _mpv_subprocess_kwargs() -> dict[str, object]:
@@ -110,7 +159,9 @@ class MusicPlayer:
             self._status(f"Music: abandoning mpv state ({why})")
             self._stop_mpv_reader_locked()
             self._mpv_proc = None
+            ipc = self._mpv_ipc
             self._mpv_ipc = ""
+        _cleanup_ipc_path(ipc)
         if proc is not None and proc.returncode is None:
             asyncio.create_task(self._terminate_proc(proc), name="mpv-terminate")
 
@@ -364,6 +415,7 @@ class MusicPlayer:
                 if self._mpv_proc is p:
                     self._mpv_proc = None
                     self._mpv_ipc = ""
+            _cleanup_ipc_path(ipc)
 
     def _stop_mpv_reader_locked(self) -> None:
         t = self._mpv_reader_task
@@ -424,7 +476,7 @@ class MusicPlayer:
             # Start a persistent mpv instance and control it via IPC. We will "loadfile"
             # for each track to reuse the same window instead of spawning new ones.
             self._stop_mpv_reader_locked()
-            self._mpv_ipc = rf"\\.\pipe\cheremsha-mpv-{uuid.uuid4()}"
+            self._mpv_ipc = _make_mpv_ipc_path()
             self._status("Music: starting mpv…")
             try:
                 argv = _build_mpv_argv(
@@ -508,10 +560,10 @@ class MusicPlayer:
 
         def _open_pipe_r(p: str) -> BinaryIO:
             # Can block until server (mpv) is ready.
-            return open(p, "rb", buffering=0)  # noqa: PTH123
+            return _open_ipc_connection(p)
 
         def _open_pipe_w(p: str) -> BinaryIO:
-            return open(p, "wb", buffering=0)  # noqa: PTH123
+            return _open_ipc_connection(p)
 
         try:
             fr = await asyncio.wait_for(asyncio.to_thread(_open_pipe_r, path), timeout=1.5)
@@ -757,11 +809,7 @@ class MusicPlayer:
         deadline = time.monotonic() + max(0.05, float(timeout_s))
 
         def _probe() -> bool:
-            try:
-                with open(path, "r+b", buffering=0):  # noqa: PTH123
-                    return True
-            except OSError:
-                return False
+            return _probe_ipc(path)
 
         while time.monotonic() < deadline:
             if proc.returncode is not None:

@@ -30,7 +30,7 @@ async def _ws_next_text(
 
 
 @pytest.mark.asyncio
-async def test_overlay_server_health_and_debug_html() -> None:
+async def test_overlay_server_health_and_by_id_html() -> None:
     reg = OverlayRegistry()
     srv = OverlayServer(registry=reg, host="127.0.0.1", port=0)
     await srv.start()
@@ -42,10 +42,11 @@ async def test_overlay_server_health_and_debug_html() -> None:
             async with s.get(f"{base}/health") as r:
                 assert r.status == 200
                 assert (await r.text()).strip() == "ok"
+            # Unknown instance id -> 404; legacy type URLs are gone.
+            async with s.get(f"{base}/overlay/by-id/does-not-exist") as r:
+                assert r.status == 404
             async with s.get(f"{base}/overlay/debug?instance=default") as r:
-                assert r.status == 200
-                body = await r.text()
-                assert "<!doctype html>" in body.lower()
+                assert r.status == 404
             async with s.get(f"{base}/assets/twitch.svg") as r:
                 assert r.status == 200
                 assert "svg" in (r.headers.get("Content-Type") or "").lower()

@@ -50,7 +50,7 @@ class LayoutWidget:
     locked: bool = False
     # Optional WidgetInstance id (see overlays/widget_instances.py).
     # When set and resolvable, renderers/embeds address the instance
-    # via /overlay/by-id/{id}; otherwise the legacy type+instance URL.
+    # via /overlay/by-id/{id}; unbound widgets are skipped in rendering.
     widget_instance_id: str = ""
 
     def replace(self, **kwargs: object) -> LayoutWidget:

@@ -458,6 +458,8 @@ Item {
     property var _obsPickScenes: []
     property var _obsPickSources: []
     property bool _suppressObsBrowseCombos: false
+    property int _obsRefreshRetryLeft: 0
+    property bool _obsLastHadError: false
     property int selectedTriggerIdx: 0
     // Inline so QML tracks selectedRule + selectedTriggerIdx (not hidden inside a JS function).
     readonly property var editingTrigger: {
@@ -509,6 +511,129 @@ Item {
                 return;
             }
             root._save(false);
+        }
+    }
+
+    // Fills OBS pickers once the cached background fetch completes (see _obsRefreshFromObs).
+    Timer {
+        id: obsRefreshRetryTimer
+        interval: 1200
+        repeat: false
+        onTriggered: {
+            if (root._obsRefreshRetryLeft <= 0) return;
+            root._obsRefreshRetryLeft -= 1;
+            var aa = root.actionsModel;
+            var ix = root.selectedActionIdx;
+            if (!aa || ix < 0 || ix >= aa.length) return;
+            if ((aa[ix] && ("" + (aa[ix].type || "")).trim()) !== "obs_scene") return;
+            root._obsRefreshFromObs(ix, false);
+        }
+    }
+
+    // `{variable}` reference dialog (single source of truth: actApi.placeholderReferenceJson()).
+    function _openPlaceholdersReference() {
+        var data = null;
+        if (actApi) {
+            try {
+                data = JSON.parse(actApi.placeholderReferenceJson());
+            } catch (e) {
+                data = null;
+            }
+        }
+        placeholdersRefPopup.refData = data;
+        placeholdersRefPopup.open();
+    }
+
+    Popup {
+        id: placeholdersRefPopup
+        property var refData: null
+        width: Math.min(660, (parent ? parent.width : 700) - 32)
+        height: Math.min(540, (parent ? parent.height : 600) - 32)
+        x: parent ? (parent.width - width) / 2 : 0
+        y: parent ? (parent.height - height) / 2 : 0
+        modal: true
+        focus: true
+        dim: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: Rectangle {
+            radius: 12
+            color: root.cardBase
+            border.width: 1
+            border.color: root.cardEdge
+        }
+        contentItem: ColumnLayout {
+            spacing: 8
+            Text {
+                Layout.fillWidth: true
+                text: placeholdersRefPopup.refData && placeholdersRefPopup.refData.title
+                    ? placeholdersRefPopup.refData.title
+                    : (api ? api.loc("actions.placeholders_reference_title") : "All available variables")
+                color: root.ink
+                font.pixelSize: 15
+                font.bold: true
+                wrapMode: Text.WordWrap
+            }
+            ScrollView {
+                id: placeholdersRefScroll
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                Column {
+                    width: placeholdersRefScroll.availableWidth
+                    spacing: 12
+                    Repeater {
+                        model: placeholdersRefPopup.refData && placeholdersRefPopup.refData.categories
+                            ? placeholdersRefPopup.refData.categories : []
+                        delegate: Column {
+                            width: placeholdersRefScroll.availableWidth
+                            spacing: 4
+                            Text {
+                                width: parent.width
+                                text: modelData.title || ""
+                                color: root.accentPurpleSoft
+                                font.pixelSize: 13
+                                font.bold: true
+                                wrapMode: Text.WordWrap
+                            }
+                            Text {
+                                width: parent.width
+                                visible: (modelData.triggers || "") !== ""
+                                text: modelData.triggers || ""
+                                color: root.muted
+                                font.pixelSize: 11
+                                wrapMode: Text.WordWrap
+                            }
+                            Repeater {
+                                model: modelData.vars || []
+                                delegate: Text {
+                                    width: placeholdersRefScroll.availableWidth
+                                    wrapMode: Text.WordWrap
+                                    font.pixelSize: 12
+                                    color: root.ink
+                                    text: {
+                                        var names = "";
+                                        var arr = modelData.names || [];
+                                        for (var i = 0; i < arr.length; i++) {
+                                            if (i > 0) names += " = ";
+                                            names += "{" + arr[i] + "}";
+                                        }
+                                        return names + (modelData.desc ? " — " + modelData.desc : "");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                CheremshaSecondaryButton {
+                    text: api ? api.loc("actions.placeholders_reference_close") : "Close"
+                    onClicked: placeholdersRefPopup.close()
+                }
+            }
         }
     }
 
@@ -638,6 +763,42 @@ Item {
         root._obsPickSources = root._obsRowsToComboModel(srcj.items || []);
     }
 
+    // After a pick-list reload the stored name may no longer exist (e.g. canvas
+    // switched, scene renamed in OBS). Adopt the first listed entry so the stored
+    // value always matches what the combo displays. Empty/failed lists (OBS offline)
+    // keep the stored value untouched.
+    function _obsAdoptScene() {
+        var aa = root.actionsModel;
+        var ix = root.selectedActionIdx;
+        if (!aa || ix < 0 || ix >= aa.length) return;
+        var m = root._obsPickScenes;
+        if (!m || !m.length) return;
+        var pr = (aa[ix] && aa[ix].params) ? aa[ix].params : {};
+        var cur = (pr.scene_name !== undefined && pr.scene_name !== null) ? ("" + pr.scene_name) : "";
+        if (root._obsFindComboIndex(m, cur) >= 0) return;
+        var cp = JSON.parse(JSON.stringify(aa));
+        if (!cp[ix].params) cp[ix].params = {};
+        cp[ix].params.scene_name = m[0].value;
+        cp[ix].params.source_name = "";
+        root._updateActionsModel(cp);
+    }
+
+    function _obsAdoptSource() {
+        var aa = root.actionsModel;
+        var ix = root.selectedActionIdx;
+        if (!aa || ix < 0 || ix >= aa.length) return;
+        var m = root._obsPickSources;
+        if (!m || !m.length) return;
+        var pr = (aa[ix] && aa[ix].params) ? aa[ix].params : {};
+        if ((pr.mode || "") !== "source_visible") return;
+        var cur = (pr.source_name !== undefined && pr.source_name !== null) ? ("" + pr.source_name) : "";
+        if (root._obsFindComboIndex(m, cur) >= 0) return;
+        var cp = JSON.parse(JSON.stringify(aa));
+        if (!cp[ix].params) cp[ix].params = {};
+        cp[ix].params.source_name = m[0].value;
+        root._updateActionsModel(cp);
+    }
+
     function _obsRefreshFromObs(aIdx, silentToast) {
         var st = silentToast === true;
         if (!actApi) {
@@ -649,37 +810,77 @@ Item {
         root._suppressObsBrowseCombos = true;
         var pr = aa[aIdx].params || {};
         var cu = (pr.canvas_uuid !== undefined && pr.canvas_uuid !== null) ? ("" + pr.canvas_uuid).trim() : "";
-        var sn = (pr.scene_name !== undefined && pr.scene_name !== null) ? ("" + pr.scene_name).trim() : "";
         var mode = (pr.mode !== undefined && pr.mode !== null) ? ("" + pr.mode) : "program_scene";
 
         var canv = JSON.parse(actApi.obsListCanvasesJson());
-        if (canv.error) {
+        var canvErr = canv.error;
+        if (canvErr) {
             root._obsPickCanvases = [];
-            if (!st) root._notifyPreviewToast(canv.error);
+            if (!st) root._notifyPreviewToast(canvErr);
         } else {
             root._obsPickCanvases = root._obsRowsToComboModel(canv.items || []);
         }
 
         var scn = JSON.parse(actApi.obsListScenesJson(cu));
-        if (scn.error) {
+        var scenesErr = scn.error;
+        if (scenesErr) {
             root._obsPickScenes = [];
-            if (!st) root._notifyPreviewToast(scn.error);
+            if (!st) root._notifyPreviewToast(scenesErr);
         } else {
             root._obsPickScenes = root._obsRowsToComboModel(scn.items || []);
+            root._obsAdoptScene();
         }
 
-        if (mode === "source_visible" && sn) {
-            var srcj = JSON.parse(actApi.obsListSceneSourcesJson(cu, sn));
-            if (srcj.error) {
+        // Re-read: adopt above may have just committed the first scene.
+        var sn2 = "";
+        var pra = root.actionsModel;
+        if (pra && aIdx >= 0 && aIdx < pra.length) {
+            var prb = (pra[aIdx] && pra[aIdx].params) ? pra[aIdx].params : {};
+            sn2 = (prb.scene_name !== undefined && prb.scene_name !== null) ? ("" + prb.scene_name).trim() : "";
+        }
+        var sourcesErr = null;
+        if (mode === "source_visible" && sn2) {
+            var srcj = JSON.parse(actApi.obsListSceneSourcesJson(cu, sn2));
+            sourcesErr = srcj.error;
+            if (sourcesErr) {
                 root._obsPickSources = [];
-                if (!st) root._notifyPreviewToast(srcj.error);
+                if (!st) root._notifyPreviewToast(sourcesErr);
             } else {
                 root._obsPickSources = root._obsRowsToComboModel(srcj.items || []);
+                root._obsAdoptSource();
             }
         } else {
             root._obsPickSources = [];
         }
+        root._obsLastHadError = !!(canvErr || scenesErr || sourcesErr);
+        root._obsScheduleRetryIfEmpty();
         Qt.callLater(function() { root._suppressObsBrowseCombos = false; });
+    }
+
+    // OBS list slots are cached + async: the first call usually returns empty lists
+    // while the background fetch runs. Retry a few times so canvas/scene/source
+    // pickers fill in instead of staying empty.
+    function _obsScheduleRetryIfEmpty() {
+        if (root._obsLastHadError) {
+            root._obsRefreshRetryLeft = 0;
+            obsRefreshRetryTimer.stop();
+            return;
+        }
+        var aa = root.actionsModel;
+        var ix = root.selectedActionIdx;
+        if (!aa || ix < 0 || ix >= aa.length) return;
+        if ((aa[ix] && ("" + (aa[ix].type || "")).trim()) !== "obs_scene") return;
+        var pr = (aa[ix] && aa[ix].params) ? aa[ix].params : {};
+        var mode = (pr.mode !== undefined && pr.mode !== null) ? ("" + pr.mode) : "program_scene";
+        var sn = (pr.scene_name !== undefined && pr.scene_name !== null) ? ("" + pr.scene_name).trim() : "";
+        if (!root._obsPickCanvases.length || !root._obsPickScenes.length
+            || (mode === "source_visible" && sn && !root._obsPickSources.length)) {
+            if (root._obsRefreshRetryLeft <= 0) root._obsRefreshRetryLeft = 5;
+            obsRefreshRetryTimer.restart();
+        } else {
+            root._obsRefreshRetryLeft = 0;
+            obsRefreshRetryTimer.stop();
+        }
     }
 
     function _restoreScrollIfPossible(flickable, y) {
@@ -914,7 +1115,7 @@ Item {
         rulesModel = full;
     }
 
-    function _updateActionsModel(aa, scheduleSave) {
+    function _updateActionsModel(aa, scheduleSave, silent) {
         if (root._suppressActionsAutosave)
             return;
         var next;
@@ -923,11 +1124,16 @@ Item {
         } catch (e) {
             return;
         }
-        try {
-            if (JSON.stringify(root.actionsModel) === JSON.stringify(next))
-                return;
-        } catch (e2) {
+        if (silent === true) {
+            // Text inputs mutate the shared model in place while typing: never reassign
+            // here (delegates would rebuild and the field would lose focus). The in-place
+            // edit is picked up by the scheduled autosave / focus-loss commit.
+            if (scheduleSave !== false)
+                root._scheduleCommitSelectedRuleActions();
+            return;
         }
+        // Fresh copy: always notifies delegates (plain in-place mutation does not),
+        // so steppers/sliders/checkboxes/combos refresh immediately and autosave runs.
         root.actionsModel = next;
         if (scheduleSave !== false)
             root._scheduleCommitSelectedRuleActions();
@@ -2705,6 +2911,23 @@ Item {
         };
     }
 
+    function _donateEvent(p) {
+        var plat = "all";
+        if (p.platform != null && ("" + p.platform).trim() !== "")
+            plat = ("" + p.platform).trim().toLowerCase();
+        return {
+            type: "donate",
+            platform: plat,
+            params: {
+                min_amount: p.min_amount !== undefined && p.min_amount !== null ? p.min_amount : 0,
+                max_amount: p.max_amount !== undefined && p.max_amount !== null ? p.max_amount : 0,
+                user: p.user != null && p.user !== undefined ? ("" + p.user) : "",
+                currency: p.currency != null && p.currency !== undefined ? ("" + p.currency) : "",
+                message_contains: p.message_contains != null && p.message_contains !== undefined ? ("" + p.message_contains) : ""
+            }
+        };
+    }
+
     function _youtubeAmountEvent(typ, p) {
         var plat = "youtube";
         if (p.platform != null && ("" + p.platform).trim() !== "")
@@ -2730,6 +2953,11 @@ Item {
         var t = (ev.type || "").trim();
         if (t === "chat_keyword")
             return "all";
+        if (t === "donate") {
+            if (typeof p === "string" && p.trim().length)
+                return p.trim().toLowerCase();
+            return "all";
+        }
         if (t.indexOf("twitch_") === 0)
             return "twitch";
         if (t.indexOf("youtube_") === 0)
@@ -2749,7 +2977,9 @@ Item {
             { text: api ? api.loc("actions.trigger_platform_tiktok") : "TikTok", value: "tiktok" },
             { text: api ? api.loc("actions.trigger_platform_twitch") : "Twitch", value: "twitch" },
             { text: api ? api.loc("actions.trigger_platform_youtube") : "YouTube", value: "youtube" },
-            { text: api ? api.loc("actions.trigger_platform_kick") : "Kick", value: "kick" }
+            { text: api ? api.loc("actions.trigger_platform_kick") : "Kick", value: "kick" },
+            { text: api ? api.loc("actions.trigger_platform_donatik") : "Donatik", value: "donatik" },
+            { text: api ? api.loc("actions.trigger_platform_donatello") : "Donatello", value: "donatello" }
         ];
     }
 
@@ -2760,7 +2990,10 @@ Item {
             value: "chat_keyword"
         };
         if (p === "all")
-            return [chat];
+            return [chat, {
+                text: api ? api.loc("actions.event.donate") : "Donate (Donatik / Donatello)",
+                value: "donate"
+            }];
         if (p === "tiktok") {
             return [
                 chat,
@@ -2841,6 +3074,22 @@ Item {
                 {
                     text: api ? api.loc("actions.event.youtube_member") : "New member (YouTube)",
                     value: "youtube_member"
+                }
+            ];
+        }
+        if (p === "donatik") {
+            return [
+                {
+                    text: api ? api.loc("actions.event.donate") : "Donate (Donatik)",
+                    value: "donate"
+                }
+            ];
+        }
+        if (p === "donatello") {
+            return [
+                {
+                    text: api ? api.loc("actions.event.donate") : "Donate (Donatello)",
+                    value: "donate"
                 }
             ];
         }
@@ -3032,6 +3281,15 @@ Item {
                 min_amount: p.min_amount || 0,
                 user: p.user || ""
             });
+        if (val === "donate")
+            return root._donateEvent({
+                platform: plat,
+                min_amount: p.min_amount || 0,
+                max_amount: p.max_amount || 0,
+                user: p.user || "",
+                currency: p.currency || "",
+                message_contains: p.message_contains || ""
+            });
         if (val === "twitch_follow" || val === "twitch_subscribe" || val === "twitch_resub"
             || val === "twitch_sub_gift" || val === "tiktok_joined" || val === "tiktok_followed"
             || val === "tiktok_paid_subscribed" || val === "tiktok_first_activity"
@@ -3082,7 +3340,7 @@ Item {
             }
         }
         if (!allowed)
-            typ = "chat_keyword";
+            typ = kinds.length ? kinds[0].value : "chat_keyword";
         return root._buildTriggerEventLocal(typ, plat, cur.params || {});
     }
 
@@ -3218,6 +3476,19 @@ Item {
             return (api ? api.loc("actions.event.kick_gift_sub") : "Gift sub");
         if (ev.type === "kick_gift")
             return (api ? api.loc("actions.event.kick_gift") : "KICKS");
+        if (ev.type === "donate") {
+            var dp = ev.params || {};
+            var dmin = dp.min_amount != null ? dp.min_amount : 0;
+            var dmax = dp.max_amount != null ? dp.max_amount : 0;
+            var dLabel = api ? api.loc("actions.event.donate") : "Donate";
+            if (dmax > 0 && dmax === dmin)
+                return dLabel + " · =" + dmin;
+            if (dmin > 0 && dmax > 0)
+                return dLabel + " · " + dmin + "–" + dmax;
+            if (dmax > 0)
+                return dLabel + " · ≤" + dmax;
+            return dmin > 0 ? (dLabel + " · ≥" + dmin) : dLabel;
+        }
         return ev.type || "—";
     }
 
@@ -4075,7 +4346,7 @@ Item {
                     }
 
                     CheremshaSecondaryButton {
-                        text: api ? api.loc("actions.add_folder") : "+ Folder"
+                        text: api ? api.loc("actions.add_folder") : "Folder"
                         iconName: "web_folder.svg"
                         Layout.preferredWidth: 105
                         onClicked: root._insertFolderAtRoot("")
@@ -4290,7 +4561,7 @@ Item {
                             Layout.alignment: Qt.AlignHCenter
                             spacing: 8
                             ConnPillButton {
-                                text: api ? api.loc("actions.empty_create_rule") : "+ Create first rule"
+                                text: api ? api.loc("actions.empty_create_rule") : "Create first rule"
                                 onClicked: {
                                     var nr = _defaultRule();
                                     var defName = api ? api.loc("actions.new_rule_default_name") : "New rule";
@@ -4312,7 +4583,7 @@ Item {
                                 }
                             }
                             ConnPillButton {
-                                text: api ? api.loc("actions.add_folder") : "+ Folder"
+                                text: api ? api.loc("actions.add_folder") : "Folder"
                                 onClicked: root._insertFolderAtRoot("")
                             }
                         }
@@ -4525,7 +4796,7 @@ Item {
                                     visible: root.selectedRule && root.selectedRule.events && root.selectedRule.events.length === 1
                                     Layout.preferredWidth: 68
                                     Layout.minimumWidth: 60
-                                    text: "+ АБО"
+                                    text: "АБО"
                                     pillFontSize: 11
                                     hoverEnabled: true
                                     ToolTip.visible: hovered
@@ -5346,6 +5617,141 @@ Item {
                         }
                     }
 
+                    // Donate editor (Donatik / Donatello: min amount + optional user/currency/message)
+                    ColumnLayout {
+                        visible: root.editingTrigger && root.editingTrigger.type === "donate"
+                        Layout.fillWidth: true
+                        spacing: 6
+                        Text {
+                            text: api ? api.loc("actions.donate_min_amount") : "Min donation amount"
+                            color: muted
+                            font.pixelSize: 12
+                        }
+                        ConnIntStepper {
+                            Layout.fillWidth: true
+                            fromVal: 0
+                            toVal: 9999999
+                            intValue: root.editingTrigger
+                                ? ((root.editingTrigger.params && root.editingTrigger.params.min_amount) || 0)
+                                : 0
+                            onCommitted: function (v) {
+                                if (root.selectedRule === null) return;
+                                var ep = (root.editingTrigger && root.editingTrigger.params) || {};
+                                var r = root._patchSelectedTrigger(root._donateEvent({
+                                    platform: root._platformForEdits(),
+                                    min_amount: v,
+                                    max_amount: ep.max_amount || 0,
+                                    user: ep.user || "",
+                                    currency: ep.currency || "",
+                                    message_contains: ep.message_contains || ""
+                                }));
+                                if (r == null) return;
+                                root._setRule(root.selectedIdx, r);
+                                root._save();
+                            }
+                        }
+                        Text {
+                            text: api ? api.loc("actions.donate_max_amount") : "Max donation amount (0 = no limit)"
+                            color: muted
+                            font.pixelSize: 12
+                        }
+                        ConnIntStepper {
+                            Layout.fillWidth: true
+                            fromVal: 0
+                            toVal: 9999999
+                            intValue: root.editingTrigger
+                                ? ((root.editingTrigger.params && root.editingTrigger.params.max_amount) || 0)
+                                : 0
+                            onCommitted: function (v) {
+                                if (root.selectedRule === null) return;
+                                var ep = (root.editingTrigger && root.editingTrigger.params) || {};
+                                var r = root._patchSelectedTrigger(root._donateEvent({
+                                    platform: root._platformForEdits(),
+                                    min_amount: ep.min_amount || 0,
+                                    max_amount: v,
+                                    user: ep.user || "",
+                                    currency: ep.currency || "",
+                                    message_contains: ep.message_contains || ""
+                                }));
+                                if (r == null) return;
+                                root._setRule(root.selectedIdx, r);
+                                root._save();
+                            }
+                        }
+                        Text { text: api ? api.loc("actions.user_filter") : "User (optional)"; color: muted; font.pixelSize: 12 }
+                        TextField {
+                            Layout.fillWidth: true
+                            color: ink
+                            placeholderTextColor: muted
+                            placeholderText: api ? api.loc("actions.user_filter_ph") : "nickname…"
+                            text: root.editingTrigger ? ((root.editingTrigger.params && root.editingTrigger.params.user) || "") : ""
+                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                            onEditingFinished: {
+                                if (root.selectedRule === null) return;
+                                var ep = (root.editingTrigger && root.editingTrigger.params) || {};
+                                var r = root._patchSelectedTrigger(root._donateEvent({
+                                    platform: root._platformForEdits(),
+                                    min_amount: ep.min_amount || 0,
+                                    max_amount: ep.max_amount || 0,
+                                    user: text || "",
+                                    currency: ep.currency || "",
+                                    message_contains: ep.message_contains || ""
+                                }));
+                                if (r == null) return;
+                                root._setRule(root.selectedIdx, r);
+                                root._save();
+                            }
+                        }
+                        Text { text: api ? api.loc("actions.donate_currency_filter") : "Currency (optional, e.g. UAH)"; color: muted; font.pixelSize: 12 }
+                        TextField {
+                            Layout.fillWidth: true
+                            color: ink
+                            placeholderTextColor: muted
+                            placeholderText: "UAH"
+                            text: root.editingTrigger ? ((root.editingTrigger.params && root.editingTrigger.params.currency) || "") : ""
+                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                            onEditingFinished: {
+                                if (root.selectedRule === null) return;
+                                var ep = (root.editingTrigger && root.editingTrigger.params) || {};
+                                var r = root._patchSelectedTrigger(root._donateEvent({
+                                    platform: root._platformForEdits(),
+                                    min_amount: ep.min_amount || 0,
+                                    max_amount: ep.max_amount || 0,
+                                    user: ep.user || "",
+                                    currency: text || "",
+                                    message_contains: ep.message_contains || ""
+                                }));
+                                if (r == null) return;
+                                root._setRule(root.selectedIdx, r);
+                                root._save();
+                            }
+                        }
+                        Text { text: api ? api.loc("actions.donate_message_filter") : "Message contains (optional)"; color: muted; font.pixelSize: 12 }
+                        TextField {
+                            Layout.fillWidth: true
+                            color: ink
+                            placeholderTextColor: muted
+                            placeholderText: api ? api.loc("actions.donate_message_ph") : "text…"
+                            text: root.editingTrigger ? ((root.editingTrigger.params && root.editingTrigger.params.message_contains) || "") : ""
+                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                            onEditingFinished: {
+                                if (root.selectedRule === null) return;
+                                var ep = (root.editingTrigger && root.editingTrigger.params) || {};
+                                var r = root._patchSelectedTrigger(root._donateEvent({
+                                    platform: root._platformForEdits(),
+                                    min_amount: ep.min_amount || 0,
+                                    max_amount: ep.max_amount || 0,
+                                    user: ep.user || "",
+                                    currency: ep.currency || "",
+                                    message_contains: text || ""
+                                }));
+                                if (r == null) return;
+                                root._setRule(root.selectedIdx, r);
+                                root._save();
+                            }
+                        }
+                    }
+
                     // TikTok likes editor
                     ColumnLayout {
                         visible: root.editingTrigger && root.editingTrigger.type === "tiktok_likes_received"
@@ -5490,7 +5896,7 @@ Item {
                                 }
                                 CheremshaPrimaryButton {
                                     visible: root.actionsModel && root.actionsModel.length > 0
-                                    text: api ? api.loc("actions.add_action_short") : "+ Add action"
+                                    text: api ? api.loc("actions.add_action_short") : "Add action"
                                     iconName: "web_plus.svg"
                                     Layout.preferredWidth: 112
                                     Layout.minimumWidth: 0
@@ -5534,7 +5940,7 @@ Item {
                             CheremshaPrimaryButton {
                                 Layout.alignment: Qt.AlignHCenter
                                 iconName: "web_plus.svg"
-                                text: api ? api.loc("actions.then_empty_cta") : "+ Add first action"
+                                text: api ? api.loc("actions.then_empty_cta") : "Add first action"
                                 onClicked: {
                                     root.actionPickerReplaceIdx = -1;
                                     root.showActionPicker = true;
@@ -5584,7 +5990,7 @@ Item {
                                 fld.text = t0.substring(0, pos) + tag + t0.substring(pos);
                                 fld.cursorPosition = pos + tag.length;
                                 aa[aIdx].params.sequence = fld.text;
-                                page._updateActionsModel(aa);
+                                page._updateActionsModel(aa, true, true);
                             }
 
                             Layout.fillWidth: true
@@ -6018,7 +6424,7 @@ Item {
                                                 if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                                 if (!aa[aIdx].params) aa[aIdx].params = {};
                                                 aa[aIdx].params.skip_words = text;
-                                                page._updateActionsModel(aa);
+                                                page._updateActionsModel(aa, true, true);
                                             }
                                         }
                                     }
@@ -6048,7 +6454,7 @@ Item {
                                                 var v = parseFloat(text);
                                                 if (isNaN(v) || v < 0) v = 0;
                                                 aa[aIdx].params.max_duration_seconds = v;
-                                                page._updateActionsModel(aa);
+                                                page._updateActionsModel(aa, true, true);
                                             }
                                         }
                                     }
@@ -6078,7 +6484,7 @@ Item {
                                                 var v = parseInt(text);
                                                 if (isNaN(v) || v < 1) v = 1;
                                                 aa[aIdx].params.max_page = v;
-                                                page._updateActionsModel(aa);
+                                                page._updateActionsModel(aa, true, true);
                                             }
                                         }
                                     }
@@ -6136,7 +6542,7 @@ Item {
                                                 if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                                 if (!aa[aIdx].params) aa[aIdx].params = {};
                                                 aa[aIdx].params.file_path = text;
-                                                page._updateActionsModel(aa);
+                                                page._updateActionsModel(aa, true, true);
                                             }
                                             onActiveFocusChanged: {
                                                 if (!activeFocus) page._commitSelectedRuleActions(false);
@@ -6197,7 +6603,7 @@ Item {
                                             if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                             if (!aa[aIdx].params) aa[aIdx].params = {};
                                             aa[aIdx].params.text = text;
-                                            page._updateActionsModel(aa);
+                                            page._updateActionsModel(aa, true, true);
                                         }
                                         onActiveFocusChanged: {
                                             page.isActionTextEditing = activeFocus;
@@ -6322,7 +6728,7 @@ Item {
                                             if (!aa[aIdx].params)
                                                 aa[aIdx].params = {};
                                             aa[aIdx].params.sequence = text;
-                                            page._updateActionsModel(aa);
+                                            page._updateActionsModel(aa, true, true);
                                         }
                                         onActiveFocusChanged: {
                                             page.isActionTextEditing = activeFocus;
@@ -6583,7 +6989,7 @@ Item {
                                             if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                             if (!aa[aIdx].params) aa[aIdx].params = {};
                                             aa[aIdx].params.text = text;
-                                            page._updateActionsModel(aa);
+                                            page._updateActionsModel(aa, true, true);
                                         }
                                         onActiveFocusChanged: {
                                             page.isActionTextEditing = activeFocus;
@@ -6596,6 +7002,13 @@ Item {
                                         wrapMode: Text.WordWrap
                                         font.pixelSize: 11
                                         color: page.muted
+                                    }
+                                    CheremshaSecondaryButton {
+                                        Layout.alignment: Qt.AlignLeft
+                                        buttonFontSize: 11
+                                        implicitHeight: 30
+                                        text: api ? api.loc("actions.placeholders_reference_btn") : "{…} All variables"
+                                        onClicked: root._openPlaceholdersReference()
                                     }
                                 }
 
@@ -6619,7 +7032,7 @@ Item {
                                             if (!aa || aIdx < 0 || aIdx >= aa.length) return;
                                             if (!aa[aIdx].params) aa[aIdx].params = {};
                                             aa[aIdx].params.text = text;
-                                            page._updateActionsModel(aa);
+                                            page._updateActionsModel(aa, true, true);
                                         }
                                         onActiveFocusChanged: {
                                             page.isActionTextEditing = activeFocus;
@@ -6658,6 +7071,13 @@ Item {
                                         font.pixelSize: 11
                                         color: page.muted
                                     }
+                                    CheremshaSecondaryButton {
+                                        Layout.alignment: Qt.AlignLeft
+                                        buttonFontSize: 11
+                                        implicitHeight: 30
+                                        text: api ? api.loc("actions.placeholders_reference_btn") : "{…} All variables"
+                                        onClicked: root._openPlaceholdersReference()
+                                    }
                                 }
 
                                 // OBS WebSocket: program scene or source visibility
@@ -6695,8 +7115,11 @@ Item {
                                             if (!aa[aIdx].params) aa[aIdx].params = {};
                                             aa[aIdx].params.mode = model[idx].value;
                                             page._updateActionsModel(aa);
-                                            if (model[idx].value === "source_visible" && obsBrowseUi)
+                                            if (model[idx].value === "source_visible" && obsBrowseUi) {
                                                 page._obsReloadSourcesPickList();
+                                                page._obsAdoptSource();
+                                                page._obsScheduleRetryIfEmpty();
+                                            }
                                         }
                                     }
 
@@ -6743,9 +7166,13 @@ Item {
                                             aa[aIdx].params.canvas_uuid = model[idx].value;
                                             page._updateActionsModel(aa);
                                             page._obsReloadScenesPickList();
+                                            page._obsAdoptScene();
                                             var pr = aa[aIdx].params || {};
-                                            if ((pr.mode || "") === "source_visible")
+                                            if ((pr.mode || "") === "source_visible") {
                                                 page._obsReloadSourcesPickList();
+                                                page._obsAdoptSource();
+                                            }
+                                            page._obsScheduleRetryIfEmpty();
                                         }
                                     }
 
@@ -6778,8 +7205,11 @@ Item {
                                             aa[aIdx].params.scene_name = model[idx].value;
                                             page._updateActionsModel(aa);
                                             var pr = aa[aIdx].params || {};
-                                            if ((pr.mode || "") === "source_visible")
+                                            if ((pr.mode || "") === "source_visible") {
                                                 page._obsReloadSourcesPickList();
+                                                page._obsAdoptSource();
+                                                page._obsScheduleRetryIfEmpty();
+                                            }
                                         }
                                     }
 
@@ -6818,63 +7248,10 @@ Item {
                                     Text {
                                         visible: obsBrowseUi
                                         Layout.fillWidth: true
-                                        text: api ? api.loc("actions.obs_manual_names_hint") : "You can still edit names below (placeholders supported)."
+                                        text: api ? api.loc("actions.obs_pick_hint") : "Pick the canvas, scene and source from the OBS lists above."
                                         wrapMode: Text.WordWrap
                                         font.pixelSize: 11
                                         color: page.muted
-                                    }
-
-                                    Text { text: api ? api.loc("actions.obs_scene_name") : "Scene name"; color: muted; font.pixelSize: 12 }
-                                    TextField {
-                                        Layout.fillWidth: true
-                                        color: ink
-                                        placeholderTextColor: muted
-                                        placeholderText: api ? api.loc("actions.obs_scene_name_ph") : "Scene…"
-                                        text: (modelData && modelData.params && modelData.params.scene_name) ? modelData.params.scene_name : ""
-                                        background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                                        onTextChanged: {
-                                            var aa = page.actionsModel;
-                                            if (!aa || aIdx < 0 || aIdx >= aa.length) return;
-                                            if (!aa[aIdx].params) aa[aIdx].params = {};
-                                            aa[aIdx].params.scene_name = text;
-                                            page._updateActionsModel(aa);
-                                        }
-                                        onActiveFocusChanged: {
-                                            if (!activeFocus) page._commitSelectedRuleActions(false);
-                                        }
-                                    }
-
-                                    Text {
-                                        Layout.fillWidth: true
-                                        visible: {
-                                            var m = (modelData && modelData.params && modelData.params.mode) ? modelData.params.mode : "program_scene";
-                                            return m === "source_visible";
-                                        }
-                                        text: api ? api.loc("actions.obs_source_name") : "Source name"
-                                        color: muted
-                                        font.pixelSize: 12
-                                    }
-                                    TextField {
-                                        Layout.fillWidth: true
-                                        visible: {
-                                            var m = (modelData && modelData.params && modelData.params.mode) ? modelData.params.mode : "program_scene";
-                                            return m === "source_visible";
-                                        }
-                                        color: ink
-                                        placeholderTextColor: muted
-                                        placeholderText: api ? api.loc("actions.obs_source_name_ph") : "Source…"
-                                        text: (modelData && modelData.params && modelData.params.source_name) ? modelData.params.source_name : ""
-                                        background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                                        onTextChanged: {
-                                            var aa = page.actionsModel;
-                                            if (!aa || aIdx < 0 || aIdx >= aa.length) return;
-                                            if (!aa[aIdx].params) aa[aIdx].params = {};
-                                            aa[aIdx].params.source_name = text;
-                                            page._updateActionsModel(aa);
-                                        }
-                                        onActiveFocusChanged: {
-                                            if (!activeFocus) page._commitSelectedRuleActions(false);
-                                        }
                                     }
 
                                     RowLayout {

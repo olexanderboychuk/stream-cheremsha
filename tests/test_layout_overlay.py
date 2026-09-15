@@ -68,9 +68,29 @@ def test_layout_parser_ignores_unknown_widget_types() -> None:
 
 
 def test_layout_overlay_renders_absolute_iframes(monkeypatch) -> None:
-    monkeypatch.setattr(layout_overlay, "load_layouts", lambda: [default_layout()])
+    from PySide6.QtCore import QSettings
+
+    import stream_cheremsha.overlays.widget_instances as wimod
+
+    monkeypatch.setattr(
+        wimod, "QSettings", lambda *a, **k: QSettings("t-org-lay-ov", "t-app-lay-ov")
+    )
+    QSettings("t-org-lay-ov", "t-app-lay-ov").clear()
+
+    lay = default_layout()
+    # Bind the first widget so a by-id iframe renders.
+    inst = wimod.create_instance("chat", "Bound", None)
+    w = lay.widgets[0]
+    from dataclasses import replace
+
+    bound = replace(w, widget_instance_id=inst.id)
+    monkeypatch.setattr(
+        layout_overlay,
+        "load_layouts",
+        lambda: [replace(lay, widgets=(bound,))],
+    )
     html = LayoutOverlayType().render_html({"instance": "main"})
     assert "class=\"canvas\"" in html
-    assert "/overlay/chat?instance=main" in html
-    assert "/overlay/actions?instance=main" in html
+    assert f"/overlay/by-id/{inst.id}" in html
+    assert "/overlay/chat?instance=" not in html
     assert "position:absolute" in html
