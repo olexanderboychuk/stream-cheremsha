@@ -164,6 +164,7 @@ from stream_cheremsha.overlays.king_of_live_overlay_config import (
     load_king_of_live_overlay_config,
 )
 from stream_cheremsha.overlays.live_leaderboard_controller import LiveLeaderboardController
+from stream_cheremsha.overlays.live_leaderboard_simple_controller import LiveLeaderboardSimpleController
 from stream_cheremsha.overlays.registry import OverlayRegistry
 from stream_cheremsha.overlays.server import OverlayServer
 from stream_cheremsha.overlays.signal_system_controller import SignalSystemController
@@ -1166,6 +1167,12 @@ class MainWindow(FramelessWindow):
             instance="main",
             parent=self,
         )
+        self._live_leaderboard_simple = LiveLeaderboardSimpleController(
+            pubsub=self._overlay_server.pubsub(),
+            get_locale=lambda: self._locale,
+            instance="main",
+            parent=self,
+        )
         self._social_rotator = SocialRotatorController(
             pubsub=self._overlay_server.pubsub(),
             get_locale=lambda: self._locale,
@@ -1514,6 +1521,7 @@ class MainWindow(FramelessWindow):
         self._widgets_qml_api.set_battle_host(self)
         self._widgets_qml_api.set_stream_goal_controller(self._stream_goal)
         self._widgets_qml_api.set_live_leaderboard_controller(self._live_leaderboard)
+        self._widgets_qml_api.set_live_leaderboard_simple_controller(self._live_leaderboard_simple)
         self._widgets_qml_api.set_social_rotator_controller(self._social_rotator)
         self._widgets_qml_api.set_webcam_frame_controller(self._webcam_frame)
         self._widgets_qml_api.set_signal_system_controller(self._signal_system)
@@ -2325,6 +2333,7 @@ class MainWindow(FramelessWindow):
             self._stream_pet,
             self._stream_goal,
             self._live_leaderboard,
+            self._live_leaderboard_simple,
             self._social_rotator,
             self._community_world,
             self._webcam_frame,
@@ -4060,6 +4069,7 @@ class MainWindow(FramelessWindow):
         self._schedule_battle_overlay_publish()
         if hasattr(self, "_live_leaderboard") and self._live_leaderboard is not None:
             self._live_leaderboard.schedule_publish()
+            self._live_leaderboard_simple.schedule_publish()
         if hasattr(self, "_webcam_frame") and self._webcam_frame is not None:
             self._webcam_frame.schedule_publish()
 
@@ -5866,6 +5876,11 @@ class MainWindow(FramelessWindow):
             stable_key=message.tiktok_stable_key,
             unique_id=message.tiktok_unique_id,
         )
+        self._live_leaderboard_simple.on_comment(
+            user=message.author,
+            stable_key=message.tiktok_stable_key,
+            unique_id=message.tiktok_unique_id,
+        )
         self._community_world.on_chat(user=message.author, text=message.text)
         self._signal_system.on_comment(
             user=message.author,
@@ -6231,6 +6246,13 @@ class MainWindow(FramelessWindow):
             unique_id=unique_id,
         )
         self._live_leaderboard.on_like(
+            user=user,
+            count=n_i,
+            profile_picture_url=profile_picture_url,
+            user_key=user_key,
+            unique_id=unique_id,
+        )
+        self._live_leaderboard_simple.on_like(
             user=user,
             count=n_i,
             profile_picture_url=profile_picture_url,
@@ -6785,6 +6807,7 @@ class MainWindow(FramelessWindow):
         self._stream_pet.reset_for_new_stream()
         self._stream_goal.reset_for_new_stream()
         self._live_leaderboard.reset_for_new_stream()
+        self._live_leaderboard_simple.reset_for_new_stream()
         self._social_rotator.reset_for_new_stream()
         self._community_world.reset_session()
         loop = self._asyncio_loop
@@ -6849,6 +6872,12 @@ class MainWindow(FramelessWindow):
             user=user, count=int(n), stable_key=stable_key, unique_id=unique_id
         )
         self._live_leaderboard.on_share(
+            user=user,
+            count=int(n),
+            stable_key=stable_key,
+            unique_id=unique_id,
+        )
+        self._live_leaderboard_simple.on_share(
             user=user,
             count=int(n),
             stable_key=stable_key,
@@ -7219,6 +7248,13 @@ class MainWindow(FramelessWindow):
                 sender_avatar_url=str(sender_avatar_url or ""),
                 sender_user_key=sender_user_key,
             )
+            self._live_leaderboard_simple.on_gift(
+                sender=sender,
+                count=count,
+                tiktok_coin_each=tiktok_coin_each,
+                sender_avatar_url=str(sender_avatar_url or ""),
+                sender_user_key=sender_user_key,
+            )
             self._social_rotator.on_tiktok_gift(
                 sender=sender,
                 count=count,
@@ -7246,6 +7282,100 @@ class MainWindow(FramelessWindow):
                     "sender_user_key": sender_user_key,
                 },
             )
+
+    def open_widgets(self) -> None:
+        self._set_main_page(self._IX_WIDGETS)
+
+    def open_layouts(self) -> None:
+        self._set_main_page(self._IX_LAYOUTS)
+
+    def open_actions(self) -> None:
+        self._set_main_page(self._IX_ACTIONS)
+        self._qml_api.refresh()
+
+    @Slot()
+    def _save_twitch_keys(self) -> None:
+        token = self._twitch_token.text().strip()
+        cid = self._twitch_client_id.text().strip()
+        sec = self._twitch_client_secret.text().strip()
+        ch = self._twitch_channel.text().strip()
+        try:
+            if token:
+                keyring_store.set_password(constants.KEY_TWITCH_TOKEN, token)
+            if cid:
+                keyring_store.set_password(constants.KEY_TWITCH_CLIENT_ID, cid)
+            if sec:
+                keyring_store.set_password(constants.KEY_TWITCH_CLIENT_SECRET, sec)
+            else:
+                keyring_store.delete_password(constants.KEY_TWITCH_CLIENT_SECRET)
+            if ch:
+                keyring_store.set_password(constants.KEY_TWITCH_CHANNEL, ch)
+        except RuntimeError as e:
+            QMessageBox.warning(self, self._tr("dlg.keyring"), str(e))
+            return
+        self._on_user_status(self._tr("status.twitch_keys_saved"))
+        self._refresh_connection_panels()
+
+    async def _twitch_browser_login(self) -> None:
+        client_id = self._twitch_client_id_resolved()
+        if not client_id:
+            QMessageBox.warning(self, self._tr("dlg.twitch"), self._tr("dlg.twitch_need_client_id"))
+            return
+        try:
+            token_payload = await twitch_oauth_device.run_device_code_flow(
+                client_id,
+                status=self._on_user_status,
+                locale=self._locale,
+            )
+            twitch_credentials.save_oauth_bundle(token_payload, client_id=client_id)
+            keyring_store.set_password(constants.KEY_TWITCH_CLIENT_ID, client_id)
+            sec = self._twitch_client_secret.text().strip()
+            if sec:
+                keyring_store.set_password(constants.KEY_TWITCH_CLIENT_SECRET, sec)
+            keyring_store.delete_password(constants.KEY_TWITCH_TOKEN)
+            self._twitch_token.clear()
+            access = token_payload.get("access_token")
+            if isinstance(access, str) and access:
+                info = await twitch_oauth_device.validate_token(access)
+                login = info.get("login")
+                if isinstance(login, str) and login:
+                    ln = login.strip().lower()
+                    twitch_credentials.set_authorized_login(ln)
+                    self._twitch_channel.setText(ln)
+            self._on_user_status(self._tr("status.twitch_browser_ok"))
+            self._refresh_connection_panels()
+        except (httpx.HTTPError, ValueError, TimeoutError, OSError, RuntimeError) as e:
+            QMessageBox.warning(self, self._tr("dlg.twitch_oauth"), str(e))
+
+    async def _start_twitch(self) -> None:
+        channel = self._twitch_channel.text().strip()
+        if not channel:
+            QMessageBox.warning(self, self._tr("dlg.twitch"), self._tr("dlg.twitch_need_channel"))
+            return
+
+        manual = self._twitch_token.text().strip()
+        if not manual:
+            manual = keyring_store.get_password(constants.KEY_TWITCH_TOKEN) or ""
+
+        client_id = self._twitch_client_id_resolved()
+        client_secret = self._twitch_client_secret_resolved()
+
+        token = manual.strip()
+        if not token:
+            token = await twitch_credentials.ensure_fresh_access_token(
+                client_id,
+                client_secret or None,
+            )
+        if not token:
+            QMessageBox.warning(self, self._tr("dlg.twitch"), self._tr("dlg.twitch_need_token"))
+            return
+
+        await self._twitch.start(token, channel)
+        await self._start_twitch_analytics(
+            token=token,
+            client_id=client_id,
+            channel_login=channel,
+        )
 
     def open_widgets(self) -> None:
         self._set_main_page(self._IX_WIDGETS)
@@ -7710,22 +7840,34 @@ class MainWindow(FramelessWindow):
         self._qml_refresh_if_visible()
 
     def _schedule_kick_viewer_poll(self, channel: str) -> None:
-        asyncio.ensure_future(self._kick_poll_viewers(channel))
+        self._kick_viewers_gen = getattr(self, "_kick_viewers_gen", 0) + 1
+        asyncio.ensure_future(self._kick_poll_viewers(channel, self._kick_viewers_gen))
 
-    async def _kick_poll_viewers(self, channel: str) -> None:
+    async def _kick_poll_viewers(self, channel: str, gen: int | None = None) -> None:
         backoff = 5.0
         while self._kick_enabled and not self._closing:
+            if gen is not None and gen != getattr(self, "_kick_viewers_gen", gen):
+                return
             try:
+                count: int | None = None
                 cfg = KickOAuthConfig.from_env()
                 token = await kick_credentials.ensure_valid_access_token()
                 if cfg is not None and token:
                     api = KickApiClient(token)
                     try:
                         info = await api.fetch_live_channel(channel)
-                        self._kick_analytics.enqueue_viewers(info.viewer_count)
-                        self._social_rotator.on_viewers("kick", int(info.viewer_count))
+                        count = int(info.viewer_count)
                     finally:
                         await api.aclose()
+                else:
+                    # No OAuth — public endpoint still exposes viewer_count.
+                    from stream_cheremsha.chat.kick_api import KickApiClient as _KickApi
+
+                    info = await _KickApi.fetch_public_channel_info(channel)
+                    count = int(info.viewer_count)
+                if count is not None:
+                    self._kick_analytics.enqueue_viewers(max(0, count))
+                    self._social_rotator.on_viewers("kick", max(0, int(count)))
                 backoff = 30.0
             except (ValueError, httpx.HTTPError, OSError, RuntimeError) as exc:
                 logger.debug("Kick viewers poll error: %s", exc)
@@ -8553,6 +8695,7 @@ class MainWindow(FramelessWindow):
 
             try:
                 self._live_leaderboard.stop()
+                self._live_leaderboard_simple.stop()
             except (OSError, RuntimeError, ValueError, TypeError) as e:
                 logger.exception("Shutdown step failed (live_leaderboard.stop): %s", e)
 

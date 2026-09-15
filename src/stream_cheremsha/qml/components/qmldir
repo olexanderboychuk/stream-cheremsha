@@ -18,3 +18,5 @@ CheremshaServiceCard 1.0 CheremshaServiceCard.qml
 CheremshaCalendar 1.0 CheremshaCalendar.qml
 CheremshaDatePicker 1.0 CheremshaDatePicker.qml
 ServiceHistoryPage 1.0 ServiceHistoryPage.qml
+CheremshaModal 1.0 CheremshaModal.qml
+CheremshaColorPicker 1.0 CheremshaColorPicker.qml

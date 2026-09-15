@@ -126,6 +126,14 @@ WIDGET_TYPES: dict[str, dict[str, Any]] = {
         "accent": "#a78bfa",
         "platforms": ["all"],
     },
+    "live_leaderboard_simple": {
+        "name": "Live Leaderboard Simple",
+        "description": "Компактний лідерборд списком.",
+        "icon": "🏆",
+        "icon_svg": "icons/web_trophy.svg",
+        "accent": "#f5a623",
+        "platforms": ["all"],
+    },
     "social_rotator": {
         "name": "Social Rotator",
         "description": "Ротація соцмереж.",
@@ -172,6 +180,7 @@ _DEFAULTS_LOADERS: dict[str, str] = {
     "community_world": "stream_cheremsha.overlays.community_world_config:community_world_overlay_config_defaults:community_world_overlay_config_to_json_text",
     "stream_goal": "stream_cheremsha.overlays.stream_goal_overlay_config:stream_goal_overlay_config_defaults:stream_goal_overlay_config_to_json_text",
     "live_leaderboard": "stream_cheremsha.overlays.live_leaderboard_overlay_config:live_leaderboard_overlay_config_defaults:live_leaderboard_overlay_config_to_json_text",
+    "live_leaderboard_simple": "stream_cheremsha.overlays.live_leaderboard_simple_config:live_leaderboard_simple_config_defaults:live_leaderboard_simple_config_to_json_text",
     "social_rotator": "stream_cheremsha.overlays.social_rotator_overlay_config:social_rotator_overlay_config_defaults:social_rotator_overlay_config_to_json_text",
     "webcam_frame": "stream_cheremsha.overlays.webcam_frame_overlay_config:webcam_frame_overlay_config_defaults:webcam_frame_overlay_config_to_json_text",
     "signal_system": "stream_cheremsha.overlays.signal_system_overlay_config:signal_system_overlay_config_defaults:signal_system_overlay_config_to_json_text",

@@ -706,7 +706,7 @@ class YouTubeChatSource:
                         self._on_status(
                             l10n.tr(self._get_locale(), "yt.fallback_switching"),
                         )
-                        await self._run_fallback_for_video(video_id)
+                        await self._run_fallback_for_video(video_id, creds=creds)
                     else:
                         self._on_status(
                             l10n.tr(
@@ -721,7 +721,7 @@ class YouTubeChatSource:
                         self._on_status(
                             l10n.tr(self._get_locale(), "yt.fallback_switching"),
                         )
-                        await self._run_fallback_for_video(video_id)
+                        await self._run_fallback_for_video(video_id, creds=creds)
                     else:
                         self._on_status(
                             l10n.tr(
@@ -739,7 +739,7 @@ class YouTubeChatSource:
                 self._data_api.invalidate_service()
                 if video_id:
                     self._on_status(l10n.tr(self._get_locale(), "yt.fallback_switching"))
-                    await self._run_fallback_for_video(video_id)
+                    await self._run_fallback_for_video(video_id, creds=creds)
                 else:
                     self._on_status(
                         l10n.tr(self._get_locale(), "yt.api_init_retry", err=str(e), sec=wait),
@@ -766,6 +766,11 @@ class YouTubeChatSource:
                     self._on_status(l10n.tr(self._get_locale(), "yt.no_live_retry", sec=wait))
                 else:
                     self._on_status(l10n.tr(self._get_locale(), "yt.no_chat_retry", sec=wait))
+                if self._on_viewers_current is not None:
+                    try:
+                        self._on_viewers_current(0)
+                    except Exception:
+                        logger.debug("YouTube viewers zero-push failed", exc_info=True)
                 await asyncio.sleep(wait)
                 continue
 
@@ -790,9 +795,21 @@ class YouTubeChatSource:
             # exiting the supervisor, which used to flip the UI toggle off in Nuitka.
             continue
 
-    async def _run_fallback_for_watch_url(self, watch_url: str) -> None:
+    async def _run_fallback_for_watch_url(
+        self,
+        watch_url: str,
+        *,
+        creds: Credentials | None = None,
+        video_ids: list[str] | None = None,
+    ) -> None:
         _ensure_yt_helpers()
         self._on_status(l10n.tr(self._get_locale(), "yt.fallback_polling"))
+        viewers_task: asyncio.Task[None] | None = None
+        if creds is not None and video_ids and self._on_viewers_current is not None:
+            viewers_task = asyncio.create_task(
+                self._poll_concurrent_viewers(creds, list(video_ids)),
+                name="youtube-viewers-fallback",
+            )
         loop = asyncio.get_running_loop()
         q: asyncio.Queue[ChatDownloaderMessage | None] = asyncio.Queue()
         stop = threading.Event()
@@ -840,12 +857,19 @@ class YouTubeChatSource:
             raise
         finally:
             stop.set()
+            if viewers_task is not None and not viewers_task.done():
+                viewers_task.cancel()
+                await asyncio.gather(viewers_task, return_exceptions=True)
             if not worker.done():
                 worker.cancel()
             await asyncio.gather(worker, return_exceptions=True)
 
-    async def _run_fallback_for_video(self, video_id: str) -> None:
-        await self._run_fallback_for_watch_url(youtube_watch_url(video_id))
+    async def _run_fallback_for_video(
+        self, video_id: str, *, creds: Credentials | None = None
+    ) -> None:
+        await self._run_fallback_for_watch_url(
+            youtube_watch_url(video_id), creds=creds, video_ids=[video_id]
+        )
 
     async def _poll_chats_round_robin(
         self,
@@ -875,7 +899,9 @@ class YouTubeChatSource:
         rr = 0
 
         try:
-            await self._chat_round_robin_loop(creds, order, page_tokens, rr, fallback_watch_url)
+            await self._chat_round_robin_loop(
+                creds, order, page_tokens, rr, fallback_watch_url, video_ids
+            )
         finally:
             if viewers_task is not None and not viewers_task.done():
                 viewers_task.cancel()
@@ -888,6 +914,7 @@ class YouTubeChatSource:
         page_tokens: dict[str, str | None],
         rr: int,
         fallback_watch_url: str | None,
+        video_ids: list[str] | None = None,
     ) -> None:
         _ensure_google()
         while self._running:
@@ -907,7 +934,9 @@ class YouTubeChatSource:
                 if _http_error_is_fallback_worthy(e):
                     self._on_status(l10n.tr(self._get_locale(), "yt.fallback_switching"))
                     if fallback_watch_url:
-                        await self._run_fallback_for_watch_url(fallback_watch_url)
+                        await self._run_fallback_for_watch_url(
+                            fallback_watch_url, creds=creds, video_ids=video_ids
+                        )
                     else:
                         self._on_status(
                             l10n.tr(

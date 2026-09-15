@@ -46,7 +46,7 @@ ColumnLayout {
     spacing: 8
 
     RowLayout {
-        visible: root.type !== "social_platforms"
+        visible: root.type !== "social_platforms" && root.type !== "leaderboard_sequence"
         Layout.fillWidth: true
         spacing: 12
         ColumnLayout {
@@ -153,9 +153,9 @@ ColumnLayout {
         ComboBox {
             id: comboBox
             visible: root.type === "select" || root.type === "dropdown" || root.type === "font"
-            Layout.preferredWidth: 140
-            Layout.minimumWidth: 140
-            Layout.maximumWidth: 140
+            Layout.preferredWidth: root.type === "font" ? 220 : 140
+            Layout.minimumWidth: root.type === "font" ? 220 : 140
+            Layout.maximumWidth: root.type === "font" ? 220 : 140
             model: root.optionLabels.length ? root.optionLabels : root.options
             currentIndex: Math.max(0, root.options.indexOf(root.value))
             hoverEnabled: true
@@ -195,19 +195,14 @@ ColumnLayout {
             }
             onActivated: root.changed(root.field, root.options[currentIndex])
         }
-        TextField {
-            id: colorField
+        CheremshaColorPicker {
             visible: root.type === "color"
-            Layout.preferredWidth: 120
-            Layout.minimumWidth: 120
-            Layout.maximumWidth: 120
-            implicitHeight: 36
-            text: root.value
-            color: "#e8eaed"
-            padding: 9
-            hoverEnabled: true
-            background: Rectangle { radius: 7; color: colorField.text; border.width: 1; border.color: "#566174" }
-            onTextChanged: if (activeFocus) root.changed(root.field, text)
+            Layout.preferredWidth: 300
+            Layout.minimumWidth: 280
+            Layout.maximumWidth: 340
+            Layout.fillWidth: true
+            value: String(root.value === undefined || root.value === null ? "#000000" : root.value)
+            onAccepted: function(colorValue) { root.changed(root.field, colorValue) }
         }
         Button {
             id: utilityButton
@@ -456,6 +451,207 @@ ColumnLayout {
                     }
                 }
             }
+        }
+    }
+
+    ColumnLayout {
+        id: seqEditor
+        visible: root.type === "leaderboard_sequence"
+        Layout.fillWidth: true
+        spacing: 8
+        property var sourceOptions: ["likers", "gifters", "sharers", "commenters", "contributors"]
+        property var sourceLabels: ["Лайкери", "Донори", "Шери", "Коментатори", "Контриб'ютори"]
+        property var sceneOptions: ["hall_of_fame", "arena", "energy_network"]
+        property var sceneLabels: ["Зал слави", "Арена", "Енергомережа"]
+        property var entries: []
+        function syncFromValue() {
+            var v = root.value;
+            if (typeof v === "string") {
+                try { v = JSON.parse(v); } catch (e) { v = []; }
+            }
+            if (!Array.isArray(v)) v = [];
+            var out = [];
+            for (var i = 0; i < v.length; ++i) {
+                var r = v[i] || {};
+                var src = String(r.source_id || r.source || "likers").toLowerCase();
+                if (seqEditor.sourceOptions.indexOf(src) < 0) src = "likers";
+                var scn = String(r.scene_id || r.scene || "hall_of_fame").toLowerCase();
+                if (seqEditor.sceneOptions.indexOf(scn) < 0) scn = "hall_of_fame";
+                var dur = Math.max(1, Math.min(120, Math.round(Number(r.duration_sec || r.duration || 8))));
+                if (isNaN(dur)) dur = 8;
+                out.push({source_id: src, scene_id: scn, duration_sec: dur});
+            }
+            entries = out;
+        }
+        Component.onCompleted: syncFromValue()
+        onVisibleChanged: if (visible) syncFromValue()
+        Connections { target: root; function onValueChanged() { seqEditor.syncFromValue(); } }
+        function commit(list) {
+            entries = JSON.parse(JSON.stringify(list));
+            root.changed(root.field, JSON.parse(JSON.stringify(list)));
+        }
+        function cloneList() { return JSON.parse(JSON.stringify(entries)); }
+        Text {
+            text: root.label
+            color: "#e8eaed"
+            font.pixelSize: 12
+            font.weight: Font.DemiBold
+            Layout.fillWidth: true
+        }
+        Text {
+            visible: seqEditor.entries.length === 0
+            text: "Порожньо — додайте крок нижче."
+            color: "#8b95a5"
+            font.pixelSize: 11
+            Layout.fillWidth: true
+        }
+        Repeater {
+            model: seqEditor.entries
+            delegate: Rectangle {
+                required property int index
+                required property var modelData
+                Layout.fillWidth: true
+                implicitHeight: seqRow.implicitHeight + 20
+                radius: 12
+                color: "#10141a"
+                border.width: 1
+                border.color: "#242b36"
+                ColumnLayout {
+                    id: seqRow
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    spacing: 8
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        Text {
+                            text: String(index + 1).padStart(2, "0")
+                            color: "#5eead4"
+                            font.pixelSize: 11
+                            font.weight: Font.DemiBold
+                            Layout.preferredWidth: 22
+                        }
+                        ComboBox {
+                            id: seqSourceBox
+                            Layout.fillWidth: true
+                            implicitHeight: 36
+                            hoverEnabled: true
+                            textRole: "text"
+                            valueRole: "value"
+                            model: ListModel {
+                                ListElement { value: "likers"; text: "Лайкери" }
+                                ListElement { value: "gifters"; text: "Донори" }
+                                ListElement { value: "sharers"; text: "Шери" }
+                                ListElement { value: "commenters"; text: "Коментатори" }
+                                ListElement { value: "contributors"; text: "Контриб'ютори" }
+                            }
+                            currentIndex: Math.max(0, seqEditor.sourceOptions.indexOf(String(modelData.source_id || "likers")))
+                            contentItem: Text { text: seqSourceBox.displayText; color: "#e8eaed"; font.pixelSize: 13; verticalAlignment: Text.AlignVCenter; leftPadding: 10; elide: Text.ElideRight }
+                            background: Rectangle { radius: 8; color: "#0f172a"; border.width: 1; border.color: seqSourceBox.hovered ? "#2d3748" : "#242b36" }
+                            onActivated: function(idx) {
+                                var list = seqEditor.cloneList();
+                                list[index].source_id = seqEditor.sourceOptions[idx] || "likers";
+                                seqEditor.commit(list);
+                            }
+                        }
+                        ComboBox {
+                            id: seqSceneBox
+                            Layout.fillWidth: true
+                            implicitHeight: 36
+                            hoverEnabled: true
+                            textRole: "text"
+                            valueRole: "value"
+                            model: ListModel {
+                                ListElement { value: "hall_of_fame"; text: "Зал слави" }
+                                ListElement { value: "arena"; text: "Арена" }
+                                ListElement { value: "energy_network"; text: "Енергомережа" }
+                            }
+                            currentIndex: Math.max(0, seqEditor.sceneOptions.indexOf(String(modelData.scene_id || "hall_of_fame")))
+                            contentItem: Text { text: seqSceneBox.displayText; color: "#e8eaed"; font.pixelSize: 13; verticalAlignment: Text.AlignVCenter; leftPadding: 10; elide: Text.ElideRight }
+                            background: Rectangle { radius: 8; color: "#0f172a"; border.width: 1; border.color: seqSceneBox.hovered ? "#2d3748" : "#242b36" }
+                            onActivated: function(idx) {
+                                var list = seqEditor.cloneList();
+                                list[index].scene_id = seqEditor.sceneOptions[idx] || "hall_of_fame";
+                                seqEditor.commit(list);
+                            }
+                        }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        Text { text: "Тривалість (с)"; color: "#8b95a5"; font.pixelSize: 11; Layout.fillWidth: true }
+                        SpinBox {
+                            from: 1; to: 120; stepSize: 1
+                            value: Math.max(1, Math.min(120, Number(modelData.duration_sec || 8)))
+                            editable: true
+                            implicitHeight: 36
+                            onValueModified: {
+                                var list = seqEditor.cloneList();
+                                list[index].duration_sec = value;
+                                seqEditor.commit(list);
+                            }
+                        }
+                        IconBtn { glyph: "↑"; disabled: index === 0; onClicked: {
+                            var list = seqEditor.cloneList();
+                            var tmp = list[index - 1]; list[index - 1] = list[index]; list[index] = tmp;
+                            seqEditor.commit(list);
+                        } }
+                        IconBtn { glyph: "↓"; disabled: index >= seqEditor.entries.length - 1; onClicked: {
+                            var list = seqEditor.cloneList();
+                            var tmp = list[index + 1]; list[index + 1] = list[index]; list[index] = tmp;
+                            seqEditor.commit(list);
+                        } }
+                        IconBtn { glyph: "✕"; disabled: seqEditor.entries.length <= 1; onClicked: {
+                            var list = seqEditor.cloneList();
+                            list.splice(index, 1);
+                            seqEditor.commit(list);
+                        } }
+                    }
+                }
+            }
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 8
+            ComboBox {
+                id: seqAddSource
+                Layout.fillWidth: true
+                implicitHeight: 36
+                hoverEnabled: true
+                textRole: "text"
+                valueRole: "value"
+                model: ListModel {
+                    ListElement { value: "likers"; text: "Лайкери" }
+                    ListElement { value: "gifters"; text: "Донори" }
+                    ListElement { value: "sharers"; text: "Шери" }
+                    ListElement { value: "commenters"; text: "Коментатори" }
+                    ListElement { value: "contributors"; text: "Контриб'ютори" }
+                }
+                contentItem: Text { text: seqAddSource.displayText; color: "#e8eaed"; font.pixelSize: 13; verticalAlignment: Text.AlignVCenter; leftPadding: 10; elide: Text.ElideRight }
+                background: Rectangle { radius: 8; color: "#0f172a"; border.width: 1; border.color: seqAddSource.hovered ? "#2d3748" : "#242b36" }
+            }
+            ComboBox {
+                id: seqAddScene
+                Layout.fillWidth: true
+                implicitHeight: 36
+                hoverEnabled: true
+                textRole: "text"
+                valueRole: "value"
+                model: ListModel {
+                    ListElement { value: "hall_of_fame"; text: "Зал слави" }
+                    ListElement { value: "arena"; text: "Арена" }
+                    ListElement { value: "energy_network"; text: "Енергомережа" }
+                }
+                contentItem: Text { text: seqAddScene.displayText; color: "#e8eaed"; font.pixelSize: 13; verticalAlignment: Text.AlignVCenter; leftPadding: 10; elide: Text.ElideRight }
+                background: Rectangle { radius: 8; color: "#0f172a"; border.width: 1; border.color: seqAddScene.hovered ? "#2d3748" : "#242b36" }
+            }
+            IconBtn { glyph: "+"; onClicked: {
+                var list = seqEditor.cloneList();
+                var src = seqAddSource.currentIndex >= 0 ? seqEditor.sourceOptions[seqAddSource.currentIndex] : "likers";
+                var scn = seqAddScene.currentIndex >= 0 ? seqEditor.sceneOptions[seqAddScene.currentIndex] : "hall_of_fame";
+                list.push({source_id: src || "likers", scene_id: scn || "hall_of_fame", duration_sec: 8});
+                seqEditor.commit(list);
+            } }
         }
     }
 

@@ -52,6 +52,12 @@ from stream_cheremsha.overlays.live_leaderboard_overlay_config import (
     load_live_leaderboard_overlay_config,
     save_live_leaderboard_overlay_config,
 )
+from stream_cheremsha.overlays.live_leaderboard_simple_config import (
+    live_leaderboard_simple_config_from_json_text,
+    live_leaderboard_simple_config_to_json_text,
+    load_live_leaderboard_simple_config,
+    save_live_leaderboard_simple_config,
+)
 from stream_cheremsha.overlays.online_overlay_config import (
     load_online_overlay_config,
     online_overlay_config_from_json_text,
@@ -221,6 +227,7 @@ class WidgetsQmlApi(QObject):
         self._battle_host: Any | None = None
         self._stream_goal_controller: Any | None = None
         self._live_leaderboard_controller: Any | None = None
+        self._live_leaderboard_simple_controller: Any | None = None
         self._social_rotator_controller: Any | None = None
         self._webcam_frame_controller: Any | None = None
         self._signal_system_controller: Any | None = None
@@ -236,6 +243,9 @@ class WidgetsQmlApi(QObject):
 
     def set_live_leaderboard_controller(self, controller: Any) -> None:
         self._live_leaderboard_controller = controller
+
+    def set_live_leaderboard_simple_controller(self, controller: Any) -> None:
+        self._live_leaderboard_simple_controller = controller
 
     def set_social_rotator_controller(self, controller: Any) -> None:
         self._social_rotator_controller = controller
@@ -508,6 +518,8 @@ class WidgetsQmlApi(QObject):
             self.previewStreamGoalOverlay(inst)
         elif typ == "live_leaderboard":
             self.previewLiveLeaderboardOverlay(inst)
+        elif typ == "live_leaderboard_simple":
+            self.previewLiveLeaderboardSimpleOverlay(inst)
         elif typ == "social_rotator":
             self.previewSocialRotatorOverlay(inst)
         elif typ == "webcam_frame":
@@ -902,6 +914,69 @@ class WidgetsQmlApi(QObject):
                 ],
                 "sharers": [],
                 "commenters": [],
+                "contributors": demo,
+            },
+            "presentation": {
+                "source_id": "likers",
+                "scene_id": "hall_of_fame",
+                "sequence_index": 0,
+                "scene_started_at_ms": 0,
+                "scene_duration_ms": 8000,
+                "transition_token": 1,
+                "server_now_ms": 0,
+            },
+        }
+        self._publish_patch(topic=topic, patch=patch)
+
+    liveLeaderboardSimpleOverlayUrlChanged = Signal()
+
+    @Property(str, notify=liveLeaderboardSimpleOverlayUrlChanged)
+    def liveLeaderboardSimpleOverlayUrlValue(self) -> str:  # noqa: ANN201 - PySide pattern
+        return self.liveLeaderboardSimpleOverlayUrl()
+
+    @Slot(result=str)
+    def liveLeaderboardSimpleOverlayUrl(self) -> str:
+        if not self._base:
+            return ""
+        inst = self._live_leaderboard_instance
+        return f"{self._base}/overlay/live_leaderboard_simple?instance={inst}"
+
+    @Slot()
+    def copyLiveLeaderboardSimpleOverlayUrl(self) -> None:
+        url = self.liveLeaderboardSimpleOverlayUrl()
+        if not url:
+            return
+        clip = QGuiApplication.clipboard()
+        if clip is None:
+            return
+        clip.setText(url)
+
+    @Slot(str)
+    @Slot()
+    def previewLiveLeaderboardSimpleOverlay(self, instance: str | None = None) -> None:
+        token = instance or self._live_leaderboard_instance
+        topic = f"overlay:live_leaderboard_simple:{token}"
+        cfg = self._preview_config(
+            "live_leaderboard_simple",
+            token,
+            load_live_leaderboard_simple_config,
+            live_leaderboard_simple_config_from_json_text,
+        )
+        demo = [
+            {"key": "1", "rank": 1, "user": "kriss", "value": 12400, "avatar_url": ""},
+            {"key": "2", "rank": 2, "user": "marta", "value": 8100, "avatar_url": ""},
+            {"key": "3", "rank": 3, "user": "denis", "value": 6700, "avatar_url": ""},
+            {"key": "4", "rank": 4, "user": "alex", "value": 4300, "avatar_url": ""},
+            {"key": "5", "rank": 5, "user": "lisa", "value": 3100, "avatar_url": ""},
+        ]
+        patch = {
+            "config": json.loads(live_leaderboard_simple_config_to_json_text(cfg)),
+            "locale": _ui_locale(),
+            "rankings": {
+                "likers": demo,
+                "gifters": demo,
+                "sharers": demo,
+                "commenters": demo,
                 "contributors": demo,
             },
             "presentation": {
@@ -2032,6 +2107,36 @@ class WidgetsQmlApi(QObject):
             else:
                 patch = {"config": json.loads(live_leaderboard_overlay_config_to_json_text(cfg))}
             self._publish_patch(topic=topic, patch=patch)
+
+    @Slot(result="QVariant")
+    def loadLiveLeaderboardSimpleConfigMap(self) -> dict[str, Any]:
+        routed = self._load_cfg_or_instance("live_leaderboard_simple")
+        if routed is not None:
+            return routed
+        cfg = load_live_leaderboard_simple_config()
+        return json.loads(live_leaderboard_simple_config_to_json_text(cfg))
+
+    @Slot(str)
+    def saveLiveLeaderboardSimpleConfigJson(self, cfg_json: str) -> None:
+        txt = (cfg_json or "").strip()
+        if not txt:
+            return
+        try:
+            cfg = live_leaderboard_simple_config_from_json_text(txt)
+        except (ValueError, TypeError, json.JSONDecodeError):
+            return
+        if self._save_cfg_to_instance(
+            "live_leaderboard_simple",
+            json.loads(live_leaderboard_simple_config_to_json_text(cfg)),
+        ):
+            return
+        save_live_leaderboard_simple_config(cfg)
+        ctl = getattr(self, "_live_leaderboard_simple_controller", None)
+        if ctl is not None:
+            try:
+                ctl.reload_config()
+            except Exception:
+                pass
 
     @Slot(QJSValue)
     def saveLiveLeaderboardOverlayConfigMap(self, cfg_js: QJSValue) -> None:

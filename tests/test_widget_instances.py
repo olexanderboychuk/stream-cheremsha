@@ -181,13 +181,14 @@ def test_no_static_type_cards_duplicate_instance_list() -> None:
         "communityWorld",
         "streamGoal",
         "liveLeaderboard",
+        "liveLeaderboardSimple",
         "socialRotator",
         "webcamFrame",
         "signalSystem",
     ):
         assert f"text: api ? api.{name}OverlayUrlValue" not in qml, name
         assert f"root.editorUrlValue(api.{name}OverlayUrlValue)" in qml, name
-    assert qml.count("root.copyEditorUrl(function()") == 13
+    assert qml.count("root.copyEditorUrl(function()") == 14
 
 
 def test_new_strings_translated_uk_en() -> None:

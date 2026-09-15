@@ -2792,6 +2792,18 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "РЕЙТИНГ",
         "en": "LEADERBOARD",
     },
+    "live_leaderboard_simple.scene.hall_of_fame": {
+        "uk": "Лідери",
+        "en": "Leaders",
+    },
+    "live_leaderboard_simple.scene.arena": {
+        "uk": "Топ-3",
+        "en": "Top 3",
+    },
+    "live_leaderboard_simple.scene.energy_network": {
+        "uk": "Огляд",
+        "en": "Overview",
+    },
     "widgets.live_leaderboard.title": {
         "uk": "Live Leaderboard (Живий рейтинг)",
         "en": "Live Leaderboard (Live Ranking Show)",
@@ -2874,6 +2886,12 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "widgets.instances.active": {"uk": "● Активний", "en": "● Active"},
     "widgets.instances.disabled": {"uk": "○ Вимкнено", "en": "○ Disabled"},
     "widgets.instances.new_title": {"uk": "Новий віджет", "en": "New widget"},
+    "widgets.instances.new_subtitle": {
+        "uk": "Створіть новий віджет для вашого стріму.",
+        "en": "Create a new widget for your stream.",
+    },
+    "widgets.instances.type_label": {"uk": "ТИП ВІДЖЕТА", "en": "WIDGET TYPE"},
+    "widgets.instances.name_label": {"uk": "НАЗВА ВІДЖЕТА", "en": "WIDGET NAME"},
     "widgets.instances.copy_suffix": {"uk": " Копія", "en": " Copy"},
     "widgets.instances.editing_title": {"uk": "Редагується інстанс:", "en": "Editing instance:"},
     "widgets.instances.editing_hint": {
@@ -2948,6 +2966,8 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "widgets.type.stream_goal.desc": {"uk": "Ціль стріму.", "en": "Stream goal."},
     "widgets.type.live_leaderboard.name": {"uk": "Live Leaderboard", "en": "Live Leaderboard"},
     "widgets.type.live_leaderboard.desc": {"uk": "Живий лідерборд.", "en": "Live leaderboard."},
+    "widgets.type.live_leaderboard_simple.name": {"uk": "Live Leaderboard Simple", "en": "Live Leaderboard Simple"},
+    "widgets.type.live_leaderboard_simple.desc": {"uk": "Компактний лідерборд списком.", "en": "Compact list leaderboard."},
     "widgets.type.social_rotator.name": {"uk": "Social Rotator", "en": "Social Rotator"},
     "widgets.type.social_rotator.desc": {"uk": "Ротація соцмереж.", "en": "Social media rotation."},
     "widgets.type.webcam_frame.name": {"uk": "Webcam Frame", "en": "Webcam Frame"},

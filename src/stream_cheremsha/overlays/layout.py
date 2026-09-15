@@ -29,6 +29,7 @@ SUPPORTED_LAYOUT_WIDGETS = (
     "community_world",
     "stream_goal",
     "live_leaderboard",
+    "live_leaderboard_simple",
     "social_rotator",
     "webcam_frame",
     "music",

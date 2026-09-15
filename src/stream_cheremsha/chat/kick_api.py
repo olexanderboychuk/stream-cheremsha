@@ -258,6 +258,56 @@ class KickApiClient:
         payload = await self.get_channel_by_slug(slug)
         return self.parse_channel_info(payload)
 
+    @staticmethod
+    def parse_public_channel_info(payload: dict[str, Any]) -> KickChannelInfo:
+        """Parse ``kick.com/api/v1/channel/{slug}`` (no auth required).
+
+        Shape: ``{"livestream": {"is_live": bool, "viewer_count": int, ...} | None}``.
+        Offline → ``is_live=False, viewer_count=0``.
+        """
+        info = KickChannelInfo()
+        info.slug = str(payload.get("slug") or "").strip()
+        info.broadcaster_user_id = int(payload.get("broadcaster_user_id") or 0)
+        stream = payload.get("livestream")
+        if isinstance(stream, dict):
+            info.is_live = bool(stream.get("is_live"))
+            info.title = str(stream.get("session_title") or "").strip()
+            try:
+                info.viewer_count = (
+                    max(0, int(stream.get("viewer_count") or 0)) if info.is_live else 0
+                )
+            except (TypeError, ValueError):
+                info.viewer_count = 0
+        else:
+            info.is_live = False
+            info.viewer_count = 0
+        return info
+
+    @staticmethod
+    async def fetch_public_channel_info(
+        slug: str,
+        *,
+        client: httpx.AsyncClient | None = None,
+        timeout: float = 20.0,
+    ) -> KickChannelInfo:
+        """Unauthenticated viewer-count lookup (works without Kick OAuth)."""
+        name = (slug or "").strip().lstrip("@")
+        if not name:
+            return KickChannelInfo()
+        owns = client is None
+        c = client or httpx.AsyncClient(timeout=timeout)
+        try:
+            resp = await c.get(f"https://kick.com/api/v1/channel/{name}")
+        finally:
+            if owns:
+                await c.aclose()
+        if resp.status_code != 200:
+            raise ValueError(f"Kick public channel lookup failed ({resp.status_code})")
+        payload = resp.json()
+        if not isinstance(payload, dict):
+            return KickChannelInfo(slug=name)
+        return KickApiClient.parse_public_channel_info(payload)
+
     async def send_message(
         self,
         content: str,

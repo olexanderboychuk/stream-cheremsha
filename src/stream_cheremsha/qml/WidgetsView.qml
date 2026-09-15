@@ -102,6 +102,7 @@ Item {
         {type: "community_world", label: "Community World", iconName: "web_globe.svg"},
         {type: "stream_goal", label: "Stream Goal", iconName: "web_target.svg"},
         {type: "live_leaderboard", label: "Live Leaderboard", iconName: "web_trophy.svg"},
+        {type: "live_leaderboard_simple", label: "Live Leaderboard Simple", iconName: "web_trophy.svg"},
         {type: "social_rotator", label: "Social Rotator", iconName: "web_refresh.svg"},
         {type: "webcam_frame", label: "Webcam Frame", iconName: "web_camera.svg"},
         {type: "signal_system", label: "Signal System", iconName: "web_signal.svg"},
@@ -122,6 +123,7 @@ Item {
             case "community_world": return {w: 480, h: 320};
             case "stream_goal": return {w: 400, h: 160};
             case "live_leaderboard": return {w: 360, h: 280};
+            case "live_leaderboard_simple": return {w: 300, h: 280};
             case "social_rotator": return {w: 360, h: 120};
             case "webcam_frame": return {w: 480, h: 360};
             case "signal_system": return {w: 1920, h: 1080};
@@ -523,6 +525,43 @@ Item {
         } catch (e) { console.warn("instances refresh failed:", e); }
     }
 
+    // ---- New-widget modal (UI layer only; creation logic unchanged) ----
+    // showCreateWidget drives createModal.opened via binding; never assign
+    // createModal.opened directly (that would break the binding).
+    function openCreateModal() {
+        root.refreshWidgetInstances();
+        if ((root.widgetTypeList || []).length > 0) {
+            var stillThere = (root.widgetTypeList || []).filter(function (x) {
+                return x.type_id === root.newInstanceType;
+            }).length > 0;
+            if (!stillThere) root.newInstanceType = root.widgetTypeList[0].type_id;
+        }
+        root.showCreateWidget = true;
+    }
+    function closeCreateModal() {
+        root.showCreateWidget = false;
+        root.newInstanceName = "";
+    }
+    function submitCreateWidget() {
+        var nm = (root.newInstanceName || "").trim();
+        if (!nm) nm = root.newInstanceType;
+        var nid = "";
+        if (typeof api !== "undefined" && api) nid = api.createWidgetInstance(root.newInstanceType, nm);
+        root.newInstanceName = "";
+        root.showCreateWidget = false;
+        root.refreshWidgetInstances();
+        if (nid) {
+            var created = null;
+            var list = root.widgetInstanceList || [];
+            for (var ci = 0; ci < list.length; ++ci) {
+                if (list[ci].id === nid) { created = list[ci]; break; }
+            }
+            root.editWidgetInstance(created || {id: nid, type_id: root.newInstanceType, name: nm});
+        } else {
+            console.warn("createWidgetInstance returned empty id; not opening editor");
+        }
+    }
+
     Timer {
         id: widgetInstancesInitTimer
         interval: 400
@@ -560,7 +599,7 @@ Item {
     }
 
     readonly property int titleBarH: 44
-    property string widgetMode: "grid" // grid | chat | actions | online | top_likers | top_gifters | king_of_live | battle_royale | stream_pet | community_world | stream_goal | live_leaderboard | social_rotator | webcam_frame | signal_system
+    property string widgetMode: "grid" // grid | chat | actions | online | top_likers | top_gifters | king_of_live | battle_royale | stream_pet | community_world | stream_goal | live_leaderboard | live_leaderboard_simple | social_rotator | webcam_frame | signal_system
     readonly property bool universalEditorActive: root.editingInstanceId !== "" && root.widgetMode !== "grid" && root.widgetMode !== "layout"
 
     function universalInstance() {
@@ -568,6 +607,18 @@ Item {
         for (var i = 0; i < list.length; ++i)
             if (list[i].id === root.editingInstanceId) return list[i];
         return null;
+    }
+
+    function _systemFontOptions(current) {
+        var fams = [];
+        try {
+            if (typeof api !== "undefined" && api && typeof api.systemFontFamilies === "function")
+                fams = api.systemFontFamilies() || [];
+        } catch (e) {}
+        if (!fams.length) fams = ["system-ui", "Segoe UI", "Arial", "Verdana", "Tahoma"];
+        var cur = String(current || "").trim();
+        if (cur && fams.indexOf(cur) < 0) fams = [cur].concat(fams);
+        return fams;
     }
 
     function universalSchema(typeId, cfg) {
@@ -717,9 +768,12 @@ Item {
             appearance = [c("Skin", "skin", "select", "digital_core", {options: ["digital_core", "boss", "reactor", "rocket", "vault", "tower", "creature"]}), c("Accent color", "accent_color", "color", "#00ffff"), c("Scale", "scale_percent", "number", 100, {minimum: 40, maximum: 250})];
             animation = [c("Animation intensity", "animation_intensity", "select", "medium", {options: ["low", "medium", "high"]}), c("Combo", "enable_combo", "toggle", true), c("Milestones", "enable_milestones", "toggle", true), c("Particles", "enable_particles", "toggle", true), c("Glitch", "enable_glitch", "toggle", true), c("Reset behavior", "reset_behavior", "select", "after_completion", {options: ["after_completion", "manual", "new_stream"]})];
         } else if (typeId === "live_leaderboard") {
-            general = [c("Enabled", "enabled", "toggle", true), c("Top entries", "top_n", "number", 10, {minimum: 1, maximum: 10}), c("Rotation sequence", "sequence", "list", "")];
-            behavior = [c("Likers", "enable_likers", "toggle", true), c("Gifters", "enable_gifters", "toggle", true), c("Sharers", "enable_sharers", "toggle", true), c("Commenters", "enable_commenters", "toggle", true), c("Contributors", "enable_contributors", "toggle", true), c("Hall of fame", "enable_hall_of_fame", "toggle", true), c("Arena", "enable_arena", "toggle", true), c("Energy network", "enable_energy_network", "toggle", true)];
-            animation = [c("Transition", "transition", "select", "glitch_morph", {options: ["glitch_morph", "digital_dissolve", "scan", "fade"]}), c("Animation intensity", "animation_intensity", "select", "medium", {options: ["low", "medium", "high"]}), c("Scale", "scale_percent", "number", 100, {minimum: 40, maximum: 250}), c("Rank change animation", "enable_rank_change_anim", "toggle", true), c("Particles", "enable_particles", "toggle", true), c("CRT", "enable_crt", "toggle", true)];
+            general = [c("Enabled", "enabled", "toggle", true), c("Top entries", "top_n", "number", 10, {minimum: 1, maximum: 10}), c("Rotation sequence", "sequence", "leaderboard_sequence", "")];
+        } else if (typeId === "live_leaderboard_simple") {
+            general = [c("Enabled", "enabled", "toggle", true), c("Top entries", "top_n", "number", 10, {minimum: 1, maximum: 10}), c("Show header", "show_header", "toggle", true), c("Show avatars", "show_avatars", "toggle", true), c("Rotation sequence", "sequence", "leaderboard_sequence", "")];
+            appearance = [c("Theme", "theme", "select", "dark", {options: ["dark", "transparent", "light", "neon"]}), c("Background color", "background_color", "color", "#0b0e14"), c("Background opacity", "background_opacity", "slider", 0.72, {minimum: 0, maximum: 1}), c("Font", "font_family", "font", "system-ui", {options: root._systemFontOptions("system-ui")}), c("Font size", "font_size_px", "number", 15, {minimum: 8, maximum: 48}), c("Value format", "value_format", "select", "compact", {options: ["compact", "full", "short"]}), c("Rank style", "rank_style", "select", "medal", {options: ["medal", "number", "badge"]}), c("Accent color", "accent_color", "color", "#14b8a6"), c("Scale", "scale_percent", "number", 100, {minimum: 40, maximum: 250})];
+            behavior = [c("Likers", "enable_likers", "toggle", true), c("Gifters", "enable_gifters", "toggle", true), c("Sharers", "enable_sharers", "toggle", true), c("Commenters", "enable_commenters", "toggle", true), c("Contributors", "enable_contributors", "toggle", true), c("Leaders scene", "enable_hall_of_fame", "toggle", true), c("Top 3 scene", "enable_arena", "toggle", true), c("Overview scene", "enable_energy_network", "toggle", true)];
+            animation = [c("Transition", "transition", "select", "fade", {options: ["fade", "slide", "digital_dissolve", "scan"]}), c("Animation intensity", "animation_intensity", "select", "low", {options: ["low", "medium", "high"]}), c("Rank change animation", "enable_rank_change_anim", "toggle", true), c("Username text effect", "text_effect_username", "select", "none", {options: ["none", "rainbow", "aurora", "fire", "ice", "cold", "freeze", "strong"]}), c("Wave animation", "wave_enabled", "toggle", false), c("Wave speed", "wave_speed", "select", "normal", {options: ["slow", "normal", "fast"]})];
         } else if (typeId === "social_rotator") {
             general = [c("Enabled", "enabled", "toggle", true), c("Platforms", "platforms", "social_platforms", "", {options: ["twitch", "youtube", "kick", "telegram", "tiktok", "instagram", "discord", "x", "facebook"]}), c("Rotation interval", "rotation_interval_ms", "number", 8000, {minimum: 1000, maximum: 120000})];
             appearance = [c("Transition", "transition", "select", "glitch_morph", {options: ["glitch_morph", "data_stream", "energy_burst", "scan", "pixel_dissolve", "fade"]}), c("Theme", "theme", "select", "neon_cyber", {options: ["neon_cyber", "synthwave", "toxic", "ice", "amber"]}), c("Background opacity", "background_opacity_percent", "slider", 85, {minimum: 0, maximum: 100}), c("Scale", "scale_percent", "number", 100, {minimum: 40, maximum: 250})];
@@ -758,6 +812,7 @@ Item {
             c("Milestones JSON", "milestones_json", "text", "[]"), c("Gift coin progress", "gift_coin_per_progress", "number", 1, {minimum: 0, maximum: 100000}), c("Combo window", "combo_window_sec", "number", 5, {minimum: 0, maximum: 120})
         ]);
         if (typeId === "live_leaderboard") advanced = advanced.concat([c("Accent color", "accent_color", "color", "#14b8a6"), c("Like weight", "weight_like", "number", 1, {minimum: 0, maximum: 100}), c("Gift weight", "weight_gift_coin", "number", 1, {minimum: 0, maximum: 100}), c("Share weight", "weight_share", "number", 1, {minimum: 0, maximum: 100}), c("Comment weight", "weight_comment", "number", 1, {minimum: 0, maximum: 100})]);
+        if (typeId === "live_leaderboard_simple") advanced = advanced.concat([c("Like weight", "weight_like", "number", 1, {minimum: 0, maximum: 100}), c("Gift weight", "weight_gift_coin", "number", 1, {minimum: 0, maximum: 100}), c("Share weight", "weight_share", "number", 1, {minimum: 0, maximum: 100}), c("Comment weight", "weight_comment", "number", 1, {minimum: 0, maximum: 100})]);
         if (typeId === "social_rotator") advanced = advanced.concat([c("Accent color", "accent_color", "color", "#14b8a6")]);
         if (typeId === "signal_system") advanced = advanced.concat([
             c("Font family", "font_family", "text", "Segoe UI"), c("Intensity multiplier", "intensity_multiplier", "number", 1, {minimum: 0, maximum: 10}), c("Primary accent", "primary_accent", "color", "#14b8a6"), c("Secondary accent", "secondary_accent", "color", "#a78bfa"),
@@ -784,10 +839,21 @@ Item {
         if (root.widgetMode === "community_world") return root.communityWorldCfg;
         if (root.widgetMode === "stream_goal") return root.streamGoalCfg;
         if (root.widgetMode === "live_leaderboard") return root.liveLeaderboardCfg;
+        if (root.widgetMode === "live_leaderboard_simple") return root.liveLeaderboardSimpleCfg;
         if (root.widgetMode === "social_rotator") return root.socialRotatorCfg;
         if (root.widgetMode === "webcam_frame") return root.webcamFrameCfg;
         if (root.widgetMode === "signal_system") return root.signalSystemCfg;
         return null;
+    }
+
+    function _ensureSimpleSourceInSequence(sourceId) {
+        if (!root.liveLeaderboardSimpleCfg) return;
+        var arr = (root.liveLeaderboardSimpleCfg.sequence || []).slice();
+        for (var i = 0; i < arr.length; ++i) {
+            if (String((arr[i] && (arr[i].source_id || arr[i].source)) || "") === sourceId) return;
+        }
+        arr.push({source_id: sourceId, scene_id: "hall_of_fame", duration_sec: 8});
+        root.liveLeaderboardSimpleCfg.sequence = arr;
     }
 
     function applyUniversalSetting(field, value) {
@@ -800,6 +866,16 @@ Item {
             return;
         }
         cfg[field] = value;
+        if (root.widgetMode === "live_leaderboard_simple" && value === true) {
+            var srcByToggle = {
+                enable_likers: "likers",
+                enable_gifters: "gifters",
+                enable_sharers: "sharers",
+                enable_commenters: "commenters",
+                enable_contributors: "contributors"
+            };
+            if (srcByToggle[field]) root._ensureSimpleSourceInSequence(srcByToggle[field]);
+        }
         universalPreviewSaveDebounce.restart();
         universalPreviewUpdateDebounce.restart();
     }
@@ -2025,6 +2101,9 @@ Item {
     property var liveLeaderboardCfg: null
     property bool _loadingLiveLeaderboardCfg: false
     property int liveLeaderboardCfgEpoch: 0
+    property var liveLeaderboardSimpleCfg: null
+    property bool _loadingLiveLeaderboardSimpleCfg: false
+    property int liveLeaderboardSimpleCfgEpoch: 0
     property var socialRotatorCfg: null
     property bool _loadingSocialRotatorCfg: false
     property int socialRotatorCfgEpoch: 0
@@ -2275,6 +2354,7 @@ Item {
             (root.widgetMode === "community_world" && root.communityWorldCfg !== null) ||
             (root.widgetMode === "stream_goal" && root.streamGoalCfg !== null) ||
             (root.widgetMode === "live_leaderboard" && root.liveLeaderboardCfg !== null) ||
+            (root.widgetMode === "live_leaderboard_simple" && root.liveLeaderboardSimpleCfg !== null) ||
             (root.widgetMode === "social_rotator" && root.socialRotatorCfg !== null) ||
             (root.widgetMode === "webcam_frame" && root.webcamFrameCfg !== null) ||
             (root.widgetMode === "signal_system" && root.signalSystemCfg !== null)
@@ -2341,6 +2421,8 @@ Item {
             root._saveStreamGoal();
         } else if (root.widgetMode === "live_leaderboard") {
             root._saveLiveLeaderboard();
+        } else if (root.widgetMode === "live_leaderboard_simple") {
+            root._saveLiveLeaderboardSimple();
         } else if (root.widgetMode === "social_rotator") {
             root._saveSocialRotator();
         } else if (root.widgetMode === "webcam_frame") {
@@ -2510,6 +2592,14 @@ Item {
         if (root.liveLeaderboardCfg.sequence)
             root.liveLeaderboardCfg.sequence_json = JSON.stringify(root.liveLeaderboardCfg.sequence);
         api.saveLiveLeaderboardOverlayConfigJson(JSON.stringify(root.liveLeaderboardCfg));
+    }
+
+    function _saveLiveLeaderboardSimple() {
+        if (!api || root.liveLeaderboardSimpleCfg === null) return;
+        root.liveLeaderboardSimpleCfgEpoch += 1;
+        if (root.liveLeaderboardSimpleCfg.sequence)
+            root.liveLeaderboardSimpleCfg.sequence_json = JSON.stringify(root.liveLeaderboardSimpleCfg.sequence);
+        api.saveLiveLeaderboardSimpleConfigJson(JSON.stringify(root.liveLeaderboardSimpleCfg));
     }
 
     function _saveSocialRotator() {
@@ -3122,7 +3212,7 @@ Item {
                                 Text { text: "+"; color: "white"; font.pixelSize: 18; font.bold: true }
                                 Text { text: root.loc("widgets.gallery.create"); color: "white"; font.pixelSize: 13; font.bold: true }
                             }
-                            MouseArea { id: createWidgetMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { root.refreshWidgetInstances(); root.showCreateWidget = true; } }
+                            MouseArea { id: createWidgetMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.openCreateModal() }
                         }
                     }
 
@@ -3236,86 +3326,8 @@ Item {
                         function onWidgetInstancesChanged() { root.refreshWidgetInstances(); }
                     }
 
-                    Rectangle {
-                        Layout.fillWidth: true
-                        radius: 12
-                        color: "#111827"
-                        border.width: 1
-                        border.color: cardEdge
-                        visible: root.showCreateWidget
-                        implicitHeight: createCol.implicitHeight + 16
-                        ColumnLayout {
-                            id: createCol
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.top: parent.top
-                            anchors.margins: 12
-                            spacing: 8
-                            Text { text: root.loc("widgets.instances.new_title"); color: ink; font.pixelSize: 15; font.bold: true }
-                            StyledComboBox {
-                                id: newTypeBox
-                                Layout.fillWidth: true
-                                model: (root.widgetTypeList || []).map(function(t) { return (t.icon || "") + " " + (t.name || t.type_id); })
-                                onUserActivated: function(idx) {
-                                    var t = (root.widgetTypeList || [])[idx];
-                                    if (t) root.newInstanceType = t.type_id;
-                                }
-                                onActivated: function(idx) {
-                                    var t2 = (root.widgetTypeList || [])[idx];
-                                    if (t2) root.newInstanceType = t2.type_id;
-                                }
-                            }
-                            Text {
-                                Layout.fillWidth: true
-                                color: muted
-                                font.pixelSize: 12
-                                wrapMode: Text.Wrap
-                                text: {
-                                    var t = (root.widgetTypeList || []).filter(function(x) { return x.type_id === root.newInstanceType; })[0];
-                                    return t ? (t.description || "") : "";
-                                }
-                            }
-                            TextField {
-                                id: newNameField
-                                Layout.fillWidth: true
-                                placeholderText: root.loc("widgets.instances.name_placeholder")
-                                color: ink
-                                font.pixelSize: 13
-                                background: Rectangle { radius: 8; color: "#0b0f17"; border.width: 1; border.color: cardEdge }
-                                onTextChanged: root.newInstanceName = text
-                            }
-                            RowLayout {
-                                spacing: 8
-                                PillButton {
-                                    text: root.loc("widgets.common.create")
-                                    onClicked: {
-                                        var nm = (root.newInstanceName || "").trim();
-                                        if (!nm) nm = root.newInstanceType;
-                                        var nid = "";
-                                        if (api) nid = api.createWidgetInstance(root.newInstanceType, nm);
-                                        root.newInstanceName = "";
-                                        newNameField.text = "";
-                                         root.showCreateWidget = false;
-                                         root.refreshWidgetInstances();
-                                         if (nid) {
-                                            var created = null;
-                                            var list = root.widgetInstanceList || [];
-                                            for (var ci = 0; ci < list.length; ++ci) {
-                                                if (list[ci].id === nid) { created = list[ci]; break; }
-                                            }
-                                            root.editWidgetInstance(created || {id: nid, type_id: root.newInstanceType, name: nm});
-                                        } else {
-                                            console.warn("createWidgetInstance returned empty id; not opening editor");
-                                        }
-                                    }
-                                }
-                                PillButton {
-                                    text: root.loc("widgets.common.cancel")
-                                    onClicked: root.showCreateWidget = false
-                                }
-                            }
-                        }
-                    }
+                    // New-widget creation lives in the CheremshaModal overlay
+                    // at the root (createModal). Inline panel removed.
 
                      ScrollView {
                         id: galleryScroll
@@ -3426,6 +3438,11 @@ Item {
                                                     {icon: "heart", label: "luna", user: "12,4 тис.", time: "топ-1"},
                                                     {icon: "heart", label: "darkness", user: "9,1 тис.", time: "топ-2"},
                                                     {icon: "heart", label: "sakura", user: "7,8 тис.", time: "топ-3"}]};
+                                            case "live_leaderboard_simple":
+                                                return {kind: "feed", rows: [
+                                                    {icon: "web_trophy", label: "kriss", user: "12.4K", time: "#1"},
+                                                    {icon: "web_trophy", label: "marta", user: "8.1K", time: "#2"},
+                                                    {icon: "web_trophy", label: "denis", user: "6.7K", time: "#3"}]};
                                             case "live_leaderboard":
                                                 return {kind: "feed", rows: [
                                                     {icon: "web_trophy", label: "luna", user: "12 400", time: "#1"},
@@ -3669,7 +3686,7 @@ Item {
                                 Text { Layout.alignment: Qt.AlignHCenter; horizontalAlignment: Text.AlignHCenter; text: root.loc("widgets.gallery.create_new"); color: ink; font.pixelSize: 12; font.bold: true; wrapMode: Text.Wrap; Layout.fillWidth: true }
                                 Text { Layout.alignment: Qt.AlignHCenter; horizontalAlignment: Text.AlignHCenter; text: root.loc("widgets.gallery.create_new_sub"); color: muted; font.pixelSize: 10; wrapMode: Text.Wrap; Layout.fillWidth: true }
                             }
-                             MouseArea { id: createNewMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { root.refreshWidgetInstances(); root.showCreateWidget = true; } }
+                             MouseArea { id: createNewMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.openCreateModal() }
                          }
                     }
                     }
@@ -6185,6 +6202,70 @@ Item {
                 border.color: cardEdge
                 visible: root.widgetMode === "live_leaderboard" && !root.universalEditorActive
                 implicitHeight: editLiveLeaderboardHeader.implicitHeight + 20
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                radius: 14
+                color: cardBase
+                border.width: 1
+                border.color: cardEdge
+                visible: root.widgetMode === "live_leaderboard_simple" && !root.universalEditorActive
+                implicitHeight: editLiveLeaderboardSimpleHeader.implicitHeight + 20
+
+                ColumnLayout {
+                    id: editLiveLeaderboardSimpleHeader
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 12
+                    spacing: 8
+
+                    Text {
+                        text: "Live Leaderboard Simple (Компактний рейтинг)"
+                        color: ink
+                        font.pixelSize: 18
+                        font.bold: true
+                        Layout.fillWidth: true
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+
+                        TextField {
+                            Layout.fillWidth: true
+                            readOnly: true
+                            selectByMouse: true
+                            color: ink
+                            font.pixelSize: 12
+                            background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
+                            text: api ? root.editorUrlValue(api.liveLeaderboardSimpleOverlayUrlValue) : ""
+                        }
+
+                        PillButton {
+                            text: "Скопіювати URL"
+                            onClicked: root.copyEditorUrl(function() { if (api) api.copyLiveLeaderboardSimpleOverlayUrl(); })
+                        }
+
+                        PillButton {
+                            text: "▶"
+                            pillFontSize: 12
+                            onClicked: if (api) api.previewLiveLeaderboardSimpleOverlay()
+                        }
+
+                        PillButton {
+                            text: "Зберегти"
+                            enabled: root._canSaveCurrentWidget
+                            onClicked: root._saveAndApplyCurrentWidget()
+                        }
+
+                        PillButton {
+                            text: "Назад"
+                            onClicked: root.widgetMode = "grid"
+                        }
+                    }
+                }
 
                 ColumnLayout {
                     id: editLiveLeaderboardHeader
@@ -9449,15 +9530,12 @@ Item {
                             Layout.fillWidth: true
                             spacing: 10
                             Text { text: root.loc("stream_goal.ui.accent"); color: muted; Layout.preferredWidth: 160 }
-                            TextField {
+                            CheremshaColorPicker {
                                 Layout.fillWidth: true
-                                color: ink
-                                font.pixelSize: 13
-                                background: Rectangle { radius: 8; color: fieldBg; border.width: 1; border.color: cardEdge }
-                                text: root.streamGoalCfg ? (root.streamGoalCfg.accent_color || "#00ffff") : "#00ffff"
-                                onEditingFinished: {
+                                value: root.streamGoalCfg ? String(root.streamGoalCfg.accent_color || "#00ffff") : "#00ffff"
+                                onAccepted: function(colorValue) {
                                     if (root._loadingStreamGoalCfg || !root.streamGoalCfg) return;
-                                    root.streamGoalCfg.accent_color = text;
+                                    root.streamGoalCfg.accent_color = colorValue;
                                     root._saveStreamGoal();
                                 }
                             }
@@ -11478,6 +11556,7 @@ StyledCheckBox {
                     root._loadingCommunityWorldCfg = false;
                     root._loadingStreamGoalCfg = false;
                     root._loadingLiveLeaderboardCfg = false;
+                    root._loadingLiveLeaderboardSimpleCfg = false;
                     root._loadingSocialRotatorCfg = false;
                     root._loadingWebcamFrameCfg = false;
                     root._loadingSignalSystemCfg = false;
@@ -11496,6 +11575,7 @@ StyledCheckBox {
                 root._loadingCommunityWorldCfg = true;
                 root._loadingStreamGoalCfg = true;
                 root._loadingLiveLeaderboardCfg = true;
+                root._loadingLiveLeaderboardSimpleCfg = true;
                 root._loadingSocialRotatorCfg = true;
                 root._loadingWebcamFrameCfg = true;
                 root._loadingSignalSystemCfg = true;
@@ -11647,6 +11727,17 @@ StyledCheckBox {
                 var llobj = api.loadLiveLeaderboardOverlayConfigMap();
                 if (!llobj || typeof llobj !== "object")
                     llobj = {};
+                var llsobj = null;
+                try {
+                    if (typeof api.loadLiveLeaderboardSimpleConfigMap === "function")
+                        llsobj = api.loadLiveLeaderboardSimpleConfigMap();
+                } catch (e) { console.warn("live_leaderboard_simple load failed:", e); }
+                if (!llsobj || typeof llsobj !== "object")
+                    llsobj = {};
+                root.liveLeaderboardSimpleCfg = JSON.parse(JSON.stringify(llsobj));
+                root.liveLeaderboardSimpleCfgEpoch += 1;
+                if (root.liveLeaderboardSimpleCfg && !root.liveLeaderboardSimpleCfg.sequence)
+                    root.liveLeaderboardSimpleCfg.sequence = [];
                 root.liveLeaderboardCfg = JSON.parse(JSON.stringify(llobj));
                 root.liveLeaderboardCfgEpoch += 1;
                 if (root.liveLeaderboardCfg) {
@@ -12033,6 +12124,140 @@ StyledCheckBox {
             root.streamPetCfg.bubble_bg_color = _colorToHex(selectedColor);
             root.streamPetCfg.preset = "custom";
             root._saveStreamPet();
+        }
+    }
+
+    // ---- New-widget modal overlay (UI layer only) ----
+    CheremshaModal {
+        id: createModal
+        anchors.fill: parent
+        title: root.loc("widgets.instances.new_title")
+        subtitle: root.loc("widgets.instances.new_subtitle")
+        opened: root.showCreateWidget
+        onCloseRequested: {
+            root.showCreateWidget = false;
+            root.closeCreateModal();
+        }
+        onOpenedChanged: {
+            if (!opened && root.showCreateWidget) root.showCreateWidget = false;
+        }
+
+        body: Component {
+            ColumnLayout {
+                spacing: 0
+                Text {
+                    text: root.loc("widgets.instances.type_label")
+                    color: root.inkMuted
+                    font.pixelSize: 11
+                    font.weight: Font.DemiBold
+                    font.letterSpacing: 1.2
+                    Layout.fillWidth: true
+                }
+                Item { Layout.preferredHeight: 8 }
+                StyledComboBox {
+                    id: modalTypeBox
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 44
+                    model: (root.widgetTypeList || []).map(function (t) {
+                        return (t.name || t.type_id);
+                    })
+                    Component.onCompleted: modalTypeBox._syncToRoot()
+                    function _syncToRoot() {
+                        var list = root.widgetTypeList || [];
+                        for (var i = 0; i < list.length; ++i) {
+                            if (list[i].type_id === root.newInstanceType) {
+                                modalTypeBox.currentIndex = i;
+                                return;
+                            }
+                        }
+                        if (list.length > 0) modalTypeBox.currentIndex = 0;
+                    }
+                    Connections {
+                        target: createModal
+                        function onOpenedChanged() {
+                            if (createModal.opened) {
+                                modalTypeBox._syncToRoot();
+                                modalNameField.text = root.newInstanceName || "";
+                                modalNameField.forceActiveFocus();
+                            } else {
+                                modalNameField.text = "";
+                            }
+                        }
+                    }
+                    onUserActivated: function (idx) {
+                        var t = (root.widgetTypeList || [])[idx];
+                        if (t) root.newInstanceType = t.type_id;
+                    }
+                    onActivated: function (idx) {
+                        var t2 = (root.widgetTypeList || [])[idx];
+                        if (t2) root.newInstanceType = t2.type_id;
+                    }
+                }
+                Item { Layout.preferredHeight: 8 }
+                Text {
+                    Layout.fillWidth: true
+                    color: root.muted
+                    font.pixelSize: 12
+                    wrapMode: Text.Wrap
+                    text: {
+                        var t = (root.widgetTypeList || []).filter(function (x) {
+                            return x.type_id === root.newInstanceType;
+                        })[0];
+                        return t ? (t.description || "") : "";
+                    }
+                }
+                Item { Layout.preferredHeight: 20 }
+                Text {
+                    text: root.loc("widgets.instances.name_label")
+                    color: root.inkMuted
+                    font.pixelSize: 11
+                    font.weight: Font.DemiBold
+                    font.letterSpacing: 1.2
+                    Layout.fillWidth: true
+                }
+                Item { Layout.preferredHeight: 8 }
+                StyledTextField {
+                    id: modalNameField
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 44
+                    leftPadding: 14
+                    rightPadding: 14
+                    placeholderText: root.loc("widgets.instances.name_placeholder")
+                    onTextChanged: root.newInstanceName = text
+                    Keys.onReturnPressed: {
+                        if (root.newInstanceType !== "") root.submitCreateWidget();
+                    }
+                    Keys.onEnterPressed: {
+                        if (root.newInstanceType !== "") root.submitCreateWidget();
+                    }
+                }
+            }
+        }
+
+        footer: Component {
+            RowLayout {
+                spacing: 8
+                Item { Layout.fillWidth: true }
+                PillButton {
+                    Layout.preferredHeight: 40
+                    Layout.preferredWidth: 100
+                    text: root.loc("widgets.common.cancel")
+                    onClicked: {
+                        root.showCreateWidget = false;
+                        root.closeCreateModal();
+                    }
+                }
+                PillButton {
+                    id: createBtn
+                    Layout.preferredHeight: 40
+                    Layout.preferredWidth: 130
+                    primary: true
+                    text: root.loc("widgets.common.create")
+                    enabled: (root.widgetTypeList || []).length > 0 && root.newInstanceType !== ""
+                    opacity: enabled ? 1.0 : 0.45
+                    onClicked: root.submitCreateWidget()
+                }
+            }
         }
     }
 }

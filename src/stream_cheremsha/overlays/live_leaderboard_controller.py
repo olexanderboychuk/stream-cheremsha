@@ -32,6 +32,8 @@ _ROTATION_TICK_MS = 250
 
 
 class LiveLeaderboardController(QObject):
+    OVERLAY_TYPE = "live_leaderboard"
+
     def __init__(
         self,
         *,
@@ -47,7 +49,7 @@ class LiveLeaderboardController(QObject):
         self._publish_handle: asyncio.TimerHandle | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
 
-        cfg = load_live_leaderboard_overlay_config()
+        cfg = self._load_cfg()
         self._ranking = LiveLeaderboardRankingEngine(
             weights=ContributorWeights(
                 like=cfg.weight_like,
@@ -70,6 +72,12 @@ class LiveLeaderboardController(QObject):
         self._rotation_timer = QTimer(self)
         self._rotation_timer.setInterval(_ROTATION_TICK_MS)
         self._rotation_timer.timeout.connect(self._on_rotation_tick)
+
+    def _load_cfg(self):  # noqa: ANN202 - generic config object
+        return load_live_leaderboard_overlay_config()
+
+    def _public_dict(self, cfg) -> dict[str, Any]:  # noqa: ANN001, ANN202
+        return live_leaderboard_overlay_config_to_public_dict(cfg)
 
     def set_pubsub(self, pubsub: OverlayPubSub | None) -> None:
         self._pubsub = pubsub
@@ -111,7 +119,7 @@ class LiveLeaderboardController(QObject):
         user_key: str = "",
         unique_id: str = "",
     ) -> None:
-        cfg = load_live_leaderboard_overlay_config()
+        cfg = self._load_cfg()
         if not cfg.enabled:
             return
         self._ranking.add_likes(
@@ -135,7 +143,7 @@ class LiveLeaderboardController(QObject):
         unique_id: str = "",
         avatar_url: str = "",
     ) -> None:
-        cfg = load_live_leaderboard_overlay_config()
+        cfg = self._load_cfg()
         if not cfg.enabled:
             return
         self._ranking.add_shares(
@@ -154,7 +162,7 @@ class LiveLeaderboardController(QObject):
         sender_avatar_url: str = "",
         sender_user_key: str = "",
     ) -> None:
-        cfg = load_live_leaderboard_overlay_config()
+        cfg = self._load_cfg()
         if not cfg.enabled:
             return
         try:
@@ -181,7 +189,7 @@ class LiveLeaderboardController(QObject):
         unique_id: str = "",
         avatar_url: str = "",
     ) -> None:
-        cfg = load_live_leaderboard_overlay_config()
+        cfg = self._load_cfg()
         if not cfg.enabled:
             return
         self._ranking.add_comment(
@@ -211,14 +219,14 @@ class LiveLeaderboardController(QObject):
         if pubsub is None:
             return
         patch = self._build_state()
-        topic = f"overlay:live_leaderboard:{self._instance}"
+        topic = f"overlay:{type(self).OVERLAY_TYPE}:{self._instance}"
         pubsub.publish_sync(topic, patch)
 
     async def _publish_patch(self) -> None:
         self._publish_patch_sync()
 
     def _on_rotation_tick(self) -> None:
-        cfg = load_live_leaderboard_overlay_config()
+        cfg = self._load_cfg()
         if not cfg.enabled:
             return
         advanced = self._rotation.tick(now_ms=int(time.time() * 1000))
@@ -226,17 +234,17 @@ class LiveLeaderboardController(QObject):
             self.schedule_publish()
 
     def _build_state(self) -> dict[str, Any]:
-        cfg = load_live_leaderboard_overlay_config()
+        cfg = self._load_cfg()
         now_ms = int(time.time() * 1000)
         return {
-            "config": live_leaderboard_overlay_config_to_public_dict(cfg),
+            "config": self._public_dict(cfg),
             "rankings": self._ranking.all_rankings(limit=cfg.top_n),
             "presentation": self._rotation.presentation_dict(server_now_ms=now_ms),
             "locale": str(self._get_locale() or "uk"),
         }
 
     def _reload_config(self, *, reset_rotation: bool) -> None:
-        cfg = load_live_leaderboard_overlay_config()
+        cfg = self._load_cfg()
         self._ranking.weights = ContributorWeights(
             like=cfg.weight_like,
             gift_coin=cfg.weight_gift_coin,
