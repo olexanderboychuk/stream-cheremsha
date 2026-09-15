@@ -10,6 +10,11 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import httpx
+
+if TYPE_CHECKING:
+    from stream_cheremsha.chat.tiktok.proxy_manager import ProxyEntry, ProxyManager
+
 from stream_cheremsha import l10n
 from stream_cheremsha.domain.models import ChatMessage, ChatPlatform
 from stream_cheremsha.pipeline.coordinator import StreamCoordinator
@@ -780,6 +785,10 @@ class TikTokChatSource:
         self._connect_cutoff_mono: float | None = None
         # Current reconnect backoff used for status messages (read by event handlers).
         self._connect_backoff_sec: float = TIKTOK_RECONNECT_SEC
+        # Proxy failover — lazy, session-scoped.
+        self._proxy_manager: ProxyManager | None = None
+        # Proxy currently being used for the active WS connection (None = direct).
+        self._current_proxy: ProxyEntry | None = None
 
     @staticmethod
     def _wrap_on_like(
@@ -1086,20 +1095,47 @@ class TikTokChatSource:
         await self._close_client()
         self._on_status(l10n.tr(self._get_locale(), "tk.stopped"))
 
+    def _get_proxy_manager(self) -> ProxyManager:
+        """Lazy-initialize ProxyManager (never at app startup)."""
+        if self._proxy_manager is None:
+            from stream_cheremsha.chat.tiktok.proxy_manager import ProxyManager  # noqa: PLC0415
+            self._proxy_manager = ProxyManager()
+        return self._proxy_manager
+
+    def _make_client(self, uid: str, proxy: httpx.Proxy | None = None) -> TikTokLiveClient:
+        """
+        Build a TikTokLiveClient for *uid*.
+
+        When *proxy* is None the existing ``self._client_factory`` is used
+        (preserves backward compat with test stubs that supply a custom factory).
+        When *proxy* is provided we build directly with ``TikTokLiveClient`` so
+        that both ``web_proxy`` and ``ws_proxy`` are forwarded correctly.
+        """
+        if proxy is None:
+            return self._client_factory(uid)
+        # Proxy path: bypass client_factory (test factories don't accept proxy).
+        # web_kwargs are forwarded as **kwargs to TikTokHTTPClient.__init__,
+        # which accepts httpx_kwargs (not 'timeout' directly).
+        return TikTokLiveClient(
+            unique_id=uid,
+            web_proxy=proxy,
+            ws_proxy=proxy,
+            web_kwargs={"httpx_kwargs": {"timeout": 4.0}},
+        )
+
     async def _close_client(self) -> None:
         client, self._client = self._client, None
         if client is None:
             return
         try:
-            await client.disconnect(close_client=True)
-        except (OSError, RuntimeError, TikTokLiveError) as exc:
-            logger.debug("TikTok disconnect ignored: %s", exc)
-            # `disconnect(close_client=True)` already closes the underlying HTTP client.
-            # Only attempt a direct close as a best-effort fallback if disconnect failed.
-            try:
+            if getattr(client, "connected", False):
+                await client.disconnect(close_client=True)
+            elif hasattr(client, "_web") and hasattr(client._web, "close"):
+                await client._web.close()
+            elif hasattr(client, "close") and callable(client.close):
                 await client.close()
-            except (OSError, RuntimeError, TikTokLiveError) as exc2:
-                logger.debug("TikTok close ignored: %s", exc2)
+        except (OSError, RuntimeError, TikTokLiveError) as exc:
+            logger.debug("TikTok close ignored: %s", exc)
 
     async def _supervisor(self) -> None:
         assert self._unique_id is not None
@@ -1553,39 +1589,7 @@ class TikTokChatSource:
                         )
 
             try:
-                # TikTokLive docs: using connect/start just to check "is live" is inefficient.
-                # We poll via is_live() and only connect once the creator is live.
-                self._on_status(l10n.tr(self._get_locale(), "tk.connecting", user=uid))
-                try:
-                    live = await client.is_live()
-                except UserNotFoundError:
-                    msg = l10n.tr(self._get_locale(), "tk.user_not_found", user=uid, sec=backoff)
-                    self._on_status(msg)
-                    live = False
-                except AgeRestrictedError:
-                    self._on_status(l10n.tr(self._get_locale(), "tk.age_restricted", user=uid))
-                    live = False
-                except SignatureRateLimitError as exc:
-                    wait = max(float(getattr(exc, "retry_after", backoff)), backoff)
-                    self._on_status(l10n.tr(self._get_locale(), "tk.rate_limited", sec=wait))
-                    await asyncio.sleep(wait)
-                    live = False
-
-                if not live:
-                    msg = l10n.tr(self._get_locale(), "tk.user_offline", user=uid, sec=backoff)
-                    self._on_status(msg)
-                else:
-                    # Keep WS connect independent of `/room/info` (HTTP may fail while WS works).
-                    t = await client.start(fetch_room_info=False, fetch_gift_info=True)
-                    poll_task = asyncio.create_task(
-                        self._poll_live_viewers_http(client),
-                        name="tiktok-room-viewers",
-                    )
-                    try:
-                        await t
-                    finally:
-                        poll_task.cancel()
-                        await asyncio.gather(poll_task, return_exceptions=True)
+                await self._attempt_with_fallback(uid, client, backoff)
             except asyncio.CancelledError:
                 raise
             except UserOfflineError:
@@ -1635,3 +1639,224 @@ class TikTokChatSource:
             self._task.done() if self._task else None,
         )
         logger.debug("TikTok supervisor exited")
+
+    # ------------------------------------------------------------------
+    # Proxy failover helpers
+    # ------------------------------------------------------------------
+
+    async def _run_connection(self, client: TikTokLiveClient, uid: str, backoff: float) -> None:
+        """
+        Execute a single TikTok connection attempt (is_live → start).
+
+        This is the exact same logic as the original supervisor block,
+        extracted so both direct and proxy paths share one implementation.
+        Raises on non-retryable errors; returns normally when the connection
+        ends naturally (stream ended / disconnected).
+        """
+        _ensure_tiktoklive()
+        # TikTokLive docs: using connect/start just to check "is live" is inefficient.
+        # We poll via is_live() and only connect once the creator is live.
+        self._on_status(l10n.tr(self._get_locale(), "tk.connecting", user=uid))
+        try:
+            live = await client.is_live()
+        except UserNotFoundError:
+            msg = l10n.tr(self._get_locale(), "tk.user_not_found", user=uid, sec=backoff)
+            self._on_status(msg)
+            live = False
+        except AgeRestrictedError:
+            self._on_status(l10n.tr(self._get_locale(), "tk.age_restricted", user=uid))
+            live = False
+        except SignatureRateLimitError as exc:
+            wait = max(float(getattr(exc, "retry_after", backoff)), backoff)
+            self._on_status(l10n.tr(self._get_locale(), "tk.rate_limited", sec=wait))
+            await asyncio.sleep(wait)
+            live = False
+
+        if not live:
+            msg = l10n.tr(self._get_locale(), "tk.user_offline", user=uid, sec=backoff)
+            self._on_status(msg)
+        else:
+            # Keep WS connect independent of `/room/info` (HTTP may fail while WS works).
+            t = await client.start(fetch_room_info=False, fetch_gift_info=True)
+            poll_task = asyncio.create_task(
+                self._poll_live_viewers_http(client),
+                name="tiktok-room-viewers",
+            )
+            try:
+                await t
+            finally:
+                poll_task.cancel()
+                await asyncio.gather(poll_task, return_exceptions=True)
+
+    @staticmethod
+    def _is_retryable_network_error(exc: BaseException) -> bool:
+        """
+        Return True when *exc* suggests a low-level network failure that a proxy
+        might fix (connection refused, timeout, DNS failure, transport reset…).
+
+        Returns False for protocol/auth/not-found errors where rotating proxy
+        would only mask the real problem.
+        """
+        # Non-network TikTokLive errors are not retryable via proxy.
+        # We intentionally do NOT import TikTokLiveError here; those are
+        # handled by name in _attempt_with_fallback.
+        if isinstance(exc, OSError):
+            return True
+        cls_name = type(exc).__name__
+        # httpx network-layer errors.
+        if cls_name in (
+            "ConnectError",
+            "ConnectTimeout",
+            "ReadTimeout",
+            "WriteTimeout",
+            "PoolTimeout",
+            "RemoteProtocolError",
+            "NetworkError",
+        ):
+            return True
+        # TikTokLive sometimes wraps network failures as generic RuntimeError or
+        # TikTokLiveError with "400" / "connection" in the message.
+        msg = str(exc).lower()
+        if any(kw in msg for kw in ("connection", "timeout", "refused", "reset", "network")):
+            return True
+        # HTTP 400 from TikTok's server during is_live() / start() is an access
+        # failure (geo-block, TikTok-side error) — allow proxy fallback once.
+        if "400" in msg or "bad request" in msg:
+            return True
+        return False
+
+    async def _attempt_with_fallback(
+        self,
+        uid: str,
+        direct_client: TikTokLiveClient,
+        backoff: float,
+    ) -> None:
+        """
+        Run one full connection cycle for *uid*.
+
+        Strategy:
+        1. Try DIRECT connection first (using the client already set up by
+           ``_supervisor``).
+        2. On retryable network failure: load proxy pool and try up to
+           ``MAX_PROXY_ATTEMPTS`` proxies sequentially.
+        3. On all-fail: call existing error status and return — supervisor
+           handles exponential backoff + retry.
+
+        Non-retryable errors (UserOffline, NotFound, AgeRestricted,
+        RateLimit, auth failures) are surfaced normally without proxy rotation.
+        """
+        _ensure_tiktoklive()
+        from stream_cheremsha.chat.tiktok.proxy_manager import MAX_PROXY_ATTEMPTS  # noqa: PLC0415
+
+        # --- Step 1: DIRECT attempt ---
+        logger.info("TikTok direct connection attempt uid=@%s", uid)
+        direct_error: BaseException | None = None
+        try:
+            await self._run_connection(direct_client, uid, backoff)
+            return  # direct success — done
+        except asyncio.CancelledError:
+            raise
+        except (UserOfflineError, UserNotFoundError, AgeRestrictedError):
+            # Non-retryable: no proxy fallback — surface normally.
+            raise
+        except SignatureRateLimitError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            if not self._is_retryable_network_error(exc):
+                raise
+            direct_error = exc
+            logger.info("TikTok direct connection failed (retryable): %s", exc)
+        finally:
+            await self._close_client()
+
+        if not self._running:
+            return
+
+        # --- Step 2: PROXY fallback ---
+        logger.info("TikTok loading proxy pool for fallback")
+        self._on_status(l10n.tr(self._get_locale(), "tk.trying_network_fallback"))
+
+        pm = self._get_proxy_manager()
+        try:
+            pool = await pm.get_proxy_pool()
+        except Exception as exc:  # noqa: BLE001
+            # ProxyManager must never crash TikTokService.
+            logger.warning("TikTok proxy pool unavailable: %s", exc)
+            pool = []
+
+        if not pool:
+            logger.info("TikTok proxy pool empty — no fallback available")
+            # Surface the original direct error.
+            if direct_error is not None:
+                raise direct_error  # type: ignore[misc]
+            return
+
+        logger.info("TikTok proxy pool ready: %d entries", len(pool))
+
+        tried: set[str] = set()
+        last_proxy_error: BaseException | None = None
+
+        for attempt_n in range(1, MAX_PROXY_ATTEMPTS + 1):
+            if not self._running:
+                break
+
+            entry = pm.get_next_proxy(skip=tried)
+            if entry is None:
+                logger.info("TikTok proxy pool exhausted after %d attempt(s)", attempt_n - 1)
+                break
+
+            tried.add(entry.key)
+            logger.info(
+                "TikTok trying proxy #%d: %s:%d",
+                attempt_n,
+                entry.host,
+                entry.port,
+            )
+
+            proxy_obj = pm.make_httpx_proxy(entry)
+            proxy_client = self._make_client(uid, proxy_obj)
+            self._client = proxy_client
+            _patch_tiktoklive_negative_log_id()
+            _configure_tiktoklive_client(proxy_client)
+
+            try:
+                await self._run_connection(proxy_client, uid, backoff)
+                # Success!
+                pm.report_success(entry)
+                self._current_proxy = entry
+                logger.info(
+                    "TikTok connected through proxy %s:%d",
+                    entry.host,
+                    entry.port,
+                )
+                return
+            except asyncio.CancelledError:
+                raise
+            except (UserOfflineError, UserNotFoundError, AgeRestrictedError):
+                # Non-network: no point trying more proxies.
+                pm.report_failure(entry)
+                raise
+            except SignatureRateLimitError:
+                pm.report_failure(entry)
+                raise
+            except Exception as exc:  # noqa: BLE001
+                pm.report_failure(entry)
+                last_proxy_error = exc
+                logger.info(
+                    "TikTok proxy #%d failed (%s:%d): %s",
+                    attempt_n,
+                    entry.host,
+                    entry.port,
+                    exc,
+                )
+            finally:
+                await self._close_client()
+
+        # --- Step 3: All attempts exhausted ---
+        logger.warning(
+            "TikTok all proxy attempts failed (tried %d); surfacing error",
+            len(tried),
+        )
+        err = last_proxy_error or direct_error
+        if err is not None:
+            raise err  # type: ignore[misc]

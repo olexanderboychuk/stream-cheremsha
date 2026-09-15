@@ -1344,6 +1344,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "TikTok: введіть юзернейм (нік) стрімера",
         "en": "TikTok: enter the streamer username",
     },
+    "tk.trying_network_fallback": {
+        "uk": "TikTok: пряме підключення не вдалось — спроба резервної мережі…",
+        "en": "TikTok: direct connection failed — trying network fallback…",
+    },
     # Audio / TTS
     "audio.flush_queues": {
         "uk": "Зупинити озвучення (очистити черги)",
