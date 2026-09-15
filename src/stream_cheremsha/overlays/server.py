@@ -121,6 +121,7 @@ class OverlayServer:
         app.router.add_get("/health", self._health)
         app.router.add_get("/assets/{path:.*}", self._assets)
         app.router.add_get("/overlay/by-id/{instance_id}", self._overlay_by_id)
+        app.router.add_get("/overlay/{overlay_type}", self._overlay_page)
         app.router.add_get("/dock/multichat", self._dock_multichat)
         app.router.add_get("/dock/activity", self._dock_activity)
         app.router.add_get("/dock/online", self._dock_online)
@@ -198,6 +199,36 @@ class OverlayServer:
             path=p,
             headers={"Content-Type": ctype or "application/octet-stream"},
         )
+
+    async def _overlay_page(self, req: web.Request) -> web.Response:
+        _ensure_aiohttp()
+        overlay_type = str(req.match_info.get("overlay_type") or "").strip()
+        try:
+            t = self._registry.get(overlay_type)
+        except UnknownOverlayTypeError as e:
+            raise web.HTTPNotFound(text=f"unknown overlay type: {e.args[0]}") from e
+
+        try:
+            instance = normalize_instance_id(str(req.query.get("instance", "")))
+        except ValueError as e:
+            raise web.HTTPBadRequest(text="invalid instance") from e
+
+        params: dict[str, Any] = {"instance": instance}
+        try:
+            from stream_cheremsha.overlays.widget_instances import resolve_ws_params
+
+            ws_cfg = resolve_ws_params(overlay_type, instance)
+            if ws_cfg is not None:
+                params["instance_settings"] = ws_cfg
+        except Exception:
+            pass
+        if overlay_type == "layout":
+            params["layout"] = str(req.query.get("layout", "default"))
+        anchor = str(req.query.get("anchor", "")).strip().lstrip("@").strip()
+        if anchor:
+            params["anchor"] = anchor
+        html = t.render_html(params)
+        return web.Response(text=html, content_type="text/html", charset="utf-8")
 
     async def _overlay_by_id(self, req: web.Request) -> web.Response:
         _ensure_aiohttp()
