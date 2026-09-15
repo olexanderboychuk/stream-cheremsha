@@ -7970,8 +7970,11 @@ class MainWindow(FramelessWindow):
         self._audio_combo.blockSignals(True)
         current = self._settings.value("audio/device_description", "", str)
         self._audio_combo.clear()
-        for dev in QMediaDevices.audioOutputs():
-            self._audio_combo.addItem(dev.description())
+        try:
+            for dev in QMediaDevices.audioOutputs():
+                self._audio_combo.addItem(dev.description())
+        except Exception as e:
+            logger.warning("Failed to refresh audio devices: %s", e)
         idx = self._audio_combo.findText(current)
         if idx >= 0:
             self._audio_combo.setCurrentIndex(idx)

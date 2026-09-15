@@ -207,12 +207,16 @@ class QtAudioSink(QObject):
         if not description:
             return
         self.ensure_ready()
-        assert self._audio is not None
-        for dev in QMediaDevices.audioOutputs():
-            if dev.description() == description:
-                self._audio.setDevice(dev)
-                return
-        logger.warning("Audio device %r not found, using default", description)
+        if self._audio is None:
+            return
+        try:
+            for dev in QMediaDevices.audioOutputs():
+                if dev.description() == description:
+                    self._audio.setDevice(dev)
+                    return
+            logger.warning("Audio device %r not found, using default", description)
+        except Exception as e:
+            logger.warning("Error matching audio device by description %r: %s", description, e)
 
     def set_volume(self, linear: float) -> None:
         v = max(0.0, min(1.0, float(linear)))
@@ -380,11 +384,13 @@ class QtAudioSink(QObject):
             file_path = await asyncio.to_thread(_write_temp_audio, scaled)
             out_volume = 1.0
 
+        self.ensure_ready()
         with _BACKEND_LOCK:
             player = QMediaPlayer(self)
-            audio = QAudioOutput(self)
-            player.setAudioOutput(audio)
-            audio.setVolume(max(0.0, min(1.0, float(out_volume))))
+            if self._audio is not None:
+                player.setAudioOutput(self._audio)
+                if scaled is data:
+                    self._audio.setVolume(max(0.0, min(1.0, float(out_volume))))
 
         def _done_ok() -> None:
             if not fut.done():
@@ -413,7 +419,6 @@ class QtAudioSink(QObject):
             except OSError as e:
                 logger.debug("Temp audio cleanup: %s", e)
             player.deleteLater()
-            audio.deleteLater()
 
     async def play_mp3_parallel_with_volume(self, data: bytes, linear: float) -> None:
         """Public API: play immediately, even if others queued."""
