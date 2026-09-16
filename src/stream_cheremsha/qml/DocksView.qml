@@ -256,7 +256,7 @@ Item {
     Text {
         anchors.centerIn: parent
         visible: !apiGate.active
-        text: dockApi.strings.not_available || "Docks API is not available yet."
+        text: (dockApi && dockApi.strings && dockApi.strings.not_available) || "Docks API is not available yet."
         color: muted
         font.pixelSize: 13
     }

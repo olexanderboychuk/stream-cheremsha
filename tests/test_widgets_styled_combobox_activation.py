@@ -31,10 +31,12 @@ def test_styled_combobox_emits_user_activated_from_delegate_click() -> None:
 
 
 def test_actions_username_effect_listens_for_user_activated() -> None:
+    """Actions username_text_effect is edited via the universal select control now."""
     text = _WIDGETS_VIEW.read_text(encoding="utf-8")
-    idx = text.find("id: actionsUsernameEffect")
-    assert idx >= 0
-    window = text[idx : idx + 900]
-    assert "onUserActivated:" in window
-    assert "username_text_effect" in window
-    assert "_saveActions" in window
+    start = text.find('} else if (typeId === "actions")')
+    assert start >= 0
+    end = text.find('} else if (typeId === "online")', start)
+    block = text[start:end]
+    assert '"username_text_effect"' in block
+    for fx in ("rainbow", "aurora", "neon", "fire"):
+        assert fx in block

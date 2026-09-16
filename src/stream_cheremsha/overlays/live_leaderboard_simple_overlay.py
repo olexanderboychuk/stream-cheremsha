@@ -8,6 +8,7 @@ from stream_cheremsha import l10n
 from stream_cheremsha.overlays.live_leaderboard_ranking import LiveLeaderboardRankingEngine
 from stream_cheremsha.overlays.live_leaderboard_simple_config import (
     live_leaderboard_simple_config_from_json_text,
+    live_leaderboard_simple_config_to_json_text,
     live_leaderboard_simple_config_to_public_dict,
     load_live_leaderboard_simple_config,
 )
@@ -60,6 +61,18 @@ class LiveLeaderboardSimpleOverlayType:
             instance = "default"
         cfg = load_live_leaderboard_simple_config()
         cfg_dict = live_leaderboard_simple_config_to_public_dict(cfg)
+        try:
+            from stream_cheremsha.overlays.widget_instances import config_for_type
+
+            cfg_dict = config_for_type(
+                "live_leaderboard_simple",
+                params,
+                load_live_leaderboard_simple_config,
+                live_leaderboard_simple_config_to_json_text,
+            )
+            cfg = live_leaderboard_simple_config_from_json_text(json.dumps(cfg_dict))
+        except Exception:
+            pass
         locale = load_ui_locale()
         i18n = _overlay_i18n_bundle()
         pack = i18n.get(locale) or i18n["uk"]

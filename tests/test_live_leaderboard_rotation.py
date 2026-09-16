@@ -180,11 +180,6 @@ def test_migrate_legacy_optional_sources_off() -> None:
     from stream_cheremsha.overlays.live_leaderboard_overlay_config import (
         migrate_live_leaderboard_overlay_config,
     )
-    from stream_cheremsha.overlays.live_leaderboard_rotation import (
-        SOURCE_COMMENTERS,
-        SOURCE_CONTRIBUTORS,
-        SOURCE_SHARERS,
-    )
 
     legacy = live_leaderboard_overlay_config_defaults().replace(
         enable_sharers=False,
@@ -202,7 +197,38 @@ def test_migrate_legacy_optional_sources_off() -> None:
     assert migrated.enable_sharers is True
     assert migrated.enable_commenters is True
     assert migrated.enable_contributors is True
-    sources = {s.source_id for s in parse_sequence_steps(migrated)}
-    assert SOURCE_SHARERS in sources
-    assert SOURCE_COMMENTERS in sources
-    assert SOURCE_CONTRIBUTORS in sources
+    # Trimmed rotation stays trimmed: migrate must not resurrect deleted steps
+    # (runtime filtering via filter_sequence_for_config honors the toggles;
+    # the editors append a step explicitly when a source is toggled on).
+    assert [(s.source_id, s.scene_id) for s in parse_sequence_steps(migrated)] == [
+        (SOURCE_LIKERS, SCENE_HALL_OF_FAME),
+        (SOURCE_GIFTERS, SCENE_ARENA),
+    ]
+
+
+def test_trimmed_sequence_survives_save_parse_roundtrip() -> None:
+    """Regression: user-trimmed rotation must not be resurrected on save/load."""
+    from stream_cheremsha.overlays.live_leaderboard_overlay_config import (
+        live_leaderboard_overlay_config_to_public_dict,
+    )
+
+    cfg = live_leaderboard_overlay_config_defaults()
+    pub = live_leaderboard_overlay_config_to_public_dict(cfg)
+    pub["sequence"] = [
+        {"source_id": SOURCE_LIKERS, "scene_id": SCENE_ARENA, "duration_sec": 5},
+        {"source_id": SOURCE_GIFTERS, "scene_id": SCENE_HALL_OF_FAME, "duration_sec": 9},
+    ]
+    pub["sequence_json"] = json.dumps(pub["sequence"])
+    reloaded = live_leaderboard_overlay_config_from_json_text(json.dumps(pub))
+    assert [(s.source_id, s.scene_id) for s in parse_sequence_steps(reloaded)] == [
+        (SOURCE_LIKERS, SCENE_ARENA),
+        (SOURCE_GIFTERS, SCENE_HALL_OF_FAME),
+    ]
+    # A second save→parse cycle must be stable too.
+    again = live_leaderboard_overlay_config_from_json_text(
+        live_leaderboard_overlay_config_to_json_text(reloaded)
+    )
+    assert [(s.source_id, s.scene_id) for s in parse_sequence_steps(again)] == [
+        (SOURCE_LIKERS, SCENE_ARENA),
+        (SOURCE_GIFTERS, SCENE_HALL_OF_FAME),
+    ]

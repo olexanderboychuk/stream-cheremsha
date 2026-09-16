@@ -33,9 +33,9 @@ def test_load_chat_config_map_matches_python_roundtrip() -> None:
 def test_preview_actions_overlay_publishes_append_patch() -> None:
     async def _run() -> dict[str, object]:
         ps = OverlayPubSub()
-        q = ps.subscribe("overlay:actions:main")
+        q = ps.subscribe("overlay:actions:inst-1")
         api = WidgetsQmlApi(pubsub=ps)
-        api.previewActionsOverlay()
+        api.previewActionsOverlay("inst-1")
         got = await asyncio.wait_for(q.get(), timeout=1.0)
         return got
 

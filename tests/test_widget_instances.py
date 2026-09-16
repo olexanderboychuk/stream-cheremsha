@@ -160,35 +160,28 @@ def test_no_static_type_cards_duplicate_instance_list() -> None:
         "widgets.layouts.instance",
     ):
         assert live in qml, live
-    # settings tab adaptation: editing banner, abort guards, verified open
+    # settings tab adaptation: universal editor shows/copies the instance by-id URL,
+    # verified open guards stay
     for live in (
-        "widgets.instances.editing_title",
-        "widgets.instances.editing_hint",
         "editingInstanceName",
         "copyWidgetInstanceUrl(root.editingInstanceId)",
         "backend did not accept id",
+        "onCopyRequested",
     ):
         assert live in qml, live
-    # editor headers must show/copy the instance by-id URL while editing,
-    # never the legacy ?instance=main URL
-    for name in (
-        "chat",
-        "actions",
-        "online",
-        "kingOfLive",
-        "battleRoyale",
-        "streamPet",
-        "communityWorld",
-        "streamGoal",
-        "liveLeaderboard",
-        "liveLeaderboardSimple",
-        "socialRotator",
-        "webcamFrame",
-        "signalSystem",
+    # legacy per-type forms and editing banner are gone; universal editor owns settings
+    for dead in (
+        "widgets.instances.editing_title",
+        "widgets.instances.editing_hint",
+        "editorUrlValue(",
+        "copyEditorUrl(",
+        "editChatHeader",
+        "actionsSettings",
+        "signalSystemSettings",
+        "liveLeaderboardSettings",
+        "component VarMapSpinBox:",
     ):
-        assert f"text: api ? api.{name}OverlayUrlValue" not in qml, name
-        assert f"root.editorUrlValue(api.{name}OverlayUrlValue)" in qml, name
-    assert qml.count("root.copyEditorUrl(function()") == 14
+        assert dead not in qml, dead
 
 
 def test_new_strings_translated_uk_en() -> None:

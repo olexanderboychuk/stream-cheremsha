@@ -108,15 +108,14 @@ def layout_copy_suffix() -> str:
 
 
 def default_layout() -> StreamLayout:
+    # First run: empty canvas. User adds widget instances explicitly;
+    # no legacy default (chat-main/actions-main) instances.
     return StreamLayout(
         id="default",
         name=layout_default_name(),
         width=1920,
         height=1080,
-        widgets=(
-            LayoutWidget("chat-main", "chat", "main", 1450, 80, 420, 700, 10),
-            LayoutWidget("actions-main", "actions", "main", 550, 820, 820, 180, 20),
-        ),
+        widgets=(),
     )
 
 

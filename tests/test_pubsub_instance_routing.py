@@ -7,6 +7,7 @@ from stream_cheremsha.overlays.pubsub import OverlayPubSub
 
 @pytest.mark.asyncio
 async def test_chat_message_reaches_custom_instance() -> None:
+    # Isolation: publish to custom topic reaches only that instance.
     ps = OverlayPubSub()
     q_main = ps.subscribe("overlay:chat:main")
     q_custom = ps.subscribe("overlay:chat:custom_inst_id_123")
@@ -19,15 +20,26 @@ async def test_chat_message_reaches_custom_instance() -> None:
             "received_at": "2026-09-11T23:00:00Z",
         }
     }
+    ps.publish_sync("overlay:chat:custom_inst_id_123", msg)
+
+    assert q_main.empty()
+    assert not q_custom.empty()
+    rec_custom = q_custom.get_nowait()
+
+    assert rec_custom == msg
+
+
+@pytest.mark.asyncio
+async def test_main_publish_does_not_leak_to_custom_instance() -> None:
+    ps = OverlayPubSub()
+    q_main = ps.subscribe("overlay:chat:main")
+    q_custom = ps.subscribe("overlay:chat:custom_inst_id_123")
+
+    msg = {"append": {"author": "TestUser", "text": "Hello"}}
     ps.publish_sync("overlay:chat:main", msg)
 
     assert not q_main.empty()
-    assert not q_custom.empty()
-    rec_main = q_main.get_nowait()
-    rec_custom = q_custom.get_nowait()
-
-    assert rec_main == msg
-    assert rec_custom == msg
+    assert q_custom.empty()
 
 
 @pytest.mark.asyncio
@@ -46,6 +58,7 @@ async def test_config_only_patch_isolated_to_main() -> None:
 
 @pytest.mark.asyncio
 async def test_stream_event_with_config_strips_config_for_custom_instance() -> None:
+    # Isolation: 'main' topic never fans out — custom instance gets nothing.
     ps = OverlayPubSub()
     q_main = ps.subscribe("overlay:stream_goal:main")
     q_custom = ps.subscribe("overlay:stream_goal:my_goal_instance_456")
@@ -60,20 +73,13 @@ async def test_stream_event_with_config_strips_config_for_custom_instance() -> N
     ps.publish_sync("overlay:stream_goal:main", progress_patch)
 
     assert not q_main.empty()
-    assert not q_custom.empty()
+    assert q_custom.empty()
 
     rec_main = q_main.get_nowait()
-    rec_custom = q_custom.get_nowait()
 
     # Main gets the singleton config
     assert rec_main["config"] == {"skin": "cyberpunk", "accent_color": "#ff0055"}
     assert rec_main["current_value"] == 42
-
-    # Custom instance gets the progress and events, but NOT the singleton config
-    assert "config" not in rec_custom
-    assert rec_custom["current_value"] == 42
-    assert rec_custom["progress"] == 0.42
-    assert rec_custom["visual_events"] == [{"type": "like", "amount": 5}]
 
 
 @pytest.mark.asyncio

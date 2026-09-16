@@ -137,6 +137,7 @@ async def test_chat_overlay_ws_receives_append_patch() -> None:
 
 @pytest.mark.asyncio
 async def test_custom_instance_overlay_ws_receives_main_events() -> None:
+    """Instances are isolated: 'main' topic must NOT leak into custom instances."""
     reg = OverlayRegistry()
     ps = OverlayPubSub()
     srv = OverlayServer(registry=reg, pubsub=ps, host="127.0.0.1", port=0)
@@ -161,9 +162,24 @@ async def test_custom_instance_overlay_ws_receives_main_events() -> None:
                 obj = json.loads(msg.data)
                 assert obj["op"] == "initial_state"
 
-                # Backend publishes to main topic
+                # Backend publishes to main topic -> must NOT reach custom instance.
                 await ps.publish(
                     "overlay:chat:main",
+                    {
+                        "append": {
+                            "author": "streamer",
+                            "text": "testing custom instance",
+                            "platform": "tiktok",
+                            "received_at": "now",
+                        }
+                    },
+                )
+                with pytest.raises(TimeoutError):
+                    await _ws_next_text(ws, timeout=0.3)
+
+                # Publish to the instance's own topic -> must arrive.
+                await ps.publish(
+                    "overlay:chat:custom_instance_id_999",
                     {
                         "append": {
                             "author": "streamer",

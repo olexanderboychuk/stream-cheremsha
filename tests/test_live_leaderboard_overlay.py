@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+import json
+
 from stream_cheremsha.overlays.live_leaderboard_controller import LiveLeaderboardController
 from stream_cheremsha.overlays.live_leaderboard_overlay import LiveLeaderboardOverlayType
+from stream_cheremsha.overlays.live_leaderboard_overlay_config import (
+    live_leaderboard_overlay_config_from_json_text,
+    parse_sequence_steps,
+)
 from stream_cheremsha.overlays.registry import OverlayRegistry
 from stream_cheremsha.ui.widgets_qml_api import WidgetsQmlApi
 
@@ -96,3 +102,26 @@ def test_widgets_api_url() -> None:
     cfg = api.loadLiveLeaderboardOverlayConfigMap()
     assert cfg["enabled"] is True
     assert isinstance(cfg["sequence"], list)
+
+
+def test_render_html_embeds_instance_sequence() -> None:
+    """Regression: by-id pages must boot with the instance rotation, not defaults."""
+    overlay = LiveLeaderboardOverlayType()
+    params = {
+        "instance": "abc123",
+        "instance_settings": {
+            "sequence": [
+                {"source_id": "gifters", "scene_id": "arena", "duration_sec": 47},
+            ],
+            "sequence_json": json.dumps(
+                [{"source_id": "gifters", "scene_id": "arena", "duration_sec": 47}]
+            ),
+        },
+    }
+    html = overlay.render_html(params)
+    assert "47" in html
+    state = overlay.initial_state(params)
+    steps = parse_sequence_steps(
+        live_leaderboard_overlay_config_from_json_text(json.dumps(state["config"]))
+    )
+    assert [(s.source_id, s.scene_id) for s in steps] == [("gifters", "arena")]

@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 
 import stream_cheremsha.overlays.layout_overlay as layout_overlay
 from stream_cheremsha.overlays.layout import (
@@ -67,6 +68,11 @@ def test_layout_parser_ignores_unknown_widget_types() -> None:
     assert layout.widgets[0].width == 320
 
 
+def test_default_layout_is_empty_for_first_run() -> None:
+    lay = default_layout()
+    assert lay.widgets == ()
+
+
 def test_layout_overlay_renders_absolute_iframes(monkeypatch) -> None:
     from PySide6.QtCore import QSettings
 
@@ -78,12 +84,11 @@ def test_layout_overlay_renders_absolute_iframes(monkeypatch) -> None:
     QSettings("t-org-lay-ov", "t-app-lay-ov").clear()
 
     lay = default_layout()
-    # Bind the first widget so a by-id iframe renders.
-    inst = wimod.create_instance("chat", "Bound", None)
-    w = lay.widgets[0]
-    from dataclasses import replace
+    # Bind a user-created instance so a by-id iframe renders.
+    from stream_cheremsha.overlays.layout import LayoutWidget
 
-    bound = replace(w, widget_instance_id=inst.id)
+    inst = wimod.create_instance("chat", "Bound", None)
+    bound = LayoutWidget("chat-1", "chat", inst.id, 10, 10, 420, 700, 10, widget_instance_id=inst.id)
     monkeypatch.setattr(
         layout_overlay,
         "load_layouts",

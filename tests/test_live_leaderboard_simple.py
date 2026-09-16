@@ -49,8 +49,14 @@ def test_simple_config_rejects_cyber_effect() -> None:
 
 
 def test_simple_overlay_renders_scenes_effects_and_smooth_transitions() -> None:
+    from unittest.mock import patch
+
     overlay = LiveLeaderboardSimpleOverlayType()
-    html = overlay.render_html({"instance": "main"})
+    with patch(
+        "stream_cheremsha.overlays.live_leaderboard_simple_overlay.load_live_leaderboard_simple_config",
+        return_value=live_leaderboard_simple_config_defaults(),
+    ):
+        html = overlay.render_html({"instance": "main"})
     low = html.lower()
     assert "<!doctype html>" in low
     assert "live_leaderboard_simple" in html
@@ -85,7 +91,11 @@ def test_simple_overlay_renders_scenes_effects_and_smooth_transitions() -> None:
     assert "font_size_px" in html
     assert "zoom" in html
 
-    init_st = overlay.initial_state({"instance": "main"})
+    with patch(
+        "stream_cheremsha.overlays.live_leaderboard_simple_overlay.load_live_leaderboard_simple_config",
+        return_value=live_leaderboard_simple_config_defaults(),
+    ):
+        init_st = overlay.initial_state({"instance": "main"})
     assert init_st["presentation"]["scene_id"] == "hall_of_fame"
     assert init_st["config"]["transition"] == "fade"
 
@@ -109,6 +119,30 @@ def test_simple_trimmed_sequence_is_not_resurrected() -> None:
     assert [(s["source_id"], s["scene_id"]) for s in steps] == [
         ("gifters", "arena"),
         ("likers", "hall_of_fame"),
+    ]
+
+
+def test_simple_render_html_embeds_instance_sequence() -> None:
+    """Regression: by-id pages must boot with the instance rotation, not defaults."""
+    overlay = LiveLeaderboardSimpleOverlayType()
+    import json as _json
+
+    params = {
+        "instance": "abc123",
+        "instance_settings": {
+            "sequence": [
+                {"source_id": "gifters", "scene_id": "arena", "duration_sec": 47},
+            ],
+            "sequence_json": _json.dumps(
+                [{"source_id": "gifters", "scene_id": "arena", "duration_sec": 47}]
+            ),
+        },
+    }
+    html = overlay.render_html(params)
+    assert "47" in html
+    state = overlay.initial_state(params)
+    assert state["config"]["sequence"] == [
+        {"source_id": "gifters", "scene_id": "arena", "duration_sec": 47.0},
     ]
 
 

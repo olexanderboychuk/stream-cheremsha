@@ -479,10 +479,16 @@ class WidgetsQmlApi(QObject):
             QDesktopServices.openUrl(QUrl(url))
 
     @Slot(str, str)
-    def previewLayoutWidget(self, widget_type: str, instance: str = "main") -> None:
-        """Send a representative event to the real overlay preview."""
+    def previewLayoutWidget(self, widget_type: str, instance: str = "") -> None:
+        """Send a representative event to the real overlay preview.
+
+        Only the explicit instance topic is used — never a "main" fallback —
+        so a preview touches exactly its own instance.
+        """
         typ = str(widget_type or "").strip()
-        inst = instance or "main"
+        inst = str(instance or "").strip()
+        if not typ or not inst:
+            return
         if typ == "chat":
             self._publish_patch(
                 topic=f"overlay:chat:{inst}",
@@ -539,25 +545,6 @@ class WidgetsQmlApi(QObject):
     def previewLayout(self, layout_id: str = "default") -> None:
         """Prime all overlay previews with test events and open the layout in the browser."""
         self.openLayoutPreview(layout_id or "default")
-        for widget_type in (
-            "chat",
-            "actions",
-            "online",
-            "stream_pet",
-            "community_world",
-            "battle_royale",
-            "top_likers",
-            "top_gifters",
-            "king_of_live",
-            "stream_goal",
-            "live_leaderboard",
-            "social_rotator",
-            "webcam_frame",
-            "activity",
-            "signal_system",
-        ):
-            self.previewLayoutWidget(widget_type)
-
         try:
             from stream_cheremsha.overlays.layout import load_layouts
             from stream_cheremsha.overlays.widget_instances import get_instance
@@ -727,7 +714,9 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     @Slot()
     def previewStreamPetOverlay(self, instance: str | None = None) -> None:
-        token = instance or self._stream_pet_instance
+        token = str(instance or "").strip()
+        if not token:
+            return
         topic = f"overlay:stream_pet:{token}"
         cfg = self._preview_config(
             "stream_pet",
@@ -776,7 +765,9 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     @Slot()
     def previewStreamGoalOverlay(self, instance: str | None = None) -> None:
-        token = instance or self._stream_goal_instance
+        token = str(instance or "").strip()
+        if not token:
+            return
         topic = f"overlay:stream_goal:{token}"
         cfg = self._preview_config(
             "stream_goal",
@@ -852,7 +843,9 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     @Slot()
     def previewLiveLeaderboardOverlay(self, instance: str | None = None) -> None:
-        token = instance or self._live_leaderboard_instance
+        token = str(instance or "").strip()
+        if not token:
+            return
         topic = f"overlay:live_leaderboard:{token}"
         cfg = self._preview_config(
             "live_leaderboard",
@@ -954,7 +947,9 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     @Slot()
     def previewLiveLeaderboardSimpleOverlay(self, instance: str | None = None) -> None:
-        token = instance or self._live_leaderboard_instance
+        token = str(instance or "").strip()
+        if not token:
+            return
         topic = f"overlay:live_leaderboard_simple:{token}"
         cfg = self._preview_config(
             "live_leaderboard_simple",
@@ -1016,7 +1011,9 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     @Slot()
     def previewSocialRotatorOverlay(self, instance: str | None = None) -> None:
-        token = instance or self._social_rotator_instance
+        token = str(instance or "").strip()
+        if not token:
+            return
         topic = f"overlay:social_rotator:{token}"
         cfg = self._preview_config(
             "social_rotator",
@@ -1071,7 +1068,9 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     @Slot()
     def previewWebcamFrameOverlay(self, instance: str | None = None) -> None:
-        token = instance or self._webcam_frame_instance
+        token = str(instance or "").strip()
+        if not token:
+            return
         topic = f"overlay:webcam_frame:{token}"
         cfg = self._preview_config(
             "webcam_frame",
@@ -1118,7 +1117,9 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     @Slot()
     def previewSignalSystemOverlay(self, instance: str | None = None) -> None:
-        token = instance or self._signal_system_instance
+        token = str(instance or "").strip()
+        if not token:
+            return
         topic = f"overlay:signal_system:{token}"
         cfg = self._preview_config(
             "signal_system",
@@ -1190,7 +1191,9 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     @Slot()
     def previewCommunityWorldOverlay(self, instance: str | None = None) -> None:
-        token = instance or self._community_world_instance
+        token = str(instance or "").strip()
+        if not token:
+            return
         topic = f"overlay:community_world:{token}"
         cfg = self._preview_config(
             "community_world",
@@ -1263,7 +1266,9 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     @Slot()
     def previewBattleRoyaleOverlay(self, instance: str | None = None) -> None:
-        token = instance or self._battle_royale_instance
+        token = str(instance or "").strip()
+        if not token:
+            return
         topic = f"overlay:battle_royale:{token}"
         cfg = self._preview_config(
             "battle_royale",
@@ -1391,7 +1396,10 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     @Slot()
     def previewActionsOverlay(self, instance: str | None = None) -> None:
-        topic = f"overlay:actions:{instance or self._actions_instance}"
+        token = str(instance or "").strip()
+        if not token:
+            return
+        topic = f"overlay:actions:{token}"
         patch = {
             "append": {
                 "username": "username",
@@ -1409,7 +1417,10 @@ class WidgetsQmlApi(QObject):
     @Slot()
     def previewMusicOverlay(self, instance: str | None = None) -> None:
         """Preview the music overlay with a demo track (YouTube API demo video)."""
-        topic = f"overlay:music:{instance or self._music_instance}"
+        token = str(instance or "").strip()
+        if not token:
+            return
+        topic = f"overlay:music:{token}"
         patch = {
             "set_state": {
                 "current": {
@@ -1426,7 +1437,9 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     @Slot()
     def previewTopLikersOverlay(self, instance: str | None = None) -> None:
-        token = instance or self._top_likers_instance
+        token = str(instance or "").strip()
+        if not token:
+            return
         topic = f"overlay:top_likers:{token}"
         cfg = self._preview_config(
             "top_likers",
@@ -1454,7 +1467,9 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     @Slot()
     def previewTopGiftersOverlay(self, instance: str | None = None) -> None:
-        token = instance or self._top_gifters_instance
+        token = str(instance or "").strip()
+        if not token:
+            return
         topic = f"overlay:top_gifters:{token}"
         cfg = self._preview_config(
             "top_gifters",
@@ -1482,7 +1497,9 @@ class WidgetsQmlApi(QObject):
     @Slot(str)
     @Slot()
     def previewKingOfLiveOverlay(self, instance: str | None = None) -> None:
-        token = instance or self._king_of_live_instance
+        token = str(instance or "").strip()
+        if not token:
+            return
         topic = f"overlay:king_of_live:{token}"
         cfg = self._preview_config(
             "king_of_live",

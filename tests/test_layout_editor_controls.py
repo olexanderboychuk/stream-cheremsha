@@ -84,3 +84,55 @@ def test_layout_url_binding_tracks_server_base():
     source = WIDGETS_VIEW.read_text(encoding="utf-8")
     assert "api.overlayBaseUrl" in source
     assert "api.layoutOverlayUrl(root.activeLayoutId" in source
+
+
+def test_fit_to_content_changes_viewport_only():
+    # Fit must adjust zoom + camera pan, never widget geometry.
+    source = WIDGETS_VIEW.read_text(encoding="utf-8")
+    fit = source[source.index("function fitToContent") : source.index("// Snapping calculation for moving")]
+    assert "setLayoutCanvasZoom" in fit
+    assert "layoutCanvasPanX" in fit
+    assert "layoutCanvasPanY" in fit
+    for forbidden in ("item.x =", "item.y =", "item.width =", "commitWidgetGeometry"):
+        assert forbidden not in fit
+    # Empty canvas: no division by zero, reset to default view.
+    assert "setLayoutCanvasZoom(1.0)" in fit
+
+
+def test_grid_config_is_centralized():
+    source = WIDGETS_VIEW.read_text(encoding="utf-8")
+    assert "property int layoutGridSize: 16" in source
+    assert "property bool layoutGridSnapEnabled" in source
+    assert "function snapCanvasToGrid" in source
+    assert "function gridSnapActive" in source
+
+
+def test_grid_snap_uses_canvas_coordinates():
+    # Snap must round in canvas space; screen scale only affects rendering.
+    source = WIDGETS_VIEW.read_text(encoding="utf-8")
+    snap = source[source.index("function snapCanvasToGrid") : source.index("function gridSnapActive")]
+    assert "layoutGridSize" in snap
+    assert "editorScale" not in snap
+    # Applied to both move and resize paths.
+    assert source.count("snapCanvasToGrid") >= 5
+
+
+def test_resize_grid_snap_preserves_minimums():
+    source = WIDGETS_VIEW.read_text(encoding="utf-8")
+    assert "function snapGridSize(value, minimum)" in source
+    assert "snapGridSize(nextW, 32)" in source
+    assert "snapGridSize(nextH, 24)" in source
+
+
+def test_grid_is_editor_only_layer():
+    # Grid Canvas lives inside layoutCanvas (moves/scales with it) and is
+    # never referenced by save/export paths.
+    source = WIDGETS_VIEW.read_text(encoding="utf-8")
+    assert "id: editorGridCanvas" in source
+    grid = source[source.index("id: editorGridCanvas") : source.index("// Canvas background click")]
+    # Both minor and major paths must actually be stroked; a beginPath
+    # without stroke() renders nothing.
+    assert grid.count("ctx.stroke()") >= 2
+    save = source[source.index("function saveLayoutEditor") : source.index("function updateLayoutItemStr")]
+    assert "editorGridCanvas" not in save
+    assert "layoutCanvasGridVisible" not in save

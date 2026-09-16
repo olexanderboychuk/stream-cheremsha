@@ -237,6 +237,10 @@ ColumnLayout {
             var v = root.value;
             if (typeof v === "string") {
                 try { v = JSON.parse(v); } catch (e) { v = []; }
+            } else if (v !== null && typeof v === "object" && !Array.isArray(v)) {
+                // QVariantList from the Python bridge is array-like but fails
+                // Array.isArray; normalize via JSON roundtrip instead of wiping.
+                try { v = JSON.parse(JSON.stringify(v)); } catch (e) { v = []; }
             }
             if (!Array.isArray(v)) v = [];
             var out = [];
@@ -468,6 +472,12 @@ ColumnLayout {
             var v = root.value;
             if (typeof v === "string") {
                 try { v = JSON.parse(v); } catch (e) { v = []; }
+            } else if (v !== null && typeof v === "object" && !Array.isArray(v)) {
+                // QVariantList from the Python bridge is array-like but fails
+                // Array.isArray; a JSON roundtrip normalizes it to a native array.
+                // Without this the editor showed "empty" and the next save could
+                // wipe a perfectly good stored rotation sequence.
+                try { v = JSON.parse(JSON.stringify(v)); } catch (e) { v = []; }
             }
             if (!Array.isArray(v)) v = [];
             var out = [];

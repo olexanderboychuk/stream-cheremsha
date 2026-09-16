@@ -7,6 +7,7 @@ from typing import Any
 from stream_cheremsha import l10n
 from stream_cheremsha.overlays.live_leaderboard_overlay_config import (
     live_leaderboard_overlay_config_from_json_text,
+    live_leaderboard_overlay_config_to_json_text,
     live_leaderboard_overlay_config_to_public_dict,
     load_live_leaderboard_overlay_config,
 )
@@ -56,6 +57,18 @@ class LiveLeaderboardOverlayType:
 
         cfg = load_live_leaderboard_overlay_config()
         cfg_dict = live_leaderboard_overlay_config_to_public_dict(cfg)
+        try:
+            from stream_cheremsha.overlays.widget_instances import config_for_type
+
+            cfg_dict = config_for_type(
+                "live_leaderboard",
+                params,
+                load_live_leaderboard_overlay_config,
+                live_leaderboard_overlay_config_to_json_text,
+            )
+            cfg = live_leaderboard_overlay_config_from_json_text(json.dumps(cfg_dict))
+        except Exception:
+            pass
         accent = str(cfg.accent_color or "#00ffff")
         scale = max(40, min(250, int(cfg.scale_percent))) / 100.0
         locale = load_ui_locale()

@@ -270,7 +270,16 @@ def ensure_enabled_sources_in_sequence(
 def migrate_live_leaderboard_overlay_config(
     cfg: LiveLeaderboardOverlayConfig,
 ) -> LiveLeaderboardOverlayConfig:
-    """Repair legacy configs where optional sources were off and absent from the sequence."""
+    """Repair legacy configs where optional sources were off and absent from the sequence.
+
+    NOTE: intentionally does NOT call ``ensure_enabled_sources_in_sequence``.
+    That helper re-appends Hall-of-Fame steps for every enabled source missing
+    from the sequence on *every* parse — including right after the user saved
+    a trimmed rotation — so deleted steps kept coming back and edits never
+    stuck. Source toggles are already honored at runtime by
+    ``filter_sequence_for_config``; the editors append a step explicitly when
+    a source is toggled on.
+    """
     seq_sources = {s.source_id for s in parse_sequence_steps(cfg)}
     optional = {SOURCE_SHARERS, SOURCE_COMMENTERS, SOURCE_CONTRIBUTORS}
     patched = cfg
@@ -283,7 +292,7 @@ def migrate_live_leaderboard_overlay_config(
             enable_commenters=True,
             enable_contributors=True,
         )
-    return ensure_enabled_sources_in_sequence(patched)
+    return patched
 
 
 def live_leaderboard_overlay_config_from_json_text(text: str) -> LiveLeaderboardOverlayConfig:
@@ -401,7 +410,7 @@ def load_live_leaderboard_overlay_config(
             except (ValueError, TypeError, json.JSONDecodeError):
                 pass
         return live_leaderboard_overlay_config_defaults()
-    # Persist repair (optional sources / missing sequence steps).
+    # Persist repair (legacy optional-source flags).
     repaired = live_leaderboard_overlay_config_to_json_text(cfg)
     if repaired.strip() != raw:
         save_live_leaderboard_overlay_config(cfg, s)

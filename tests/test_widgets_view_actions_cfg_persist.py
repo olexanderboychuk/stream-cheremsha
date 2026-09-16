@@ -50,40 +50,31 @@ def test_online_cfg_load_detaches_variant_map() -> None:
 
 
 def test_chat_combos_resync_after_load() -> None:
+    """Chat combos live in the universal editor now: schema must expose them."""
     text = _widgets_view_text()
-    load_idx = text.find("root.cfg = root._ensureDefaults")
-    assert load_idx >= 0
-    window = text[load_idx : load_idx + 1500]
-    assert "_syncChatCombosFromCfg" in window
-    assert "function _syncChatCombosFromCfg" in text
-    sync = text[text.find("function _syncChatCombosFromCfg") :]
-    assert "usernameColorMode" in sync
-    assert "fontFamily" in sync
+    start = text.find('if (typeId === "chat")')
+    assert start >= 0
+    end = text.find('} else if (typeId === "actions")', start)
+    block = text[start:end]
+    for key in ('"username_color_mode"', '"font_family"', '"show_platform_icon"'):
+        assert key in block, f"chat universal schema missing {key}"
 
 
 def test_actions_font_and_effect_combos_resync_after_load() -> None:
+    """Actions font/effect selects live in the universal editor now."""
     text = _widgets_view_text()
-    # After loadActionsConfigMap assignment, combos must be synced (not only onCompleted).
-    load_idx = text.find("root.actionsCfg = root._ensureActionsDefaults")
-    assert load_idx >= 0
-    window = text[load_idx : load_idx + 1200]
-    assert "_syncActionsCombosFromCfg" in window
-    assert "function _syncActionsCombosFromCfg" in text
-    assert "actionsFontFamily" in text[text.find("function _syncActionsCombosFromCfg") :]
-    assert "actionsUsernameEffect" in text[text.find("function _syncActionsCombosFromCfg") :]
+    start = text.find('} else if (typeId === "actions")')
+    assert start >= 0
+    end = text.find('} else if (typeId === "online")', start)
+    block = text[start:end]
+    for key in ('"font_family"', '"username_text_effect"', '"platform_icon_size_px"'):
+        assert key in block, f"actions universal schema missing {key}"
 
 
 def test_varmap_spinbox_persists_signal_system_group() -> None:
+    """Number settings persist via the universal editor save path (no VarMapSpinBox)."""
     text = _widgets_view_text()
-    # syncGroup "signal_system" is used in settings; VarMapSpinBox must persist it.
-    assert 'syncGroup: "signal_system"' in text
-    assert re.search(
-        r'if\s*\(\s*vsb\.syncGroup\s*===\s*"signal_system"\s*\)\s*'
-        r"return\s+root\._loadingSignalSystemCfg",
-        text,
-    )
-    assert re.search(
-        r'else if\s*\(\s*vsb\.syncGroup\s*===\s*"signal_system"\s*\)\s*'
-        r"root\._saveSignalSystem\(\)",
-        text,
-    )
+    assert "component VarMapSpinBox:" not in text
+    assert "syncGroup:" not in text
+    assert "function onSettingChanged(field, value) { root.applyUniversalSetting(field, value) }" in text
+    assert "universalPreviewSaveDebounce" in text

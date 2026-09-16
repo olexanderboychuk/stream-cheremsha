@@ -21,6 +21,10 @@ def _route_patch(
         return True, payload
 
     # Broadcast routing for overlay topics: overlay:{type}:{instance}
+    # Only exact matches and explicit "*" broadcasts are delivered.
+    # There is intentionally NO "main" -> all-instances fan-out: every
+    # widget instance owns only its own topic, otherwise a config change
+    # or preview for one instance would leak into all others.
     parts = pub_topic.split(":")
     if len(parts) == 3 and parts[0] == "overlay":
         ov_type, target = parts[1], parts[2]
@@ -28,14 +32,6 @@ def _route_patch(
         if len(sub_parts) == 3 and sub_parts[0] == "overlay" and sub_parts[1] == ov_type:
             if target == "*":
                 return True, payload
-            if target == "main":
-                # Deliver to other instances only if this is a stream/runtime event,
-                # not a config-only update for 'main'.
-                has_event_keys = any(k not in ("config", "timestamp") for k in payload)
-                if has_event_keys:
-                    # Strip singleton config so instance custom settings are preserved.
-                    inst_payload = {k: v for k, v in payload.items() if k != "config"}
-                    return True, inst_payload
 
     return False, None
 
