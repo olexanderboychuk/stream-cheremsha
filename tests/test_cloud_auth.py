@@ -87,6 +87,10 @@ class FakeCloudClient(CheremshaCloudClient):
         assert access_token
         return self.platforms
 
+    async def get_identities(self, access_token):  # type: ignore[override]
+        assert access_token
+        return []
+
     async def fetch_avatar(self, url):  # type: ignore[override]
         return self.avatar
 
@@ -561,4 +565,49 @@ async def test_callback_server_platform_and_link_triggers() -> None:
             assert await link_waiter == {"provider": "google", "status": "conflict"}
     finally:
         await server.stop()
+
+
+@pytest.mark.asyncio()
+async def test_link_provider_conflict_emits_notice(qapplication, keyring_fake) -> None:
+    import stream_cheremsha.cloud.auth_state as astate
+
+    client = FakeCloudClient()
+    opened: list[str] = []
+    notices: list[str] = []
+
+    async def fake_link_start(provider, access_token):
+        return {"authorization_url": "https://x/link"}
+
+    async def fake_identities(access_token):
+        return [{"provider": "google", "provider_email": "a@example.com"}]
+
+    client.link_start = fake_link_start  # type: ignore[assignment]
+    client.get_identities = fake_identities  # type: ignore[assignment]
+    auth = _auth(client, opened)
+    auth.notice.connect(notices.append)
+    auth._store_session("a", "r", CloudUser("u-1", "a@example.com", "u"))
+    auth._set_status(STATUS_AUTHENTICATED)
+
+    real_class = astate.DesktopCallbackServer
+
+    class _FakeLinkServer:
+        def __init__(self, *a, **kw) -> None:
+            pass
+
+        async def start(self) -> None:
+            return None
+
+        async def wait_for_link(self, **kw) -> dict:
+            return {"provider": "twitch", "status": "conflict"}
+
+        async def stop(self) -> None:
+            return None
+
+    astate.DesktopCallbackServer = _FakeLinkServer  # type: ignore[assignment]
+    try:
+        auth.linkProvider("twitch")
+        await asyncio.wait_for(auth._task, timeout=10)
+        assert notices == ["link-conflict"]
+    finally:
+        astate.DesktopCallbackServer = real_class
 

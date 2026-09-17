@@ -52,6 +52,7 @@ class CheremshaAuthState(QObject):
     userChanged = Signal()
     platformsChanged = Signal()
     avatarChanged = Signal()
+    identitiesChanged = Signal()
     # Non-modal failure notice: short reason code, never any secret.
     # Reasons: "unreachable" | "callback-busy" | "exchange-failed".
     # Cancel/timeout stay silent (user simply walked away).
@@ -85,6 +86,7 @@ class CheremshaAuthState(QObject):
         self._task: asyncio.Task[None] | None = None
         self._last_auto_connect: CloudAutoConnectOutcome | None = None
         self._auto_connected_platform: str | None = None
+        self._identities: list[dict[str, Any]] = []
 
     # -- Qt properties (user-visible state only; tokens are never exposed) --
     def _get_status(self) -> str:
@@ -217,6 +219,16 @@ class CheremshaAuthState(QObject):
     def openDashboard(self) -> None:
         self._open_url(constants.dashboard_url())
 
+    @Slot(str)
+    def linkProvider(self, provider: str) -> None:
+        """Begin linking another login provider (authenticated only)."""
+        provider = (provider or "").strip().lower()
+        if provider not in constants.LOGIN_PROVIDERS:
+            return
+        if self._status != STATUS_AUTHENTICATED or not self._access_token:
+            return
+        self._launch(lambda: self._link_flow(provider), name="cheremsha-link")
+
     @Slot(str, result="QVariantMap")
     def platformStatus(self, platform: str) -> dict[str, Any]:
         info = self._platforms.get((platform or "").strip().lower())
@@ -272,6 +284,7 @@ class CheremshaAuthState(QObject):
             self._store_session(saved.access_token, saved.refresh_token, user)
         self._set_status(STATUS_AUTHENTICATED)
         await self._sync_platforms_and_avatar(client)
+        await self._refresh_identities(client)
 
     async def _login_flow(self, provider: str) -> None:
         self._set_status(STATUS_STARTING)
@@ -331,12 +344,52 @@ class CheremshaAuthState(QObject):
                 if auto_connect.reauth_required and auto_connect.platform:
                     self._on_auto_reauth_required(auto_connect)
             await self._sync_platforms_and_avatar(client)
+            await self._refresh_identities(client)
         except asyncio.CancelledError:
             # cancelLogin() or logout() abandoned this flow: converge on logged-out.
             self._set_status(STATUS_LOGGED_OUT)
             raise
         finally:
             await server.stop()
+
+    async def _link_flow(self, provider: str) -> None:
+        server = DesktopCallbackServer(expected_state="")
+        try:
+            try:
+                await server.start()
+            except OSError:
+                self.notice.emit("callback-busy")
+                return
+            client = self._client_or_create()
+            try:
+                start = await client.link_start(provider, self._access_token or "")
+            except CloudApiError:
+                self.notice.emit("unreachable")
+                return
+            auth_url = str(start.get("authorization_url") or "")
+            if not (auth_url.startswith("https://") or auth_url.startswith("http://")):
+                return
+            self._open_url(auth_url)
+            try:
+                outcome = await server.wait_for_link()
+            except (TimeoutError, asyncio.CancelledError):
+                return
+            if outcome.get("status") == "conflict":
+                self.notice.emit("link-conflict")
+            await self._refresh_identities(client)
+        except asyncio.CancelledError:
+            raise
+        finally:
+            await server.stop()
+
+    async def _refresh_identities(self, client: CheremshaCloudClient) -> None:
+        if not self._access_token:
+            return
+        try:
+            self._identities = await client.get_identities(self._access_token)
+        except CloudApiError:
+            return
+        self.identitiesChanged.emit()
 
     async def _logout_flow(self) -> None:
         if self._access_token:
