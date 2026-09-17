@@ -363,7 +363,9 @@ _SETTINGS_TTS_GAIN_DB = "audio/tts_gain_db"
 _TTS_ENGINE_GOOGLE = "google"
 _TTS_ENGINE_EDGE = "edge"
 _TTS_ENGINE_RESPEECHER = "respeecher"
-_TTS_DEFAULT_VOICE_ID = "olesia-conversation"
+_TTS_DEFAULT_VOICE_ID = "olesia-conversation"  # Respeecher default voice
+# Default Microsoft Edge voice used as Respeecher fallback (valid Edge ShortName).
+_EDGE_FALLBACK_VOICE_UK = "uk-UA-PolinaNeural"
 _SETTINGS_TTS_ENGINE = "tts/engine"
 _SETTINGS_TTS_LANG = "tts/output_language"
 _SETTINGS_EDGE_VOICE_BY_LANG = "tts/edge_voice_by_lang"
@@ -5333,7 +5335,7 @@ class MainWindow(FramelessWindow):
             if randomize_respeecher:
                 new_tts = RandomizedReSpeecherTts(
                     rate_percent=rate_percent,
-                    fallback_tts=EdgeTts(voice="olesia-conversation"),
+                    fallback_tts=EdgeTts(voice=_EDGE_FALLBACK_VOICE_UK),
                     min_interval_sec=self._min_interval_sec_from_settings(),
                 )
             else:
@@ -5356,7 +5358,7 @@ class MainWindow(FramelessWindow):
                 if voice not in REPEECHER_VOICES:
                     voice = _TTS_DEFAULT_VOICE_ID
                 # Instantiate ReSpeecherTts with Edge TTS as fallback
-                fallback = EdgeTts(voice=_TTS_DEFAULT_VOICE_ID)
+                fallback = EdgeTts(voice=_EDGE_FALLBACK_VOICE_UK)
                 new_tts = ReSpeecherTts(
                     voice=voice,
                     rate_percent=rate_percent,

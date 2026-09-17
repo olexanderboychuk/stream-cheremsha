@@ -69,7 +69,7 @@ def _ffmpeg_run(
             ],
             input=data,
             capture_output=True,
-            timeout=60,
+            timeout=15,
             check=False,
             startupinfo=startupinfo,
             creationflags=creationflags,
@@ -113,12 +113,18 @@ def _try_louder_mp3(data: bytes, gain_db: int) -> bytes:
         return data
 
     g = max(0, min(36, int(gain_db)))
-    # Simple volume first (ffmpeg-free friendly); then dynamics / loudnorm; then stronger gain.
+    # adelay=150|150: prepend 150 ms of silence before each TTS clip.
+    # PipeWire (and some ALSA drivers) need ~100-200 ms to initialise the
+    # output stream; without this padding the audio device "eats" the very
+    # first word of every clip (e.g. "vault gifts are very expensive" starts
+    # playing only from "gifts...").  The silence is inaudible and adds only
+    # ~0.15 s per utterance — an acceptable trade-off.
+    pre = "adelay=150|150"
     filters = (
-        f"volume={g}dB",
-        f"volume={g}dB,dynaudnorm=f=100:g=21:m=60.0",
-        "loudnorm=I=-14:LRA=11:TP=-1.5",
-        f"volume={g + 8}dB",
+        f"{pre},volume={g}dB",
+        f"{pre},volume={g}dB,dynaudnorm=f=100:g=21:m=60.0",
+        f"{pre},loudnorm=I=-14:LRA=11:TP=-1.5",
+        f"{pre},volume={g + 8}dB",
     )
     for af in filters:
         out = _ffmpeg_try_filter_encodings(data, af)
@@ -167,10 +173,17 @@ class QtAudioSink(QObject):
         # entry points ensure them; pure setters work without backends.
         self._player: QMediaPlayer | None = None
         self._audio: QAudioOutput | None = None
+        self._sfx_player: QMediaPlayer | None = None
+        self._sfx_audio: QAudioOutput | None = None
+        self._sfx_lock = asyncio.Lock()
         self._play_lock = asyncio.Lock()
         self._sound_dedupe_lock = asyncio.Lock()
         self._sound_dedupe_keys: set[str] = set()
         self._pending_fut: asyncio.Future[None] | None = None
+        # Guard so StoppedState fired by setSource() doesn't prematurely resolve
+        # _pending_fut before play() has been called (Qt fires StoppedState on
+        # every setSource when the player transitions from its current state).
+        self._tts_play_started: bool = False
         self._parallel_tasks: set[asyncio.Task[None]] = set()
         self._tts_gain_db = _DEFAULT_TTS_GAIN_DB
         self._pending_volume: float | None = None
@@ -192,8 +205,18 @@ class QtAudioSink(QObject):
             player.setAudioOutput(audio)
             player.errorOccurred.connect(self._on_player_error)
             player.mediaStatusChanged.connect(self._on_media_status)
+            player.playbackStateChanged.connect(self._on_playback_state)
             self._player = player
             self._audio = audio
+
+            # Separate dedicated SFX player + audio output so SFX never
+            # hijacks self._audio or disrupts TTS playback.
+            sfx_player = QMediaPlayer(self)
+            sfx_audio = QAudioOutput(self)
+            sfx_player.setAudioOutput(sfx_audio)
+            self._sfx_player = sfx_player
+            self._sfx_audio = sfx_audio
+
             if self._pending_volume is not None:
                 audio.setVolume(self._pending_volume)
                 self._pending_volume = None
@@ -213,6 +236,8 @@ class QtAudioSink(QObject):
             for dev in QMediaDevices.audioOutputs():
                 if dev.description() == description:
                     self._audio.setDevice(dev)
+                    if self._sfx_audio is not None:
+                        self._sfx_audio.setDevice(dev)
                     return
             logger.warning("Audio device %r not found, using default", description)
         except Exception as e:
@@ -230,17 +255,51 @@ class QtAudioSink(QObject):
             return float(self._pending_volume) if self._pending_volume is not None else 1.0
         return float(self._audio.volume())
 
+    @staticmethod
+    def _safe_resolve_fut(
+        fut: asyncio.Future[None] | None,
+        *,
+        exception: Exception | None = None,
+    ) -> None:
+        if fut is None or fut.done():
+            return
+        try:
+            loop = fut.get_loop()
+        except RuntimeError:
+            return
+        if loop.is_closed():
+            return
+        if exception is not None:
+            loop.call_soon_threadsafe(
+                lambda: None if fut.done() else fut.set_exception(exception),
+            )
+        else:
+            loop.call_soon_threadsafe(
+                lambda: None if fut.done() else fut.set_result(None),
+            )
+
     def _on_player_error(self, error: QMediaPlayer.Error, error_string: str) -> None:
-        fut = self._pending_fut
-        if fut is not None and not fut.done():
-            fut.set_exception(RuntimeError(f"QMediaPlayer error {error!s}: {error_string}"))
+        logger.warning("TTS QMediaPlayer error %s: %s", error, error_string)
+        self._safe_resolve_fut(
+            self._pending_fut,
+            exception=RuntimeError(f"QMediaPlayer error {error!s}: {error_string}"),
+        )
 
     def _on_media_status(self, status: QMediaPlayer.MediaStatus) -> None:
-        if status != QMediaPlayer.MediaStatus.EndOfMedia:
-            return
-        fut = self._pending_fut
-        if fut is not None and not fut.done():
-            fut.set_result(None)
+        if status == QMediaPlayer.MediaStatus.EndOfMedia:
+            self._safe_resolve_fut(self._pending_fut)
+        elif status == QMediaPlayer.MediaStatus.InvalidMedia:
+            logger.warning("TTS QMediaPlayer reported InvalidMedia")
+            self._safe_resolve_fut(
+                self._pending_fut,
+                exception=RuntimeError("QMediaPlayer reported InvalidMedia"),
+            )
+
+    def _on_playback_state(self, state: QMediaPlayer.PlaybackState) -> None:
+        # Only resolve when the player actually started (play() was called);
+        # setSource() alone fires StoppedState which must NOT resolve the future.
+        if state == QMediaPlayer.PlaybackState.StoppedState and self._tts_play_started:
+            self._safe_resolve_fut(self._pending_fut)
 
     def pause(self) -> None:
         """Pause current playback (best-effort)."""
@@ -263,9 +322,10 @@ class QtAudioSink(QObject):
     async def _play_mp3_locked(self, data: bytes, *, tts_boost: bool = True) -> None:
         self.ensure_ready()
         assert self._player is not None
-        loop = asyncio.get_running_loop()
-        fut: asyncio.Future[None] = loop.create_future()
-        self._pending_fut = fut
+
+        # Defensively ensure _player still has _audio attached
+        if self._audio is not None and self._player.audioOutput() != self._audio:
+            self._player.setAudioOutput(self._audio)
 
         if tts_boost:
             boosted = await asyncio.to_thread(_try_louder_mp3, data, self._tts_gain_db)
@@ -296,13 +356,38 @@ class QtAudioSink(QObject):
 
         file_path = await asyncio.to_thread(_write_temp_audio, boosted)
 
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future[None] = loop.create_future()
+
+        # Calculate a reasonable watchdog timeout:
+        # e.g., conservative estimate: 128kbps MP3 is 16KB/s, 22kHz 16-bit WAV is 44KB/s.
+        # Allow at least 8 seconds + 1 second per 4KB. Cap minimum at 10.0s.
+        timeout_sec = max(10.0, 8.0 + (len(boosted) / 4000.0))
+
+        # setSource() fires StoppedState (and sometimes buffering signals) before play().
+        # Set _pending_fut and _tts_play_started only AFTER setSource to avoid
+        # those early signals resolving the future before audio has started.
+        self._tts_play_started = False
         self._player.setSource(QUrl.fromLocalFile(str(file_path)))
+        self._pending_fut = fut
+        self._tts_play_started = True
         self._player.play()
         try:
-            await fut
+            await asyncio.wait_for(fut, timeout=timeout_sec)
+        except TimeoutError:
+            logger.warning(
+                "TTS playback watchdog timed out after %.1fs for %s B clip; stopping",
+                timeout_sec,
+                len(boosted),
+            )
         finally:
+            self._tts_play_started = False
             self._pending_fut = None
-            self._player.stop()
+            try:
+                self._player.stop()
+                self._player.setSource(QUrl())
+            except RuntimeError:
+                pass
             try:
                 file_path.unlink(missing_ok=True)
             except OSError as e:
@@ -367,9 +452,10 @@ class QtAudioSink(QObject):
         await self._play_sequential_with_volume(data, linear)
 
     async def _play_mp3_parallel(self, data: bytes, linear: float) -> None:
-        """Play one clip without waiting on the FIFO lock (allows overlap)."""
-        loop = asyncio.get_running_loop()
-        fut: asyncio.Future[None] = loop.create_future()
+        """Play one clip without waiting on the FIFO lock (allows overlap with TTS)."""
+        self.ensure_ready()
+        assert self._sfx_player is not None
+        assert self._sfx_audio is not None
 
         v = max(0.0, min(1.0, float(linear)))
         scaled = await asyncio.to_thread(_try_apply_volume, data, v)
@@ -384,41 +470,67 @@ class QtAudioSink(QObject):
             file_path = await asyncio.to_thread(_write_temp_audio, scaled)
             out_volume = 1.0
 
-        self.ensure_ready()
-        with _BACKEND_LOCK:
-            player = QMediaPlayer(self)
-            if self._audio is not None:
-                player.setAudioOutput(self._audio)
-                if scaled is data:
-                    self._audio.setVolume(max(0.0, min(1.0, float(out_volume))))
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future[None] = loop.create_future()
 
-        def _done_ok() -> None:
-            if not fut.done():
-                fut.set_result(None)
+        def _on_sfx_status(st: QMediaPlayer.MediaStatus) -> None:
+            if st == QMediaPlayer.MediaStatus.EndOfMedia:
+                self._safe_resolve_fut(fut)
+            elif st == QMediaPlayer.MediaStatus.InvalidMedia:
+                self._safe_resolve_fut(fut, exception=RuntimeError("SFX InvalidMedia"))
 
-        def _done_err(_err: QMediaPlayer.Error, error_string: str) -> None:
-            if not fut.done():
-                fut.set_exception(RuntimeError(f"QMediaPlayer error: {error_string}"))
+        def _on_sfx_error(_err: QMediaPlayer.Error, error_string: str) -> None:
+            self._safe_resolve_fut(fut, exception=RuntimeError(f"SFX error: {error_string}"))
 
-        player.mediaStatusChanged.connect(
-            lambda st: _done_ok() if st == QMediaPlayer.MediaStatus.EndOfMedia else None
-        )
-        player.errorOccurred.connect(_done_err)
+        def _on_sfx_state(st: QMediaPlayer.PlaybackState) -> None:
+            if st == QMediaPlayer.PlaybackState.StoppedState:
+                self._safe_resolve_fut(fut)
 
-        player.setSource(QUrl.fromLocalFile(str(file_path)))
-        player.play()
-        try:
-            await fut
-        finally:
+        async with self._sfx_lock:
+            player = self._sfx_player
+            audio = self._sfx_audio
+
+            if player.audioOutput() != audio:
+                player.setAudioOutput(audio)
+
+            if scaled is data:
+                audio.setVolume(max(0.0, min(1.0, float(out_volume))))
+            else:
+                audio.setVolume(1.0)
+
+            conn_status = player.mediaStatusChanged.connect(_on_sfx_status)
+            conn_err = player.errorOccurred.connect(_on_sfx_error)
+            conn_state = player.playbackStateChanged.connect(_on_sfx_state)
+
+            timeout_sec = max(10.0, 8.0 + (len(data) / 4000.0))
+            player.setSource(QUrl.fromLocalFile(str(file_path)))
+            player.play()
             try:
-                player.stop()
-            except RuntimeError:
-                pass
-            try:
-                file_path.unlink(missing_ok=True)
-            except OSError as e:
-                logger.debug("Temp audio cleanup: %s", e)
-            player.deleteLater()
+                await asyncio.wait_for(fut, timeout=timeout_sec)
+            except TimeoutError:
+                logger.warning("SFX playback watchdog timed out after %.1fs; stopping", timeout_sec)
+            finally:
+                try:
+                    player.mediaStatusChanged.disconnect(conn_status)
+                except (RuntimeError, TypeError):
+                    pass
+                try:
+                    player.errorOccurred.disconnect(conn_err)
+                except (RuntimeError, TypeError):
+                    pass
+                try:
+                    player.playbackStateChanged.disconnect(conn_state)
+                except (RuntimeError, TypeError):
+                    pass
+                try:
+                    player.stop()
+                    player.setSource(QUrl())
+                except RuntimeError:
+                    pass
+                try:
+                    file_path.unlink(missing_ok=True)
+                except OSError as e:
+                    logger.debug("Temp audio cleanup: %s", e)
 
     async def play_mp3_parallel_with_volume(self, data: bytes, linear: float) -> None:
         """Public API: play immediately, even if others queued."""
@@ -452,8 +564,20 @@ class QtAudioSink(QObject):
                 self._sound_dedupe_keys.discard(k)
 
     def shutdown(self) -> None:
-        if self._player is None:
-            self._pending_fut = None
-            return
-        self._player.stop()
-        self._player.setSource(QUrl())
+        fut = self._pending_fut
+        self._pending_fut = None
+        if fut is not None and not fut.done():
+            fut.cancel()
+        if self._player is not None:
+            try:
+                self._player.stop()
+                self._player.setSource(QUrl())
+            except RuntimeError:
+                pass
+        if self._sfx_player is not None:
+            try:
+                self._sfx_player.stop()
+                self._sfx_player.setSource(QUrl())
+            except RuntimeError:
+                pass
+

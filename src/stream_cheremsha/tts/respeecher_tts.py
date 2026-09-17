@@ -96,7 +96,10 @@ class ReSpeecherTts:
 
         # State tracking
         self._consecutive_failures: int = 0
-        self._backoff_stage: int = 0  # 0=healthy, 1=30s, 2=2m, 3=5m
+        # Monotonic timestamp after which Respeecher may be retried (0 = ready immediately).
+        # Using time-based recovery instead of permanent stage locks so a brief
+        # connectivity blip on Windows doesn't disable Respeecher for the whole session.
+        self._backoff_until: float = 0.0
         self._last_request_time: float = 0.0
 
         # Build voice descriptor objects
@@ -164,14 +167,25 @@ class ReSpeecherTts:
             await asyncio.sleep(wait)
         self._last_request_time = time.monotonic()
 
-        # If we have a fallback and we're in a bad backoff state, try fallback immediately
-        if self._backoff_stage >= 3 and self._fallback_tts is not None:
-            logger.warning(
-                "ReSpeecher in severe backoff (%d stages); falling back to engine %s",
-                self._backoff_stage,
-                getattr(self._fallback_tts, "ENGINE_ID", "unknown"),
+        # Time-based backoff: if we're still within a backoff window, use the
+        # fallback engine instead of hammering Respeecher with doomed requests.
+        # Unlike a permanent stage lock, this resets automatically once the
+        # window expires — a brief connectivity blip on Windows won't disable
+        # Respeecher for the whole session.
+        remaining = self._backoff_until - time.monotonic()
+        if remaining > 0:
+            if self._fallback_tts is not None:
+                logger.debug(
+                    "ReSpeecher backoff active for %.0fs more; using fallback",
+                    remaining,
+                )
+                return await self._fallback_tts.synthesize(text)
+            # No fallback — wait out the backoff window, then try Respeecher again
+            logger.info(
+                "ReSpeecher backoff active for %.0fs more; waiting (no fallback configured)",
+                remaining,
             )
-            return await self._fallback_tts.synthesize(text)
+            await asyncio.sleep(remaining)
 
         # Open WebSocket connection with full headers
         websocket: Any | None = None
@@ -207,7 +221,6 @@ class ReSpeecherTts:
 
             # Send payload
             await websocket.send(json.dumps(payload))
-            # print("Запит відправлено, збираємо Float32 PCM...")  # debug
 
             # Collect Float32 PCM chunks
             float32_chunks: list[np.ndarray] = []
@@ -232,11 +245,7 @@ class ReSpeecherTts:
                 elif data.get("type") == "done" or data.get("done") is True:
                     break
 
-            # If we never received any chunks, something went wrong
             if not float32_chunks:
-                # Check if it was a close/error code
-                # Codes 1008 (Policy Violation), 1011 (Internal Server Error),
-                # 429 (Too Many Requests), 403 (Forbidden) should trigger backoff
                 logger.warning("ReSpeecher: no audio chunks received for text (len=%d)", len(text))
                 raise RuntimeError("ReSpeecher: no audio data received")
 
@@ -258,58 +267,40 @@ class ReSpeecherTts:
                 wav_file.writeframes(audio_int16.tobytes())
 
             wav_bytes = wav_buffer.getvalue()
-            # logger.info("ReSpeecher: generated %d bytes WAV", len(wav_bytes))
 
-            # Success: reset failure counter
+            # Success: reset failure counter and backoff window
             self._consecutive_failures = 0
-            self._backoff_stage = 0
+            self._backoff_until = 0.0
 
             return wav_bytes
 
         except Exception as e:
-            # Track failure and apply exponential backoff
             self._consecutive_failures += 1
             logger.warning(
                 "ReSpeecher synthesize error (failure #%d): %s",
                 self._consecutive_failures,
                 e,
-                exc_info=True,
             )
 
-            # Determine backoff stage based on consecutive failures
-            if self._consecutive_failures >= 3:
-                if self._backoff_stage == 0:
-                    self._backoff_stage = 1  # First failure -> 30s pause
-                elif self._backoff_stage == 1:
-                    self._backoff_stage = 2  # Second -> 2 min
-                elif self._backoff_stage == 2:
-                    self._backoff_stage = 3  # Third -> 5 min
+            # Exponential backoff schedule (seconds): 1 failure → 5s, 2 → 30s,
+            # 3 → 2 min, 4+ → 5 min.  Each window expires on its own so the
+            # engine recovers automatically without a restart.
+            _BACKOFF_SCHEDULE = (5, 30, 120, 300)
+            idx = min(self._consecutive_failures - 1, len(_BACKOFF_SCHEDULE) - 1)
+            wait_secs = _BACKOFF_SCHEDULE[idx]
+            self._backoff_until = time.monotonic() + wait_secs
+            logger.info(
+                "ReSpeecher backoff: %.0fs window set after failure #%d",
+                wait_secs,
+                self._consecutive_failures,
+            )
 
-                # If we have a fallback engine, use it after backoff stages
-                if self._fallback_tts is not None and self._backoff_stage >= 3:
-                    logger.info(
-                        "Switching to fallback TTS engine after %d ReSpeecher failures",
-                        self._consecutive_failures,
-                    )
-                    return await self._fallback_tts.synthesize(text)
-                else:
-                    # Wait according to backoff stage before retry
-                    # (caller should respect this, but we log the wait time)
-                    wait_secs = [0, 30, 120, 300][self._backoff_stage]
-                    logger.info(
-                        "ReSpeecher backoff stage %d: waiting %.1fs before next attempt",
-                        self._backoff_stage,
-                        wait_secs,
-                    )
-            elif self._consecutive_failures == 1:
-                # First failure: brief pause, then try fallback if available
-                if self._fallback_tts is not None:
-                    logger.info(
-                        "First ReSpeecher failure; attempting fallback TTS",
-                    )
-                    return await self._fallback_tts.synthesize(text)
+            # Use fallback immediately for this request if available
+            if self._fallback_tts is not None:
+                logger.info("ReSpeecher: using fallback TTS for this request")
+                return await self._fallback_tts.synthesize(text)
 
-            # Re-raise so caller can decide (engine manager will handle backoff/switch)
+            # No fallback configured — re-raise so the coordinator can log it
             raise
 
         finally:
@@ -327,14 +318,15 @@ class ReSpeecherTts:
         pass
 
     def is_healthy(self) -> bool:
-        """Return True if the engine is not in a backoff penalty stage."""
-        return self._backoff_stage == 0
+        """Return True if the engine is not in an active backoff window."""
+        return time.monotonic() >= self._backoff_until
 
 
 class RandomizedReSpeecherTts:
     """ReSpeecher TTS wrapper that randomly selects a voice for each synthesis."""
 
     ENGINE_ID: str = "respeecher-random"
+    DEFAULT_VOICE_ID: str = ReSpeecherTts.DEFAULT_VOICE_ID
 
     def __init__(
         self,
@@ -364,19 +356,17 @@ class RandomizedReSpeecherTts:
         if not stripped:
             raise ValueError("empty TTS text")
 
-        # If we have a fallback and random voice, synthesize with random voice
         voice = self.voice
-
-        # Validate voice is in our supported list
         if voice not in REPEECHER_VOICES:
             logger.warning(
-                "ReSpeecher random voice %s not in supported list; defaulting to %s",
+                "ReSpeecher random voice %r not in supported list; defaulting to %r",
                 voice,
                 self.DEFAULT_VOICE_ID,
             )
             voice = self.DEFAULT_VOICE_ID
 
-        # Use the ReSpeecherTts implementation with the randomly selected voice
+        # Delegate to a per-request ReSpeecherTts so the backoff state is
+        # isolated per synthesis call and doesn't bleed across randomized voices.
         tts = ReSpeecherTts(
             voice=voice,
             rate_percent=self._rate_percent,
