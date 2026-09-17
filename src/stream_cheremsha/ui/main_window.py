@@ -5746,7 +5746,7 @@ class MainWindow(FramelessWindow):
     @Slot()
     def _refresh_footer(self) -> None:
         cq = self._coordinator.chat_in.qsize()
-        tq = self._coordinator.tts_jobs.qsize()
+        tq = self._coordinator.tts_jobs.qsize() + self._coordinator.audio_jobs.qsize()
         tip_bits = [
             f"{self._tr('footer.twitch')}: {self._status_twitch}",
             f"{self._tr('footer.youtube')}: {self._status_youtube}",

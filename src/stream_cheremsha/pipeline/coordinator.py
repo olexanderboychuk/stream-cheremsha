@@ -7,7 +7,7 @@ from collections.abc import Awaitable, Callable
 import httpx
 
 from stream_cheremsha import l10n
-from stream_cheremsha.config.constants import CHAT_QUEUE_MAX, TTS_QUEUE_MAX
+from stream_cheremsha.config.constants import AUDIO_QUEUE_MAX, CHAT_QUEUE_MAX, TTS_QUEUE_MAX
 from stream_cheremsha.domain.models import ChatMessage
 from stream_cheremsha.domain.protocols import AudioSink, TextToSpeech
 from stream_cheremsha.pipeline.chunking import chunk_text, merge_short_subchunks
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class StreamCoordinator:
-    """Bounded chat → filter → chunk → TTS → audio pipeline."""
+    """Bounded chat → filter → chunk → TTS synthesis → audio playback pipeline."""
 
     def __init__(
         self,
@@ -38,9 +38,16 @@ class StreamCoordinator:
         self._pre_tts = pre_tts
         self.chat_in: asyncio.Queue[ChatMessage] = asyncio.Queue(maxsize=CHAT_QUEUE_MAX)
         self.tts_jobs: asyncio.Queue[str] = asyncio.Queue(maxsize=TTS_QUEUE_MAX)
+        self.audio_jobs: asyncio.Queue[bytes] = asyncio.Queue(maxsize=AUDIO_QUEUE_MAX)
         self._running = False
         self._ingest_task: asyncio.Task[None] | None = None
-        self._tts_task: asyncio.Task[None] | None = None
+        self._synth_task: asyncio.Task[None] | None = None
+        self._play_task: asyncio.Task[None] | None = None
+
+    @property
+    def _tts_task(self) -> asyncio.Task[None] | None:
+        """Compatibility property for legacy references to the synthesis task."""
+        return self._synth_task
 
     def _status(self, msg: str) -> None:
         self._on_status(msg)
@@ -70,29 +77,22 @@ class StreamCoordinator:
             return
         self._running = True
         self._ingest_task = asyncio.create_task(self._ingest_loop(), name="cheremsha-ingest")
-        self._tts_task = asyncio.create_task(self._tts_loop(), name="cheremsha-tts")
+        self._synth_task = asyncio.create_task(self._synth_loop(), name="cheremsha-synth")
+        self._play_task = asyncio.create_task(self._play_loop(), name="cheremsha-play")
 
     async def stop_workers(self) -> None:
         self._running = False
-        tasks = [t for t in (self._ingest_task, self._tts_task) if t is not None]
+        tasks = [t for t in (self._ingest_task, self._synth_task, self._play_task) if t is not None]
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         self._ingest_task = None
-        self._tts_task = None
-        while not self.chat_in.empty():
-            try:
-                self.chat_in.get_nowait()
-            except asyncio.QueueEmpty:
-                break
-        while not self.tts_jobs.empty():
-            try:
-                self.tts_jobs.get_nowait()
-            except asyncio.QueueEmpty:
-                break
+        self._synth_task = None
+        self._play_task = None
+        self.clear_queues()
 
     def clear_queues(self) -> None:
-        """Drop pending chat and TTS work items (does not stop an in-flight TTS synth)."""
+        """Drop pending chat, TTS text chunks, and synthesized audio clips."""
         while not self.chat_in.empty():
             try:
                 self.chat_in.get_nowait()
@@ -101,19 +101,26 @@ class StreamCoordinator:
         while not self.tts_jobs.empty():
             try:
                 self.tts_jobs.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+        while not self.audio_jobs.empty():
+            try:
+                self.audio_jobs.get_nowait()
             except asyncio.QueueEmpty:
                 break
 
     async def flush_tts(self) -> None:
-        """Stop in-flight TTS task, drop queues, and resume workers if running."""
+        """Stop in-flight TTS synthesis and playback, drop queues, and resume workers if running."""
         self.clear_queues()
-        t = self._tts_task
-        if t is None or t.done():
-            return
-        t.cancel()
-        await asyncio.gather(t, return_exceptions=True)
+        tasks = [t for t in (self._synth_task, self._play_task) if t is not None and not t.done()]
+        for t in tasks:
+            t.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self.clear_queues()
         if self._running:
-            self._tts_task = asyncio.create_task(self._tts_loop(), name="cheremsha-tts")
+            self._synth_task = asyncio.create_task(self._synth_loop(), name="cheremsha-synth")
+            self._play_task = asyncio.create_task(self._play_loop(), name="cheremsha-play")
 
     async def _ingest_loop(self) -> None:
         while self._running:
@@ -149,7 +156,7 @@ class StreamCoordinator:
                     self._status(l10n.tr(self._get_locale(), "coord.tts_queue_full"))
                     break
 
-    async def _tts_loop(self) -> None:
+    async def _synth_loop(self) -> None:
         while self._running:
             try:
                 chunk = await asyncio.wait_for(self.tts_jobs.get(), timeout=0.35)
@@ -159,16 +166,44 @@ class StreamCoordinator:
                 raise
             try:
                 audio = await self._tts.synthesize(chunk)
+            except httpx.HTTPError as e:
+                logger.warning("TTS HTTP error: %s", e)
+                self._status(l10n.tr(self._get_locale(), "coord.tts_http_error", err=str(e)))
+                continue
+            except ValueError as e:
+                logger.warning("TTS error: %s", e)
+                self._status(l10n.tr(self._get_locale(), "coord.tts_error", err=str(e)))
+                continue
+            except Exception as e:
+                logger.warning("TTS failed: %s", e)
+                self._status(l10n.tr(self._get_locale(), "coord.tts_error", err=str(e)))
+                continue
+
+            if not audio:
+                continue
+
+            while self._running:
+                try:
+                    await asyncio.wait_for(self.audio_jobs.put(audio), timeout=0.35)
+                    break
+                except TimeoutError:
+                    continue
+                except asyncio.CancelledError:
+                    raise
+
+    async def _play_loop(self) -> None:
+        while self._running:
+            try:
+                audio = await asyncio.wait_for(self.audio_jobs.get(), timeout=0.35)
+            except TimeoutError:
+                continue
+            except asyncio.CancelledError:
+                raise
+            try:
                 await self._sink.play_mp3(audio)
             except OSError as e:
                 logger.warning("Audio playback failed: %s", e)
                 self._status(l10n.tr(self._get_locale(), "coord.audio_error", err=str(e)))
-            except httpx.HTTPError as e:
-                logger.warning("TTS HTTP error: %s", e)
-                self._status(l10n.tr(self._get_locale(), "coord.tts_http_error", err=str(e)))
-            except ValueError as e:
-                logger.warning("TTS error: %s", e)
-                self._status(l10n.tr(self._get_locale(), "coord.tts_error", err=str(e)))
             except Exception as e:
-                logger.warning("TTS failed: %s", e)
-                self._status(l10n.tr(self._get_locale(), "coord.tts_error", err=str(e)))
+                logger.warning("Audio playback failed: %s", e)
+                self._status(l10n.tr(self._get_locale(), "coord.audio_error", err=str(e)))
