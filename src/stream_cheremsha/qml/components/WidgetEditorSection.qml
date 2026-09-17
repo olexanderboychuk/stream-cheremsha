@@ -49,12 +49,7 @@ Rectangle {
                     color: root.validationState === "invalid" ? "#fb7185" : "#fbbf24"
                     font.bold: true
                 }
-                Text {
-                    visible: root.collapsible
-                    text: root.expanded ? "⌃" : "⌄"
-                    color: "#8b95a5"
-                    font.pixelSize: 16
-                }
+
             }
             Text {
                 visible: root.description !== ""
@@ -68,8 +63,7 @@ Rectangle {
         Item {
             id: body
             Layout.fillWidth: true
-            visible: root.expanded
-            implicitHeight: visible ? contentColumn.implicitHeight : 0
+            implicitHeight: contentColumn.implicitHeight
             clip: true
             ColumnLayout {
                 id: contentColumn
@@ -84,9 +78,5 @@ Rectangle {
     HoverHandler {
         id: headerHover
         onHoveredChanged: root.headerHovered = hovered
-    }
-    TapHandler {
-        enabled: root.collapsible
-        onTapped: root.expanded = !root.expanded
     }
 }

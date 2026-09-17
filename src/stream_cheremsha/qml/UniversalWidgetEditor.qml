@@ -147,53 +147,81 @@ Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
-            RowLayout {
+            // Adaptive breakpoints driven by the editor root width (reliable at
+            // binding time, unlike nested ScrollView/Grid widths which start at 0
+            // and pin the layout to a single column forever).
+            readonly property bool narrowMode: root.width < 1100
+            readonly property bool twoColumnSections: root.width >= 1500
+            GridLayout {
+                id: contentGrid
                 anchors.fill: parent
                 anchors.leftMargin: 40
                 anchors.rightMargin: 40
                 anchors.topMargin: 28
                 anchors.bottomMargin: 28
-                spacing: 40
+                columns: root.narrowMode ? 1 : 2
+                columnSpacing: 40
+                rowSpacing: 24
 
                 Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     Layout.minimumWidth: 420
+                    Layout.columnSpan: 1
                     ScrollView {
+                        id: settingsScroll
                         anchors.fill: parent
                         clip: true
                         ColumnLayout {
-                            width: Math.min(720, Math.max(420, parent.width - 20))
-                            x: Math.max(0, (parent.width - width) / 2)
+                            // Full viewport width — no 720px cap, so the grid below
+                            // can actually spread into 2 columns on wide screens.
+                            width: settingsScroll.availableWidth
                             spacing: 0
                             Text { text: "SETTINGS"; color: "#5eead4"; font.pixelSize: 11; font.weight: Font.DemiBold; font.letterSpacing: 1.4; Layout.bottomMargin: 6 }
                             Text { text: "Only the capabilities provided by this widget type appear here."; color: "#8b95a5"; font.pixelSize: 11; Layout.bottomMargin: 20 }
-                            Repeater {
-                                model: root.sections
-                                delegate: WidgetEditorSection {
-                                    id: sectionDelegate
-                                    required property var modelData
-                                    title: modelData.title
-                                    description: modelData.description || ""
-                                    icon: modelData.icon || ""
-                                    expanded: modelData.expanded !== false
-                                    validationState: modelData.validationState || "normal"
-                                    Layout.bottomMargin: 24
-                                    Repeater {
-                                        model: sectionDelegate.modelData.controls || []
-                                        delegate: WidgetEditorControl {
-                                            required property var modelData
-                                            label: modelData.label
-                                            description: modelData.description || ""
-                                            type: modelData.type || "text"
-                                            field: modelData.field || ""
-                                             value: modelData.value
-                                             options: modelData.options || []
-                                             optionLabels: modelData.optionLabels || []
-                                             minimum: modelData.minimum || 0
-                                            maximum: modelData.maximum || 100
-                                             wide: modelData.wide !== undefined ? modelData.wide : ["slider", "textarea", "url", "list", "social_platforms", "leaderboard_sequence", "repeater", "draggable", "file", "image"].indexOf(type) >= 0
-                                            onChanged: function(field, value) { root.settingChanged(field, value); root.saveState = "dirty" }
+                            GridLayout {
+                                id: sectionsGrid
+                                Layout.fillWidth: true
+                                columns: root.twoColumnSections ? 2 : 1
+                                columnSpacing: 20
+                                rowSpacing: 24
+                                Repeater {
+                                    model: root.sections
+                                    delegate: WidgetEditorSection {
+                                        id: sectionDelegate
+                                        required property var modelData
+                                        required property int index
+                                        title: modelData.title
+                                        description: modelData.description || ""
+                                        icon: modelData.icon || ""
+                                        expanded: modelData.expanded !== false
+                                        validationState: modelData.validationState || "normal"
+                                        // No width bindings here on purpose: in a
+                                        // GridLayout, fillWidth items share the
+                                        // column width automatically. Binding
+                                        // preferredWidth to sectionsGrid.width is
+                                        // circular (grid starts at 0) and collapses
+                                        // the layout back to one column.
+                                        Layout.fillWidth: true
+                                        Layout.alignment: Qt.AlignTop
+                                        Layout.minimumWidth: 320
+                                        Layout.columnSpan: (root.twoColumnSections && (modelData.fullWidth === true || (modelData.controls || []).length > 6)) ? 2 : 1
+                                        Repeater {
+                                            model: sectionDelegate.modelData.controls || []
+                                            delegate: WidgetEditorControl {
+                                                required property var modelData
+                                                label: modelData.label
+                                                description: modelData.description || ""
+                                                type: modelData.type || "text"
+                                                field: modelData.field || ""
+                                                 value: modelData.value
+                                                 options: modelData.options || []
+                                                 optionLabels: modelData.optionLabels || []
+                                                 minimum: modelData.minimum || 0
+                                                maximum: modelData.maximum || 100
+                                                 wide: modelData.wide !== undefined ? modelData.wide : ["slider", "textarea", "url", "list", "social_platforms", "leaderboard_sequence", "repeater", "draggable", "file", "image"].indexOf(type) >= 0
+                                                onChanged: function(field, value) { root.settingChanged(field, value); root.saveState = "dirty" }
+                                            }
                                         }
                                     }
                                 }
@@ -203,10 +231,11 @@ Rectangle {
                 }
 
                 ColumnLayout {
-                    Layout.alignment: Qt.AlignTop
-                    Layout.preferredWidth: 360
+                    Layout.alignment: root.narrowMode ? Qt.AlignLeft : Qt.AlignTop
+                    Layout.fillWidth: root.narrowMode
+                    Layout.preferredWidth: root.narrowMode ? contentGrid.width : 360
                     Layout.minimumWidth: 300
-                    Layout.maximumWidth: 440
+                    Layout.maximumWidth: root.narrowMode ? contentGrid.width : 440
                     spacing: 12
                     Text { text: "PREVIEW"; color: "#8b95a5"; font.pixelSize: 11; font.weight: Font.DemiBold; font.letterSpacing: 1.4 }
                      Rectangle {
