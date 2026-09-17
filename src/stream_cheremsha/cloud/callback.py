@@ -28,6 +28,9 @@ class DesktopCallbackServer:
         self._runner: object | None = None
         self._site: object | None = None
         self._future: asyncio.Future[tuple[str, str]] | None = None
+        self._platform_future: asyncio.Future[dict[str, str]] | None = None
+        self._platform_name = ""
+        self._link_future: asyncio.Future[dict[str, str]] | None = None
 
     async def start(self) -> None:
         from aiohttp import web
@@ -49,6 +52,40 @@ class DesktopCallbackServer:
                     ),
                     content_type="text/html",
                 )
+            # Platform-connect / link redirects carry no secrets: they only
+            # trigger a refresh. Each is accepted solely while its waiter is
+            # armed (exact platform / any link outcome, respectively).
+            query_platform = str(req.query.get("platform") or "")
+            query_status = str(req.query.get("status") or "")
+            pfut = self._platform_future
+            if (
+                pfut is not None
+                and not pfut.done()
+                and query_platform
+                and query_platform == self._platform_name
+                and query_status
+            ):
+                pfut.set_result({"platform": query_platform, "status": query_status})
+                return web.Response(
+                    text="<h1>Cheremsha</h1><p>Це вікно можна закрити.</p>",
+                    content_type="text/html",
+                )
+            if (
+                req.query.get("action") == "link"
+                and self._link_future is not None
+                and not self._link_future.done()
+                and str(req.query.get("provider") or "")
+            ):
+                self._link_future.set_result(
+                    {
+                        "provider": str(req.query.get("provider")),
+                        "status": str(req.query.get("status") or ""),
+                    }
+                )
+                return web.Response(
+                    text="<h1>Cheremsha</h1><p>Це вікно можна закрити.</p>",
+                    content_type="text/html",
+                )
             return web.Response(
                 text="<h1>Cheremsha</h1><p>Це вікно можна закрити.</p>",
                 content_type="text/html",
@@ -65,6 +102,8 @@ class DesktopCallbackServer:
         self._runner = runner
         self._site = site
         self._future = asyncio.get_running_loop().create_future()
+        self._platform_future = asyncio.get_running_loop().create_future()
+        self._link_future = asyncio.get_running_loop().create_future()
 
     def wait_for_callback(
         self, *, timeout: float = constants.LOGIN_WAIT_TIMEOUT_S
@@ -73,12 +112,34 @@ class DesktopCallbackServer:
             raise RuntimeError("callback server not started")
         return asyncio.wait_for(self._future, timeout=timeout)
 
+    def wait_for_platform(
+        self, *, platform: str, timeout: float = constants.LOGIN_WAIT_TIMEOUT_S
+    ) -> Awaitable[dict[str, str]]:
+        self._platform_name = (platform or "").strip().lower()
+        if self._platform_future is None:
+            raise RuntimeError("callback server not started")
+        return asyncio.wait_for(self._platform_future, timeout=timeout)
+
+    def wait_for_link(
+        self, *, timeout: float = constants.LOGIN_WAIT_TIMEOUT_S
+    ) -> Awaitable[dict[str, str]]:
+        if self._link_future is None:
+            raise RuntimeError("callback server not started")
+        return asyncio.wait_for(self._link_future, timeout=timeout)
+
     def cancel(self) -> None:
         if self._future is not None and not self._future.done():
             self._future.cancel()
+        if self._platform_future is not None and not self._platform_future.done():
+            self._platform_future.cancel()
+        if self._link_future is not None and not self._link_future.done():
+            self._link_future.cancel()
 
     async def stop(self) -> None:
         self._future = None
+        self._platform_future = None
+        self._platform_name = ""
+        self._link_future = None
         runner, self._runner = self._runner, None
         self._site = None
         if runner is not None:

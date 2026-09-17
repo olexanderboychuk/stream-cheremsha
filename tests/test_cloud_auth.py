@@ -533,3 +533,32 @@ async def test_login_twitch_partial_scopes_emits_reauth_without_persisting(
     finally:
         astate.DesktopCallbackServer = real_class
 
+
+@pytest.mark.asyncio()
+async def test_callback_server_platform_and_link_triggers() -> None:
+    from stream_cheremsha.cloud.callback import DesktopCallbackServer
+
+    server = DesktopCallbackServer(expected_state="ds-1")
+    await server.start()
+    try:
+        async with httpx.AsyncClient() as http:
+            # Unarmed hits are ignored, never resolve anything.
+            r = await http.get(
+                f"http://127.0.0.1:{cloud_constants.CALLBACK_PORT}{cloud_constants.CALLBACK_PATH}",
+                params={"platform": "twitch", "status": "connected"})
+            assert r.status_code == 200
+            waiter = server.wait_for_platform(platform="twitch", timeout=5)
+            r = await http.get(
+                f"http://127.0.0.1:{cloud_constants.CALLBACK_PORT}{cloud_constants.CALLBACK_PATH}",
+                params={"platform": "twitch", "status": "connected"})
+            assert r.status_code == 200
+            assert await waiter == {"platform": "twitch", "status": "connected"}
+            link_waiter = server.wait_for_link(timeout=5)
+            r = await http.get(
+                f"http://127.0.0.1:{cloud_constants.CALLBACK_PORT}{cloud_constants.CALLBACK_PATH}",
+                params={"action": "link", "provider": "google", "status": "conflict"})
+            assert r.status_code == 200
+            assert await link_waiter == {"provider": "google", "status": "conflict"}
+    finally:
+        await server.stop()
+
