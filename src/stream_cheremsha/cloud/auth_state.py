@@ -44,6 +44,13 @@ STATUS_STARTING = "starting"
 STATUS_AWAITING_CALLBACK = "awaiting-callback"
 STATUS_AUTHENTICATED = "authenticated"
 
+_CONNECT_LOGIN_MAP = {
+    "twitch": "twitch",
+    "tiktok": "tiktok",
+    "kick": "kick",
+    "youtube": "google",
+}
+
 
 class CheremshaAuthState(QObject):
     """QObject holding Cheremsha account state. All network work is async."""
@@ -87,6 +94,7 @@ class CheremshaAuthState(QObject):
         self._last_auto_connect: CloudAutoConnectOutcome | None = None
         self._auto_connected_platform: str | None = None
         self._identities: list[dict[str, Any]] = []
+        self._pending_platform: str | None = None
 
     # -- Qt properties (user-visible state only; tokens are never exposed) --
     def _get_status(self) -> str:
@@ -206,6 +214,7 @@ class CheremshaAuthState(QObject):
 
     @Slot()
     def cancelLogin(self) -> None:
+        self._pending_platform = None
         if self._task is not None and not self._task.done():
             self._task.cancel()
 
@@ -228,6 +237,22 @@ class CheremshaAuthState(QObject):
         if self._status != STATUS_AUTHENTICATED or not self._access_token:
             return
         self._launch(lambda: self._link_flow(provider), name="cheremsha-link")
+
+    @Slot(str)
+    def connectPlatform(self, platform: str) -> None:
+        """Cloud-first platform connect. Logged out → login with the mapped
+        provider (auto-connect finishes the job); logged in → explicit
+        platform-connect round-trip."""
+        platform = (platform or "").strip().lower()
+        if platform not in ("twitch", "tiktok", "kick", "youtube"):
+            return
+        if self._status != STATUS_AUTHENTICATED or not self._access_token:
+            self._pending_platform = platform
+            self.login(_CONNECT_LOGIN_MAP[platform])
+            return
+        self._launch(
+            lambda: self._platform_connect_flow(platform), name="cheremsha-connect"
+        )
 
     @Slot(str, result="QVariantMap")
     def platformStatus(self, platform: str) -> dict[str, Any]:
@@ -343,6 +368,12 @@ class CheremshaAuthState(QObject):
                     self._on_auto_connected(auto_connect)
                 if auto_connect.reauth_required and auto_connect.platform:
                     self._on_auto_reauth_required(auto_connect)
+            # A logged-out platform-connect request lands here: twitch/tiktok/
+            # kick arrive connected via auto-connect + reconcile; youtube needs
+            # an explicit connect round-trip (google login is login-only).
+            pending, self._pending_platform = self._pending_platform, None
+            if pending == "youtube":
+                await self._platform_connect_flow("youtube")
             await self._sync_platforms_and_avatar(client)
             await self._refresh_identities(client)
         except asyncio.CancelledError:
@@ -391,7 +422,38 @@ class CheremshaAuthState(QObject):
             return
         self.identitiesChanged.emit()
 
+    async def _platform_connect_flow(self, platform: str) -> None:
+        server = DesktopCallbackServer(expected_state="")
+        try:
+            try:
+                await server.start()
+            except OSError:
+                self.notice.emit("callback-busy")
+                return
+            client = self._client_or_create()
+            try:
+                start = await client.platform_connect_start(
+                    platform, self._access_token or ""
+                )
+            except CloudApiError:
+                self.notice.emit("unreachable")
+                return
+            auth_url = str(start.get("authorization_url") or "")
+            if not (auth_url.startswith("https://") or auth_url.startswith("http://")):
+                return
+            self._open_url(auth_url)
+            try:
+                await server.wait_for_platform(platform=platform)
+            except (TimeoutError, asyncio.CancelledError):
+                return
+            await self._sync_platforms_and_avatar(client)
+        except asyncio.CancelledError:
+            raise
+        finally:
+            await server.stop()
+
     async def _logout_flow(self) -> None:
+        self._pending_platform = None
         if self._access_token:
             try:
                 await self._client_or_create().logout(self._access_token)

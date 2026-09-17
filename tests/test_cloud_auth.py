@@ -611,3 +611,80 @@ async def test_link_provider_conflict_emits_notice(qapplication, keyring_fake) -
     finally:
         astate.DesktopCallbackServer = real_class
 
+
+@pytest.mark.asyncio()
+async def test_connect_platform_logged_out_triggers_login(qapplication, keyring_fake) -> None:
+    client = FakeCloudClient()
+    opened: list[str] = []
+    auth = _auth(client, opened)
+    auth.connectPlatform("twitch")
+    await asyncio.sleep(0.2)
+    assert client.start_calls and client.start_calls[-1]["provider"] == "twitch"
+    assert auth._pending_platform == "twitch"  # noqa: SLF001
+    auth.cancelLogin()
+
+
+@pytest.mark.asyncio()
+async def test_connect_platform_logged_in_unreachable_emits_notice(
+    qapplication, keyring_fake
+) -> None:
+    client = FakeCloudClient()
+    opened: list[str] = []
+    notices: list[str] = []
+
+    async def boom(platform, access_token):
+        raise CloudApiError("down")
+
+    client.platform_connect_start = boom  # type: ignore[assignment]
+    auth = _auth(client, opened)
+    auth.notice.connect(notices.append)
+    auth._store_session("a", "r", CloudUser("u-1", "a@example.com", "u"))
+    auth._set_status(STATUS_AUTHENTICATED)
+    auth.connectPlatform("kick")
+    await asyncio.wait_for(auth._task, timeout=10)
+    assert notices == ["unreachable"]
+
+
+@pytest.mark.asyncio()
+async def test_logout_during_link_converges_logged_out(qapplication, keyring_fake) -> None:
+    import stream_cheremsha.cloud.auth_state as astate
+
+    client = FakeCloudClient()
+    opened: list[str] = []
+    auth = _auth(client, opened)
+    auth._store_session("a", "r", CloudUser("u-1", "a@example.com", "u"))
+    auth._set_status(STATUS_AUTHENTICATED)
+
+    async def fake_link_start(provider, access_token):
+        return {"authorization_url": "https://x/link"}
+
+    client.link_start = fake_link_start  # type: ignore[assignment]
+
+    real_class = astate.DesktopCallbackServer
+
+    class _HangingServer:
+        def __init__(self, *a, **kw) -> None:
+            pass
+
+        async def start(self) -> None:
+            return None
+
+        async def wait_for_link(self, **kw) -> dict:
+            await asyncio.sleep(60)
+            return {}
+
+        async def stop(self) -> None:
+            return None
+
+    astate.DesktopCallbackServer = _HangingServer  # type: ignore[assignment]
+    try:
+        auth.linkProvider("twitch")
+        await asyncio.sleep(0.2)
+        assert auth._task is not None and not auth._task.done()
+        auth.logout()
+        await asyncio.wait_for(auth._task, timeout=10)
+        assert auth.status == STATUS_LOGGED_OUT
+        assert load_session() is None
+    finally:
+        astate.DesktopCallbackServer = real_class
+
