@@ -23,8 +23,8 @@ import httpx
 import shiboken6
 from PySide6.QtCore import (
     Property,
-    QByteArray,
     QAbstractAnimation,
+    QByteArray,
     QEasingCurve,
     QEvent,
     QObject,
@@ -136,6 +136,9 @@ from stream_cheremsha.chat.youtube_source import (
     is_google_account_linked,
     parse_google_desktop_client_json,
 )
+from stream_cheremsha.cloud import constants as cloud_constants
+from stream_cheremsha.cloud.auth_state import CheremshaAuthState
+from stream_cheremsha.cloud.platform_bridge import PlatformConnectionManager
 from stream_cheremsha.config import constants, embedded, keyring_store
 from stream_cheremsha.domain.models import ChatMessage, ChatPlatform
 from stream_cheremsha.domain.points import (
@@ -223,6 +226,8 @@ from stream_cheremsha.tts.edge_tts import (
 )
 from stream_cheremsha.tts.google_translate_tts import GoogleTranslateTts
 from stream_cheremsha.tts.respeecher_tts import REPEECHER_VOICES, ReSpeecherTts
+from stream_cheremsha.ui.account_pill import AccountPill
+from stream_cheremsha.ui.actions_qml_api import ActionsQmlApi
 from stream_cheremsha.ui.chat_formatting import (
     CHAT_DEFAULT_FONT_FAMILY,
     chat_font_stack_css,
@@ -374,6 +379,18 @@ _SETTINGS_TTS_CHAT_TWITCH = "tts_chat/twitch_enabled"
 _SETTINGS_TTS_CHAT_YOUTUBE = "tts_chat/youtube_enabled"
 _SETTINGS_TTS_CHAT_TIKTOK = "tts_chat/tiktok_enabled"
 _SETTINGS_TTS_CHAT_KICK = "tts_chat/kick_enabled"
+
+# Per-platform "enabled for this installation" flag, driven by
+# PlatformConnectionManager. ``platform_enabled/<PLAT>`` stores the
+# boolean; ``platform_enabled/<PLAT>_set`` records that the value was
+# explicitly recorded (so we can distinguish "fresh account, never
+# touched" from "user disabled this"). On a NEW successful OAuth
+# auto-connect (same transaction as login), the auth flow writes
+# ``enabled=True`` plus the ``_set`` sentinel, marking the platform
+# active for this desktop. The user's later manual toggle is preserved
+# across restarts (we never overwrite a previously-set value).
+_SETTING_PLATFORM_ENABLED = "platform_enabled/{plat}"
+_SETTING_PLATFORM_ENABLED_INIT = "platform_enabled/{plat}_set"
 _SETTINGS_TTS_OPENAI_MODERATE = "tts/openai_moderate_enabled"
 _SETTINGS_TTS_SPEAK_AUTHOR = "tts/speak_chat_author_name"
 _SETTINGS_TTS_STRIP_NON_ALPHA = "tts/strip_non_alphabetic"
@@ -759,7 +776,9 @@ class _HoverCapsuleView(QWidget):
             bp.setCosmetic(True)
             p.setPen(bp)
             p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawRoundedRect(QRectF(rc.x() + 0.5, rc.y() + 0.5, rc.width() - 1.0, rc.height() - 1.0), r, r)
+            p.drawRoundedRect(
+                QRectF(rc.x() + 0.5, rc.y() + 0.5, rc.width() - 1.0, rc.height() - 1.0), r, r
+            )
         finally:
             p.end()
 
@@ -903,7 +922,14 @@ class _SidebarHoverController(QObject):
 class _SidebarHoverWatcher(QObject):
     """Forwards Enter/Leave of any sidebar surface to the shared pill controller."""
 
-    def __init__(self, controller: _SidebarHoverController, glow: QColor | None, *, swell: bool = False, parent: QObject | None = None) -> None:
+    def __init__(
+        self,
+        controller: _SidebarHoverController,
+        glow: QColor | None,
+        *,
+        swell: bool = False,
+        parent: QObject | None = None,
+    ) -> None:
         super().__init__(parent)
         self._ctl = controller
         self._glow = glow
@@ -1026,6 +1052,40 @@ class MainWindow(FramelessWindow):
         if app_ico.is_file():
             self.setWindowIcon(QIcon(str(app_ico)))
         self.titleBar.raise_()
+        self._cloud_auth = CheremshaAuthState(
+            self,
+            base_url=cloud_constants.api_base_url(self._settings.value),
+            open_url=self._open_system_browser,
+            on_auto_connected=self._on_auto_connected_platform,
+            on_auto_reauth_required=self._on_auto_reauth_required_platform,
+        )
+        self._cloud_auth.notice.connect(self._on_cloud_notice)
+        try:
+            self._cloud_auth.statusChanged.connect(
+                self._on_cloud_status_for_platforms  # type: ignore[attr-defined]
+            )
+        except Exception:
+            pass
+        # Whenever Cloud announces a new /platforms result, re-render
+        # the connection cards so a freshly auto-connected Twitch
+        # appears as "Connected" without waiting for the next keyring
+        # tick or a manual refresh.
+        try:
+            self._cloud_auth.platformsChanged.connect(
+                lambda: self._refresh_connection_panels()
+            )
+        except Exception:
+            pass
+        self._account_pill = AccountPill(
+            self._cloud_auth,
+            self._tr,
+            on_open_platforms=lambda: self._set_main_page(self._IX_CONN),
+            on_open_settings=lambda: self._set_main_page(self._IX_SETTINGS),
+            parent=self.titleBar,
+        )
+        # Right-aligned, just before the min/max/close buttons (layout:
+        # [spacing, icon, title, stretch, min, max, close]).
+        self.titleBar.hBoxLayout.insertWidget(4, self._account_pill, 0, Qt.AlignRight)
         self._win_anim_applied = False
         self._closing = False
         self._tiktok_toggle_busy = False
@@ -1064,7 +1124,13 @@ class MainWindow(FramelessWindow):
         }
 
         self._bridge = UiBridge(self)
-        self._bridge.append_chat.connect(self._append_chat)
+        # ``connect`` does eager slot validation: pass the slot through a
+        # closure so the validation happens lazily (after __init__ has
+        # bound the attribute on the instance dict).
+        def _chat_slot(html_fragment: str) -> None:
+            self._append_chat(html_fragment)
+
+        self._bridge.append_chat.connect(_chat_slot)
         self._log_handler: QtLogHandler | None = None
 
         self._tts = self._construct_initial_tts()
@@ -1393,6 +1459,53 @@ class MainWindow(FramelessWindow):
         box.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         box.open()
 
+    def _open_system_browser(self, url: str) -> None:
+        """Open a URL in the user's system browser (never WebEngine)."""
+        u = (url or "").strip()
+        if u.startswith("http://") or u.startswith("https://"):
+            QDesktopServices.openUrl(QUrl(u))
+
+    def _on_cloud_notice(self, reason: str) -> None:
+        """Surface Cheremsha login failures in the footer status (no popups)."""
+        key = {
+            "unreachable": "cloud.error_unreachable",
+            "callback-busy": "cloud.error_callback_busy",
+            "exchange-failed": "cloud.error_exchange",
+        }.get(reason, "")
+        if key:
+            self._on_user_status(self._tr(key))
+
+    def _on_cloud_status_for_platforms(self, status: str) -> None:
+        """Hook: when Cheremsha login succeeded or session is restored,
+        run the platform reconciliation pass. The manager is responsible
+        for stopping sources on cloud-disconnected, requesting runtime
+        credentials from the Cloud broker (no provider tokens locally).
+        """
+        if status not in ("authenticated", "auth-restored"):
+            return
+        mgr = getattr(self, "_platform_manager", None)
+        if mgr is None:
+            return
+        try:
+            mgr.triggerReconcile()
+        except Exception:
+            logger.debug("platform manager trigger failed", exc_info=True)
+
+    def _on_widget_instance_changed(self, *args: object, **kwargs: object) -> None:
+        """Hook: every Widgets QML change emits this; collect current state
+        and enqueue for debounced push."""
+        try:
+            from stream_cheremsha.overlays import widget_instances as widget_store
+            from stream_cheremsha.sync.drive import widget_instance_to_dict
+
+            for inst in widget_store.list_instances():
+                self._sync_manager.enqueue_widget_change(
+                    inst.id,
+                    widget_instance_to_dict(inst),
+                )
+        except Exception:
+            pass
+
     # Fixed icon→text gap for sidebar QToolButtons (QSS can't set it).
     # Non-breaking spaces: identical width for every item, so labels stay X-aligned.
     _NAV_GAP = "\u00a0\u00a0"
@@ -1531,6 +1644,162 @@ class MainWindow(FramelessWindow):
         self._connections_root.hide()
 
         self._qml_api = StreamCheremshaQmlApi(self)
+        # Construct the Cheremsha Cloud Sync manager after `_qml_api` so the
+        # actions/widget hooks can enqueue safely, before any QML is loaded.
+        from stream_cheremsha.sync.manager import CheremshaSyncManager
+
+        _auth = getattr(self, "_cloud_auth", None)
+
+        async def _sync_post(payload: dict) -> dict:
+            token = getattr(_auth, "_access_token", None) if _auth is not None else None
+            if not token:
+                raise RuntimeError("not authenticated")
+            client = (
+                _auth._client_or_create()
+                if _auth is not None and hasattr(_auth, "_client_or_create")
+                else None
+            )
+            if client is None:
+                raise RuntimeError("not authenticated")
+            return await client.sync_push(token, payload)
+
+        async def _sync_get_state() -> dict:
+            token = getattr(_auth, "_access_token", None) if _auth is not None else None
+            if not token:
+                raise RuntimeError("not authenticated")
+            client = (
+                _auth._client_or_create()
+                if _auth is not None and hasattr(_auth, "_client_or_create")
+                else None
+            )
+            if client is None:
+                raise RuntimeError("not authenticated")
+            return await client.sync_state(token)
+
+        self._sync_manager = CheremshaSyncManager(
+            self._cloud_auth,
+            network_post=_sync_post,
+            network_get=_sync_get_state,
+            parent=self,
+        )
+        # PlatformConnectionManager: bridges cloud PlatformConnection rows
+        # into the existing Twitch/TikTok/Kick/YouTube PlatformSource layer
+        # without ever touching provider tokens here.
+        async def _cloud_fetch_platforms() -> list[dict]:
+            token = (
+                getattr(self._cloud_auth, "_access_token", None)
+                if self._cloud_auth is not None
+                else None
+            )
+            if not token:
+                raise RuntimeError("not authenticated")
+            client = (
+                self._cloud_auth._client_or_create()
+                if self._cloud_auth is not None
+                and hasattr(self._cloud_auth, "_client_or_create")
+                else None
+            )
+            if client is None:
+                raise RuntimeError("not authenticated")
+            rows: list[dict] = []
+            payload = await client.get_platforms(token)
+            for item in payload:
+                if isinstance(item, dict):
+                    rows.append(
+                        {
+                            "platform": item.get("platform"),
+                            "connected": bool(item.get("connected")),
+                            "username": item.get("username"),
+                            "display_name": item.get("display_name"),
+                            "avatar_url": item.get("avatar_url"),
+                            "status": item.get("status") or "active",
+                        }
+                    )
+            return rows
+
+        async def _cloud_fetch_runtime(platform: str) -> dict:
+            token = (
+                getattr(self._cloud_auth, "_access_token", None)
+                if self._cloud_auth is not None
+                else None
+            )
+            if not token:
+                raise RuntimeError("not authenticated")
+            client = (
+                self._cloud_auth._client_or_create()
+                if self._cloud_auth is not None
+                and hasattr(self._cloud_auth, "_client_or_create")
+                else None
+            )
+            if client is None:
+                raise RuntimeError("not authenticated")
+            # fetch_runtime_token signature is (self, platform, access_token).
+            return await client.fetch_runtime_token(platform, token=token)
+
+        def _platform_autostart(plat: str) -> bool:
+            if plat == "twitch":
+                return bool(
+                    self._settings.value(_SETTINGS_AUTOSTART_TWITCH, False, bool)
+                )
+            if plat == "youtube":
+                return bool(
+                    self._settings.value(_SETTINGS_AUTOSTART_YOUTUBE, False, bool)
+                )
+            if plat == "tiktok":
+                return bool(
+                    self._settings.value(_SETTINGS_AUTOSTART_TIKTOK, False, bool)
+                )
+            if plat == "kick":
+                return bool(
+                    self._settings.value(_SETTINGS_AUTOSTART_KICK, False, bool)
+                )
+            return False
+
+        # Per-platform "enabled for this installation" helpers — use
+        # the instance methods (defined alongside ``_set_platform_status_field``
+        # below) instead of nested closures so they can be referenced
+        # from anywhere in the class, including the early-bind time
+        # when ``CheremshaAuthState`` is constructed.
+        def _platform_local_enabled(plat: str) -> bool:
+            return self._read_platform_local_enabled(plat)
+
+        def _set_platform_local_enabled(plat: str, enabled: bool) -> None:
+            self._write_platform_local_enabled(plat, enabled)
+
+        def _platform_running_local() -> dict[str, dict]:
+            out: dict[str, dict] = {}
+            try:
+                out["twitch"] = {"running": bool(self._twitch.running)}
+            except Exception:
+                out["twitch"] = {"running": False}
+            try:
+                out["youtube"] = {"running": bool(self._youtube.running)}
+            except Exception:
+                out["youtube"] = {"running": False}
+            try:
+                out["tiktok"] = {"running": bool(self._tiktok.running)}
+            except Exception:
+                out["tiktok"] = {"running": False}
+            try:
+                out["kick"] = {"running": bool(self._kick.running)}
+            except Exception:
+                out["kick"] = {"running": False}
+            return out
+
+        self._platform_manager = PlatformConnectionManager(
+            self._cloud_auth,
+            cloud_fetch_platforms=_cloud_fetch_platforms,
+            cloud_fetch_runtime_token=_cloud_fetch_runtime,
+            fetch_local_summaries=_platform_running_local,
+            start_platform=self._start_platform_via_cloud,
+            stop_platform=self._stop_platform,
+            autostart_predicate=_platform_autostart,
+            post_status=self._on_user_status,
+            platform_status_fields=self._set_platform_status_field,
+            platform_local_enabled=_platform_local_enabled,
+            set_platform_local_enabled=_set_platform_local_enabled,
+            parent=self,
+        )
         self._qml_conn = QQuickWidget(self)
         self._qml_conn.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
         self._qml_conn.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -1551,6 +1820,13 @@ class MainWindow(FramelessWindow):
         self._qml_donations.setClearColor(QColor(10, 11, 14))
         _setup_qml_import_path(self._qml_donations)
         self._widgets_qml_api = WidgetsQmlApi(pubsub=self._overlay_server.pubsub())
+        # Sync: every local widget-instance change refreshes the debounced push.
+        try:
+            self._widgets_qml_api.widgetInstancesChanged.connect(
+                self._on_widget_instance_changed  # type: ignore[attr-defined]
+            )
+        except Exception:
+            pass
         # NOTE: legacy widget-instance DB migration runs lazily on the first
         # open of the Widgets page (see _load_qml_page), not at startup.
         self._widgets_qml_api.set_battle_host(self)
@@ -2217,6 +2493,8 @@ class MainWindow(FramelessWindow):
         ctx = widget.rootContext()
         if index == self._IX_CONN:
             ctx.setContextProperty("api", self._qml_api)
+            ctx.setContextProperty("cheremshaAuth", self._cloud_auth)
+            ctx.setContextProperty("cheremshaSync", self._sync_manager)
             ctx.setContextProperty("tiktokAnalytics", self._tiktok_analytics)
             ctx.setContextProperty("twitchAnalytics", self._twitch_analytics)
             ctx.setContextProperty("youtubeAnalytics", self._youtube_analytics)
@@ -2225,15 +2503,18 @@ class MainWindow(FramelessWindow):
             ctx.setContextProperty("donApi", self._donations_qml_api)
         elif index in (self._IX_WIDGETS, self._IX_LAYOUTS):
             ctx.setContextProperty("api", self._widgets_qml_api)
+            ctx.setContextProperty("cheremshaSync", self._sync_manager)
             ctx.setContextProperty("tunnelApi", self._overlay_tunnel_qml_api)
             ctx.setContextProperty("navApi", self._qml_api)
         elif index == self._IX_DOCKS:
             ctx.setContextProperty("dockApi", self._docks_qml_api)
+            ctx.setContextProperty("cheremshaSync", self._sync_manager)
             ctx.setContextProperty("tunnelApi", self._overlay_tunnel_qml_api)
             ctx.setContextProperty("navApi", self._qml_api)
         elif index == self._IX_ACTIONS:
             ctx.setContextProperty("api", self._qml_api)
             ctx.setContextProperty("actApi", self._actions_qml_api)
+            ctx.setContextProperty("cheremshaSync", self._sync_manager)
             ctx.setContextProperty("navApi", self._qml_api)
 
     def _load_qml_page(self, index: int) -> None:
@@ -4129,20 +4410,42 @@ class MainWindow(FramelessWindow):
             self._chat_popout.apply_texts()
 
     def _refresh_connection_panels(self) -> None:
-        tw_in = twitch_credentials.twitch_keyring_has_session()
+        # Display state per platform = (legacy keyring) OR (cloud-managed
+        # PlatformConnection with an active local source). The cloud →
+        # desktop bridge pushes the connected flag here via the
+        # "platformsChanged" signal → so users on a brand-new install
+        # who do "Login through Twitch" see the connected panel the
+        # moment the auto-connect completes.
+        auth = getattr(self, "_cloud_auth", None)
+        platforms_by_name: dict[str, dict[str, Any]] = {}
+        if auth is not None and getattr(auth, "isAuthenticated", False):
+            try:
+                platforms_by_name = {
+                    p.platform: auth.platformStatus(p.platform) for p in (auth._platforms or {}).values()  # type: ignore[attr-defined]
+                }
+            except Exception:  # noqa: BLE001
+                platforms_by_name = {}
+        tw_cloud_connected = bool(platforms_by_name.get("twitch", {}).get("connected"))
+        tw_in = (
+            twitch_credentials.twitch_keyring_has_session()
+            or (tw_cloud_connected and bool(self._twitch and self._twitch.running))
+        )
         self._tw_login_panel.setVisible(not tw_in)
         self._tw_connected_panel.setVisible(tw_in)
         if tw_in:
             bundle = twitch_credentials.load_oauth_bundle()
             manual = keyring_store.get_password(constants.KEY_TWITCH_TOKEN)
+            tw_login_label = platforms_by_name.get("twitch", {}).get("username") or ""
             if bundle and bundle.authorized_login:
                 self._twitch_logged_in_label.setText(
                     self._tr("tw.connected_as", login=bundle.authorized_login),
                 )
-            elif bundle:
-                self._twitch_logged_in_label.setText(self._tr("tw.connected_oauth"))
             elif manual:
                 self._twitch_logged_in_label.setText(self._tr("tw.connected_token"))
+            elif tw_login_label:
+                self._twitch_logged_in_label.setText(
+                    self._tr("tw.connected_as", login=tw_login_label),
+                )
             else:
                 self._twitch_logged_in_label.setText(self._tr("tw.connected_generic"))
 
@@ -8226,6 +8529,12 @@ class MainWindow(FramelessWindow):
                 return
             self._on_user_status(self._tr("startup.workers"))
             self._asyncio_loop = asyncio.get_running_loop()
+            # Cheremsha session restore: fire-and-forget, never blocks startup.
+            # Failures (expired/invalid/offline) silently converge on logged-out.
+            asyncio.create_task(
+                self._cloud_auth.restore_session(),
+                name="cheremsha-session-restore",
+            )
             self._music_queue.set_loop(self._asyncio_loop)
             if not self._overlay_server_started:
                 await self.warm_overlay_server()
@@ -8698,6 +9007,178 @@ class MainWindow(FramelessWindow):
             if channel:
                 self._kick_enabled = True
                 await self._start_kick()
+
+    # ------------------------------------------------------------------
+    # PlatformConnectionManager hooks. Each of these is an async helper that
+    # a) starts the existing PlatformSource using a runtime credential dict
+    #    fetched from the Cloud broker, or b) stops the in-process source.
+    # They NEVER read provider tokens from disk — those live only on Cloud.
+    # ------------------------------------------------------------------
+    async def _start_platform_via_cloud(self, platform: str, runtime: dict) -> bool:
+        """Inject a runtime credential dict into the existing source layer.
+        ``runtime`` keys:
+          - access_token (str, required, short-lived)
+          - platform_user_id / username / display_name / avatar_url / scope
+          - reauth_required (bool)
+        """
+        try:
+            if platform == "twitch":
+                channel = runtime.get("username") or self._twitch_channel.text().strip()
+                if not channel:
+                    channel = (self._twitch_channel.text() or "").strip()
+                # Without a manual token UI field, runtime.token wins.
+                self._twitch_token.setText(runtime.get("access_token") or "")
+                token = (runtime.get("access_token") or "").strip()
+                if not (channel and token):
+                    self._twitch_token.setText("")
+                    return False
+                client_id = self._twitch_client_id_resolved() or runtime.get(
+                    "client_id"
+                ) or ""
+                # If we don't have the client id locally (cloud-only
+                # auth flow), pass a placeholder — the cloud broker has
+                # already authorised the token, so TwitchSource does not
+                # need it to connect.
+                if not client_id:
+                    client_id = "cloud-broker"
+                await self._twitch.start(token, channel)
+                await self._start_twitch_analytics(
+                    token=token,
+                    client_id=client_id,
+                    channel_login=channel,
+                )
+                self._twitch_token.setText("")
+                return True
+            if platform == "youtube":
+                # YouTube inherits Google OAuth; runtime broker returns an
+                # access token, but the existing source persists the OAuth
+                # Credentials blob — the cloud path is observed through
+                # _start_youtube which falls back to manual video id.
+                # Mark reauth_required when the broker reports it.
+                if runtime.get("reauth_required"):
+                    self._on_user_status("YouTube: потрібна повторна авторизація")
+                    return False
+                await self._youtube.start(None)
+                return True
+            if platform == "tiktok":
+                if runtime.get("reauth_required"):
+                    self._on_user_status("TikTok: потрібна повторна авторизація")
+                    return False
+                user = (runtime.get("username") or self._tiktok_username.text() or "").strip()
+                self._tiktok_username.setText(user.lstrip("@"))
+                self._tiktok_enabled = True
+                await self._start_tiktok()
+                return True
+            if platform == "kick":
+                if runtime.get("reauth_required"):
+                    self._on_user_status("Kick: потрібна повторна авторизація")
+                    return False
+                channel = (runtime.get("username") or self._kick_channel.text() or "").strip()
+                channel = channel.lstrip("@").strip()
+                self._kick_channel.setText(channel)
+                self._kick_enabled = True
+                await self._start_kick()
+                return True
+        except Exception as exc:  # noqa: BLE001 - never crash MainWindow on broker
+            logger.debug("start platform %s via cloud failed: %s", platform, type(exc).__name__)
+            return False
+        return False
+
+    async def _stop_platform(self, platform: str) -> bool:
+        try:
+            if platform == "twitch" and self._twitch.running:
+                await self._twitch.stop()
+                await self._stop_twitch_analytics()
+            elif platform == "youtube" and self._youtube.running:
+                await self._youtube.stop()
+                self._youtube_analytics.resetSession()
+            elif platform == "tiktok" and self._tiktok.running:
+                await self._tiktok.stop()
+            elif platform == "kick" and self._kick.running:
+                await self._kick.stop()
+        except Exception:
+            logger.debug("stop platform %s failed", platform, exc_info=True)
+        # Always sync the footer.
+        self._qml_refresh_if_visible()
+        return True
+
+    def _set_platform_status_field(self, platform: str, status: str, connected: bool) -> None:
+        """Route platform status into the existing footer / connection panels
+        through the same prefix strings used by the manual paths.
+        """
+        if platform == "twitch":
+            self._status_twitch = status
+        elif platform == "youtube":
+            self._status_youtube = status
+        elif platform == "tiktok":
+            self._status_tiktok = status
+        elif platform == "kick":
+            self._status_kick = status
+        # Don't surface transient broker statuses as a hard error in the UI;
+        # the per-platform footer is the user-facing indicator.
+        self._qml_refresh_if_visible()
+
+    # ------------------------------------------------------------------
+    # OAuth auto-connect during login: on_auto_connected_platform /
+    # on_auto_reauth_required_platform. MainWindow flips the platform
+    # local-enabled flag so ``PlatformConnectionManager.reconcile()``
+    # starts driving the platform's source after a fresh auto-login.
+    # ------------------------------------------------------------------
+    def _on_auto_connected_platform(self, outcome: object) -> None:
+        """Mark the OAuth auto-connected platform as locally enabled
+        (drives the existing PlatformSource startup via the broker).
+        """
+        plat = getattr(outcome, "platform", None)
+        if not plat:
+            return
+        if plat not in {"twitch", "youtube", "tiktok", "kick"}:
+            return
+        if not getattr(outcome, "connected", False):
+            return
+        try:
+            self._write_platform_local_enabled(plat, True)
+        except Exception:  # noqa: BLE001
+            logger.debug("persist platform_enabled after login failed", exc_info=True)
+
+    def _on_auto_reauth_required_platform(self, outcome: object) -> None:
+        """When the same-transaction OAuth was inadequate, surface a
+        non-modal notice in the existing status string. We DO NOT flip
+        the platform_enabled flag — we still want the user to re-auth
+        manually via the connections panel."""
+        plat = getattr(outcome, "platform", None) or ""
+        if not plat:
+            return
+        self._on_user_status(f"{plat.capitalize()}: потрібна повторна авторизація")
+
+    def _read_platform_local_enabled(self, plat: str) -> bool:
+        """Return whether THIS installation should actively drive the
+        platform's source. Returns False on a brand-new account (key
+        never written). Once written, the value sticks across restarts
+        (a user's manual disable is preserved)."""
+        # Brand-new account: no sentinel → False. The reconcile loop
+        # will not start this platform's source until the sentinel is
+        # written (only happens via OAuth auto-connect or via the
+        # QML ``Платформа увімкнена [ON]`` toggle).
+        init_key = _SETTING_PLATFORM_ENABLED_INIT.format(plat=plat)
+        if not self._settings.value(init_key, False, bool):
+            return False
+        key = _SETTING_PLATFORM_ENABLED.format(plat=plat)
+        return bool(self._settings.value(key, False, bool))
+
+    def _write_platform_local_enabled(self, plat: str, enabled: bool) -> None:
+        """Persist the user's toggle of ``Платформа увімкнена [ON/OFF]``."""
+        init_key = _SETTING_PLATFORM_ENABLED_INIT.format(plat=plat)
+        key = _SETTING_PLATFORM_ENABLED.format(plat=plat)
+        self._settings.setValue(key, bool(enabled))
+        self._settings.setValue(init_key, True)
+        self._settings.sync()
+        # Make sure the platform reconciler re-runs so the change of
+        # state actually takes effect (start or stop the source).
+        try:
+            if getattr(self, "_platform_manager", None) is not None:
+                self._platform_manager.triggerReconcile()
+        except Exception:  # noqa: BLE001
+            logger.debug("triggerReconcile after platform_enabled write failed", exc_info=True)
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if self._closing:

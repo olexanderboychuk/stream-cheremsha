@@ -9,8 +9,16 @@ KICK_CLIENT_SECRET: str = ""
 OVERLAY_CERTIFICATE: str = ""
 OVERLAY_PRIVATE_KEY: str = ""
 OVERLAY_PUBLIC_HOSTNAME: str = "app.cheremsha.click"
+# Cheremsha Cloud API base URL. Compiled into the Nuitka build from
+# STREAM_CHEREMSHA_CLOUD_API_URL (CI secret) or defaults to localhost for
+# dev builds. See ``stream_cheremsha.cloud.constants.api_base_url`` which
+# resolves: QSettings > runtime env > this embedded value > default.
+CHEREMSHA_CLOUD_API_URL: str = ""
 
 try:
+    from stream_cheremsha.config.embedded_local import (
+        CHEREMSHA_CLOUD_API_URL as _EMBEDDED_CHEREMSHA_CLOUD_API_URL,
+    )
     from stream_cheremsha.config.embedded_local import (  # type: ignore[import-not-found]
         CLOUDFLARE_TUNNEL_HOSTNAME as _EMBEDDED_CLOUDFLARE_TUNNEL_HOSTNAME,
     )
@@ -42,3 +50,4 @@ else:
     OVERLAY_CERTIFICATE = _EMBEDDED_OVERLAY_CERTIFICATE
     OVERLAY_PRIVATE_KEY = _EMBEDDED_OVERLAY_PRIVATE_KEY
     OVERLAY_PUBLIC_HOSTNAME = _EMBEDDED_OVERLAY_PUBLIC_HOSTNAME
+    CHEREMSHA_CLOUD_API_URL = _EMBEDDED_CHEREMSHA_CLOUD_API_URL

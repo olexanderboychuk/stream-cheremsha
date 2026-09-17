@@ -3425,6 +3425,28 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "splash.donations": {"uk": "Завантаження донатів…", "en": "Loading donations…"},
     "splash.docks": {"uk": "Завантаження доків…", "en": "Loading docks…"},
     "splash.overlay": {"uk": "Запуск оверлей-сервера…", "en": "Starting overlay server…"},
+    # Cheremsha Cloud account
+    "cloud.login": {"uk": "Увійти в Cheremsha", "en": "Sign in to Cheremsha"},
+    "cloud.login_with": {"uk": "Увійти через {provider}", "en": "Sign in with {provider}"},
+    "cloud.starting": {"uk": "Відкриваємо браузер…", "en": "Opening browser…"},
+    "cloud.waiting_auth": {"uk": "Очікуємо авторизацію…", "en": "Waiting for authorization…"},
+    "cloud.account": {"uk": "Cheremsha Account", "en": "Cheremsha Account"},
+    "cloud.platforms": {"uk": "Платформи", "en": "Platforms"},
+    "cloud.settings": {"uk": "Налаштування", "en": "Settings"},
+    "cloud.dashboard": {"uk": "Відкрити кабінет", "en": "Open dashboard"},
+    "cloud.logout": {"uk": "Вийти з акаунта", "en": "Sign out"},
+    "cloud.error_unreachable": {
+        "uk": "Cheremsha Cloud недоступний — перевірте з'єднання та адресу API",
+        "en": "Cheremsha Cloud is unreachable — check the connection and API address",
+    },
+    "cloud.error_callback_busy": {
+        "uk": "Не вдалося відкрити локальний порт для входу",
+        "en": "Could not open the local login port",
+    },
+    "cloud.error_exchange": {
+        "uk": "Не вдалося завершити вхід — спробуйте ще раз",
+        "en": "Could not finish sign-in — please retry",
+    },
 }
 
 

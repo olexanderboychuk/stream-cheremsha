@@ -512,6 +512,12 @@ class ActionsQmlApi(QObject):
         w = self._win()
         if w is not None:
             w._actions_reload_scope(p, ak)  # noqa: SLF001
+        if w is not None and getattr(w, "_sync_manager", None) is not None:
+            try:
+                data = json.loads(ruleset_to_json_text(rules, ui_layout=incoming_layout))
+            except (ValueError, TypeError):
+                data = {"rules": list(rules or []), "ui_layout": None}
+            w._sync_manager.enqueue_actions_change(f"{p}:{ak}", data)  # noqa: SLF001
 
     @Slot(str, str, result=str)
     def loadRulesUiLayoutJson(self, platform: str, accountKey: str) -> str:
@@ -564,6 +570,12 @@ class ActionsQmlApi(QObject):
         w = self._win()
         if w is not None:
             w._actions_reload_scope(p, ak)  # noqa: SLF001
+            if getattr(w, "_sync_manager", None) is not None:
+                try:
+                    data = json.loads(ruleset_to_json_text(rules, ui_layout=layout_in))
+                except (ValueError, TypeError):
+                    data = {"rules": list(rules), "ui_layout": None}
+                w._sync_manager.enqueue_actions_change(f"{p}:{ak}", data)  # noqa: SLF001
 
     @Slot(result=str)
     def pickSoundFile(self) -> str:

@@ -17,6 +17,12 @@ _ENV_KICK_CLIENT_SECRET = "STREAM_CHEREMSHA_KICK_CLIENT_SECRET"
 _ENV_OVERLAY_CERTIFICATE = "STREAM_CHEREMSHA_OVERLAY_CERTIFICATE"
 _ENV_OVERLAY_PRIVATE_KEY = "STREAM_CHEREMSHA_OVERLAY_PRIVATE_KEY"
 _ENV_OVERLAY_PUBLIC_HOSTNAME = "STREAM_CHEREMSHA_OVERLAY_PUBLIC_HOSTNAME"
+# Cheremsha Cloud API base URL. CI builds inject this from a GitHub Actions
+# secret; local builds default to localhost so dev builds still work
+# without env wiring. The desktop + web dashboard URL picked here is baked
+# into the binary's `embedded.CHEREMSHA_CLOUD_API_URL`.
+_ENV_CHEREMSHA_CLOUD_API_URL = "STREAM_CHEREMSHA_CLOUD_API_URL"
+_DEFAULT_CHEREMSHA_CLOUD_API_URL = "http://127.0.0.1:8000"
 
 
 def _write_embedded_local(*, overlay_cert_path: str = "", overlay_key_path: str = "") -> bool:
@@ -30,6 +36,15 @@ def _write_embedded_local(*, overlay_cert_path: str = "", overlay_key_path: str 
     public_hostname = (
         os.environ.get(_ENV_OVERLAY_PUBLIC_HOSTNAME) or "app.cheremsha.click"
     ).strip()
+    cloud_api_url = (
+        (os.environ.get(_ENV_CHEREMSHA_CLOUD_API_URL) or _DEFAULT_CHEREMSHA_CLOUD_API_URL)
+        .strip()
+        .rstrip("/")
+    )
+    if not (cloud_api_url.startswith("http://") or cloud_api_url.startswith("https://")):
+        raise SystemExit(
+            f"{_ENV_CHEREMSHA_CLOUD_API_URL} must be an http(s):// URL; got {cloud_api_url!r}"
+        )
     if overlay_cert_path or overlay_key_path:
         if not overlay_cert_path or not overlay_key_path:
             raise SystemExit("Both --overlay-cert and --overlay-key are required")
@@ -54,7 +69,8 @@ def _write_embedded_local(*, overlay_cert_path: str = "", overlay_key_path: str 
         f"KICK_CLIENT_SECRET = {kick_sec!r}\n"
         f"OVERLAY_CERTIFICATE = {certificate!r}\n"
         f"OVERLAY_PRIVATE_KEY = {private_key!r}\n"
-        f"OVERLAY_PUBLIC_HOSTNAME = {public_hostname!r}\n",
+        f"OVERLAY_PUBLIC_HOSTNAME = {public_hostname!r}\n"
+        f"CHEREMSHA_CLOUD_API_URL = {cloud_api_url!r}\n",
         encoding="utf-8",
     )
     return True
