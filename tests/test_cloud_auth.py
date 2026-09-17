@@ -194,6 +194,32 @@ async def test_cloud_client_http_error_maps() -> None:
     await client.aclose()
 
 
+@pytest.mark.asyncio()
+async def test_cloud_client_link_and_platform_connect_shapes() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/auth/twitch/link-start"):
+            assert request.headers["authorization"].startswith("Bearer ")
+            return httpx.Response(200, json={"authorization_url": "https://x/link", "state": "s"})
+        if path.endswith("/platforms/youtube/connect"):
+            assert request.url.params.get("mode") == "desktop"
+            return httpx.Response(200, json={"authorization_url": "https://x/connect", "state": "s"})
+        if path.endswith("/account/identities"):
+            return httpx.Response(200, json=[
+                {"id": "i-1", "provider": "google", "provider_email": "a@example.com"}])
+        raise AssertionError(path)
+
+    client = CheremshaCloudClient(
+        "http://cloud.test", httpx.AsyncClient(transport=_transport(handler)))
+    start = await client.link_start("twitch", "tok")
+    assert start["authorization_url"] == "https://x/link"
+    conn = await client.platform_connect_start("youtube", "tok")
+    assert conn["authorization_url"] == "https://x/connect"
+    ids = await client.get_identities("tok")
+    assert ids[0]["provider"] == "google"
+    await client.aclose()
+
+
 # ---------------------------------------------------------------- session store
 def test_session_store_roundtrip(keyring_fake) -> None:
     assert load_session() is None

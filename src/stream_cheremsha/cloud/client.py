@@ -189,6 +189,34 @@ class CheremshaCloudClient:
             # Logout is best-effort: local state is cleared regardless.
             logger.debug("cloud logout request failed (best-effort)")
 
+    async def _delete(self, path: str, token: str | None) -> Any:
+        return await self._request("DELETE", path, token=token)
+
+    async def link_start(self, provider: str, access_token: str) -> dict[str, Any]:
+        body = await self._get(f"/api/v1/auth/{provider}/link-start", token=access_token)
+        if not isinstance(body, dict) or not body.get("authorization_url"):
+            raise CloudApiError("cloud link start has no authorization URL")
+        return body
+
+    async def platform_connect_start(
+        self, platform: str, access_token: str
+    ) -> dict[str, Any]:
+        body = await self._post(
+            f"/api/v1/platforms/{platform}/connect?mode=desktop",
+            token=access_token,
+            payload={},
+        )
+        if not isinstance(body, dict) or not body.get("authorization_url"):
+            raise CloudApiError("cloud connect start has no authorization URL")
+        return body
+
+    async def get_identities(self, access_token: str) -> list[dict[str, Any]]:
+        body = await self._get("/api/v1/account/identities", token=access_token)
+        return [i for i in body] if isinstance(body, list) else []
+
+    async def unlink_identity(self, identity_id: str, access_token: str) -> None:
+        await self._delete(f"/api/v1/account/identities/{identity_id}", token=access_token)
+
     # -- platforms -------------------------------------------------------
     async def get_platforms(self, access_token: str) -> list[CloudPlatformStatus]:
         body = await self._get("/api/v1/platforms", token=access_token)
