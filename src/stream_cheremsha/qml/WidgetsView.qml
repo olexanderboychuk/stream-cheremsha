@@ -1119,6 +1119,16 @@ Item {
             if (!doc && all.length) doc = all[0];
             root.layoutDoc = doc || {};
             root.activeLayoutId = root.layoutDoc.id || "default";
+            // Self-heal legacy docs: z_index must mirror array position so
+            // editor stacking and OBS export agree. No save triggered here;
+            // the normalized doc persists on the next user edit.
+            try {
+                var zw = ((root.layoutDoc || {}).widgets || []).slice();
+                root._renumberLayoutZ(zw);
+                root._inspectorUpdating = true;
+                root.layoutDoc = Object.assign({}, root.layoutDoc, {widgets: zw});
+                root._inspectorUpdating = false;
+            } catch (e2) {}
         } catch (e) {
             root.layoutDoc = {};
         }
@@ -1280,11 +1290,12 @@ Item {
             y: targetY,
             width: defaultW,
             height: defaultH,
-            z_index: n + 1,
+            z_index: items.length,
             visible: true,
             locked: false,
             widget_instance_id: root.firstWidgetInstanceId(type)
         });
+        root._renumberLayoutZ(items);
         root._inspectorUpdating = true;
         root.layoutDoc = Object.assign({}, doc, {widgets: items});
         root._inspectorUpdating = false;
@@ -1298,11 +1309,25 @@ Item {
         root._pushUndo();
         var removedIdx = root.selectedLayoutWidget;
         items.splice(removedIdx, 1);
+        root._renumberLayoutZ(items);
         root._inspectorUpdating = true;
         root.layoutDoc = Object.assign({}, root.layoutDoc, {widgets: items});
         root._inspectorUpdating = false;
         root.selectedLayoutWidget = items.length ? Math.min(removedIdx, items.length - 1) : -1;
         root.saveLayoutEditor();
+    }
+
+    // z_index always mirrors array position (back-to-front): array[0]
+    // is the back layer, array[last] is the front layer. OBS export sorts
+    // by z_index, the editor canvas stacks by array index, so keeping them
+    // in sync is what keeps editor and output consistent.
+    function _renumberLayoutZ(items) {
+        for (var i = 0; i < items.length; ++i) {
+            if (Number(items[i].z_index) !== i) {
+                items[i] = Object.assign({}, items[i], {z_index: i});
+            }
+        }
+        return items;
     }
 
     function moveWidgetLayer(fromIdx, toIdx) {
@@ -1311,6 +1336,7 @@ Item {
         root._pushUndo();
         var moved = items.splice(fromIdx, 1)[0];
         items.splice(toIdx, 0, moved);
+        root._renumberLayoutZ(items);
         root._inspectorUpdating = true;
         root.layoutDoc = Object.assign({}, root.layoutDoc, {widgets: items});
         root._inspectorUpdating = false;
@@ -1363,10 +1389,10 @@ Item {
 
     function selectCanvasPreset(index) {
         root.canvasPresetIndex = index;
-        if (index === 1) root.applyLayoutPreset(1080, 1920, "TikTok вертикаль");
-        else if (index === 2) root.applyLayoutPreset(1080, 1080, "Квадрат");
-        else if (index === 3) root.applyLayoutPreset(1280, 720, "HD");
-        else if (index === 0) root.applyLayoutPreset(1920, 1080, "Основна сцена");
+        if (index === 1) root.applyLayoutPreset(1080, 1920, root.loc("widgets.layouts.editor.preset_tiktok_name"));
+        else if (index === 2) root.applyLayoutPreset(1080, 1080, root.loc("widgets.layouts.editor.preset_square_name"));
+        else if (index === 3) root.applyLayoutPreset(1280, 720, root.loc("widgets.layouts.editor.preset_hd_name"));
+        else if (index === 0) root.applyLayoutPreset(1920, 1080, root.loc("widgets.layouts.default_name"));
     }
 
     component EditorIconButton: Button {
@@ -3486,7 +3512,7 @@ Item {
                                                     color: "#111827cc"
                                                     border.width: 1
                                                     border.color: root.layoutPreviewAccent(index)
-                                                    z: Number(modelData.z_index || index)
+                                                    z: modelData.z_index !== undefined ? Number(modelData.z_index) : index
                                                     clip: true
                                                     Text {
                                                         anchors.fill: parent
@@ -3777,7 +3803,7 @@ Item {
                                     source: Qt.resolvedUrl("../assets/icons/" + (root.layoutSaveSucceeded ? "check.svg" : "x.svg"))
                                 }
                                 Text {
-                                    text: root.layoutSaveSucceeded ? "Збережено" : "Не збережено"
+                                    text: root.layoutSaveSucceeded ? root.loc("widgets.layouts.editor.saved") : root.loc("widgets.layouts.editor.unsaved")
                                     color: root.layoutSaveSucceeded ? muted : "#fca5a5"
                                     font.pixelSize: 11
                                 }
@@ -3841,19 +3867,19 @@ Item {
 
                             EditorIconButton {
                                 iconName: "editor_undo.svg"
-                                toolTipText: "Скасувати"
+                                toolTipText: root.loc("widgets.layouts.editor.undo")
                                 enabled: (root._undoStack || []).length > 0
                                 onClicked: root.undo()
                             }
                             EditorIconButton {
                                 iconName: "editor_redo.svg"
-                                toolTipText: "Повторити"
+                                toolTipText: root.loc("widgets.layouts.editor.redo")
                                 enabled: (root._redoStack || []).length > 0
                                 onClicked: root.redo()
                             }
 
                             LayoutCardButton {
-                                text: "Показати preview"
+                                text: root.loc("widgets.layouts.editor.preview")
                                 iconName: "open-external.svg"
                                 implicitHeight: 34
                                 onClicked: {
@@ -3862,7 +3888,7 @@ Item {
                                 }
                             }
                             LayoutPrimaryButton {
-                                text: "Зберегти"
+                                text: root.loc("widgets.common.save")
                                 iconName: "check.svg"
                                 implicitHeight: 34
                                 onClicked: {
@@ -3896,13 +3922,13 @@ Item {
 
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    Text { text: "Додати віджет"; color: ink; font.pixelSize: 14; font.bold: true }
+                                    Text { text: root.loc("widgets.layouts.editor.add_widget"); color: ink; font.pixelSize: 14; font.bold: true }
                                     Item { Layout.fillWidth: true }
                                     Text { text: root.filteredLayoutWidgetTypes().length; color: muted; font.pixelSize: 11 }
                                 }
                                 Text {
                                     Layout.fillWidth: true
-                                    text: "Перетягніть на полотно або натисніть +"
+                                    text: root.loc("widgets.layouts.editor.add_widget_hint")
                                     color: muted
                                     font.pixelSize: 10
                                     wrapMode: Text.Wrap
@@ -3928,7 +3954,7 @@ Item {
                                         anchors.fill: parent
                                         leftPadding: 32
                                         rightPadding: 8
-                                        placeholderText: "Пошук віджетів"
+                                        placeholderText: root.loc("widgets.layouts.editor.search_ph")
                                         text: root.layoutLibrarySearch
                                         color: ink
                                         font.pixelSize: 12
@@ -3984,9 +4010,9 @@ Item {
                                                         Layout.fillWidth: true
                                                         elide: Text.ElideRight
                                                     }
-                                                    EditorIconButton {
-                                                        iconName: "web_plus.svg"
-                                                        toolTipText: "Додати віджет"
+                                                     EditorIconButton {
+                                                         iconName: "web_plus.svg"
+                                                         toolTipText: root.loc("widgets.layouts.editor.add_widget")
                                                         implicitWidth: 28
                                                         implicitHeight: 28
                                                         onClicked: root.addLayoutWidget(modelData.type, modelData.label)
@@ -4062,7 +4088,7 @@ Item {
                                     spacing: 2
                                     EditorIconButton {
                                         iconName: "editor_zoom_out.svg"
-                                        toolTipText: "Зменшити масштаб"
+                                        toolTipText: root.loc("widgets.layouts.editor.zoom_out")
                                         implicitWidth: 28
                                         implicitHeight: 28
                                         enabled: root.layoutCanvasZoom > 0.25
@@ -4077,25 +4103,25 @@ Item {
                                     }
                                     EditorIconButton {
                                         iconName: "editor_zoom_in.svg"
-                                        toolTipText: "Збільшити масштаб"
+                                        toolTipText: root.loc("widgets.layouts.editor.zoom_in")
                                         implicitWidth: 28
                                         implicitHeight: 28
                                         enabled: root.layoutCanvasZoom < 3.0
                                         onClicked: root.setLayoutCanvasZoom(root.layoutCanvasZoom + 0.1)
                                     }
                                     LayoutCardButton {
-                                        text: "Вписати"
+                                        text: root.loc("widgets.layouts.editor.fit")
                                         iconName: "editor_fit.svg"
                                         implicitHeight: 28
-                                        toolTipText: "Вписати всі віджети в область"
+                                        toolTipText: root.loc("widgets.layouts.editor.fit_tip")
                                         onClicked: layoutCanvas.fitToContent()
                                     }
                                     LayoutCardButton {
-                                        text: root.layoutCanvasGridVisible ? "Сітка ✓" : "Сітка"
+                                        text: root.loc("widgets.layouts.editor.grid") + (root.layoutCanvasGridVisible ? " ✓" : "")
                                         iconName: "editor_grid.svg"
                                         primary: root.layoutCanvasGridVisible
                                         implicitHeight: 28
-                                        toolTipText: "Увімкнути сітку та прив'язку об'єктів"
+                                        toolTipText: root.loc("widgets.layouts.editor.grid_tip")
                                         onClicked: root.layoutCanvasGridVisible = !root.layoutCanvasGridVisible
                                     }
                                 }
@@ -4831,13 +4857,13 @@ Item {
 
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    Text { text: "Шари"; color: ink; font.pixelSize: 14; font.bold: true }
+                                    Text { text: root.loc("widgets.layouts.editor.layers"); color: ink; font.pixelSize: 14; font.bold: true }
                                     Item { Layout.fillWidth: true }
                                     Text { text: (root.layoutDoc.widgets || []).length; color: muted; font.pixelSize: 11 }
                                 }
                                 Text {
                                     Layout.fillWidth: true
-                                    text: "Порядок віджетів"
+                                    text: root.loc("widgets.layouts.editor.layers_hint")
                                     color: muted
                                     font.pixelSize: 10
                                 }
@@ -4848,16 +4874,21 @@ Item {
                                     Layout.fillHeight: true
                                     clip: true
                                     spacing: 5
-                                    model: root.layoutDoc.widgets || []
+                                    // Front layer on top (Figma/Photoshop convention):
+                                    // array order is back-to-front, so display reversed.
+                                    model: (root.layoutDoc.widgets || []).slice().reverse()
 
                                     delegate: Rectangle {
                                         required property var modelData
                                         required property int index
+                                        // Array position of this row (back-to-front order).
+                                        property int realIndex: ((root.layoutDoc.widgets || []).length - 1) - index
+                                        property int layerCount: (root.layoutDoc.widgets || []).length
                                         width: activeLayoutWidgets.width
                                         height: 44
                                         radius: 7
-                                        color: index === root.selectedLayoutWidget ? "#134e4a" : (itemHover.hovered ? "#1b2537" : "#141c2c")
-                                        border.width: index === root.selectedLayoutWidget ? 1 : 0
+                                        color: realIndex === root.selectedLayoutWidget ? "#134e4a" : (itemHover.hovered ? "#1b2537" : "#141c2c")
+                                        border.width: realIndex === root.selectedLayoutWidget ? 1 : 0
                                         border.color: "#5eead4"
 
                                         HoverHandler { id: itemHover }
@@ -4884,45 +4915,45 @@ Item {
                                                 }
                                                 color: modelData.visible === false ? muted : ink
                                                 font.pixelSize: 11
-                                                font.weight: index === root.selectedLayoutWidget ? Font.Medium : Font.Normal
+                                                font.weight: realIndex === root.selectedLayoutWidget ? Font.Medium : Font.Normal
                                                 Layout.fillWidth: true
                                                 elide: Text.ElideRight
                                             }
 
                                             EditorIconButton {
                                                 iconName: "chevron-up.svg"
-                                                toolTipText: "Підняти шар"
+                                                toolTipText: root.loc("widgets.layouts.editor.layer_up")
                                                 implicitWidth: 30
                                                 implicitHeight: 30
                                                 padding: 4
-                                                enabled: index > 0
-                                                onClicked: root.moveWidgetLayer(index, index - 1)
+                                                enabled: realIndex < layerCount - 1
+                                                onClicked: root.moveWidgetLayer(realIndex, realIndex + 1)
                                             }
                                             EditorIconButton {
                                                 iconName: "chevron-down.svg"
-                                                toolTipText: "Опустити шар"
+                                                toolTipText: root.loc("widgets.layouts.editor.layer_down")
                                                 implicitWidth: 30
                                                 implicitHeight: 30
                                                 padding: 4
-                                                enabled: index < (root.layoutDoc.widgets || []).length - 1
-                                                onClicked: root.moveWidgetLayer(index, index + 1)
+                                                enabled: realIndex > 0
+                                                onClicked: root.moveWidgetLayer(realIndex, realIndex - 1)
                                             }
                                             EditorIconButton {
                                                 iconName: modelData.locked ? "editor_lock.svg" : "editor_unlock.svg"
-                                                toolTipText: modelData.locked ? "Розблокувати" : "Заблокувати"
+                                                toolTipText: modelData.locked ? root.loc("widgets.layouts.editor.unlock") : root.loc("widgets.layouts.editor.lock")
                                                 implicitWidth: 30
                                                 implicitHeight: 30
                                                 padding: 4
                                                 active: modelData.locked
-                                                onClicked: root.toggleWidgetLock(index)
+                                                onClicked: root.toggleWidgetLock(realIndex)
                                             }
                                             EditorIconButton {
                                                 iconName: modelData.visible === false ? "editor_eye_off.svg" : "editor_eye.svg"
-                                                toolTipText: modelData.visible === false ? "Показати" : "Сховати"
+                                                toolTipText: modelData.visible === false ? root.loc("widgets.layouts.editor.show") : root.loc("widgets.layouts.editor.hide")
                                                 implicitWidth: 30
                                                 implicitHeight: 30
                                                 padding: 4
-                                                onClicked: root.toggleWidgetVisibility(index)
+                                                onClicked: root.toggleWidgetVisibility(realIndex)
                                             }
                                         }
 
@@ -4930,7 +4961,7 @@ Item {
                                             anchors.fill: parent
                                             z: -1
                                             onClicked: {
-                                                root.selectedLayoutWidget = index;
+                                                root.selectedLayoutWidget = realIndex;
                                                 layoutCanvas.forceActiveFocus();
                                             }
                                         }
@@ -4940,7 +4971,7 @@ Item {
                                 Text {
                                     visible: !(root.layoutDoc.widgets || []).length
                                     Layout.fillWidth: true
-                                    text: "Додайте віджет з панелі зліва"
+                                    text: root.loc("widgets.layouts.editor.empty_layers")
                                     color: muted
                                     font.pixelSize: 11
                                     wrapMode: Text.Wrap
@@ -4967,10 +4998,10 @@ Item {
                             RowLayout {
                                 Layout.fillWidth: true
                                 spacing: 6
-                                Text { text: "Полотно"; color: ink; font.pixelSize: 12; font.bold: true }
+                                Text { text: root.loc("widgets.layouts.editor.canvas"); color: ink; font.pixelSize: 12; font.bold: true }
                                 StyledComboBox {
                                     Layout.preferredWidth: 240
-                                    model: ["1920 × 1080 · Горизонталь", "1080 × 1920 · TikTok вертикаль", "1080 × 1080 · Квадрат", "1280 × 720 · HD", "Вручну"]
+                                    model: [root.loc("widgets.layouts.editor.preset_landscape"), root.loc("widgets.layouts.editor.preset_tiktok"), root.loc("widgets.layouts.editor.preset_square"), root.loc("widgets.layouts.editor.preset_hd"), root.loc("widgets.layouts.editor.preset_custom")]
                                     currentIndex: root.canvasPresetIndex
                                     onUserActivated: function(index) { root.selectCanvasPreset(index); }
                                 }
@@ -5001,7 +5032,7 @@ Item {
                                 Item { Layout.fillWidth: true }
                                 EditorIconButton {
                                     iconName: "web_trash.svg"
-                                    toolTipText: "Видалити віджет"
+                                    toolTipText: root.loc("widgets.layouts.editor.delete_widget")
                                     enabled: root.selectedLayoutItem() !== null
                                     onClicked: root.removeSelectedLayoutWidget()
                                 }
@@ -5026,7 +5057,7 @@ Item {
                                 Text {
                                     text: {
                                         var item = root.selectedLayoutItem();
-                                        if (!item) return "Виберіть віджет для редагування";
+                                        if (!item) return root.loc("widgets.layouts.editor.select_hint");
                                         var info = root.widgetTypeInfo(item.type);
                                         return info.label || item.type;
                                     }

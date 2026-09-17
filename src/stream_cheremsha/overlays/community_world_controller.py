@@ -183,12 +183,11 @@ class CommunityWorldController(QObject):
         pubsub = self._pubsub
         if pubsub is None:
             return
-        cfg = load_community_world_overlay_config()
         patch = self._session.to_overlay_dict()
-        patch["config"] = community_world_overlay_config_to_public_dict(cfg)
         patch["elders"] = fetch_village_elders(limit=8)
         patch["locale"] = str(self._get_locale() or "uk")
-        topic = f"overlay:community_world:{self._instance}"
+        # State-only broadcast: instances keep their own config.
+        topic = "overlay:community_world:*"
         pubsub.publish_sync(topic, patch)
         self._session.consume_pending_buildings()
 

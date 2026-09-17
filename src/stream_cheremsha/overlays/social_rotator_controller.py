@@ -178,7 +178,10 @@ class SocialRotatorController(QObject):
         if pubsub is None:
             return
         patch = self._build_state()
-        topic = f"overlay:social_rotator:{self._instance}"
+        # State-only broadcast: every instance keeps its own config (render /
+        # initial_state); the singleton config must not leak into instances.
+        patch.pop("config", None)
+        topic = "overlay:social_rotator:*"
         pubsub.publish_sync(topic, patch)
 
     async def _publish_patch(self) -> None:

@@ -2399,14 +2399,12 @@ class WidgetsQmlApi(QObject):
         return merged_settings(inst)
 
     def _save_cfg_to_instance(self, type_id: str, cfg_dict: dict[str, Any]) -> bool:
-        """Legacy save*ConfigJson hook.
+        """Instance save hook: persist only into the instance store.
 
-        New (non-legacy) instances persist only into the instance store and
-        skip the singleton. Legacy (migrated ``main``) instances update the
-        store AND fall through to the legacy path (``return False``) so the
-        singleton, controllers (reload_config) and legacy topics stay in sync
-        — otherwise controllers would keep publishing the stale singleton and
-        the overlay would visibly revert seconds after saving.
+        Never touches the type singleton. Publishes the new config to the
+        instance topic and asks per-instance engine groups to reload it.
+        Returns True when an edited instance was saved, False otherwise (the
+        caller then falls through to the legacy singleton path).
         """
         from stream_cheremsha.overlays.widget_instances import update_instance_settings
 
@@ -2420,6 +2418,23 @@ class WidgetsQmlApi(QObject):
             topic=f"overlay:{type_id}:{inst.id}",
             patch={"config": dict(cfg_dict), "timestamp": time.time()},
         )
+        # Per-instance engines (e.g. leaderboard groups) must pick up the new
+        # settings; singleton controllers reload on the legacy path instead.
+        for _attr in (
+            "_live_leaderboard_controller",
+            "_live_leaderboard_simple_controller",
+            "_stream_goal_controller",
+            "_social_rotator_controller",
+            "_webcam_frame_controller",
+            "_signal_system_controller",
+        ):
+            grp = getattr(self, _attr, None)
+            reloader = getattr(grp, "reload_instance", None)
+            if callable(reloader):
+                try:
+                    reloader(inst.id)
+                except Exception:  # noqa: BLE001 - save already persisted
+                    pass
         self.widgetInstancesChanged.emit()
         return True
 

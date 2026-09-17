@@ -123,17 +123,24 @@ class StreamCoordinator:
                 continue
             except asyncio.CancelledError:
                 raise
-            if not self._should_tts(msg):
-                continue
-            text = filter_for_tts(msg)
-            if text is None:
-                continue
-            if self._pre_tts is not None:
-                text = await self._pre_tts(text, msg.author)
-                text = (text or "").strip()
-                if not text:
+            try:
+                if not self._should_tts(msg):
                     continue
-            for chunk in merge_short_subchunks(chunk_text(text)):
+                text = filter_for_tts(msg)
+                if text is None:
+                    continue
+                if self._pre_tts is not None:
+                    text = await self._pre_tts(text, msg.author)
+                    text = (text or "").strip()
+                    if not text:
+                        continue
+                chunks = merge_short_subchunks(chunk_text(text))
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.warning("TTS ingest failed for chat message: %s", e)
+                continue
+            for chunk in chunks:
                 if not self._running:
                     break
                 try:

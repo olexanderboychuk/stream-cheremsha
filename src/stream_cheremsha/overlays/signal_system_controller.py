@@ -798,9 +798,8 @@ class SignalSystemController(QObject):
         if self._publish_handle is not None:
             self._publish_handle.cancel()
             self._publish_handle = None
-        cfg = self._get_config()
+        # State-only broadcast: instances keep their own config.
         patch = {
-            "config": signal_system_overlay_config_to_public_dict(cfg),
             "current_event": self._current_event.to_dict() if self._current_event else None,
             "event_seq": self._event_seq,
             "idle_metrics": {
@@ -809,7 +808,7 @@ class SignalSystemController(QObject):
                 "uptime_s": int(time.time() - self._start_time),
             },
         }
-        topic = f"overlay:signal_system:{self._instance}"
+        topic = "overlay:signal_system:*"
         if hasattr(pubsub, "publish_sync"):
             pubsub.publish_sync(topic, patch)
         else:
@@ -822,9 +821,8 @@ class SignalSystemController(QObject):
         pubsub = self._pubsub
         if pubsub is None:
             return
-        cfg = self._get_config()
+        # State-only broadcast: instances keep their own config.
         patch = {
-            "config": signal_system_overlay_config_to_public_dict(cfg),
             "locale": self._get_locale(),
             "current_event": self._current_event.to_dict() if self._current_event else None,
             "event_seq": self._event_seq,
@@ -834,5 +832,5 @@ class SignalSystemController(QObject):
                 "uptime_s": int(time.time() - self._start_time),
             },
         }
-        topic = f"overlay:signal_system:{self._instance}"
+        topic = "overlay:signal_system:*"
         pubsub.publish_sync(topic, patch)

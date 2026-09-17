@@ -12,6 +12,9 @@ class LiveLeaderboardSimpleController(LiveLeaderboardController):
     OVERLAY_TYPE = "live_leaderboard_simple"
 
     def _load_cfg(self):  # noqa: ANN202
+        loader = getattr(self, "_config_loader", None)
+        if loader is not None:
+            return loader()
         return simple_cfg_mod.load_live_leaderboard_simple_config()
 
     def _public_dict(self, cfg) -> dict[str, Any]:  # noqa: ANN001, ANN202

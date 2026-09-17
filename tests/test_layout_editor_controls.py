@@ -86,6 +86,63 @@ def test_layout_url_binding_tracks_server_base():
     assert "api.layoutOverlayUrl(root.activeLayoutId" in source
 
 
+def test_layout_editor_uses_l10n_not_hardcoded_strings():
+    # The canvas editor must go through root.loc() (navApi -> l10n.py) so
+    # UI locale switching applies. No hardcoded Cyrillic literals allowed
+    # in the editor section (single letters X/Y/W/H and symbols excepted).
+    import re
+
+    source = WIDGETS_VIEW.read_text(encoding="utf-8")
+    editor = source[source.index("id: layoutCanvasViewport") : source.index("// Bottom Panel: Canvas Settings")]
+    hardcoded = [
+        m for m in re.findall(r'(?:text|placeholderText|toolTipText|title): "([^"]+)"', editor)
+        if re.search(r"[А-Яа-яІіЇїЄєҐґ]", m) and m not in ("X", "Y", "W", "H")
+    ]
+    assert hardcoded == []
+
+
+def test_layout_editor_loc_keys_exist_in_l10n():
+    import re
+
+    from stream_cheremsha import l10n
+
+    source = WIDGETS_VIEW.read_text(encoding="utf-8")
+    keys = set(re.findall(r'root\.loc\("(widgets\.layouts\.editor\.[a-z_]+)"\)', source))
+    assert keys, "expected editor loc keys"
+    for key in sorted(keys):
+        row = l10n._TABLE.get(key)
+        assert row is not None, f"missing l10n key: {key}"
+        assert row.get("uk") and row.get("en"), f"key needs uk+en: {key}"
+
+
+def test_layer_moves_keep_z_index_in_sync_with_array_order():
+    # OBS export sorts by z_index while the canvas stacks by array index:
+    # every array mutation must renumber z_index to the position.
+    source = WIDGETS_VIEW.read_text(encoding="utf-8")
+    assert "function _renumberLayoutZ(items)" in source
+    for fn in ("function moveWidgetLayer", "function addLayoutWidget", "function removeSelectedLayoutWidget"):
+        body = source[source.index(fn): source.index(fn) + 2500]
+        assert "_renumberLayoutZ" in body, fn
+
+
+def test_layers_list_shows_front_layer_on_top():
+    # Array order is back-to-front, so the visible list must be reversed
+    # and row actions must address the real array index.
+    source = WIDGETS_VIEW.read_text(encoding="utf-8")
+    assert ".slice().reverse()" in source
+    assert "property int realIndex" in source
+    # "Move up" brings forward (toward array end = higher z).
+    assert "root.moveWidgetLayer(realIndex, realIndex + 1)" in source
+    assert "root.moveWidgetLayer(realIndex, realIndex - 1)" in source
+
+
+def test_layout_preview_uses_explicit_z_index_check():
+    # `z_index || index` silently drops a stored 0; must distinguish missing.
+    source = WIDGETS_VIEW.read_text(encoding="utf-8")
+    assert "modelData.z_index !== undefined ? Number(modelData.z_index) : index" in source
+    assert "Number(modelData.z_index || index)" not in source
+
+
 def test_fit_to_content_changes_viewport_only():
     # Fit must adjust zoom + camera pan, never widget geometry.
     source = WIDGETS_VIEW.read_text(encoding="utf-8")

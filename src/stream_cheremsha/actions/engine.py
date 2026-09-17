@@ -1919,7 +1919,10 @@ class PlatformActionsEngine:
                             else seconds,
                         }
                     }
-                    topic = f"overlay:actions:{self._actions_overlay_instance}"
+                    # Rule firings are runtime events, identical for every actions
+                    # instance: broadcast explicitly so each instance topic receives
+                    # them. Per-instance settings stay untouched (no "config" key).
+                    topic = "overlay:actions:*"
 
                     async def _pub(p: dict[str, object] = patch, tpc: str = topic) -> None:
                         await self._pubsub.publish(tpc, p)  # type: ignore[arg-type]

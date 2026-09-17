@@ -38,7 +38,8 @@ def test_events_schedule_and_publish() -> None:
     patch = asyncio.run(_run())
     assert patch["follows"] == 1
     assert patch["likes"] == 100
-    assert patch["config"]["enabled"] is True
+    # Periodic patches are state-only; config arrives via initial_state.
+    assert "config" not in patch
     assert "elders" in patch
 
 

@@ -41,11 +41,13 @@ class LiveLeaderboardController(QObject):
         get_locale: Callable[[], str],
         instance: str = "main",
         parent: QObject | None = None,
+        config_loader: Callable[[], Any] | None = None,
     ) -> None:
         super().__init__(parent)
         self._pubsub = pubsub
         self._get_locale = get_locale
         self._instance = str(instance or "main").strip() or "main"
+        self._config_loader = config_loader
         self._publish_handle: asyncio.TimerHandle | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
 
@@ -74,6 +76,8 @@ class LiveLeaderboardController(QObject):
         self._rotation_timer.timeout.connect(self._on_rotation_tick)
 
     def _load_cfg(self):  # noqa: ANN202 - generic config object
+        if self._config_loader is not None:
+            return self._config_loader()
         return load_live_leaderboard_overlay_config()
 
     def _public_dict(self, cfg) -> dict[str, Any]:  # noqa: ANN001, ANN202

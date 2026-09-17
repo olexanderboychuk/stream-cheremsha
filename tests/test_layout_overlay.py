@@ -99,3 +99,31 @@ def test_layout_overlay_renders_absolute_iframes(monkeypatch) -> None:
     assert f"/overlay/by-id/{inst.id}" in html
     assert "/overlay/chat?instance=" not in html
     assert "position:absolute" in html
+
+
+def test_layout_overlay_sorts_iframes_by_z_index(monkeypatch) -> None:
+    from PySide6.QtCore import QSettings
+
+    import stream_cheremsha.overlays.widget_instances as wimod
+
+    monkeypatch.setattr(
+        wimod, "QSettings", lambda *a, **k: QSettings("t-org-lay-z", "t-app-lay-z")
+    )
+    QSettings("t-org-lay-z", "t-app-lay-z").clear()
+
+    lay = default_layout()
+    from stream_cheremsha.overlays.layout import LayoutWidget
+
+    back_inst = wimod.create_instance("chat", "Back", None)
+    front_inst = wimod.create_instance("chat", "Front", None)
+    # Array order is intentionally opposite to z order: export must follow z.
+    back = LayoutWidget("back", "chat", back_inst.id, 0, 0, 100, 100, 2, widget_instance_id=back_inst.id)
+    front = LayoutWidget("front", "chat", front_inst.id, 0, 0, 100, 100, 9, widget_instance_id=front_inst.id)
+    monkeypatch.setattr(
+        layout_overlay,
+        "load_layouts",
+        lambda: [replace(lay, widgets=(front, back))],
+    )
+    html = LayoutOverlayType().render_html({"instance": "main"})
+    assert html.index("z-index:2") < html.index("z-index:9")
+    assert "z-index:9" in html

@@ -245,12 +245,11 @@ class StreamPetController(QObject):
         pubsub = self._pubsub
         if pubsub is None:
             return
-        cfg = load_stream_pet_overlay_config()
         now = datetime.now(UTC)
         patch = self._session.to_overlay_dict(now=now)
         patch["speech"] = self._resolved_speech_dict()
-        patch["config"] = stream_pet_overlay_config_to_public_dict(cfg)
-        topic = f"overlay:stream_pet:{self._instance}"
+        # State-only broadcast: instances keep their own config.
+        topic = "overlay:stream_pet:*"
         pubsub.publish_sync(topic, patch)
 
     async def _publish_patch(self) -> None:

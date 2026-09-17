@@ -199,11 +199,10 @@ class StreamGoalController(QObject):
         pubsub = self._pubsub
         if pubsub is None:
             return
-        cfg = load_stream_goal_overlay_config()
         patch = self._session.to_overlay_dict()
-        patch["config"] = stream_goal_overlay_config_to_public_dict(cfg)
         patch["locale"] = str(self._get_locale() or "uk")
-        topic = f"overlay:stream_goal:{self._instance}"
+        # State-only broadcast: instances keep their own config.
+        topic = "overlay:stream_goal:*"
         # Synchronous: publish_sync never blocks, so avoid fire-and-forget
         # tasks (destroyed-pending on loop shutdown -> log spam).
         pubsub.publish_sync(topic, patch)

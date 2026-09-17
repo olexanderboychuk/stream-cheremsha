@@ -210,7 +210,8 @@ def test_signal_system_controller_event_dispatch() -> None:
     sig = patch["current_event"]
     assert sig["type"] == "big_gift"
     assert sig["username"] == "MegaGifter"
-    assert "scale_percent" in patch["config"]
+    # Event patches are state-only; config arrives via initial_state.
+    assert "config" not in patch
     s.clear()
 
 
@@ -237,7 +238,7 @@ def test_signal_system_controller_priority_queue() -> None:
     topic, patch = pubsub.published[-1]
     sig = patch["current_event"]
     assert sig["priority"] == 100 or sig["type"] in ("milestone", "activity_surge")
-    assert "scale_percent" in patch["config"]
+    assert "config" not in patch
     s.clear()
 
 

@@ -113,13 +113,16 @@ class WebcamFrameController(QObject):
         pubsub = self._pubsub
         if pubsub is None:
             return
-        topic = f"overlay:webcam_frame:{self._instance}"
+        topic = "overlay:webcam_frame:*"
         # Publish config + activity score as a single patch.
         # Synchronous: OverlayPubSub.publish_sync is GUI-thread safe and
         # never blocks, so no fire-and-forget asyncio Task is needed
         # (bare ensure_future tasks get destroyed pending on loop
         # shutdown/restart, spamming "Task was destroyed" + "never awaited").
-        pubsub.publish_sync(topic, self.initial_state())
+        # State-only: instances keep their own config (render / initial_state).
+        patch = dict(self.initial_state())
+        patch.pop("config", None)
+        pubsub.publish_sync(topic, patch)
 
     async def _publish_patch(self) -> None:
         self._publish_patch_sync()

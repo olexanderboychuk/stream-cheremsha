@@ -154,13 +154,15 @@ from stream_cheremsha.online.models import now_hms as online_now_hms
 from stream_cheremsha.online.models import online_state_patch
 from stream_cheremsha.openai_moderation import openai_moderation_flagged
 from stream_cheremsha.overlays.battle_royale_overlay_config import (
-    battle_royale_overlay_config_to_json_text,
     load_battle_royale_overlay_config,
 )
 from stream_cheremsha.overlays.chat_overlay import chat_message_to_patch
 from stream_cheremsha.overlays.community_world_controller import CommunityWorldController
+from stream_cheremsha.overlays.instance_groups import (
+    InstanceControllerGroup,
+    instance_config_loader,
+)
 from stream_cheremsha.overlays.king_of_live_overlay_config import (
-    king_of_live_overlay_config_to_json_text,
     load_king_of_live_overlay_config,
 )
 from stream_cheremsha.overlays.live_leaderboard_controller import LiveLeaderboardController
@@ -384,6 +386,7 @@ _TTS_RATE_DEFAULT = 100
 _SETTINGS_TTS_MIN_INTERVAL_SEC = "tts/min_interval_sec"
 _SETTINGS_TTS_RANDOMIZE_EDGE = "tts/randomize_edge"
 _SETTINGS_TTS_RANDOMIZE_RESPEECHER = "tts/randomize_respeecher"
+_SETTINGS_RESPEECHER_VOICE = "tts/respeecher_voice"
 
 _SETTINGS_TELEGRAM_ENABLED = "telegram/enabled"
 _SETTINGS_TELEGRAM_ADMIN_ID = "telegram/admin_id"
@@ -1161,18 +1164,50 @@ class MainWindow(FramelessWindow):
             instance="main",
             parent=self,
         )
-        self._live_leaderboard = LiveLeaderboardController(
-            pubsub=self._overlay_server.pubsub(),
-            get_locale=lambda: self._locale,
-            instance="main",
-            parent=self,
+        from stream_cheremsha.overlays.live_leaderboard_overlay_config import (
+            live_leaderboard_overlay_config_defaults,
+            live_leaderboard_overlay_config_from_json_text,
         )
-        self._live_leaderboard_simple = LiveLeaderboardSimpleController(
-            pubsub=self._overlay_server.pubsub(),
-            get_locale=lambda: self._locale,
-            instance="main",
-            parent=self,
+        from stream_cheremsha.overlays.live_leaderboard_simple_config import (
+            live_leaderboard_simple_config_defaults,
+            live_leaderboard_simple_config_from_json_text,
         )
+
+        def _make_lb_controller(instance_id: str) -> LiveLeaderboardController:
+            return LiveLeaderboardController(
+                pubsub=self._overlay_server.pubsub(),
+                get_locale=lambda: self._locale,
+                instance=instance_id,
+                parent=self,
+                config_loader=instance_config_loader(
+                    "live_leaderboard",
+                    instance_id,
+                    live_leaderboard_overlay_config_from_json_text,
+                    live_leaderboard_overlay_config_defaults,
+                ),
+            )
+
+        def _make_lb_simple_controller(instance_id: str) -> LiveLeaderboardSimpleController:
+            return LiveLeaderboardSimpleController(
+                pubsub=self._overlay_server.pubsub(),
+                get_locale=lambda: self._locale,
+                instance=instance_id,
+                parent=self,
+                config_loader=instance_config_loader(
+                    "live_leaderboard_simple",
+                    instance_id,
+                    live_leaderboard_simple_config_from_json_text,
+                    live_leaderboard_simple_config_defaults,
+                ),
+            )
+
+        # One engine per widget instance (id-only topics); singletons are gone.
+        self._live_leaderboard = InstanceControllerGroup("live_leaderboard", _make_lb_controller)
+        self._live_leaderboard.sync_instances(start=False)
+        self._live_leaderboard_simple = InstanceControllerGroup(
+            "live_leaderboard_simple", _make_lb_simple_controller
+        )
+        self._live_leaderboard_simple.sync_instances(start=False)
         self._social_rotator = SocialRotatorController(
             pubsub=self._overlay_server.pubsub(),
             get_locale=lambda: self._locale,
@@ -1525,6 +1560,8 @@ class MainWindow(FramelessWindow):
         self._widgets_qml_api.set_social_rotator_controller(self._social_rotator)
         self._widgets_qml_api.set_webcam_frame_controller(self._webcam_frame)
         self._widgets_qml_api.set_signal_system_controller(self._signal_system)
+        # Keep per-instance engines in sync with user-created widget instances.
+        self._widgets_qml_api.widgetInstancesChanged.connect(self._sync_leaderboard_groups)
         self._donations_qml_api.set_donation_listener(self._on_external_donation)
         self._overlay_tunnel_qml_api = OverlayTunnelQmlApi(self)
         self._qml_widgets = QQuickWidget(self)
@@ -5205,6 +5242,10 @@ class MainWindow(FramelessWindow):
         self._refresh_audio_summary()
 
     def _on_respeecher_voice_changed(self, _index: int) -> None:
+        if hasattr(self, "_combo_respeecher_voice"):
+            voice = self._combo_respeecher_voice.currentData()
+            if isinstance(voice, str) and voice.strip():
+                self._settings.setValue(_SETTINGS_RESPEECHER_VOICE, voice.strip())
         # When voice changes, swap the backend to use the new voice
         if self._combo_tts_engine.currentData() == _TTS_ENGINE_RESPEECHER:
             asyncio.ensure_future(self._swap_tts_backend())
@@ -5296,12 +5337,21 @@ class MainWindow(FramelessWindow):
                     min_interval_sec=self._min_interval_sec_from_settings(),
                 )
             else:
-                # Get voice ID from the UI combo (if available) or default
+                # Get voice ID from the UI combo (if available) or saved settings or default
                 voice = _TTS_DEFAULT_VOICE_ID
                 if hasattr(self, "_combo_respeecher_voice"):
                     cd = self._combo_respeecher_voice.currentData()
                     if isinstance(cd, str) and cd.strip():
                         voice = cd.strip()
+                if voice == _TTS_DEFAULT_VOICE_ID:
+                    saved = str(
+                        self._settings.value(
+                            _SETTINGS_RESPEECHER_VOICE, _TTS_DEFAULT_VOICE_ID, str
+                        )
+                        or _TTS_DEFAULT_VOICE_ID
+                    ).strip()
+                    if saved:
+                        voice = saved
                 # Validate voice is in our supported list
                 if voice not in REPEECHER_VOICES:
                     voice = _TTS_DEFAULT_VOICE_ID
@@ -5499,6 +5549,21 @@ class MainWindow(FramelessWindow):
                 bool(self._settings.value(_SETTINGS_TTS_RANDOMIZE_RESPEECHER, False, bool)),
             )
             self._cb_respeecher_randomize.blockSignals(False)
+
+        if hasattr(self, "_combo_respeecher_voice"):
+            want_voice = str(
+                self._settings.value(_SETTINGS_RESPEECHER_VOICE, _TTS_DEFAULT_VOICE_ID, str)
+                or _TTS_DEFAULT_VOICE_ID
+            ).strip()
+            self._combo_respeecher_voice.blockSignals(True)
+            set_idx = 0
+            for i in range(self._combo_respeecher_voice.count()):
+                if self._combo_respeecher_voice.itemData(i) == want_voice:
+                    set_idx = i
+                    break
+            if self._combo_respeecher_voice.count():
+                self._combo_respeecher_voice.setCurrentIndex(set_idx)
+            self._combo_respeecher_voice.blockSignals(False)
 
         if hasattr(self, "_edit_tts_whitelist"):
             whitelist = str(self._settings.value(_SETTINGS_TTS_WHITELIST, "", str) or "").strip()
@@ -5860,7 +5925,7 @@ class MainWindow(FramelessWindow):
                         append["vip_gold"] = True
             t = asyncio.create_task(
                 self._overlay_server.pubsub().publish(
-                    "overlay:chat:main",
+                    "overlay:chat:*",
                     chat_patch,
                 ),
             )
@@ -6000,7 +6065,7 @@ class MainWindow(FramelessWindow):
             return
         t = asyncio.create_task(
             ps.publish(
-                "overlay:activity:main",
+                "overlay:activity:*",
                 activity_append_patch(item),
             ),
         )
@@ -6017,7 +6082,7 @@ class MainWindow(FramelessWindow):
             return
         t = asyncio.create_task(
             ps.publish(
-                "overlay:activity:main",
+                "overlay:activity:*",
                 activity_join_ticker_patch(item),
             ),
         )
@@ -6299,7 +6364,7 @@ class MainWindow(FramelessWindow):
         )
         try:
             self._overlay_server.pubsub().publish_sync(
-                "overlay:top_likers:main",
+                "overlay:top_likers:*",
                 {"leaders": leaders},
             )
         except RuntimeError:
@@ -6336,7 +6401,7 @@ class MainWindow(FramelessWindow):
         )
         try:
             self._overlay_server.pubsub().publish_sync(
-                "overlay:top_gifters:main",
+                "overlay:top_gifters:*",
                 {"leaders": leaders},
             )
         except RuntimeError:
@@ -6344,6 +6409,14 @@ class MainWindow(FramelessWindow):
 
     async def _publish_top_gifters_leaders_patch(self) -> None:
         self._publish_top_gifters_leaders_patch_sync()
+
+    def _sync_leaderboard_groups(self) -> None:
+        """Reconcile per-instance leaderboard engines with the instance store."""
+        for group in (self._live_leaderboard, self._live_leaderboard_simple):
+            try:
+                group.sync_instances()
+            except Exception:  # noqa: BLE001 - never break UI on sync failure
+                continue
 
     def _schedule_king_overlay_publish(self) -> None:
         if self._closing:
@@ -6411,10 +6484,9 @@ class MainWindow(FramelessWindow):
         thr_pct = max(50, min(99, int(cfg.danger_threshold_pct)))
         throne_danger = bool(challenger and best_ratio * 100.0 >= float(thr_pct))
 
-        cfg_payload = json.loads(king_of_live_overlay_config_to_json_text(cfg))
-        cfg_payload["ui_locale"] = self._locale
+        # State-only broadcast: every instance keeps its own config (render /
+        # initial_state); the singleton config must not leak into instances.
         patch: dict[str, Any] = {
-            "config": cfg_payload,
             "king": king,
             "gap_diamonds": gap,
             "runner_up_user": runner_name,
@@ -6432,7 +6504,7 @@ class MainWindow(FramelessWindow):
             self._king_overlay_cached_king_key = ""
             self._king_overlay_cached_king_display = ""
         try:
-            self._overlay_server.pubsub().publish_sync("overlay:king_of_live:main", patch)
+            self._overlay_server.pubsub().publish_sync("overlay:king_of_live:*", patch)
         except RuntimeError:
             return
 
@@ -6457,7 +6529,7 @@ class MainWindow(FramelessWindow):
         except RuntimeError:
             return
         ps.publish_sync(
-            "overlay:king_of_live:main",
+            "overlay:king_of_live:*",
             {
                 "king_presence_seq": int(self._king_presence_seq),
             },
@@ -6481,7 +6553,7 @@ class MainWindow(FramelessWindow):
         except RuntimeError:
             return
         ps.publish_sync(
-            "overlay:king_of_live:main",
+            "overlay:king_of_live:*",
             {
                 "chat_highlight_seq": int(self._king_chat_highlight_seq),
             },
@@ -6514,12 +6586,8 @@ class MainWindow(FramelessWindow):
         self._publish_battle_overlay_patch_sync()
 
     def _build_battle_overlay_patch(self) -> dict[str, Any]:
-        cfg = load_battle_royale_overlay_config()
-        patch = self._battle_controller.overlay_patch()
-        cfg_payload = json.loads(battle_royale_overlay_config_to_json_text(cfg))
-        cfg_payload["ui_locale"] = self._locale
-        patch["config"] = cfg_payload
-        return patch
+        # State-only: per-instance config comes from render / initial_state.
+        return self._battle_controller.overlay_patch()
 
     def _publish_battle_overlay_patch_sync(self) -> None:
         if self._closing:
@@ -6528,7 +6596,7 @@ class MainWindow(FramelessWindow):
             ps = self._overlay_server.pubsub()
         except RuntimeError:
             return
-        ps.publish_sync("overlay:battle_royale:main", self._build_battle_overlay_patch())
+        ps.publish_sync("overlay:battle_royale:*", self._build_battle_overlay_patch())
 
     async def _publish_battle_overlay_patch(self) -> None:
         self._publish_battle_overlay_patch_sync()
@@ -6814,13 +6882,13 @@ class MainWindow(FramelessWindow):
         if loop is not None:
             loop.create_task(
                 self._overlay_server.pubsub().publish(
-                    "overlay:top_likers:main",
+                    "overlay:top_likers:*",
                     {"leaders": []},
                 ),
             )
             loop.create_task(
                 self._overlay_server.pubsub().publish(
-                    "overlay:top_gifters:main",
+                    "overlay:top_gifters:*",
                     {"leaders": []},
                 ),
             )
@@ -8593,7 +8661,7 @@ class MainWindow(FramelessWindow):
                         },
                         "updated_at": online_now_hms(),
                     }
-                    await ps.publish("overlay:online:main", online_state_patch(state))  # type: ignore[arg-type]
+                    await ps.publish("overlay:online:*", online_state_patch(state))  # type: ignore[arg-type]
             except asyncio.CancelledError:
                 raise
             except RuntimeError:
