@@ -193,7 +193,12 @@ class CheremshaCloudClient:
         return await self._request("DELETE", path, token=token)
 
     async def link_start(self, provider: str, access_token: str) -> dict[str, Any]:
-        body = await self._get(f"/api/v1/auth/{provider}/link-start", token=access_token)
+        body = await self._request(
+            "GET",
+            f"/api/v1/auth/{provider}/link-start",
+            token=access_token,
+            params={"mode": "desktop"},
+        )
         if not isinstance(body, dict) or not body.get("authorization_url"):
             raise CloudApiError("cloud link start has no authorization URL")
         return body
