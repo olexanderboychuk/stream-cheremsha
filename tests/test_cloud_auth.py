@@ -773,3 +773,143 @@ async def test_login_auto_connect_error_emits_notice(qapplication, keyring_fake)
     finally:
         astate.DesktopCallbackServer = real_class
 
+
+class _FakeTwoLegServer:
+    """Loopback double supporting the login grant + platform waits."""
+
+    def __init__(self, *a, **kw) -> None:
+        pass
+
+    async def start(self) -> None:
+        return None
+
+    async def wait_for_callback(self, **kw) -> tuple[str, str]:
+        return ("grant-1", "desktop-state-1")
+
+    async def wait_for_platform(self, **kw) -> dict:
+        return {"platform": kw.get("platform", ""), "status": "connected"}
+
+    async def wait_for_link(self, **kw) -> dict:
+        return {"provider": "", "status": "ok"}
+
+    async def stop(self) -> None:
+        return None
+
+
+@pytest.mark.asyncio()
+async def test_pending_twitch_auto_connected_skips_explicit(
+    qapplication, keyring_fake
+) -> None:
+    """One click, auto-connect wins: no explicit round-trip, signed-in toast."""
+    import stream_cheremsha.cloud.auth_state as astate
+
+    client = FakeCloudClient()
+    client.platforms = [CloudPlatformStatus("twitch", True, username="kodithecat")]
+    opened: list[str] = []
+    notices: list[str] = []
+
+    async def exchange_connected(*, code, verifier):  # type: ignore[no-untyped-def]
+        return (
+            CloudSessionTokens("tok-access", "tok-refresh", 900),
+            CloudUser("u-1", "kodi@example.com", "kodi_the_cat"),
+            CloudAutoConnectOutcome(platform="twitch", connected=True),
+        )
+
+    async def no_explicit(platform, access_token):  # type: ignore[no-untyped-def]
+        raise AssertionError("explicit connect must not run after auto-connect")
+
+    client.exchange_desktop_code = exchange_connected  # type: ignore[assignment]
+    client.platform_connect_start = no_explicit  # type: ignore[assignment]
+    auth = _auth(client, opened)
+    auth.notice.connect(notices.append)
+    auth._pending_platform = "twitch"  # noqa: SLF001
+
+    real_class = astate.DesktopCallbackServer
+    astate.DesktopCallbackServer = _FakeTwoLegServer  # type: ignore[assignment]
+    try:
+        await auth._login_flow("twitch")  # noqa: SLF001
+        assert auth.status == STATUS_AUTHENTICATED
+        assert notices == ["signed-in:twitch"]
+        assert auth._pending_platform is None  # noqa: SLF001
+    finally:
+        astate.DesktopCallbackServer = real_class
+
+
+@pytest.mark.asyncio()
+async def test_pending_twitch_falls_back_to_explicit_connect(
+    qapplication, keyring_fake
+) -> None:
+    """Auto-connect missed → explicit platform-connect leg runs, signed-in toast."""
+    import stream_cheremsha.cloud.auth_state as astate
+
+    client = FakeCloudClient()
+    client.platforms = [CloudPlatformStatus("twitch", True, username="kodithecat")]
+    opened: list[str] = []
+    notices: list[str] = []
+    explicit_calls: list[str] = []
+
+    async def exchange_missed(*, code, verifier):  # type: ignore[no-untyped-def]
+        return (
+            CloudSessionTokens("tok-access", "tok-refresh", 900),
+            CloudUser("u-1", "kodi@example.com", "kodi_the_cat"),
+            CloudAutoConnectOutcome(
+                platform="twitch", connected=False, reauth_required=True),
+        )
+
+    async def fake_connect(platform, access_token):  # type: ignore[no-untyped-def]
+        explicit_calls.append(platform)
+        return {"authorization_url": "https://x/connect"}
+
+    client.exchange_desktop_code = exchange_missed  # type: ignore[assignment]
+    client.platform_connect_start = fake_connect  # type: ignore[assignment]
+    auth = _auth(client, opened)
+    auth.notice.connect(notices.append)
+    auth._pending_platform = "twitch"  # noqa: SLF001
+
+    real_class = astate.DesktopCallbackServer
+    astate.DesktopCallbackServer = _FakeTwoLegServer  # type: ignore[assignment]
+    try:
+        await auth._login_flow("twitch")  # noqa: SLF001
+        assert explicit_calls == ["twitch"]
+        assert "signed-in:twitch" in notices
+    finally:
+        astate.DesktopCallbackServer = real_class
+
+
+@pytest.mark.asyncio()
+async def test_pending_twitch_cloud_miss_triggers_local_fallback(
+    qapplication, keyring_fake
+) -> None:
+    """Cloud legs exhausted, still disconnected → local-fallback notice for the UI."""
+    import stream_cheremsha.cloud.auth_state as astate
+
+    client = FakeCloudClient()
+    client.platforms = []  # cloud reports nothing connected
+    opened: list[str] = []
+    notices: list[str] = []
+
+    async def exchange_missed(*, code, verifier):  # type: ignore[no-untyped-def]
+        return (
+            CloudSessionTokens("tok-access", "tok-refresh", 900),
+            CloudUser("u-1", "kodi@example.com", "kodi_the_cat"),
+            CloudAutoConnectOutcome(
+                platform="twitch", connected=False, reauth_required=True),
+        )
+
+    async def fake_connect(platform, access_token):  # type: ignore[no-untyped-def]
+        return {"authorization_url": "https://x/connect"}
+
+    client.exchange_desktop_code = exchange_missed  # type: ignore[assignment]
+    client.platform_connect_start = fake_connect  # type: ignore[assignment]
+    auth = _auth(client, opened)
+    auth.notice.connect(notices.append)
+    auth._pending_platform = "twitch"  # noqa: SLF001
+
+    real_class = astate.DesktopCallbackServer
+    astate.DesktopCallbackServer = _FakeTwoLegServer  # type: ignore[assignment]
+    try:
+        await auth._login_flow("twitch")  # noqa: SLF001
+        assert "local-fallback:twitch" in notices
+    finally:
+        astate.DesktopCallbackServer = real_class
+

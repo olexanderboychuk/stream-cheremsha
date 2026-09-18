@@ -389,13 +389,29 @@ class CheremshaAuthState(QObject):
                         auto_connect.error,
                     )
                     self.notice.emit("auto-connect-error")
-            # A logged-out platform-connect request lands here: twitch/tiktok/
-            # kick arrive connected via auto-connect + reconcile; youtube needs
-            # an explicit connect round-trip (google login is login-only).
+            # A logged-out platform-connect request lands here. One click must
+            # end with the platform connected: same-transaction auto-connect
+            # first, then an explicit connect round-trip, then (if the cloud
+            # still reports disconnected) a local-OAuth fallback driven by
+            # the UI via the "local-fallback:<platform>" notice.
             pending, self._pending_platform = self._pending_platform, None
-            if pending == "youtube":
-                await self._platform_connect_flow("youtube")
-            await self._sync_platforms_and_avatar(client)
+            if pending:
+                auto_ok = (
+                    auto_connect is not None
+                    and auto_connect.connected
+                    and auto_connect.platform == pending
+                )
+                if auto_ok:
+                    await self._sync_platforms_and_avatar(client)
+                else:
+                    await self._platform_connect_flow(pending)
+                st = self._platforms.get(pending)
+                if st is not None and st.connected:
+                    self.notice.emit(f"signed-in:{pending}")
+                else:
+                    self.notice.emit(f"local-fallback:{pending}")
+            else:
+                await self._sync_platforms_and_avatar(client)
             await self._refresh_identities(client)
         except asyncio.CancelledError:
             # cancelLogin() or logout() abandoned this flow: converge on logged-out.

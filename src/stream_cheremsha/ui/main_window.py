@@ -1479,6 +1479,37 @@ class MainWindow(FramelessWindow):
             self._on_user_status(self._tr(key))
         if reason == "unreachable":
             self._reveal_local_login_panels()
+        if reason.startswith("signed-in:"):
+            plat = reason.split(":", 1)[1].strip().lower()
+            name = ""
+            try:
+                name = self._cloud_auth.displayName or self._cloud_auth.email
+            except Exception:
+                pass
+            self._on_user_status(
+                self._tr("cloud.signed_in_as", name=name, platform=plat.capitalize())
+            )
+            return
+        if reason.startswith("local-fallback:"):
+            plat = reason.split(":", 1)[1].strip().lower()
+            self._on_user_status(self._tr("cloud.local_fallback", platform=plat))
+            self._reveal_local_login_panels()
+            self._run_local_platform_oauth(plat)
+            return
+
+    def _run_local_platform_oauth(self, platform: str) -> None:
+        """Last leg of one-click connect: platform-local OAuth after the
+        cloud could not connect it. Runs the same entries as the manual
+        buttons (TikTok has no OAuth — username field stays the fallback)."""
+        try:
+            if platform == "twitch":
+                asyncio.ensure_future(self._twitch_browser_login())
+            elif platform == "kick":
+                asyncio.ensure_future(self._kick_browser_login())
+            elif platform == "youtube":
+                asyncio.ensure_future(self._run_youtube_oauth())
+        except Exception:
+            logger.debug("local platform fallback failed", exc_info=True)
 
     def _reveal_local_login_panels(self) -> None:
         """Cloud-unavailable fallback: show the per-platform local login
