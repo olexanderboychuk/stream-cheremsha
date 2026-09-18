@@ -3461,6 +3461,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Сесію завершено — увійдіть знову",
         "en": "Session expired — please sign in again",
     },
+    "cloud.no_platforms": {
+        "uk": "Увійшли, але жодної платформи не під'єднано — натисніть Sign in на картці",
+        "en": "Signed in, but no platforms connected — press Sign in on a card",
+    },
     "cloud.error_unreachable": {
         "uk": "Cheremsha Cloud недоступний — перевірте з'єднання та адресу API",
         "en": "Cheremsha Cloud is unreachable — check the connection and API address",

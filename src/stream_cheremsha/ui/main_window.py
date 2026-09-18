@@ -1475,6 +1475,7 @@ class MainWindow(FramelessWindow):
             "unlink-last": "cloud.unlink_last",
             "auto-connect-error": "cloud.auto_connect_error",
             "session-expired": "cloud.session_expired",
+            "no-platforms": "cloud.no_platforms",
         }.get(reason, "")
         if key:
             self._on_user_status(self._tr(key))

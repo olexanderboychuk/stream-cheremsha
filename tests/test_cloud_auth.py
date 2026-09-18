@@ -769,7 +769,7 @@ async def test_login_auto_connect_error_emits_notice(qapplication, keyring_fake)
     try:
         await auth._login_flow("twitch")  # noqa: SLF001
         assert auth.status == STATUS_AUTHENTICATED
-        assert notices == ["auto-connect-error"]
+        assert notices == ["auto-connect-error", "no-platforms"]
     finally:
         astate.DesktopCallbackServer = real_class
 
@@ -959,4 +959,17 @@ async def test_platforms_sync_failure_emits_notice(qapplication, keyring_fake) -
     auth._set_status(STATUS_AUTHENTICATED)
     await auth._platforms_flow()  # noqa: SLF001
     assert notices == ["unreachable"]
+
+
+@pytest.mark.asyncio()
+async def test_empty_platforms_emits_guidance(qapplication, keyring_fake) -> None:
+    client = FakeCloudClient()
+    client.platforms = []  # authenticated, nothing connected
+    auth = _auth(client)
+    notices: list[str] = []
+    auth.notice.connect(notices.append)
+    auth._store_session("a", "r", CloudUser("u-1", "a@example.com", "u"))
+    auth._set_status(STATUS_AUTHENTICATED)
+    await auth._platforms_flow()  # noqa: SLF001
+    assert notices == ["no-platforms"]
 

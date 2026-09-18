@@ -556,6 +556,10 @@ class CheremshaAuthState(QObject):
                 return
         self._platforms = {p.platform: p for p in platforms}
         self.platformsChanged.emit()
+        if not self._platforms:
+            # Authenticated but nothing connected (e.g. Google login, which
+            # is login-only by design): say so instead of staying silent.
+            self.notice.emit("no-platforms")
         if self._user and self._user.avatar_url and self._avatar_bytes is None:
             avatar = await client.fetch_avatar(self._user.avatar_url)
             if avatar:
