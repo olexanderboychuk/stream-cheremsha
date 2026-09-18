@@ -251,6 +251,28 @@ async def test_broker_unreachable_keeps_local_source_running(qapp):
 
 
 @pytest.mark.asyncio()
+async def test_fetch_failure_posts_cause_to_footer(qapp):
+    """Footer carries the exception cause so the user knows what to fix."""
+    mgr, rec = _make_manager(
+        fetch_platforms_response=RuntimeError("boom"),
+        fetch_runtime_response={},
+    )
+    await mgr.reconcile()
+    assert any("boom" in m for m in rec["events"]["status"])
+
+
+@pytest.mark.asyncio()
+async def test_fetch_while_logged_out_asks_to_sign_in(qapp):
+    """Missing session is not an error: the footer says what to do."""
+    mgr, rec = _make_manager(
+        fetch_platforms_response=RuntimeError("not authenticated"),
+        fetch_runtime_response={},
+    )
+    await mgr.reconcile()
+    assert any("увійдіть" in m.lower() for m in rec["events"]["status"])
+
+
+@pytest.mark.asyncio()
 async def test_reconcile_is_a_single_duplicate_guarded_task(qapp):
     """Calling triggerReconcile multiple times in quick succession must
     coalesce (only one running task). Once it finishes, a new call can fire."""

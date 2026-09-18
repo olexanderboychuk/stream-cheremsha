@@ -150,7 +150,14 @@ class PlatformConnectionManager(QObject):
         except Exception as exc:
             self._last_error = f"fetch_failed: {type(exc).__name__}"
             self.lastErrorChanged.emit()
-            self._post_status("Cheremsha Cloud: не вдалося отримати платформи")
+            # The footer must carry the cause, not just the fact: network
+            # errors, expired sessions and missing logins need different
+            # user actions. Exception texts here never contain secrets
+            # (client errors carry only HTTP status / exception type).
+            if "not authenticated" in str(exc).lower():
+                self._post_status("Cheremsha: увійдіть в акаунт, щоб під'єднати платформи")
+            else:
+                self._post_status(f"Cheremsha Cloud: не вдалося отримати платформи ({exc})")
             return
         self._last_error = ""
         self.lastErrorChanged.emit()
@@ -240,7 +247,7 @@ class PlatformConnectionManager(QObject):
             except Exception as exc:
                 self._last_error = f"{plat}: broker_unreachable: {type(exc).__name__}"
                 self.lastErrorChanged.emit()
-                self._post_status(f"{plat.capitalize()}: Cloud недоступний")
+                self._post_status(f"{plat.capitalize()}: Cloud недоступний ({exc})")
                 continue
             if runtime.get("reauth_required"):
                 self._needs_reauth[plat] = True
