@@ -61,7 +61,7 @@ ColumnLayout {
     function _twKind() {
         if (!api) return "disabled"
         api.refreshCounter
-        if (api.twitchKeyringSession() || api.cloudPlatformConnected("twitch")) return "connected"
+        if (root._twConnected()) return "connected"
         if (!api.twitchClientConfigured()) return "attention"
         return "disabled"
     }
@@ -69,8 +69,7 @@ ColumnLayout {
     function _twHint() {
         if (!api) return ""
         api.refreshCounter
-        if (api.twitchKeyringSession()) return ""
-        if (api.cloudPlatformConnected("twitch")) return ""
+        if (root._twConnected()) return ""
         if (!api.twitchClientConfigured()) return _loc("connections.hint_twitch_client")
         return _loc("connections.hint_login")
     }
@@ -78,44 +77,37 @@ ColumnLayout {
     function _ytKind() {
         if (!api) return "disabled"
         api.refreshCounter
-        if (api.googleLinked() || api.cloudPlatformConnected("youtube")) return "connected"
+        if (root._ytConnected()) return "connected"
         return "disabled"
     }
 
     function _ytHint() {
         if (!api) return ""
         api.refreshCounter
-        if (api.googleLinked()) return ""
-        if (api.cloudPlatformConnected("youtube")) return ""
+        if (root._ytConnected()) return ""
         return _loc("connections.hint_login")
     }
 
     function _tkKind() {
         if (!api) return "disabled"
         api.refreshCounter
-        var u = api.tiktokUsernameGet()
-        var configured = u && String(u).length > 0
-        if ((configured && api.tiktokEnabled()) || (api.cloudPlatformConnected("tiktok") && api.tiktokRunning())) return "live"
-        if (configured || api.cloudPlatformConnected("tiktok")) return "connected"
+        if (root._tkLive()) return "live"
+        if (root._tkConnected()) return "connected"
         return "disabled"
     }
 
     function _tkHint() {
         if (!api) return ""
         api.refreshCounter
-        var u2 = api.tiktokUsernameGet()
-        if ((!u2 || String(u2).length === 0) && !api.cloudPlatformConnected("tiktok")) return _loc("connections.hint_tiktok_disabled")
-        return ""
+        if (root._tkConnected()) return ""
+        return _loc("connections.hint_tiktok_disabled")
     }
 
     function _kkKind() {
         if (!api) return "disabled"
         api.refreshCounter
-        var ch = ""
-        try { ch = api.kickChannelGet() } catch (e) { ch = "" }
-        var configured = api.kickKeyringSession() || (ch && String(ch).length > 0)
-        if ((configured && api.kickEnabled()) || (api.cloudPlatformConnected("kick") && api.kickRunning())) return "live"
-        if (configured || api.cloudPlatformConnected("kick")) return "connected"
+        if (root._kkLive()) return "live"
+        if (root._kkConnected()) return "connected"
         if (!api.kickClientConfigured()) return "attention"
         return "attention"
     }
@@ -123,14 +115,53 @@ ColumnLayout {
     function _kkHint() {
         if (!api) return ""
         api.refreshCounter
-        if (api.kickKeyringSession()) {
-            return ""
-        }
-        if (api.cloudPlatformConnected("kick")) {
+        if (root._kkConnected()) {
             return ""
         }
         if (!api.kickClientConfigured()) return _loc("connections.hint_kick_client")
         return _loc("connections.hint_kick_redirect")
+    }
+
+    // Connected = local credentials OR Cheremsha Cloud row. Single source
+    // for every visible gate below (header kinds, hints, card bodies), so a
+    // cloud login flips the whole card even with an empty local keyring.
+    function _twConnected() {
+        if (!api) return false
+        api.refreshCounter
+        return api.twitchKeyringSession() || api.cloudPlatformConnected("twitch")
+    }
+    function _ytConnected() {
+        if (!api) return false
+        api.refreshCounter
+        return api.googleLinked() || api.cloudPlatformConnected("youtube")
+    }
+    function _tkConnected() {
+        if (!api) return false
+        api.refreshCounter
+        var u = api.tiktokUsernameGet()
+        return (u && String(u).length > 0) || api.cloudPlatformConnected("tiktok")
+    }
+    function _tkLive() {
+        if (!api) return false
+        api.refreshCounter
+        var u = api.tiktokUsernameGet()
+        var configured = u && String(u).length > 0
+        return (configured && api.tiktokEnabled()) || (api.cloudPlatformConnected("tiktok") && api.tiktokRunning())
+    }
+    function _kkConnected() {
+        if (!api) return false
+        api.refreshCounter
+        var ch = ""
+        try { ch = api.kickChannelGet() } catch (e) { ch = "" }
+        return api.kickKeyringSession() || (ch && String(ch).length > 0) || api.cloudPlatformConnected("kick")
+    }
+    function _kkLive() {
+        if (!api) return false
+        api.refreshCounter
+        var ch = ""
+        try { ch = api.kickChannelGet() } catch (e) { ch = "" }
+        var configured = api.kickKeyringSession() || (ch && String(ch).length > 0)
+        return (configured && api.kickEnabled()) || (api.cloudPlatformConnected("kick") && api.kickRunning())
     }
 
     component AttentionHint: Rectangle {
@@ -370,7 +401,7 @@ ColumnLayout {
                 }
 
                 RowLayout {
-                    visible: { if (!api) return false; api.refreshCounter; return !api.twitchKeyringSession() }
+                    visible: { if (!api) return false; api.refreshCounter; return !root._twConnected() }
                     Layout.fillWidth: true
                     spacing: 8
                     ConnPillButton {
@@ -383,7 +414,7 @@ ColumnLayout {
                     visible: {
                         if (!api) return false
                         api.refreshCounter
-                        return root.twShowAdvanced && !api.twitchKeyringSession() && !api.twitchClientConfigured()
+                        return root.twShowAdvanced && !root._twConnected() && !api.twitchClientConfigured()
                     }
                     text: {
                         if (!api) return ""
@@ -398,7 +429,7 @@ ColumnLayout {
                 }
 
                 RowLayout {
-                    visible: { if (!api) return false; api.refreshCounter; return api.twitchKeyringSession() }
+                    visible: { if (!api) return false; api.refreshCounter; return root._twConnected() }
                     Layout.fillWidth: true
                     spacing: 10
                     Text {
@@ -591,7 +622,7 @@ ColumnLayout {
                     if (!root.ytCollapsed) return false
                     if (!api) return false
                     api.refreshCounter
-                    return api.googleLinked()
+                    return root._ytConnected()
                 }
                 Layout.fillWidth: true
                 Layout.leftMargin: 36
@@ -638,7 +669,7 @@ ColumnLayout {
                     visible: {
                         if (!api) return false
                         api.refreshCounter
-                        return root.ytShowAdvanced && !api.googleLinked()
+                        return root.ytShowAdvanced && !root._ytConnected()
                     }
                     text: { if (!api) return ""; api.refreshCounter; return api.youtubeOauthHelpHtml() }
                     textFormat: Text.RichText
@@ -649,7 +680,7 @@ ColumnLayout {
                     onLinkActivated: l => api.openUrl(l)
                 }
                 RowLayout {
-                    visible: { if (!api) return false; api.refreshCounter; return !api.googleLinked() }
+                    visible: { if (!api) return false; api.refreshCounter; return !root._ytConnected() }
                     Layout.fillWidth: true
                     spacing: 8
                     ConnPillButton {
@@ -659,7 +690,7 @@ ColumnLayout {
                     Item { Layout.fillWidth: true }
                 }
                 ConnPillButton {
-                    visible: { if (!api) return false; api.refreshCounter; return !api.googleLinked() }
+                    visible: { if (!api) return false; api.refreshCounter; return !root._ytConnected() }
                     text: root._loc("yt.forget_json")
                     onClicked: api.youtubeForgetClient()
                     pillFontSize: 12
@@ -669,7 +700,7 @@ ColumnLayout {
                 }
 
                 RowLayout {
-                    visible: { if (!api) return false; api.refreshCounter; return api.googleLinked() }
+                    visible: { if (!api) return false; api.refreshCounter; return root._ytConnected() }
                     Layout.fillWidth: true
                     spacing: 10
                     Text {
@@ -689,7 +720,7 @@ ColumnLayout {
                     }
                 }
                 Text {
-                    visible: { if (!api) return false; api.refreshCounter; return api.googleLinked() }
+                    visible: { if (!api) return false; api.refreshCounter; return root._ytConnected() }
                     text: root._loc("yt.video_label")
                     color: ConnTheme.muted
                     font.pixelSize: 12
@@ -698,7 +729,7 @@ ColumnLayout {
                 }
                 TextField {
                     id: ytV
-                    visible: { if (!api) return false; api.refreshCounter; return api.googleLinked() }
+                    visible: { if (!api) return false; api.refreshCounter; return root._ytConnected() }
                     color: ConnTheme.ink
                     leftPadding: 12
                     rightPadding: 12
@@ -722,7 +753,7 @@ ColumnLayout {
                     visible: {
                         if (!api) return false
                         api.refreshCounter
-                        return api.googleLinked()
+                        return root._ytConnected()
                     }
                     text: root.ytShowAdvanced ? root._loc("connections.hide") : root._loc("connections.details")
                     color: ConnTheme.muted
@@ -736,7 +767,7 @@ ColumnLayout {
                     }
                 }
                 Text {
-                    visible: { if (!api) return false; api.refreshCounter; return api.googleLinked() && root.ytShowAdvanced }
+                    visible: { if (!api) return false; api.refreshCounter; return root._ytConnected() && root.ytShowAdvanced }
                     text: { if (!api) return ""; api.refreshCounter; return api.youtubeStudioLinkHtml() }
                     textFormat: Text.RichText
                     color: ConnTheme.muted
@@ -747,7 +778,7 @@ ColumnLayout {
                 }
 
                 RowLayout {
-                    visible: { if (!api) return false; api.refreshCounter; return api.googleLinked() }
+                    visible: { if (!api) return false; api.refreshCounter; return root._ytConnected() }
                     Layout.fillWidth: true
                     spacing: 12
                     ColumnLayout {
@@ -777,7 +808,7 @@ ColumnLayout {
                 }
 
                 RowLayout {
-                    visible: { if (!api) return false; api.refreshCounter; return api.googleLinked() }
+                    visible: { if (!api) return false; api.refreshCounter; return root._ytConnected() }
                     Layout.fillWidth: true
                     spacing: 12
                     ColumnLayout {
@@ -1110,7 +1141,7 @@ ColumnLayout {
                 }
 
                 RowLayout {
-                    visible: { if (!api) return false; api.refreshCounter; return !api.kickKeyringSession() }
+                    visible: { if (!api) return false; api.refreshCounter; return !root._kkConnected() }
                     Layout.fillWidth: true
                     spacing: 8
                     ConnPillButton {
@@ -1123,7 +1154,7 @@ ColumnLayout {
                     visible: {
                         if (!api) return false
                         api.refreshCounter
-                        return root.kkShowAdvanced && !api.kickKeyringSession() && !api.kickClientConfigured()
+                        return root.kkShowAdvanced && !root._kkConnected() && !api.kickClientConfigured()
                     }
                     text: {
                         if (!api) return ""
@@ -1142,7 +1173,7 @@ ColumnLayout {
                     visible: {
                         if (!api) return false
                         api.refreshCounter
-                        return !api.kickKeyringSession() && api.kickClientConfigured()
+                        return !root._kkConnected() && api.kickClientConfigured()
                     }
                     text: root.kkShowAdvanced ? root._loc("connections.hide_uri") : root._loc("connections.show_uri")
                     onClicked: root.kkShowAdvanced = !root.kkShowAdvanced
@@ -1151,7 +1182,7 @@ ColumnLayout {
                     visible: {
                         if (!api) return false
                         api.refreshCounter
-                        return root.kkShowAdvanced && !api.kickKeyringSession() && api.kickClientConfigured()
+                        return root.kkShowAdvanced && !root._kkConnected() && api.kickClientConfigured()
                     }
                     text: {
                         if (!api) return ""
@@ -1166,7 +1197,7 @@ ColumnLayout {
                 }
 
                 RowLayout {
-                    visible: { if (!api) return false; api.refreshCounter; return api.kickKeyringSession() }
+                    visible: { if (!api) return false; api.refreshCounter; return root._kkConnected() }
                     Layout.fillWidth: true
                     spacing: 10
                     Text {
