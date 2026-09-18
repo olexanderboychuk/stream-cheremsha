@@ -61,8 +61,7 @@ ColumnLayout {
     function _twKind() {
         if (!api) return "disabled"
         api.refreshCounter
-        if (api.twitchKeyringSession()) return "connected"
-        if (api.cloudPlatformConnected("twitch") && api.twitchRunning()) return "connected"
+        if (api.twitchKeyringSession() || api.cloudPlatformConnected("twitch")) return "connected"
         if (!api.twitchClientConfigured()) return "attention"
         return "disabled"
     }
@@ -79,8 +78,7 @@ ColumnLayout {
     function _ytKind() {
         if (!api) return "disabled"
         api.refreshCounter
-        if (api.googleLinked()) return "connected"
-        if (api.cloudPlatformConnected("youtube") && api.youtubeRunning()) return "connected"
+        if (api.googleLinked() || api.cloudPlatformConnected("youtube")) return "connected"
         return "disabled"
     }
 

@@ -4500,7 +4500,7 @@ class MainWindow(FramelessWindow):
         tw_cloud_connected = bool(platforms_by_name.get("twitch", {}).get("connected"))
         tw_in = (
             twitch_credentials.twitch_keyring_has_session()
-            or (tw_cloud_connected and bool(self._twitch and self._twitch.running))
+            or tw_cloud_connected
         )
         self._tw_login_panel.setVisible(not tw_in)
         self._tw_connected_panel.setVisible(tw_in)
