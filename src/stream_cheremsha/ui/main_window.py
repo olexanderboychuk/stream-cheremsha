@@ -9154,15 +9154,22 @@ class MainWindow(FramelessWindow):
                 self._schedule_cloud_token_refresh(runtime.get("expires_at"))
                 return True
             if platform == "youtube":
-                # YouTube inherits Google OAuth; runtime broker returns an
-                # access token, but the existing source persists the OAuth
-                # Credentials blob — the cloud path is observed through
-                # _start_youtube which falls back to manual video id.
-                # Mark reauth_required when the broker reports it.
+                # Cloud path: broker access token goes straight into the
+                # source memory (never keyring); refresh happens server-side
+                # and the expiry timer restarts us with a fresh token.
                 if runtime.get("reauth_required"):
                     self._on_user_status("YouTube: потрібна повторна авторизація")
                     return False
+                token = (runtime.get("access_token") or "").strip()
+                if not token:
+                    return False
+                self._youtube.set_broker_token(
+                    token,
+                    runtime.get("expires_at"),
+                    str(runtime.get("client_id") or ""),
+                )
                 await self._youtube.start(None)
+                self._schedule_cloud_token_refresh(runtime.get("expires_at"))
                 return True
             if platform == "tiktok":
                 if runtime.get("reauth_required"):

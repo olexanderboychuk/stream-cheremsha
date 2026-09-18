@@ -1753,6 +1753,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "YouTube: токен прострочено — знову OAuth",
         "en": "YouTube: token expired — run OAuth again",
     },
+    "yt.token_refresh_wait": {
+        "uk": "YouTube: токен протух — чекаємо оновлення з хмари…",
+        "en": "YouTube token expired — waiting for cloud refresh…",
+    },
     "yt.oauth_refresh_failed": {
         "uk": (
             "YouTube: доступ скасовано або токен більше не дійсний "

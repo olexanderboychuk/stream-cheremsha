@@ -56,7 +56,10 @@ from app.auth.providers.base import (  # noqa: E402
     OAuthTokenResponse,
     ProviderIdentity,
 )
-from app.auth.providers.factory import combined_scopes_for_login  # noqa: E402
+from app.auth.providers.factory import (  # noqa: E402
+    combined_scopes_for_login,
+    platform_required_scopes,
+)
 from app.common import store as store_module  # noqa: E402
 from app.common.store import MemoryKV  # noqa: E402
 from app.config.settings import Settings  # noqa: E402
@@ -239,6 +242,31 @@ async def _wait_next_url(opened: list[str], known: int, timeout: float = 15.0) -
     return await asyncio.wait_for(_poll(), timeout=timeout)
 
 
+async def _e2e_login_headers(asgi, backend_app, provider: str) -> dict:
+    """Desktop login without a browser: drive start→callback→exchange directly."""
+    from stream_cheremsha.chat.kick_api import generate_pkce
+
+    pkce = generate_pkce()
+    start = await asgi.get(
+        f"/api/v1/auth/{provider}/start",
+        params={"mode": "desktop", "code_challenge": pkce.challenge,
+                "desktop_state": "e2e"},
+    )
+    assert start.status_code == 200, start.text
+    cb = await asgi.get(
+        f"/api/v1/auth/{provider}/callback",
+        params={"code": "e2e-code", "state": start.json()["state"]},
+        headers={"Accept": "application/json"},
+    )
+    assert cb.status_code == 200, cb.text
+    exchange = await asgi.post(
+        "/api/v1/auth/desktop/exchange",
+        json={"code": cb.json()["code"], "code_verifier": pkce.verifier},
+    )
+    assert exchange.status_code == 200, exchange.text
+    return {"Authorization": f"Bearer {exchange.json()['access_token']}"}
+
+
 def _desktop_client(backend_app) -> CheremshaCloudClient:
     http = httpx.AsyncClient(transport=httpx.ASGITransport(app=backend_app))
     return CheremshaCloudClient("http://cloud.e2e", http)
@@ -349,3 +377,43 @@ async def test_e2e_logged_out_platforms_empty(backend) -> None:
     ) as asgi:
         r = await asgi.get("/api/v1/platforms")
     assert r.status_code in (401, 403)
+
+
+@pytest.mark.asyncio()
+async def test_e2e_youtube_explicit_connect_brokers_token(
+    backend, qapplication, keyring_fake
+) -> None:
+    """YouTube live: Google login is login-only, explicit connect brokers."""
+    backend_app, settings = backend
+    yt_scopes = " ".join(platform_required_scopes("youtube", settings))
+    backend_app.state.provider_overrides["google"] = FakeLoginProvider(
+        user_id="go-e2e-yt", email="yt@example.com",
+        granted_scope=" ".join(combined_scopes_for_login("google", settings)),
+    )
+    backend_app.state.provider_overrides["youtube"] = FakeLoginProvider(
+        user_id="go-e2e-yt", email="yt@example.com", granted_scope=yt_scopes
+    )
+
+    client = _desktop_client(backend_app)
+    asgi = httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=backend_app), base_url="http://test")
+    try:
+        login_headers = await _e2e_login_headers(asgi, backend_app, "google")
+        start = await asgi.post(
+            "/api/v1/platforms/youtube/connect", headers=login_headers)
+        assert start.status_code == 200, start.text
+        cb = await asgi.get(
+            "/api/v1/platforms/youtube/callback",
+            params={"code": "yt-1", "state": start.json()["state"]},
+            headers={"Accept": "application/json"},
+        )
+        assert cb.status_code == 200, cb.text
+        assert cb.json()["connected"] is True
+
+        token = login_headers["Authorization"].split(" ", 1)[1]
+        runtime = await client.fetch_runtime_token("youtube", token)
+        assert runtime.get("access_token")
+        assert "client_secret" not in runtime and "refresh_token" not in runtime
+    finally:
+        await client.aclose()
+        await asgi.aclose()
