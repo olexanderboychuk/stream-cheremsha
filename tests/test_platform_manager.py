@@ -246,6 +246,8 @@ async def test_broker_unreachable_keeps_local_source_running(qapp):
     assert mgr.lastError.endswith("RuntimeError")
     assert rec["events"]["started"] == []
     assert rec["events"]["stopped"] == []
+    # The failure is also surfaced in the footer (never silent).
+    assert any("Twitch" in m for m in rec["events"]["status"])
 
 
 @pytest.mark.asyncio()

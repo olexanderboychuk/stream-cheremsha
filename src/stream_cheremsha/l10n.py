@@ -3457,6 +3457,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Хмара не під'єднала {platform} — пробуємо локальний вхід…",
         "en": "Cloud could not connect {platform} — trying local sign-in…",
     },
+    "cloud.session_expired": {
+        "uk": "Сесію завершено — увійдіть знову",
+        "en": "Session expired — please sign in again",
+    },
     "cloud.error_unreachable": {
         "uk": "Cheremsha Cloud недоступний — перевірте з'єднання та адресу API",
         "en": "Cheremsha Cloud is unreachable — check the connection and API address",

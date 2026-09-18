@@ -305,18 +305,21 @@ class CheremshaAuthState(QObject):
             if exc.status != 401 or not saved.refresh_token:
                 self._clear_local()
                 self._set_status(STATUS_LOGGED_OUT)
+                self.notice.emit("unreachable")
                 return
             try:
                 tokens, _ = await client.refresh_session(saved.refresh_token)
             except CloudApiError:
                 self._clear_local()
                 self._set_status(STATUS_LOGGED_OUT)
+                self.notice.emit("session-expired")
                 return
             try:
                 user = await client.get_me(tokens.access_token)
             except CloudApiError:
                 self._clear_local()
                 self._set_status(STATUS_LOGGED_OUT)
+                self.notice.emit("session-expired")
                 return
             self._store_session(tokens.access_token, tokens.refresh_token, user)
         else:
@@ -539,14 +542,17 @@ class CheremshaAuthState(QObject):
                 except CloudApiError:
                     self._clear_local()
                     self._set_status(STATUS_LOGGED_OUT)
+                    self.notice.emit("session-expired")
                     return
                 if self._user is not None:
                     self._store_session(tokens.access_token, tokens.refresh_token, self._user)
                 try:
                     platforms = await client.get_platforms(tokens.access_token)
                 except CloudApiError:
+                    self.notice.emit("unreachable")
                     return
             else:
+                self.notice.emit("unreachable")
                 return
         self._platforms = {p.platform: p for p in platforms}
         self.platformsChanged.emit()

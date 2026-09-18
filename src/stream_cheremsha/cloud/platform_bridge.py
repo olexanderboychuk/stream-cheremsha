@@ -150,6 +150,7 @@ class PlatformConnectionManager(QObject):
         except Exception as exc:
             self._last_error = f"fetch_failed: {type(exc).__name__}"
             self.lastErrorChanged.emit()
+            self._post_status("Cheremsha Cloud: не вдалося отримати платформи")
             return
         self._last_error = ""
         self.lastErrorChanged.emit()
@@ -239,6 +240,7 @@ class PlatformConnectionManager(QObject):
             except Exception as exc:
                 self._last_error = f"{plat}: broker_unreachable: {type(exc).__name__}"
                 self.lastErrorChanged.emit()
+                self._post_status(f"{plat.capitalize()}: Cloud недоступний")
                 continue
             if runtime.get("reauth_required"):
                 self._needs_reauth[plat] = True

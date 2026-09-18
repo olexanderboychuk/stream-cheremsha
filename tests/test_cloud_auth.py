@@ -913,3 +913,50 @@ async def test_pending_twitch_cloud_miss_triggers_local_fallback(
     finally:
         astate.DesktopCallbackServer = real_class
 
+
+@pytest.mark.asyncio()
+async def test_restore_unreachable_emits_notice(qapplication, keyring_fake) -> None:
+    client = FakeCloudClient()
+    client.me_result = CloudApiError("down", status=0)
+    auth = _auth(client)
+    notices: list[str] = []
+    auth.notice.connect(notices.append)
+    auth._store_session("a", "r", CloudUser("u-1", "a@example.com", "u"))
+    await auth.restore_session()
+    assert auth.status == STATUS_LOGGED_OUT
+    assert notices == ["unreachable"]
+    assert load_session() is None
+
+
+@pytest.mark.asyncio()
+async def test_restore_expired_session_emits_notice(qapplication, keyring_fake) -> None:
+    client = FakeCloudClient()
+    client.me_result = CloudApiError("expired", status=401)
+    client.refresh_result = CloudApiError("expired", status=401)
+    auth = _auth(client)
+    notices: list[str] = []
+    auth.notice.connect(notices.append)
+    auth._store_session("a", "r", CloudUser("u-1", "a@example.com", "u"))
+    await auth.restore_session()
+    assert auth.status == STATUS_LOGGED_OUT
+    assert notices == ["session-expired"]
+    assert load_session() is None
+
+
+@pytest.mark.asyncio()
+async def test_platforms_sync_failure_emits_notice(qapplication, keyring_fake) -> None:
+    client = FakeCloudClient()
+    opened: list[str] = []
+    notices: list[str] = []
+
+    async def boom(access_token):  # type: ignore[no-untyped-def]
+        raise CloudApiError("down", status=0)
+
+    client.get_platforms = boom  # type: ignore[assignment]
+    auth = _auth(client, opened)
+    auth.notice.connect(notices.append)
+    auth._store_session("a", "r", CloudUser("u-1", "a@example.com", "u"))
+    auth._set_status(STATUS_AUTHENTICATED)
+    await auth._platforms_flow()  # noqa: SLF001
+    assert notices == ["unreachable"]
+
