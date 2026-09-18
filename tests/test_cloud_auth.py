@@ -394,6 +394,25 @@ def test_pill_state_switching(qapplication, keyring_fake) -> None:
     assert "cloud.login" in pill._name.text()
 
 
+def test_pill_shows_identities_and_link_actions(qapplication, keyring_fake) -> None:
+    from stream_cheremsha.ui.account_pill import AccountPill
+
+    client = FakeCloudClient()
+    auth = _auth(client)
+    pill = AccountPill(
+        auth,
+        lambda key: "LINK {provider}" if key == "cloud.link_provider" else key,
+        lambda: None,
+        lambda: None,
+    )
+    auth._store_session("a", "r", CloudUser("u-1", "a@example.com", "u"))
+    auth._identities = [{"provider": "google", "provider_email": "a@example.com"}]  # noqa: SLF001
+    auth._set_status(STATUS_AUTHENTICATED)
+    menu_actions = [a.text() for a in pill._account_menu_actions()]
+    assert any("google" in t for t in menu_actions)
+    assert any("twitch" in t.lower() for t in menu_actions)
+
+
 @pytest.mark.asyncio()
 async def test_login_twitch_auto_connect_persists_platform_enabled(
     qapplication, keyring_fake

@@ -254,6 +254,16 @@ class CheremshaAuthState(QObject):
             lambda: self._platform_connect_flow(platform), name="cheremsha-connect"
         )
 
+    @Slot(str)
+    def unlinkIdentity(self, identity_id: str) -> None:
+        """Unlink a login identity (backend refuses the last one)."""
+        identity_id = (identity_id or "").strip()
+        if not identity_id:
+            return
+        if self._status != STATUS_AUTHENTICATED or not self._access_token:
+            return
+        self._launch(lambda: self._unlink_flow(identity_id), name="cheremsha-unlink")
+
     @Slot(str, result="QVariantMap")
     def platformStatus(self, platform: str) -> dict[str, Any]:
         info = self._platforms.get((platform or "").strip().lower())
@@ -270,6 +280,10 @@ class CheremshaAuthState(QObject):
 
     def avatar_bytes(self) -> bytes | None:
         return self._avatar_bytes
+
+    def linked_identities(self) -> list[dict[str, Any]]:
+        """User-visible linked login identities (provider + email only)."""
+        return [dict(i) for i in self._identities]
 
     # -- flows (async, never block the GUI thread) -------------------------
     async def restore_session(self) -> None:
@@ -421,6 +435,15 @@ class CheremshaAuthState(QObject):
         except CloudApiError:
             return
         self.identitiesChanged.emit()
+
+    async def _unlink_flow(self, identity_id: str) -> None:
+        client = self._client_or_create()
+        try:
+            await client.unlink_identity(identity_id, self._access_token or "")
+        except CloudApiError as exc:
+            self.notice.emit("unlink-last" if exc.status == 400 else "unreachable")
+            return
+        await self._refresh_identities(client)
 
     async def _platform_connect_flow(self, platform: str) -> None:
         server = DesktopCallbackServer(expected_state="")

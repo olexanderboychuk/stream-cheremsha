@@ -3435,6 +3435,20 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "cloud.settings": {"uk": "Налаштування", "en": "Settings"},
     "cloud.dashboard": {"uk": "Відкрити кабінет", "en": "Open dashboard"},
     "cloud.logout": {"uk": "Вийти з акаунта", "en": "Sign out"},
+    "cloud.link_provider": {"uk": "Під'єднати {provider}", "en": "Link {provider}"},
+    "cloud.unlink": {"uk": "Від'єднати", "en": "Unlink"},
+    "cloud.link_conflict": {
+        "uk": "Цей акаунт вже прив'язано до іншого Cheremsha-акаунта",
+        "en": "This account is already linked to another Cheremsha account",
+    },
+    "cloud.unlink_last": {
+        "uk": "Не можна від'єднати останній спосіб входу",
+        "en": "Cannot unlink the last sign-in method",
+    },
+    "cloud.signed_in_as": {
+        "uk": "Увійшли як {name}, {platform} під'єднано",
+        "en": "Signed in as {name}, {platform} connected",
+    },
     "cloud.error_unreachable": {
         "uk": "Cheremsha Cloud недоступний — перевірте з'єднання та адресу API",
         "en": "Cheremsha Cloud is unreachable — check the connection and API address",

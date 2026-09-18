@@ -1471,9 +1471,49 @@ class MainWindow(FramelessWindow):
             "unreachable": "cloud.error_unreachable",
             "callback-busy": "cloud.error_callback_busy",
             "exchange-failed": "cloud.error_exchange",
+            "link-conflict": "cloud.link_conflict",
+            "unlink-last": "cloud.unlink_last",
         }.get(reason, "")
         if key:
             self._on_user_status(self._tr(key))
+        if reason == "unreachable":
+            self._reveal_local_login_panels()
+
+    def _reveal_local_login_panels(self) -> None:
+        """Cloud-unavailable fallback: show the per-platform local login
+        panels so the user can still connect with local credentials."""
+        for panel in (
+            getattr(self, "_tw_login_panel", None),
+            getattr(self, "_yt_login_panel", None),
+        ):
+            try:
+                if panel is not None:
+                    panel.setVisible(True)
+            except Exception:
+                pass
+
+    def _cloud_connect_first(self, platform: str) -> bool:
+        """Cloud-first routing for platform connect buttons.
+
+        Returns True when a cloud flow was started (caller must not run the
+        local OAuth path). Returns False when the platform is already
+        cloud-connected (local start proceeds) or no cloud auth exists.
+        """
+        auth = getattr(self, "_cloud_auth", None)
+        if auth is None:
+            return False
+        try:
+            connected = bool(auth.platformStatus(platform).get("connected"))
+        except Exception:
+            connected = False
+        if connected:
+            return False
+        try:
+            auth.connectPlatform(platform)
+        except Exception:
+            logger.debug("cloud connect trigger failed", exc_info=True)
+            return False
+        return True
 
     def _on_cloud_status_for_platforms(self, status: str) -> None:
         """Hook: when Cheremsha login succeeded or session is restored,
@@ -5967,6 +6007,8 @@ class MainWindow(FramelessWindow):
 
     @Slot()
     def _schedule_twitch_browser_login(self) -> None:
+        if self._cloud_connect_first("twitch"):
+            return
         asyncio.ensure_future(self._twitch_browser_login())
 
     def _on_user_status(self, msg: str) -> None:
@@ -6117,6 +6159,9 @@ class MainWindow(FramelessWindow):
             return
         if bool(enabled) == bool(self._kick_enabled):
             return
+        if enabled and self._cloud_connect_first("kick"):
+            self._qml_refresh_if_visible()
+            return
         self._kick_toggle_busy = True
         try:
             self._kick_enabled = bool(enabled)
@@ -6138,6 +6183,9 @@ class MainWindow(FramelessWindow):
         if self._tiktok_toggle_busy:
             return
         if bool(enabled) == bool(self._tiktok_enabled):
+            return
+        if enabled and self._cloud_connect_first("tiktok"):
+            self._qml_refresh_if_visible()
             return
         self._tiktok_toggle_busy = True
         try:
@@ -6166,6 +6214,8 @@ class MainWindow(FramelessWindow):
         if self._twitch.running:
             asyncio.ensure_future(self._async_stop_twitch_all())
         else:
+            if self._cloud_connect_first("twitch"):
+                return
             asyncio.ensure_future(self._start_twitch())
 
     async def _async_stop_twitch_all(self) -> None:
@@ -6178,6 +6228,8 @@ class MainWindow(FramelessWindow):
         if self._youtube.running:
             asyncio.ensure_future(self._async_stop_youtube_all())
         else:
+            if self._cloud_connect_first("youtube"):
+                return
             asyncio.ensure_future(self._start_youtube())
 
     async def _async_stop_youtube_all(self) -> None:
@@ -8077,6 +8129,8 @@ class MainWindow(FramelessWindow):
 
     async def _run_youtube_oauth(self) -> None:
         """OAuth uses a Google *Desktop* client JSON once (keyring), then only the browser."""
+        if self._cloud_connect_first("youtube"):
+            return
         raw = os.environ.get("GOOGLE_OAUTH_CLIENT_JSON", "").strip()
         if not raw:
             raw = keyring_store.get_password(constants.KEY_YOUTUBE_CLIENT_CONFIG) or ""
@@ -8137,6 +8191,8 @@ class MainWindow(FramelessWindow):
 
     # -------- Kick --------
     def _schedule_kick_browser_login(self) -> None:
+        if self._cloud_connect_first("kick"):
+            return
         asyncio.ensure_future(self._kick_browser_login())
 
     async def _kick_browser_login(self) -> None:

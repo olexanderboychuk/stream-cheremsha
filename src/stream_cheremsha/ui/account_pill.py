@@ -160,6 +160,7 @@ class AccountPill(QWidget):
         auth.userChanged.connect(self._refresh)
         auth.platformsChanged.connect(self._refresh)
         auth.avatarChanged.connect(self._refresh)
+        auth.identitiesChanged.connect(self._refresh)
         self._refresh()
 
     # -- rendering ------------------------------------------------------
@@ -230,6 +231,46 @@ class AccountPill(QWidget):
             menu.addAction(action)
         menu.exec(self.mapToGlobal(QPoint(0, self.height())))
 
+    def _account_menu_actions(self) -> list:
+        """Fresh identities-section actions for the account menu.
+
+        Linked rows (``provider · email`` + unlink) first, then link buttons
+        for providers in LOGIN_PROVIDERS not yet linked. Caller inserts them
+        into the menu; rebuilt on every open so they never go stale.
+        """
+        from PySide6.QtGui import QAction
+
+        actions: list = []
+        try:
+            identities = self._auth.linked_identities()
+        except Exception:
+            identities = []
+        linked = {str(i.get("provider") or "").lower() for i in identities}
+        for ident in identities:
+            provider = str(ident.get("provider") or "")
+            email = str(ident.get("provider_email") or ident.get("email") or "")
+            label = f"{provider} · {email}" if email else provider
+            row = QAction(label, self)
+            row.setEnabled(False)
+            actions.append(row)
+            ident_id = str(ident.get("id") or "")
+            if ident_id:
+                unlink = QAction(self._tr("cloud.unlink"), self)
+                unlink.triggered.connect(
+                    lambda _c=False, iid=ident_id: self._auth.unlinkIdentity(iid)
+                )
+                actions.append(unlink)
+        for provider in constants.LOGIN_PROVIDERS:
+            if provider.lower() in linked:
+                continue
+            label = self._tr("cloud.link_provider").replace("{provider}", provider.title())
+            act = QAction(label, self)
+            act.triggered.connect(
+                lambda _c=False, p=provider: self._auth.linkProvider(p)
+            )
+            actions.append(act)
+        return actions
+
     def _show_account_menu(self) -> None:
         menu = QMenu(self)
         self._menu_style(menu)
@@ -256,6 +297,10 @@ class AccountPill(QWidget):
         header_action = QWidgetAction(menu)
         header_action.setDefaultWidget(header)
         menu.addAction(header_action)
+        menu.addSeparator()
+
+        for act in self._account_menu_actions():
+            menu.addAction(act)
         menu.addSeparator()
 
         count = self._auth.connectedPlatformCount
