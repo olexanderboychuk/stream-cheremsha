@@ -207,7 +207,8 @@ async def test_cloud_client_link_and_platform_connect_shapes() -> None:
             return httpx.Response(200, json={"authorization_url": "https://x/link", "state": "s"})
         if path.endswith("/platforms/youtube/connect"):
             assert request.url.params.get("mode") == "desktop"
-            return httpx.Response(200, json={"authorization_url": "https://x/connect", "state": "s"})
+            return httpx.Response(
+                200, json={"authorization_url": "https://x/connect", "state": "s"})
         if path.endswith("/account/identities"):
             return httpx.Response(200, json=[
                 {"id": "i-1", "provider": "google", "provider_email": "a@example.com"}])
@@ -704,6 +705,71 @@ async def test_logout_during_link_converges_logged_out(qapplication, keyring_fak
         await asyncio.wait_for(auth._task, timeout=10)
         assert auth.status == STATUS_LOGGED_OUT
         assert load_session() is None
+    finally:
+        astate.DesktopCallbackServer = real_class
+
+
+def test_qml_cloud_platform_connected(qapplication) -> None:
+    from PySide6.QtCore import QObject
+
+    from stream_cheremsha.ui.qml_api import StreamCheremshaQmlApi
+
+    class FakeAuth:
+        def platformStatus(self, platform):
+            return {"platform": platform, "connected": platform == "twitch"}
+
+    class FakeWin(QObject):
+        def installEventFilter(self, obj):
+            return None
+
+    w = FakeWin()
+    w._cloud_auth = FakeAuth()
+    api = StreamCheremshaQmlApi(w)
+    assert api.cloudPlatformConnected("twitch") is True
+    assert api.cloudPlatformConnected("kick") is False
+    w._cloud_auth = None
+    assert api.cloudPlatformConnected("twitch") is False
+
+
+@pytest.mark.asyncio()
+async def test_login_auto_connect_error_emits_notice(qapplication, keyring_fake) -> None:
+    import stream_cheremsha.cloud.auth_state as astate
+
+    client = FakeCloudClient()
+    opened: list[str] = []
+    notices: list[str] = []
+
+    async def exchange_broken(*, code, verifier):  # type: ignore[no-untyped-def]
+        return (
+            CloudSessionTokens("tok-access", "tok-refresh", 900),
+            CloudUser("u-1", "kodi@example.com", "kodi_the_cat"),
+            CloudAutoConnectOutcome(platform="twitch", connected=False, error="misconfigured"),
+        )
+
+    client.exchange_desktop_code = exchange_broken  # type: ignore[assignment]
+    auth = _auth(client, opened)
+    auth.notice.connect(notices.append)
+
+    real_class = astate.DesktopCallbackServer
+
+    class _FakeServer:
+        def __init__(self, *a, **kw) -> None:
+            pass
+
+        async def start(self) -> None:
+            return None
+
+        async def wait_for_callback(self, **kw) -> tuple[str, str]:
+            return ("grant-1", "desktop-state-1")
+
+        async def stop(self) -> None:
+            return None
+
+    astate.DesktopCallbackServer = _FakeServer  # type: ignore[assignment]
+    try:
+        await auth._login_flow("twitch")  # noqa: SLF001
+        assert auth.status == STATUS_AUTHENTICATED
+        assert notices == ["auto-connect-error"]
     finally:
         astate.DesktopCallbackServer = real_class
 

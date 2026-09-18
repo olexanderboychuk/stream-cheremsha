@@ -3445,6 +3445,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Не можна від'єднати останній спосіб входу",
         "en": "Cannot unlink the last sign-in method",
     },
+    "cloud.auto_connect_error": {
+        "uk": "Не вдалося автоматично під'єднати платформу — під'єднайте її вручну",
+        "en": "Could not auto-connect the platform — connect it manually",
+    },
     "cloud.signed_in_as": {
         "uk": "Увійшли як {name}, {platform} під'єднано",
         "en": "Signed in as {name}, {platform} connected",

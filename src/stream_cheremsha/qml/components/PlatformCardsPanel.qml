@@ -62,6 +62,7 @@ ColumnLayout {
         if (!api) return "disabled"
         api.refreshCounter
         if (api.twitchKeyringSession()) return "connected"
+        if (api.cloudPlatformConnected("twitch") && api.twitchRunning()) return "connected"
         if (!api.twitchClientConfigured()) return "attention"
         return "disabled"
     }
@@ -70,6 +71,7 @@ ColumnLayout {
         if (!api) return ""
         api.refreshCounter
         if (api.twitchKeyringSession()) return ""
+        if (api.cloudPlatformConnected("twitch")) return ""
         if (!api.twitchClientConfigured()) return _loc("connections.hint_twitch_client")
         return _loc("connections.hint_login")
     }
@@ -78,6 +80,7 @@ ColumnLayout {
         if (!api) return "disabled"
         api.refreshCounter
         if (api.googleLinked()) return "connected"
+        if (api.cloudPlatformConnected("youtube") && api.youtubeRunning()) return "connected"
         return "disabled"
     }
 
@@ -85,6 +88,7 @@ ColumnLayout {
         if (!api) return ""
         api.refreshCounter
         if (api.googleLinked()) return ""
+        if (api.cloudPlatformConnected("youtube")) return ""
         return _loc("connections.hint_login")
     }
 
@@ -93,8 +97,8 @@ ColumnLayout {
         api.refreshCounter
         var u = api.tiktokUsernameGet()
         var configured = u && String(u).length > 0
-        if (configured && api.tiktokEnabled()) return "live"
-        if (configured) return "connected"
+        if ((configured && api.tiktokEnabled()) || (api.cloudPlatformConnected("tiktok") && api.tiktokRunning())) return "live"
+        if (configured || api.cloudPlatformConnected("tiktok")) return "connected"
         return "disabled"
     }
 
@@ -102,7 +106,7 @@ ColumnLayout {
         if (!api) return ""
         api.refreshCounter
         var u2 = api.tiktokUsernameGet()
-        if (!u2 || String(u2).length === 0) return _loc("connections.hint_tiktok_disabled")
+        if ((!u2 || String(u2).length === 0) && !api.cloudPlatformConnected("tiktok")) return _loc("connections.hint_tiktok_disabled")
         return ""
     }
 
@@ -112,8 +116,8 @@ ColumnLayout {
         var ch = ""
         try { ch = api.kickChannelGet() } catch (e) { ch = "" }
         var configured = api.kickKeyringSession() || (ch && String(ch).length > 0)
-        if (configured && api.kickEnabled()) return "live"
-        if (configured) return "connected"
+        if ((configured && api.kickEnabled()) || (api.cloudPlatformConnected("kick") && api.kickRunning())) return "live"
+        if (configured || api.cloudPlatformConnected("kick")) return "connected"
         if (!api.kickClientConfigured()) return "attention"
         return "attention"
     }
@@ -122,6 +126,9 @@ ColumnLayout {
         if (!api) return ""
         api.refreshCounter
         if (api.kickKeyringSession()) {
+            return ""
+        }
+        if (api.cloudPlatformConnected("kick")) {
             return ""
         }
         if (!api.kickClientConfigured()) return _loc("connections.hint_kick_client")

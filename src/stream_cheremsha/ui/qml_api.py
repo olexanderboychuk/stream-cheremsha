@@ -299,6 +299,26 @@ class StreamCheremshaQmlApi(QObject):
         w = self._win()
         return w._twitch.running if w is not None else False  # noqa: SLF001
 
+    @Slot(str, result=bool)
+    def cloudPlatformConnected(self, platform: str) -> bool:
+        """True when Cheremsha Cloud lists the platform as connected.
+
+        Same rule as the QWidget connection panels: cloud row only, the
+        caller ANDs it with the running source when liveness matters.
+        Never raises (QML evaluates this on every refresh).
+        """
+        w = self._win()
+        if w is None:
+            return False
+        try:
+            auth = w._cloud_auth  # noqa: SLF001
+        except AttributeError:
+            return False
+        try:
+            return bool(auth.platformStatus(platform).get("connected"))
+        except Exception:  # noqa: BLE001 - QML must never crash on status
+            return False
+
     @Slot(result=bool)
     def youtubeRunning(self) -> bool:
         w = self._win()

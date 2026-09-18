@@ -1473,6 +1473,7 @@ class MainWindow(FramelessWindow):
             "exchange-failed": "cloud.error_exchange",
             "link-conflict": "cloud.link_conflict",
             "unlink-last": "cloud.unlink_last",
+            "auto-connect-error": "cloud.auto_connect_error",
         }.get(reason, "")
         if key:
             self._on_user_status(self._tr(key))

@@ -382,6 +382,13 @@ class CheremshaAuthState(QObject):
                     self._on_auto_connected(auto_connect)
                 if auto_connect.reauth_required and auto_connect.platform:
                     self._on_auto_reauth_required(auto_connect)
+                if auto_connect.error and auto_connect.platform:
+                    logger.warning(
+                        "cheremsha auto-connect failed for %s: %s",
+                        auto_connect.platform,
+                        auto_connect.error,
+                    )
+                    self.notice.emit("auto-connect-error")
             # A logged-out platform-connect request lands here: twitch/tiktok/
             # kick arrive connected via auto-connect + reconcile; youtube needs
             # an explicit connect round-trip (google login is login-only).
