@@ -448,6 +448,15 @@ class CheremshaAuthState(QObject):
             if outcome.get("status") == "conflict":
                 self.notice.emit("link-conflict")
             await self._refresh_identities(client)
+            # Linking a platform-capable provider chains straight into the
+            # platform connect: one click ends with the platform connected.
+            # Google is login-only and never chains.
+            if outcome.get("status") in ("ok", "already"):
+                chained = {"twitch": "twitch", "tiktok": "tiktok", "kick": "kick"}.get(
+                    provider
+                )
+                if chained is not None:
+                    await self._platform_connect_flow(chained)
         except asyncio.CancelledError:
             raise
         finally:
