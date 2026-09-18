@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import os
 
-# Default production Cloud API base. Override for local development:
+# Default Cloud API base: local backend. CI/release builds override this via
+# the Nuitka-baked ``embedded.CHEREMSHA_CLOUD_API_URL`` (from the
+# ``STREAM_CHEREMSHA_CLOUD_API_URL`` secret). Resolution order at runtime:
+# QSettings > runtime env > embedded value > this default.
 #   PowerShell: $env:STREAM_CHEREMSHA_CLOUD_API_URL="http://localhost:8000"
 #   bash:       export STREAM_CHEREMSHA_CLOUD_API_URL="http://localhost:8000"
-# CI builds inject this from a GitHub Actions secret at build time
-# (see cheremsha-build): the value is baked into ``embedded.py``. Resolution
-# order at runtime: QSettings > runtime env > embedded value > default.
-DEFAULT_API_BASE_URL = "https://api.cheremsha.app"
+DEFAULT_API_BASE_URL = "http://127.0.0.1:8000"
 ENV_API_BASE_URL = "STREAM_CHEREMSHA_CLOUD_API_URL"
 SETTINGS_API_BASE_URL = "cloud/api_base_url"
 
