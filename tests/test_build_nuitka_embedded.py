@@ -14,8 +14,6 @@ def test_write_embedded_local_from_env(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(build_nuitka, "_EMBEDDED_LOCAL", embedded_path)
     monkeypatch.setenv("STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_TOKEN", "tok")
     monkeypatch.setenv("STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_HOSTNAME", "widgets.example.com")
-    monkeypatch.setenv("STREAM_CHEREMSHA_KICK_CLIENT_ID", "kick-cid")
-    monkeypatch.setenv("STREAM_CHEREMSHA_KICK_CLIENT_SECRET", "kick-sec")
     monkeypatch.setenv("STREAM_CHEREMSHA_CLOUD_API_URL", "https://api.cheremsha.app")
 
     written = build_nuitka._write_embedded_local()
@@ -24,10 +22,22 @@ def test_write_embedded_local_from_env(monkeypatch, tmp_path: Path) -> None:
     text = embedded_path.read_text(encoding="utf-8")
     assert "CLOUDFLARE_TUNNEL_TOKEN = 'tok'" in text
     assert "CLOUDFLARE_TUNNEL_HOSTNAME = 'widgets.example.com'" in text
-    assert "KICK_CLIENT_ID = 'kick-cid'" in text
-    assert "KICK_CLIENT_SECRET = 'kick-sec'" in text
+    assert "KICK_CLIENT" not in text
     assert "CHEREMSHA_CLOUD_API_URL = 'https://api.cheremsha.app'" in text
     build_nuitka._remove_embedded_local(True)
+    assert not embedded_path.is_file()
+
+
+def test_write_embedded_local_ignores_kick_secrets(monkeypatch, tmp_path: Path) -> None:
+    """Kick OAuth secrets are never baked into the binary (cloud-only)."""
+    embedded_path = tmp_path / "embedded_local.py"
+    monkeypatch.setattr(build_nuitka, "_EMBEDDED_LOCAL", embedded_path)
+    monkeypatch.setenv("STREAM_CHEREMSHA_KICK_CLIENT_ID", "kick-cid")
+    monkeypatch.setenv("STREAM_CHEREMSHA_KICK_CLIENT_SECRET", "kick-sec")
+
+    written = build_nuitka._write_embedded_local()
+
+    assert written is False
     assert not embedded_path.is_file()
 
 
@@ -37,7 +47,7 @@ def test_write_embedded_local_cloud_url_defaults_to_localhost(monkeypatch, tmp_p
     # Force any deeper "always-present" env vars to be absent so Cloud URL
     # alone still triggers a write.
     monkeypatch.delenv("STREAM_CHEREMSHA_CLOUD_API_URL", raising=False)
-    monkeypatch.setenv("STREAM_CHEREMSHA_KICK_CLIENT_ID", "kick-cid")
+    monkeypatch.setenv("STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_TOKEN", "tok")
 
     written = build_nuitka._write_embedded_local()
 
@@ -51,7 +61,7 @@ def test_write_embedded_local_rejects_non_url_cloud(monkeypatch, tmp_path: Path)
     embedded_path = tmp_path / "embedded_local.py"
     monkeypatch.setattr(build_nuitka, "_EMBEDDED_LOCAL", embedded_path)
     monkeypatch.setenv("STREAM_CHEREMSHA_CLOUD_API_URL", "not-a-url")
-    monkeypatch.setenv("STREAM_CHEREMSHA_KICK_CLIENT_ID", "kick-cid")
+    monkeypatch.setenv("STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_TOKEN", "tok")
 
     with pytest.raises(SystemExit):
         build_nuitka._write_embedded_local()
@@ -64,8 +74,6 @@ def test_write_embedded_local_clears_when_env_missing(monkeypatch, tmp_path: Pat
     monkeypatch.setattr(build_nuitka, "_EMBEDDED_LOCAL", embedded_path)
     monkeypatch.delenv("STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_TOKEN", raising=False)
     monkeypatch.delenv("STREAM_CHEREMSHA_CLOUDFLARE_TUNNEL_HOSTNAME", raising=False)
-    monkeypatch.delenv("STREAM_CHEREMSHA_KICK_CLIENT_ID", raising=False)
-    monkeypatch.delenv("STREAM_CHEREMSHA_KICK_CLIENT_SECRET", raising=False)
     monkeypatch.delenv("STREAM_CHEREMSHA_CLOUD_API_URL", raising=False)
 
     written = build_nuitka._write_embedded_local()

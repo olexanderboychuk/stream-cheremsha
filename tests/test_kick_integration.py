@@ -45,10 +45,6 @@ def test_build_authorize_url_contains_required_params() -> None:
 
 
 def test_oauth_config_from_env(monkeypatch) -> None:
-    from stream_cheremsha.config import embedded
-
-    monkeypatch.setattr(embedded, "KICK_CLIENT_ID", "embedded-cid")
-    monkeypatch.setattr(embedded, "KICK_CLIENT_SECRET", "embedded-sec")
     monkeypatch.setenv("STREAM_CHEREMSHA_KICK_CLIENT_ID", "c")
     monkeypatch.setenv("STREAM_CHEREMSHA_KICK_CLIENT_SECRET", "s")
     cfg = KickOAuthConfig.from_env()
@@ -58,39 +54,26 @@ def test_oauth_config_from_env(monkeypatch) -> None:
     assert cfg.redirect_uri == "http://localhost:8080/callback"
 
 
-def test_oauth_config_from_env_falls_back_to_embedded(monkeypatch) -> None:
+def test_oauth_config_from_env_ignores_embedded(monkeypatch) -> None:
+    """Embedded Kick secrets are gone: without env there is no config."""
     from stream_cheremsha.config import embedded
 
     monkeypatch.delenv("STREAM_CHEREMSHA_KICK_CLIENT_ID", raising=False)
     monkeypatch.delenv("STREAM_CHEREMSHA_KICK_CLIENT_SECRET", raising=False)
-    monkeypatch.setattr(embedded, "KICK_CLIENT_ID", "embedded-cid")
-    monkeypatch.setattr(embedded, "KICK_CLIENT_SECRET", "embedded-sec")
-    cfg = KickOAuthConfig.from_env()
-    assert cfg is not None
-    assert cfg.client_id == "embedded-cid"
-    assert cfg.client_secret == "embedded-sec"
+    assert not hasattr(embedded, "KICK_CLIENT_ID")
+    assert not hasattr(embedded, "KICK_CLIENT_SECRET")
+    assert KickOAuthConfig.from_env() is None
 
 
 def test_oauth_config_from_env_pkce_only_no_secret(monkeypatch) -> None:
-    from stream_cheremsha.config import embedded
-
     monkeypatch.delenv("STREAM_CHEREMSHA_KICK_CLIENT_ID", raising=False)
     monkeypatch.delenv("STREAM_CHEREMSHA_KICK_CLIENT_SECRET", raising=False)
-    monkeypatch.setattr(embedded, "KICK_CLIENT_ID", "embedded-cid")
-    monkeypatch.setattr(embedded, "KICK_CLIENT_SECRET", "")
-    cfg = KickOAuthConfig.from_env()
-    assert cfg is not None
-    assert cfg.client_id == "embedded-cid"
-    assert cfg.client_secret == ""
+    assert KickOAuthConfig.from_env() is None
 
 
 def test_oauth_config_from_env_missing_returns_none(monkeypatch) -> None:
-    from stream_cheremsha.config import embedded
-
     monkeypatch.delenv("STREAM_CHEREMSHA_KICK_CLIENT_ID", raising=False)
     monkeypatch.delenv("STREAM_CHEREMSHA_KICK_CLIENT_SECRET", raising=False)
-    monkeypatch.setattr(embedded, "KICK_CLIENT_ID", "")
-    monkeypatch.setattr(embedded, "KICK_CLIENT_SECRET", "")
     assert KickOAuthConfig.from_env() is None
 
 
