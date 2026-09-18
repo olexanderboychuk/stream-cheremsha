@@ -278,6 +278,8 @@ async def test_e2e_twitch_login_auto_connects_and_brokers(
 
         runtime = await client.fetch_runtime_token("twitch", token)
         assert runtime.get("access_token")
+        assert "client_id" in runtime  # public id for Helix/EventSub-style APIs
+        assert "client_secret" not in runtime and "refresh_token" not in runtime
     finally:
         await client.aclose()
         await asgi.aclose()

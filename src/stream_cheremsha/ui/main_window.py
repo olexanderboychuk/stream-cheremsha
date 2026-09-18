@@ -1060,6 +1060,7 @@ class MainWindow(FramelessWindow):
             on_auto_reauth_required=self._on_auto_reauth_required_platform,
         )
         self._cloud_auth.notice.connect(self._on_cloud_notice)
+        self._cloud_last_unreachable = 0.0
         try:
             self._cloud_auth.statusChanged.connect(
                 self._on_cloud_status_for_platforms  # type: ignore[attr-defined]
@@ -1480,6 +1481,7 @@ class MainWindow(FramelessWindow):
         if key:
             self._on_user_status(self._tr(key))
         if reason == "unreachable":
+            self._cloud_last_unreachable = time.time()
             self._reveal_local_login_panels()
         if reason.startswith("signed-in:"):
             plat = reason.split(":", 1)[1].strip().lower()
@@ -1531,11 +1533,18 @@ class MainWindow(FramelessWindow):
 
         Returns True when a cloud flow was started (caller must not run the
         local OAuth path). Returns False when the platform is already
-        cloud-connected (local start proceeds) or no cloud auth exists.
+        cloud-connected (local start proceeds), when no cloud auth exists,
+        or when the cloud recently proved unreachable (local fallback gets
+        its turn instead of looping into another doomed cloud attempt).
         """
         auth = getattr(self, "_cloud_auth", None)
         if auth is None:
             return False
+        try:
+            if time.time() - float(getattr(self, "_cloud_last_unreachable", 0.0)) < 600.0:
+                return False
+        except (TypeError, ValueError):
+            pass
         try:
             connected = bool(auth.platformStatus(platform).get("connected"))
         except Exception:
@@ -9122,9 +9131,13 @@ class MainWindow(FramelessWindow):
                 if not (channel and token):
                     self._twitch_token.setText("")
                     return False
-                client_id = self._twitch_client_id_resolved() or runtime.get(
-                    "client_id"
-                ) or ""
+                # Cloud-first: broker client_id wins (public info served by the
+                # API); local resolution stays as offline fallback.
+                client_id = (
+                    str(runtime.get("client_id") or "").strip()
+                    or self._twitch_client_id_resolved()
+                    or ""
+                )
                 # If we don't have the client id locally (cloud-only
                 # auth flow), pass a placeholder — the cloud broker has
                 # already authorised the token, so TwitchSource does not
@@ -9138,6 +9151,7 @@ class MainWindow(FramelessWindow):
                     channel_login=channel,
                 )
                 self._twitch_token.setText("")
+                self._schedule_cloud_token_refresh(runtime.get("expires_at"))
                 return True
             if platform == "youtube":
                 # YouTube inherits Google OAuth; runtime broker returns an
@@ -9191,6 +9205,45 @@ class MainWindow(FramelessWindow):
         # Always sync the footer.
         self._qml_refresh_if_visible()
         return True
+
+    def _schedule_cloud_token_refresh(self, expires_at: object) -> None:
+        """Single-shot reconcile 5 minutes before the broker token expires.
+
+        The broker issues short-lived tokens with server-side refresh; the
+        desktop just re-runs reconcile in time, which re-fetches a fresh
+        runtime token and restarts the source. No-op when unparseable.
+        """
+        try:
+            exp = datetime.fromisoformat(str(expires_at or ""))
+        except (ValueError, TypeError):
+            return
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=UTC)
+        delay = (exp - datetime.now(UTC)).total_seconds() - 300.0
+        if delay <= 0:
+            return
+        try:
+            timer = getattr(self, "_cloud_refresh_timer", None)
+            if timer is None:
+                timer = QTimer(self)
+                timer.setSingleShot(True)
+                timer.timeout.connect(self._on_cloud_refresh_tick)
+                self._cloud_refresh_timer = timer
+            timer.start(int(delay * 1000))
+        except (RuntimeError, TypeError, ValueError):
+            logger.debug("cloud refresh schedule failed", exc_info=True)
+
+    @Slot()
+    def _on_cloud_refresh_tick(self) -> None:
+        mgr = getattr(self, "_platform_manager", None)
+        if mgr is None:
+            return
+        try:
+            auth = getattr(self, "_cloud_auth", None)
+            if auth is not None and getattr(auth, "status", "") == "authenticated":
+                mgr.triggerReconcile()
+        except Exception:
+            logger.debug("cloud refresh tick failed", exc_info=True)
 
     def _set_platform_status_field(self, platform: str, status: str, connected: bool) -> None:
         """Route platform status into the existing footer / connection panels
