@@ -976,27 +976,25 @@ async def test_empty_platforms_emits_guidance(qapplication, keyring_fake) -> Non
 
 
 @pytest.mark.asyncio()
-async def test_link_success_chains_platform_connect(qapplication, keyring_fake) -> None:
-    """Linking Twitch ends with the platform connected: no second click."""
+async def test_link_success_skips_explicit_when_connected(qapplication, keyring_fake) -> None:
+    """Link with same-transaction auto-connect: no second browser round-trip."""
     import stream_cheremsha.cloud.auth_state as astate
 
     client = FakeCloudClient()
     client.platforms = [CloudPlatformStatus("twitch", True, username="kodithecat")]
     opened: list[str] = []
-    explicit: list[str] = []
 
     async def fake_link_start(provider, access_token):
         return {"authorization_url": "https://x/link"}
 
-    async def fake_connect(platform, access_token):
-        explicit.append(platform)
-        return {"authorization_url": "https://x/connect"}
+    async def no_explicit(platform, access_token):  # type: ignore[no-untyped-def]
+        raise AssertionError("explicit connect must not run when already connected")
 
     async def fake_identities(access_token):
         return [{"provider": "twitch", "provider_email": "k@example.com"}]
 
     client.link_start = fake_link_start  # type: ignore[assignment]
-    client.platform_connect_start = fake_connect  # type: ignore[assignment]
+    client.platform_connect_start = no_explicit  # type: ignore[assignment]
     client.get_identities = fake_identities  # type: ignore[assignment]
     auth = _auth(client, opened)
     auth._store_session("a", "r", CloudUser("u-1", "a@example.com", "u"))
@@ -1024,7 +1022,67 @@ async def test_link_success_chains_platform_connect(qapplication, keyring_fake) 
     try:
         auth.linkProvider("twitch")
         await asyncio.wait_for(auth._task, timeout=10)
-        assert explicit == ["twitch"]
         assert auth.platformStatus("twitch")["connected"] is True
+        assert opened == ["https://x/link"]
+    finally:
+        astate.DesktopCallbackServer = real_class
+
+
+@pytest.mark.asyncio()
+async def test_link_falls_back_to_explicit_when_disconnected(
+    qapplication, keyring_fake
+) -> None:
+    """Link without auto-connect: explicit round-trip, then local fallback."""
+    import stream_cheremsha.cloud.auth_state as astate
+
+    client = FakeCloudClient()
+    client.platforms = []
+    opened: list[str] = []
+    explicit: list[str] = []
+    notices: list[str] = []
+
+    async def fake_link_start(provider, access_token):
+        return {"authorization_url": "https://x/link"}
+
+    async def fake_connect(platform, access_token):  # type: ignore[no-untyped-def]
+        explicit.append(platform)
+        return {"authorization_url": "https://x/connect"}
+
+    async def fake_identities(access_token):
+        return [{"provider": "twitch", "provider_email": "k@example.com"}]
+
+    client.link_start = fake_link_start  # type: ignore[assignment]
+    client.platform_connect_start = fake_connect  # type: ignore[assignment]
+    client.get_identities = fake_identities  # type: ignore[assignment]
+    auth = _auth(client, opened)
+    auth.notice.connect(notices.append)
+    auth._store_session("a", "r", CloudUser("u-1", "a@example.com", "u"))
+    auth._set_status(STATUS_AUTHENTICATED)
+
+    real_class = astate.DesktopCallbackServer
+
+    class _FakeChainServer:
+        def __init__(self, *a, **kw) -> None:
+            pass
+
+        async def start(self) -> None:
+            return None
+
+        async def wait_for_link(self, **kw) -> dict:
+            return {"provider": "twitch", "status": "ok"}
+
+        async def wait_for_platform(self, **kw) -> dict:
+            return {"platform": "twitch", "status": "connected"}
+
+        async def stop(self) -> None:
+            return None
+
+    astate.DesktopCallbackServer = _FakeChainServer  # type: ignore[assignment]
+    try:
+        auth.linkProvider("twitch")
+        await asyncio.wait_for(auth._task, timeout=10)
+        assert explicit == ["twitch"]
+        assert opened == ["https://x/link", "https://x/connect"]
+        assert "local-fallback:twitch" in notices
     finally:
         astate.DesktopCallbackServer = real_class
