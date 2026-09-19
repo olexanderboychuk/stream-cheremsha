@@ -561,6 +561,67 @@ class YouTubeChatSource:
         self._running = False
         self._supervisor_video_url: str | None = None
         self._data_api = _YouTubeDataApiRunner()
+        # In-memory broker credential from Cheremsha Cloud (never keyring).
+        self._broker_token: dict[str, Any] | None = None
+
+    def set_broker_token(
+        self,
+        access_token: str,
+        expires_at: object = None,
+        client_id: str = "",
+    ) -> None:
+        """Install a cloud-brokered token (cleared on stop). Empty clears."""
+        if not (access_token or "").strip():
+            self._broker_token = None
+            return
+        self._broker_token = {
+            "access_token": access_token.strip(),
+            "expires_at": expires_at,
+            "client_id": (client_id or "").strip(),
+        }
+
+    def _broker_credentials(self) -> Credentials | None:
+        """Build google creds from the broker token. No keyring, no refresh."""
+        _ensure_google()
+        broker = self._broker_token
+        if broker is None:
+            return None
+        expiry = None
+        try:
+            if broker.get("expires_at"):
+                expiry = datetime.fromisoformat(str(broker["expires_at"]))
+        except (ValueError, TypeError):
+            expiry = None
+        if expiry is not None:
+            # google-auth compares against a NAIVE utcnow: normalize.
+            if expiry.tzinfo is not None:
+                expiry = expiry.astimezone(UTC).replace(tzinfo=None)
+        return Credentials(
+            token=str(broker["access_token"]),
+            refresh_token=None,
+            id_token=None,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=str(broker.get("client_id") or ""),
+            client_secret="",
+            scopes=list(_SCOPES),
+            expiry=expiry,
+        )
+
+    def _credentials(self) -> Credentials | None:
+        """Broker token first, keyring session as fallback."""
+        broker_creds = self._broker_credentials()
+        if broker_creds is not None:
+            return broker_creds
+        return _load_credentials()
+
+    def _broker_wait_needed(self, creds: Credentials | None) -> bool:
+        """True when only a cloud refresh can unstick us (wait, don't stop)."""
+        return (
+            creds is not None
+            and bool(creds.expired)
+            and not creds.refresh_token
+            and self._broker_token is not None
+        )
 
     async def _refresh_oauth_credentials(self, creds: Credentials) -> bool:
         """Refresh access token and persist to keyring.
@@ -610,15 +671,18 @@ class YouTubeChatSource:
         self._data_api.shutdown()
         self._data_api = _YouTubeDataApiRunner()
 
-        creds = _load_credentials()
+        creds = self._credentials()
         if creds is None:
             self._on_status(l10n.tr(self._get_locale(), "yt.run_oauth_first"))
             return
         if creds.expired:
             if not creds.refresh_token:
-                self._on_status(l10n.tr(self._get_locale(), "yt.token_expired"))
-                return
-            if not await self._refresh_oauth_credentials(creds):
+                if self._broker_token is not None:
+                    self._on_status(l10n.tr(self._get_locale(), "yt.token_refresh_wait"))
+                else:
+                    self._on_status(l10n.tr(self._get_locale(), "yt.token_expired"))
+                    return
+            elif not await self._refresh_oauth_credentials(creds):
                 return
 
         self._supervisor_video_url = video_url_or_id
@@ -656,6 +720,7 @@ class YouTubeChatSource:
             self._task = None
 
     async def stop(self) -> None:
+        self._broker_token = None
         await self._cancel_task()
         self._data_api.shutdown()
         self._on_status(l10n.tr(self._get_locale(), "yt.stopped"))
@@ -673,7 +738,7 @@ class YouTubeChatSource:
 
         wait = YOUTUBE_POLL_FOR_LIVE_SEC
         while self._running:
-            loaded = _load_credentials()
+            loaded = self._credentials()
             if loaded is None:
                 self._on_status(l10n.tr(self._get_locale(), "yt.token_missing"))
                 self._running = False
@@ -681,6 +746,14 @@ class YouTubeChatSource:
             creds = loaded
             if creds.expired:
                 if not creds.refresh_token:
+                    if self._broker_wait_needed(creds):
+                        # Cloud refreshes server-side; the expiry timer
+                        # restarts us with a fresh token. Wait, don't stop.
+                        self._on_status(
+                            l10n.tr(self._get_locale(), "yt.token_refresh_wait")
+                        )
+                        await asyncio.sleep(60.0)
+                        continue
                     self._on_status(l10n.tr(self._get_locale(), "yt.token_expired"))
                     self._running = False
                     return

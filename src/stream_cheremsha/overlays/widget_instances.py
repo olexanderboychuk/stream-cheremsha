@@ -226,6 +226,10 @@ class WidgetInstance:
     enabled: bool = True
     created_at: str = field(default_factory=_utcnow)
     updated_at: str = field(default_factory=_utcnow)
+    # Key of the pre-instance singleton config this instance was migrated
+    # from (if any). Synced across devices so every device resolves the
+    # same legacy widget to the same instance id.
+    legacy_key: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -236,6 +240,7 @@ class WidgetInstance:
             "enabled": bool(self.enabled),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "legacy_key": self.legacy_key,
         }
 
     @staticmethod
@@ -248,6 +253,7 @@ class WidgetInstance:
             enabled=bool(raw.get("enabled", True)),
             created_at=str(raw.get("created_at") or _utcnow()),
             updated_at=str(raw.get("updated_at") or _utcnow()),
+            legacy_key=str(raw["legacy_key"]) if raw.get("legacy_key") else None,
         )
 
 
