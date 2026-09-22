@@ -76,12 +76,15 @@ class DesktopCallbackServer:
                 and not self._link_future.done()
                 and str(req.query.get("provider") or "")
             ):
-                self._link_future.set_result(
-                    {
-                        "provider": str(req.query.get("provider")),
-                        "status": str(req.query.get("status") or ""),
-                    }
-                )
+                outcome: dict[str, str] = {
+                    "provider": str(req.query.get("provider")),
+                    "status": str(req.query.get("status") or ""),
+                }
+                if "auto_connected" in req.query:
+                    outcome["auto_connected"] = str(req.query.get("auto_connected"))
+                if req.query.get("auto_error"):
+                    outcome["auto_error"] = str(req.query.get("auto_error"))
+                self._link_future.set_result(outcome)
                 return web.Response(
                     text="<h1>Cheremsha</h1><p>Це вікно можна закрити.</p>",
                     content_type="text/html",

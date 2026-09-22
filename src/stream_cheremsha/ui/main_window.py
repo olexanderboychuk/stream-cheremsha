@@ -7879,6 +7879,9 @@ class MainWindow(FramelessWindow):
     async def _twitch_browser_login(self) -> None:
         client_id = self._twitch_client_id_resolved()
         if not client_id:
+            # No local app credentials: cloud is the only viable path.
+            if self._cloud_connect_first("twitch"):
+                return
             QMessageBox.warning(self, self._tr("dlg.twitch"), self._tr("dlg.twitch_need_client_id"))
             return
         try:
@@ -8241,6 +8244,9 @@ class MainWindow(FramelessWindow):
     async def _kick_browser_login(self) -> None:
         cfg = KickOAuthConfig.from_env()
         if cfg is None:
+            # No local app credentials: cloud is the only viable path.
+            if self._cloud_connect_first("kick"):
+                return
             QTimer.singleShot(
                 0,
                 lambda: QMessageBox.warning(

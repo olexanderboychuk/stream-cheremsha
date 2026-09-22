@@ -633,6 +633,54 @@ async def test_link_provider_conflict_emits_notice(qapplication, keyring_fake) -
 
 
 @pytest.mark.asyncio()
+async def test_link_auto_error_emits_notice(qapplication, keyring_fake) -> None:
+    import stream_cheremsha.cloud.auth_state as astate
+
+    client = FakeCloudClient()
+    opened: list[str] = []
+    notices: list[str] = []
+
+    async def fake_link_start(provider, access_token):
+        return {"authorization_url": "https://x/link"}
+
+    async def fake_identities(access_token):
+        return [{"provider": "twitch", "provider_email": "k@example.com"}]
+
+    client.link_start = fake_link_start  # type: ignore[assignment]
+    client.get_identities = fake_identities  # type: ignore[assignment]
+    auth = _auth(client, opened)
+    auth.notice.connect(notices.append)
+    auth._store_session("a", "r", CloudUser("u-1", "a@example.com", "u"))
+    auth._set_status(STATUS_AUTHENTICATED)
+
+    real_class = astate.DesktopCallbackServer
+
+    class _FakeLinkServer:
+        def __init__(self, *a, **kw) -> None:
+            pass
+
+        async def start(self) -> None:
+            return None
+
+        async def wait_for_link(self, **kw) -> dict:
+            return {"provider": "twitch", "status": "ok", "auto_error": "boom"}
+
+        async def wait_for_platform(self, **kw) -> dict:
+            return {"platform": "twitch", "status": "connected"}
+
+        async def stop(self) -> None:
+            return None
+
+    astate.DesktopCallbackServer = _FakeLinkServer  # type: ignore[assignment]
+    try:
+        auth.linkProvider("twitch")
+        await asyncio.wait_for(auth._task, timeout=10)
+        assert "auto-connect-error" in notices
+    finally:
+        astate.DesktopCallbackServer = real_class
+
+
+@pytest.mark.asyncio()
 async def test_connect_platform_logged_out_triggers_login(qapplication, keyring_fake) -> None:
     client = FakeCloudClient()
     opened: list[str] = []

@@ -447,6 +447,13 @@ class CheremshaAuthState(QObject):
                 return
             if outcome.get("status") == "conflict":
                 self.notice.emit("link-conflict")
+            if outcome.get("auto_error"):
+                logger.warning(
+                    "cheremsha link auto-connect failed for %s: %s",
+                    outcome.get("provider"),
+                    outcome.get("auto_error"),
+                )
+                self.notice.emit("auto-connect-error")
             await self._refresh_identities(client)
             # Linking a platform-capable provider ends with the platform
             # connected: the backend auto-connects in the same transaction,
