@@ -1753,6 +1753,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "YouTube: токен прострочено — знову OAuth",
         "en": "YouTube: token expired — run OAuth again",
     },
+    "yt.token_refresh_wait": {
+        "uk": "YouTube: токен протух — чекаємо оновлення з хмари…",
+        "en": "YouTube token expired — waiting for cloud refresh…",
+    },
     "yt.oauth_refresh_failed": {
         "uk": (
             "YouTube: доступ скасовано або токен більше не дійсний "
@@ -3425,6 +3429,58 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "splash.donations": {"uk": "Завантаження донатів…", "en": "Loading donations…"},
     "splash.docks": {"uk": "Завантаження доків…", "en": "Loading docks…"},
     "splash.overlay": {"uk": "Запуск оверлей-сервера…", "en": "Starting overlay server…"},
+    # Cheremsha Cloud account
+    "cloud.login": {"uk": "Увійти в Cheremsha", "en": "Sign in to Cheremsha"},
+    "cloud.login_with": {"uk": "Увійти через {provider}", "en": "Sign in with {provider}"},
+    "cloud.starting": {"uk": "Відкриваємо браузер…", "en": "Opening browser…"},
+    "cloud.waiting_auth": {"uk": "Очікуємо авторизацію…", "en": "Waiting for authorization…"},
+    "cloud.account": {"uk": "Cheremsha Account", "en": "Cheremsha Account"},
+    "cloud.platforms": {"uk": "Платформи", "en": "Platforms"},
+    "cloud.settings": {"uk": "Налаштування", "en": "Settings"},
+    "cloud.dashboard": {"uk": "Відкрити кабінет", "en": "Open dashboard"},
+    "cloud.logout": {"uk": "Вийти з акаунта", "en": "Sign out"},
+    "cloud.link_provider": {"uk": "Під'єднати {provider}", "en": "Link {provider}"},
+    "cloud.unlink": {"uk": "Від'єднати", "en": "Unlink"},
+    "cloud.link_conflict": {
+        "uk": "Цей акаунт вже прив'язано до іншого Cheremsha-акаунта",
+        "en": "This account is already linked to another Cheremsha account",
+    },
+    "cloud.unlink_last": {
+        "uk": "Не можна від'єднати останній спосіб входу",
+        "en": "Cannot unlink the last sign-in method",
+    },
+    "cloud.auto_connect_error": {
+        "uk": "Не вдалося автоматично під'єднати платформу — під'єднайте її вручну",
+        "en": "Could not auto-connect the platform — connect it manually",
+    },
+    "cloud.signed_in_as": {
+        "uk": "Увійшли як {name}, {platform} під'єднано",
+        "en": "Signed in as {name}, {platform} connected",
+    },
+    "cloud.local_fallback": {
+        "uk": "Хмара не під'єднала {platform} — пробуємо локальний вхід…",
+        "en": "Cloud could not connect {platform} — trying local sign-in…",
+    },
+    "cloud.session_expired": {
+        "uk": "Сесію завершено — увійдіть знову",
+        "en": "Session expired — please sign in again",
+    },
+    "cloud.no_platforms": {
+        "uk": "Увійшли, але жодної платформи не під'єднано — натисніть Sign in на картці",
+        "en": "Signed in, but no platforms connected — press Sign in on a card",
+    },
+    "cloud.error_unreachable": {
+        "uk": "Cheremsha Cloud недоступний — перевірте з'єднання та адресу API",
+        "en": "Cheremsha Cloud is unreachable — check the connection and API address",
+    },
+    "cloud.error_callback_busy": {
+        "uk": "Не вдалося відкрити локальний порт для входу",
+        "en": "Could not open the local login port",
+    },
+    "cloud.error_exchange": {
+        "uk": "Не вдалося завершити вхід — спробуйте ще раз",
+        "en": "Could not finish sign-in — please retry",
+    },
 }
 
 

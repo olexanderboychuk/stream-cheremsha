@@ -65,7 +65,18 @@ def _configure_logging() -> None:
     )
 
 
+def _parse_argv(argv: list[str]) -> None:
+    """Empty placeholder. The CLI historically accepted no flags and
+    the current entry point inherits the same behaviour: the Cheremsha
+    Cloud base URL is fully resolved by ``cloud.constants.api_base_url``
+    (QSettings > ``STREAM_CHEREMSHA_CLOUD_API_URL`` env > Nuitka-baked
+    embedded value > production default).
+    """
+    return
+
+
 def main() -> None:
+    _parse_argv(sys.argv[1:])
     _configure_logging()
     # Standalone builds may not have access to system CA cert store.
     # Ensure Python/ssl/httpx can find a CA bundle.

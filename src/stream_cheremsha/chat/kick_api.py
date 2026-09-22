@@ -18,8 +18,6 @@ from urllib.parse import urlencode
 
 import httpx
 
-from stream_cheremsha.config import embedded
-
 AUTH_HOST = "https://id.kick.com"
 API_HOST = "https://api.kick.com"
 
@@ -60,14 +58,16 @@ class KickOAuthConfig:
 
     @classmethod
     def from_env(cls) -> KickOAuthConfig | None:
+        """Environment-only client config (advanced escape hatch).
+
+        Embedded build-time secrets are gone by design: Kick auth runs
+        through Cheremsha Cloud, and the binary ships zero provider
+        secrets. Set the env vars only for manual local OAuth.
+        """
         cid = (os.environ.get(ENV_KICK_CLIENT_ID) or "").strip()
-        if not cid:
-            cid = (embedded.KICK_CLIENT_ID or "").strip()
         if not cid:
             return None
         sec = (os.environ.get(ENV_KICK_CLIENT_SECRET) or "").strip()
-        if not sec:
-            sec = (embedded.KICK_CLIENT_SECRET or "").strip()
         redir = os.environ.get(ENV_KICK_REDIRECT_URI, "").strip() or DEFAULT_REDIRECT_URI
         return cls(client_id=cid, client_secret=sec, redirect_uri=redir)
 
