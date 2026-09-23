@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.23.3] - 2026-09-23
+
+### Fixed
+
+- Fixed TTS playback and refactored TTS queue logic.
+
 ## [0.23.0] - 2026-09-15
 
 ### Added
