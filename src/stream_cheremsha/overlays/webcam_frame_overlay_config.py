@@ -9,9 +9,34 @@ WEBCAM_FRAME_OVERLAY_CONFIG_SCHEMA_VERSION = 1
 WEBCAM_FRAME_OVERLAY_CONFIG_QSETTINGS_KEY = "overlays/webcam_frame/main/config_json"
 _WEBCAM_FRAME_OVERLAY_CONFIG_QSETTINGS_BACKUP_KEY = "overlays/webcam_frame/main/config_json_backup"
 
-VALID_THEMES = frozenset({"neon_cyber", "synthwave", "toxic", "ice", "amber", "critical"})
+VALID_THEMES = frozenset(
+    {
+        "neon_cyber",
+        "synthwave",
+        "toxic",
+        "ice",
+        "amber",
+        "critical",
+        "aurora",
+        "royal",
+        "sakura",
+        "mono",
+    }
+)
 VALID_INTENSITIES = frozenset({"low", "medium", "high"})
-VALID_FRAME_STYLES = frozenset({"primary", "minimal", "tactical", "broadcast", "hologram"})
+VALID_FRAME_STYLES = frozenset(
+    {
+        "primary",
+        "minimal",
+        "tactical",
+        "broadcast",
+        "hologram",
+        "anime",
+        "fantasy",
+        "glitch",
+        "cosmic",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)

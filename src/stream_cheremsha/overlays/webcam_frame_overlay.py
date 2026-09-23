@@ -125,20 +125,24 @@ body { position: relative; }
 .root.theme-ice        { --wf-accent-rgb: 126, 240, 255; --wf-secondary-rgb: 160, 196, 255; --wf-warn-rgb: 255, 255, 255; }
 .root.theme-amber      { --wf-accent-rgb: 255, 176, 32; --wf-secondary-rgb: 255, 122, 48; --wf-warn-rgb: 255, 224, 102; }
 .root.theme-critical   { --wf-accent-rgb: 255, 59, 59; --wf-secondary-rgb: 255, 138, 0; --wf-warn-rgb: 255, 222, 89; }
+.root.theme-aurora { --wf-accent-rgb: 94, 234, 212; --wf-secondary-rgb: 167, 139, 250; --wf-warn-rgb: 253, 224, 171; }
+.root.theme-royal { --wf-accent-rgb: 232, 197, 132; --wf-secondary-rgb: 176, 141, 79; --wf-warn-rgb: 255, 244, 214; }
+.root.theme-sakura { --wf-accent-rgb: 255, 158, 199; --wf-secondary-rgb: 196, 181, 253; --wf-warn-rgb: 255, 241, 242; }
+.root.theme-mono { --wf-accent-rgb: 235, 235, 245; --wf-secondary-rgb: 150, 150, 165; --wf-warn-rgb: 255, 255, 255; }
 
-.root.intensity-low    { --wf-glow-a: 0.22; --wf-loop-dur: 15s; }
-.root.intensity-medium { --wf-glow-a: 0.36; --wf-loop-dur: 11s; }
-.root.intensity-high   { --wf-glow-a: 0.5;  --wf-loop-dur: 8s; }
+.root.intensity-low    { --wf-glow-a: 0.34; --wf-loop-dur: 9s; }
+.root.intensity-medium { --wf-glow-a: 0.48; --wf-loop-dur: 7s; }
+.root.intensity-high   { --wf-glow-a: 0.62;  --wf-loop-dur: 5s; }
 
 .wf-glow-ambient {
   position: absolute; inset: 0; pointer-events: none;
   box-shadow: inset 0 0 calc(38px * var(--wf-scale)) rgba(var(--wf-accent-rgb), calc(var(--wf-glow-a) * 0.16));
   opacity: 0.85;
-  animation: wfBreathe 5.4s ease-in-out infinite;
+  animation: wfBreathe 3.6s ease-in-out infinite;
 }
 @keyframes wfBreathe {
-  0%, 100% { opacity: 0.55; }
-  50% { opacity: 1; }
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.012); }
 }
 .root.no-breathe .wf-glow-ambient { animation: none; opacity: 0.7; }
 
@@ -166,10 +170,10 @@ body { position: relative; }
 .rail-accent {
   position: absolute; background: rgb(var(--wf-accent-rgb));
   filter:
-    drop-shadow(0 0 calc(2px * var(--wf-scale)) rgba(var(--wf-accent-rgb), 0.95))
-    drop-shadow(0 0 calc(7px * var(--wf-scale)) rgba(var(--wf-accent-rgb), 0.55))
-    drop-shadow(0 0 calc(16px * var(--wf-scale)) rgba(var(--wf-accent-rgb), 0.22));
-  opacity: 0.92;
+    drop-shadow(0 0 calc(3px * var(--wf-scale)) rgba(var(--wf-accent-rgb), 1))
+    drop-shadow(0 0 calc(10px * var(--wf-scale)) rgba(var(--wf-accent-rgb), 0.75))
+    drop-shadow(0 0 calc(22px * var(--wf-scale)) rgba(var(--wf-accent-rgb), 0.35));
+  opacity: 1;
 }
 .rail-top .rail-accent, .rail-bottom .rail-accent { left: 0; right: 0; height: var(--wf-rail-thick); }
 .rail-left .rail-accent, .rail-right .rail-accent { top: 0; bottom: 0; width: var(--wf-rail-thick); }
@@ -216,10 +220,10 @@ body { position: relative; }
   will-change: transform, opacity;
 }
 .rail-top .rail-energy, .rail-bottom .rail-energy {
-  width: 14%; height: calc(var(--wf-rail-thick) + 1px);
+  width: 22%; height: calc(var(--wf-rail-thick) + 2px);
 }
 .rail-left .rail-energy, .rail-right .rail-energy {
-  height: 14%; width: calc(var(--wf-rail-thick) + 1px);
+  height: 22%; width: calc(var(--wf-rail-thick) + 2px);
 }
 .rail-top .rail-energy { top: calc(var(--wf-band) * 0.28); }
 .rail-bottom .rail-energy { bottom: calc(var(--wf-band) * 0.28); }
@@ -230,6 +234,12 @@ body { position: relative; }
 .root.online.energy-on .rail-right .rail-energy { animation: wfEnergyRight var(--wf-loop-dur) linear infinite; }
 .root.online.energy-on .rail-bottom .rail-energy { animation: wfEnergyBottom var(--wf-loop-dur) linear infinite; }
 .root.online.energy-on .rail-left .rail-energy { animation: wfEnergyLeft var(--wf-loop-dur) linear infinite; }
+/* Passive fallback: keep touring packets alive even before online/boot so the
+   frame never looks dead. Online rules above win by specificity once live. */
+.root.energy-on .rail-top .rail-energy { animation: wfEnergyTop var(--wf-loop-dur) linear infinite; }
+.root.energy-on .rail-right .rail-energy { animation: wfEnergyRight var(--wf-loop-dur) linear infinite; }
+.root.energy-on .rail-bottom .rail-energy { animation: wfEnergyBottom var(--wf-loop-dur) linear infinite; }
+.root.energy-on .rail-left .rail-energy { animation: wfEnergyLeft var(--wf-loop-dur) linear infinite; }
 
 @keyframes wfEnergyTop {
   0%     { left: -14%; opacity: 0; }
@@ -266,10 +276,15 @@ body { position: relative; }
 .rail-left .rail-sweep, .rail-right .rail-sweep {
   background: linear-gradient(180deg, transparent, rgba(255,255,255,0.85), transparent);
 }
-.root.online.sweep-on .rail-top .rail-sweep { animation: wfSweepH 17s ease-in-out infinite; }
-.root.online.sweep-on .rail-bottom .rail-sweep { animation: wfSweepH 23s ease-in-out infinite; animation-delay: 9s; }
-.root.online.sweep-on .rail-left .rail-sweep { animation: wfSweepV 29s ease-in-out infinite; animation-delay: 4s; }
-.root.online.sweep-on .rail-right .rail-sweep { animation: wfSweepV 31s ease-in-out infinite; animation-delay: 16s; }
+.root.online.sweep-on .rail-top .rail-sweep { animation: wfSweepH 9s ease-in-out infinite; }
+.root.online.sweep-on .rail-bottom .rail-sweep { animation: wfSweepH 12s ease-in-out infinite; animation-delay: 4s; }
+.root.online.sweep-on .rail-left .rail-sweep { animation: wfSweepV 14s ease-in-out infinite; animation-delay: 2s; }
+.root.online.sweep-on .rail-right .rail-sweep { animation: wfSweepV 16s ease-in-out infinite; animation-delay: 7s; }
+/* Passive fallback so sweeps run even before online. */
+.root.sweep-on .rail-top .rail-sweep { animation: wfSweepH 9s ease-in-out infinite; }
+.root.sweep-on .rail-bottom .rail-sweep { animation: wfSweepH 12s ease-in-out infinite; animation-delay: 4s; }
+.root.sweep-on .rail-left .rail-sweep { animation: wfSweepV 14s ease-in-out infinite; animation-delay: 2s; }
+.root.sweep-on .rail-right .rail-sweep { animation: wfSweepV 16s ease-in-out infinite; animation-delay: 7s; }
 @keyframes wfSweepH {
   0%, 92% { opacity: 0; transform: translateX(-30%); }
   94%     { opacity: 0.9; }
@@ -311,6 +326,11 @@ body { position: relative; }
 .root.online.energy-on .corner-tr .corner-pulse { animation: wfPulseTR var(--wf-loop-dur) ease-in-out infinite; }
 .root.online.energy-on .corner-bl .corner-pulse { animation: wfPulseBL var(--wf-loop-dur) ease-in-out infinite; }
 .root.online.energy-on .corner-br .corner-pulse { animation: wfPulseBR var(--wf-loop-dur) ease-in-out infinite; }
+/* Passive fallback: corners pulse even before online. */
+.root.energy-on .corner-tl .corner-pulse { animation: wfPulseTL var(--wf-loop-dur) ease-in-out infinite; }
+.root.energy-on .corner-tr .corner-pulse { animation: wfPulseTR var(--wf-loop-dur) ease-in-out infinite; }
+.root.energy-on .corner-bl .corner-pulse { animation: wfPulseBL var(--wf-loop-dur) ease-in-out infinite; }
+.root.energy-on .corner-br .corner-pulse { animation: wfPulseBR var(--wf-loop-dur) ease-in-out infinite; }
 @keyframes wfPulseTL { 0% { opacity: .85; } 4% { opacity: 0; } 97% { opacity: 0; } 100% { opacity: .85; } }
 @keyframes wfPulseTR { 0%, 22% { opacity: 0; } 26% { opacity: .85; } 31% { opacity: 0; } 100% { opacity: 0; } }
 @keyframes wfPulseBL { 0%, 47% { opacity: 0; } 51% { opacity: .85; } 56% { opacity: 0; } 100% { opacity: 0; } }
@@ -523,6 +543,136 @@ body { position: relative; }
   50%      { opacity: 1;   transform: scale(1.04); }
 }
 
+/* ANIME: cel-shaded hyper rails, speed lines, punchy bouncing corners */
+.root.style-anime { --wf-loop-dur: 3.2s; --wf-glow-a: 0.6; }
+.root.style-anime .rail-top .rail-accent, .root.style-anime .rail-bottom .rail-accent {
+  height: calc(var(--wf-rail-thick) * 2.4);
+  background: linear-gradient(90deg, rgb(var(--wf-secondary-rgb)), #fff 25%, rgb(var(--wf-accent-rgb)) 50%, #fff 75%, rgb(var(--wf-secondary-rgb)));
+  background-size: 200% 100%;
+  animation: wfAnimeDash 1.4s linear infinite;
+}
+.root.style-anime .rail-left .rail-accent, .root.style-anime .rail-right .rail-accent {
+  width: calc(var(--wf-rail-thick) * 2.4);
+  background: linear-gradient(180deg, rgb(var(--wf-secondary-rgb)), #fff 25%, rgb(var(--wf-accent-rgb)) 50%, #fff 75%, rgb(var(--wf-secondary-rgb)));
+  background-size: 100% 200%;
+  animation: wfAnimeDashV 1.4s linear infinite;
+}
+@keyframes wfAnimeDash { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+@keyframes wfAnimeDashV { 0% { background-position: 0 100%; } 100% { background-position: 0 -100%; } }
+.root.style-anime .wf-frame::after {
+  background:
+    repeating-linear-gradient(115deg, transparent 0 14px, rgba(255,255,255,0.10) 14px 16px),
+    radial-gradient(120% 90% at 50% 0%, transparent 60%, rgba(0,0,0,0.3) 100%);
+  animation: wfAnimeSpeed 0.9s linear infinite;
+  opacity: 1;
+}
+@keyframes wfAnimeSpeed { 0% { background-position: 0 0, 0 0; } 100% { background-position: 56px 0, 0 0; } }
+.root.style-anime .corner-bracket {
+  clip-path: none; border-width: calc(var(--wf-rail-thick) * 1.6);
+  animation: wfAnimePop 1.1s cubic-bezier(.2,2.2,.4,1) infinite;
+}
+.root.style-anime .corner-tr .corner-bracket { animation-delay: -0.27s; }
+.root.style-anime .corner-bl .corner-bracket { animation-delay: -0.55s; }
+.root.style-anime .corner-br .corner-bracket { animation-delay: -0.82s; }
+@keyframes wfAnimePop { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.12); } }
+.root.style-anime .hud-status { transform: skewX(-8deg); font-weight: bold; border-width: 2px; }
+
+/* FANTASY: golden rune rings, majestic slow magic float */
+.root.style-fantasy { --wf-loop-dur: 10s; --wf-glow-a: 0.55; }
+.root.style-fantasy .rail-top .rail-accent, .root.style-fantasy .rail-bottom .rail-accent {
+  height: calc(var(--wf-rail-thick) * 1.8);
+  background: linear-gradient(90deg, rgb(var(--wf-warn-rgb)), rgb(var(--wf-accent-rgb)) 40%, rgb(var(--wf-secondary-rgb)) 60%, rgb(var(--wf-warn-rgb)));
+  background-size: 300% 100%;
+  animation: wfFantasyFlow 7s ease-in-out infinite alternate;
+}
+.root.style-fantasy .rail-left .rail-accent, .root.style-fantasy .rail-right .rail-accent {
+  width: calc(var(--wf-rail-thick) * 1.8);
+  background: linear-gradient(180deg, rgb(var(--wf-warn-rgb)), rgb(var(--wf-accent-rgb)) 40%, rgb(var(--wf-secondary-rgb)) 60%, rgb(var(--wf-warn-rgb)));
+  background-size: 100% 300%;
+  animation: wfFantasyFlowV 7s ease-in-out infinite alternate;
+}
+@keyframes wfFantasyFlow { 0% { background-position: 0% 0; } 100% { background-position: 100% 0; } }
+@keyframes wfFantasyFlowV { 0% { background-position: 0 0%; } 100% { background-position: 0 100%; } }
+.root.style-fantasy .corner-bracket {
+  clip-path: none; border-radius: 50%;
+  border: var(--wf-rail-thick) solid transparent;
+  background: conic-gradient(from 0deg, rgb(var(--wf-accent-rgb)), rgb(var(--wf-warn-rgb)), rgb(var(--wf-secondary-rgb)), rgb(var(--wf-accent-rgb))) border-box;
+  -webkit-mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: wfRuneSpin 9s linear infinite;
+  filter: drop-shadow(0 0 8px rgba(var(--wf-warn-rgb), 0.7));
+}
+@keyframes wfRuneSpin { 0% { transform: rotate(0deg) scale(1); } 50% { transform: rotate(180deg) scale(1.08); } 100% { transform: rotate(360deg) scale(1); } }
+.root.style-fantasy .wf-frame { animation: wfFantasyFloat 6s ease-in-out infinite; }
+@keyframes wfFantasyFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+.root.style-fantasy .hud-status {
+  border-color: rgba(var(--wf-warn-rgb), 0.6);
+  font-family: 'Press Start 2P', 'VT323', monospace;
+  letter-spacing: 0.14em;
+}
+
+/* GLITCH: aggressive RGB-split cyber malfunction */
+.root.style-glitch { --wf-loop-dur: 2.4s; --wf-glow-a: 0.58; }
+.root.style-glitch .rail-accent {
+  background: rgb(var(--wf-accent-rgb));
+  filter: drop-shadow(-2px 0 rgba(255,0,120,0.85)) drop-shadow(2px 0 rgba(0,255,255,0.85)) drop-shadow(0 0 12px rgba(var(--wf-accent-rgb),0.7));
+  animation: wfGlitchJitter 0.9s steps(2, end) infinite, wfRailShimmer 2s linear infinite;
+}
+.root.style-glitch .corner-bracket {
+  clip-path: polygon(0 0, 100% 0, 100% 38%, 0 38%, 0 46%, 100% 46%, 100% 100%, 0 100%);
+  animation: wfGlitchSlice 1.3s steps(3, end) infinite;
+  border-color: rgb(var(--wf-accent-rgb));
+}
+@keyframes wfGlitchJitter {
+  0%, 100% { transform: translate(0, 0); }
+  20% { transform: translate(-2px, 1px); }
+  40% { transform: translate(2px, -2px); }
+  60% { transform: translate(-1px, -1px); }
+  80% { transform: translate(1px, 2px); }
+}
+@keyframes wfGlitchSlice {
+  0%, 100% { clip-path: polygon(0 0, 100% 0, 100% 38%, 0 38%, 0 46%, 100% 46%, 100% 100%, 0 100%); transform: translate(0,0); }
+  25% { clip-path: polygon(0 0, 100% 0, 100% 20%, 0 20%, 0 60%, 100% 60%, 100% 100%, 0 100%); transform: translate(-3px,1px); }
+  50% { clip-path: polygon(0 0, 100% 0, 100% 55%, 0 55%, 0 63%, 100% 63%, 100% 100%, 0 100%); transform: translate(3px,-1px); }
+  75% { clip-path: polygon(0 0, 100% 0, 100% 30%, 0 30%, 0 34%, 100% 34%, 100% 100%, 0 100%); transform: translate(0,0); }
+}
+.root.style-glitch .wf-frame { animation: wfGlitchHue 5s linear infinite; }
+@keyframes wfGlitchHue { 0%, 93%, 100% { filter: none; } 94% { filter: hue-rotate(90deg) saturate(2); } 96% { filter: hue-rotate(-60deg) saturate(2.5); } 98% { filter: none; } }
+.root.style-glitch .rail-scan { opacity: 0.35; }
+.root.style-glitch .hud-status { border-style: dashed; animation: wfPillIn 0.4s steps(2, end) both; }
+
+/* COSMIC: deep-space aurora, hue-drifting nebula + twinkling stars */
+.root.style-cosmic { --wf-loop-dur: 8s; --wf-glow-a: 0.58; }
+.root.style-cosmic .rail-accent {
+  background: linear-gradient(90deg, #22d3ee, #a78bfa, #f472b6, #22d3ee);
+  background-size: 300% 100%;
+  animation: wfCosmicFlow 5s linear infinite;
+  filter: drop-shadow(0 0 6px rgba(167,139,250,0.9)) drop-shadow(0 0 18px rgba(34,211,238,0.5));
+}
+.root.style-cosmic .rail-left .rail-accent, .root.style-cosmic .rail-right .rail-accent {
+  background: linear-gradient(180deg, #22d3ee, #a78bfa, #f472b6, #22d3ee);
+  background-size: 100% 300%;
+}
+@keyframes wfCosmicFlow { 0% { background-position: 0% 0; } 100% { background-position: 100% 0; } }
+.root.style-cosmic .wf-frame::after {
+  background:
+    radial-gradient(1.6px 1.6px at 12% 22%, #fff 50%, transparent 51%),
+    radial-gradient(1.3px 1.3px at 78% 12%, #fff 50%, transparent 51%),
+    radial-gradient(1.8px 1.8px at 64% 78%, #fff 50%, transparent 51%),
+    radial-gradient(1.2px 1.2px at 32% 66%, #fff 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 88% 58%, #fff 50%, transparent 51%),
+    linear-gradient(120deg, rgba(34,211,238,0.14), rgba(167,139,250,0.14), rgba(244,114,182,0.14));
+  animation: wfStarTwinkle 2.6s ease-in-out infinite, wfSheenDrift 11s ease-in-out infinite;
+  opacity: 1;
+}
+@keyframes wfStarTwinkle { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+.root.style-cosmic .corner-bracket {
+  clip-path: none; border-radius: 50%; border-style: solid;
+  animation: wfOrbitPulse 3.4s ease-in-out infinite;
+}
+.root.style-cosmic .corner-bracket::after { animation: wfOrbFloat 1.8s ease-in-out infinite; }
+@keyframes wfOrbitPulse { 0%, 100% { transform: scale(0.92) rotate(0deg); opacity: 0.7; } 50% { transform: scale(1.1) rotate(90deg); opacity: 1; } }
+
 /* ---------- SHUTDOWN ---------- */
 .root.shutting-down .rail-accent,
 .root.shutting-down .corner-bracket { transition: opacity .5s ease; opacity: 0.08; }
@@ -539,6 +689,12 @@ body { position: relative; }
   .hud-status .dot { animation: none !important; opacity: .8; }
   .corner-node { animation: none !important; opacity: .8; }
   .root.style-hologram .corner-bracket { animation: none !important; opacity: 0.75; }
+  .root.style-anime .rail-accent, .root.style-anime .corner-bracket,
+  .root.style-fantasy .rail-accent, .root.style-fantasy .corner-bracket,
+  .root.style-glitch .rail-accent, .root.style-glitch .corner-bracket,
+  .root.style-cosmic .rail-accent, .root.style-cosmic .corner-bracket,
+  .root.style-anime .wf-frame::after, .root.style-cosmic .wf-frame::after,
+  .root.style-fantasy .wf-frame, .root.style-glitch .wf-frame { animation: none !important; }
 }
 
 /* ---------- ACTIVITY STATE MODULATION ---------- */
@@ -555,11 +711,11 @@ body { position: relative; }
 /* Activity state classes — toggled via JS.  These override the
    intensity-* classes when active (they appear later in the
    stylesheet, so same-specificity rules win when present). */
-.root.activity-idle     { --wf-loop-dur: 15s; --wf-glow-a: 0.22; }
-.root.activity-active   { --wf-loop-dur: 12s; --wf-glow-a: 0.30; }
-.root.activity-hyped    { --wf-loop-dur: 9s;  --wf-glow-a: 0.42; }
-.root.activity-overdrive{ --wf-loop-dur: 7s;  --wf-glow-a: 0.52; }
-.root.activity-surge    { --wf-loop-dur: 5s;  --wf-glow-a: 0.65; }
+.root.activity-idle     { --wf-loop-dur: 9s; --wf-glow-a: 0.34; }
+.root.activity-active   { --wf-loop-dur: 7s; --wf-glow-a: 0.44; }
+.root.activity-hyped    { --wf-loop-dur: 6s;  --wf-glow-a: 0.54; }
+.root.activity-overdrive{ --wf-loop-dur: 5s;  --wf-glow-a: 0.62; }
+.root.activity-surge    { --wf-loop-dur: 4s;  --wf-glow-a: 0.72; }
 
 /* Surge transient — applied briefly by JS; overrides loop-dur/glow
    for the duration of the surge, then the activity-state class
@@ -586,7 +742,67 @@ body { position: relative; }
 .root:not(.glitch-active) .corner-bracket {
   transition: filter 0.08s ease;
 }
-"""
+
+/* ---------- PREMIUM LAYER: cinematic depth + motion ---------- */
+.wf-frame::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(120% 90% at 50% 0%, transparent 62%, rgba(0,0,0,0.28) 100%),
+    linear-gradient(115deg, transparent 40%, rgba(255,255,255,0.09) 46%, transparent 54%);
+  background-size: 100% 100%, 280% 100%;
+  mix-blend-mode: screen; opacity: 0.9;
+  animation: wfSheenDrift 9s ease-in-out infinite;
+}
+@keyframes wfSheenDrift {
+  0%, 100% { background-position: 0 0, 110% 0; }
+  50% { background-position: 0 0, -10% 0; }
+}
+.wf-frame::before {
+  content: ""; position: absolute; inset: calc(var(--wf-band) * 0.1); pointer-events: none;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.07);
+  box-shadow: 0 0 0 1px rgba(var(--wf-accent-rgb), 0.10), 0 0 24px rgba(var(--wf-accent-rgb), 0.10);
+}
+.rail-accent {
+  background: linear-gradient(90deg, rgba(var(--wf-accent-rgb),0.55), rgb(var(--wf-accent-rgb)) 30%, #fff 50%, rgb(var(--wf-accent-rgb)) 70%, rgba(var(--wf-accent-rgb),0.55));
+  background-size: 220% 100%;
+}
+.rail-accent { animation: wfRailShimmer 4s linear infinite; }
+.rail-left .rail-accent, .rail-right .rail-accent {
+  background: linear-gradient(180deg, rgba(var(--wf-accent-rgb),0.55), rgb(var(--wf-accent-rgb)) 30%, #fff 50%, rgb(var(--wf-accent-rgb)) 70%, rgba(var(--wf-accent-rgb),0.55));
+  background-size: 100% 220%;
+}
+@keyframes wfRailShimmer { 0% { background-position: 110% 0; } 100% { background-position: -110% 0; } }
+.corner-bracket { position: absolute; inset: 0; }
+.corner-bracket::after {
+  content: ""; position: absolute; width: 60%; height: 60%; border-radius: 50%;
+  background: radial-gradient(circle, #fff 0%, rgba(var(--wf-accent-rgb),1) 35%, transparent 70%);
+  filter: blur(0.5px) drop-shadow(0 0 6px rgba(var(--wf-accent-rgb), 0.9));
+  animation: wfOrbFloat 2.8s ease-in-out infinite;
+}
+.corner-tl .corner-bracket::after { top: -2px; left: -2px; }
+.corner-tr .corner-bracket::after { top: -2px; right: -2px; animation-delay: -1s; }
+.corner-bl .corner-bracket::after { bottom: -2px; left: -2px; animation-delay: -2s; }
+.corner-br .corner-bracket::after { bottom: -2px; right: -2px; animation-delay: -3s; }
+@keyframes wfOrbFloat { 0%, 100% { transform: scale(0.75); opacity: 0.55; } 50% { transform: scale(1.15); opacity: 1; } }
+.hud-status {
+  background: rgba(8, 10, 18, 0.55);
+  border: 1px solid rgba(var(--wf-accent-rgb), 0.35);
+  border-radius: 999px;
+  padding: calc(3px * var(--wf-scale)) calc(10px * var(--wf-scale));
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 2px 14px rgba(0,0,0,0.35), 0 0 12px rgba(var(--wf-accent-rgb), 0.25);
+}
+.root.online .hud-status { animation: wfPillIn 0.7s cubic-bezier(.2,1.4,.4,1) both; }
+.hud-status-right { animation-delay: 0.12s; }
+@keyframes wfPillIn { 0% { opacity: 0; transform: translateY(-6px) scale(0.92); } 100% { opacity: 0.92; transform: none; } }
+.root.theme-royal .rail-accent { filter: drop-shadow(0 0 3px rgba(232,197,132,0.9)) drop-shadow(0 0 10px rgba(232,197,132,0.45)); }
+.root.theme-aurora .wf-glow-ambient { animation-duration: 7s; }
+.root.theme-mono .rail-scan { opacity: 0.08; }
+@media (prefers-reduced-motion: reduce) {
+  .wf-frame::after, .root.online .rail-accent, .corner-bracket::after, .root.online .hud-status { animation: none !important; }
+}"""
+
 
 _DOCUMENT_TEMPLATE = """<!doctype html>
 <html>
@@ -767,7 +983,7 @@ function updateActivityState(score) {
 }
 
 function applyTheme() {
-  const validThemes = ['neon_cyber', 'synthwave', 'toxic', 'ice', 'amber', 'critical'];
+  const validThemes = ['neon_cyber', 'synthwave', 'toxic', 'ice', 'amber', 'critical', 'aurora', 'royal', 'sakura', 'mono'];
   const theme = validThemes.indexOf(config.theme) >= 0 ? config.theme : 'neon_cyber';
   validThemes.forEach(function(t) { rootEl.classList.remove('theme-' + t); });
   rootEl.classList.add('theme-' + theme);
@@ -777,7 +993,7 @@ function applyTheme() {
   validIntensity.forEach(function(i) { rootEl.classList.remove('intensity-' + i); });
   rootEl.classList.add('intensity-' + intensity);
 
-  const validStyles = ['primary', 'minimal', 'tactical', 'broadcast', 'hologram'];
+  const validStyles = ['primary', 'minimal', 'tactical', 'broadcast', 'hologram', 'anime', 'fantasy', 'glitch', 'cosmic'];
   const frameStyle = validStyles.indexOf(config.frame_style) >= 0 ? config.frame_style : 'primary';
   validStyles.forEach(function(s) { rootEl.classList.remove('style-' + s); });
   rootEl.classList.add('style-' + frameStyle);
@@ -815,10 +1031,10 @@ function scheduleMicroGlitch() {
     if (reducedMotion || !isOnline) return;
     if (config.enable_micro_glitch === false) return;
     const intensity = String(config.intensity || 'medium');
-    const chance = intensity === 'high' ? 0.10 : intensity === 'low' ? 0.03 : 0.06;
+    const chance = intensity === 'high' ? 0.22 : intensity === 'low' ? 0.12 : 0.16;
     if (Math.random() > chance) return;
     triggerMicroGlitch();
-  }, 2000);
+  }, 1400);
 }
 
 function triggerMicroGlitch() {
@@ -857,10 +1073,10 @@ function scheduleSparks() {
     if (reducedMotion || !isOnline) return;
     if (config.enable_sparks === false) return;
     const intensity = String(config.intensity || 'medium');
-    const chance = intensity === 'high' ? 0.22 : intensity === 'low' ? 0.06 : 0.13;
+    const chance = intensity === 'high' ? 0.38 : intensity === 'low' ? 0.16 : 0.26;
     if (Math.random() > chance) return;
     fireSpark();
-  }, 3000);
+  }, 1800);
 }
 
 function fireSpark() {
