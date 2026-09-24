@@ -1,83 +1,118 @@
 # AGENTS.md
 
-## PROJECT
-Cheremsha is a Ukrainian streamer assistant that aggregates live chat from Twitch, YouTube, TikTok, and Kick into a unified interface with Ukrainian Text-to-Speech (TTS), music queue management via Telegram, OBS browser source overlays, and OBS WebSocket integration.
+## Core Principle
+**DISCOVER → ROUTE → TARGET → INSPECT → STOP**
+
+Do NOT attempt to construct a complete mental model of the entire repository before working on a feature. You only need the minimum sufficient model required for the requested change.
 
 ---
 
-## AGENT STARTUP PROTOCOL
-1. Read `AGENTS.md`.
-2. Read `PROJECT_MAP.md`.
-3. Identify the relevant subsystem based on the task.
-4. Read ONLY the corresponding `.agent/modules/*.md` file for that subsystem.
-5. Read a flow file (e.g., in `.agent/flows/`) only if the task involves an end-to-end runtime flow.
-6. Inspect the actual implementation files identified in the context documents.
-7. Modify the minimum required files.
-8. Run the relevant tests found in `tests/`.
-9. Do not perform unrelated exploration of other modules.
+## Targeted Reconnaissance Flow
+
+### STEP 1 — Parse the Feature
+Extract:
+- Requested behavior and user-facing change.
+- Likely domain (e.g. `OverlaysWidgets`, `DesktopUI`, `TTSPipeline`).
+- Likely entities, widgets, or components.
+- Explicit constraints and out-of-scope items.
+
+### STEP 2 — Route
+1. Look at [PROJECT_MAP.md](file:///home/oleksandrboichuk/Dev/Self/stream-cheremsha/PROJECT_MAP.md) L1 Architecture Map or [.agent/index.md](file:///home/oleksandrboichuk/Dev/Self/stream-cheremsha/.agent/index.md) Symbol Index to identify the **1 or 2 relevant domains**.
+2. **DO NOT** inspect or read unrelated domains.
+
+### STEP 3 — Read Domain Knowledge
+Read **ONLY** the relevant domain document in `.agent/domains/<domain>.md` and its associated decision document in `.agent/decisions/` if referenced.
+Identify:
+- Candidate implementation files.
+- Candidate symbols and methods.
+- Relevant invariants constraining the change.
+
+### STEP 4 — Targeted Source Inspection
+Inspect **ONLY** the exact source files and symbols required:
+1. Where does the current behavior live?
+2. What abstraction owns it?
+3. Where should the new behavior integrate?
+4. What existing pattern should be reused?
+
+**CRITICAL**: Use line-range slices (e.g. `StartLine`/`EndLine`). **NEVER** read multi-thousand line files (e.g. `main_window.py`) in their entirety.
+
+### STEP 5 — Follow Dependencies Only When Necessary
+Follow a dependency only if:
+- Its behavior directly affects the feature.
+- Ownership is unclear.
+- An invariant depends on it.
+- The integration point cannot otherwise be determined.
+Avoid "just in case" exploration.
 
 ---
 
-## CONTEXT LOADING RULE
-- **DO NOT** recursively read the repository.
-- **DO NOT** inspect unrelated modules.
-- **DO NOT** read every file in a directory; use the "Canonical Locations" in module files.
-- **DO NOT** inspect `generated/`, `build/`, `dist/`, or `.venv/` unless specifically required for debugging build issues.
-- Use `PROJECT_MAP.md` to determine where to start.
-- Load `.agent/modules/<module>.md` only when working inside that module.
-- Load `.agent/flows/<flow>.md` only when the task involves that flow.
+## Exploration Stop Condition
+
+**STOP exploration immediately** once you can answer all 8 questions:
+1. Which subsystem owns the feature?
+2. Which existing abstraction should be extended or reused?
+3. Which files and symbols implement the current behavior?
+4. What exact code path will change?
+5. What integration points are required?
+6. Which invariants or architectural decisions constrain the change?
+7. Which existing tests establish the expected pattern?
+8. Which exact files will be modified or created?
+
+You do NOT need complete knowledge of the repository. You only need sufficient knowledge to produce an airtight implementation plan.
 
 ---
 
-## IMPORTANT DIRECTORIES
-- `src/stream_cheremsha/chat`: Chat source implementations (Twitch, YouTube, TikTok, Kick).
-- `src/stream_cheremsha/overlays`: Overlay server logic and specific widget implementations.
-- `src/stream_cheremsha/music`: Music player, queue management, and Telegram bot integration.
-- `src/stream_cheremsha/pipeline`: TTS processing pipeline (chunking, filtering).
-- `src/stream_cheremsha/actions`: Platform-specific automation actions.
-- `src/stream_cheremsha/config`: Configuration, keyring storage, and secrets.
+## Exploration Token Budget
+
+- **Project Knowledge (L1/L2/L3)**: $\le 3\text{k}$ tokens
+- **Targeted Source Slices (L4/Source)**: $\le 8\text{k}$ tokens
+- **Tests & Examples**: $\le 4\text{k}$ tokens
+- **Target Total**: **~5–15k tokens** (Complex multi-system features: ~15–25k tokens).
+
+If exploration reaches this budget: **STOP**. Re-evaluate whether remaining missing information is truly essential or if you are over-exploring.
 
 ---
 
-## EXCLUDED DIRECTORIES
-- `node_modules/`
-- `.venv/`
-- `build/`
-- `dist/`
-- `.pytest_cache/`
-- `.ruff_cache/`
-- `__pycache__/`
+## Anti-Loop Rules
+
+You must **NOT**:
+- Read every file in a directory "for context".
+- Read entire large files when only one method or constant is needed.
+- Grep broadly when [.agent/index.md](file:///home/oleksandrboichuk/Dev/Self/stream-cheremsha/.agent/index.md) lists the exact symbol location.
+- Inspect unrelated domains (e.g., loading `music/` when working on an overlay widget).
+- Recursively inspect dependencies that are behind established public interfaces.
+- Continue exploring merely to eliminate theoretical uncertainty.
 
 ---
 
-## COMMANDS
-- **Development**: `ruff check src tests`, `pytest`
-- **Linting**: `ruff check .`
-- **Formatting**: `ruff format .`
-- **Type Checking**: (Not explicitly configured, but use `mypy` if available)
+## Knowledge Freshness
+
+When completing a feature, check if your change introduced:
+- A new subsystem or widget type.
+- A new public interface or major abstraction.
+- A new architectural invariant or state boundary.
+- A new decision that was expensive to determine.
+
+If yes, update the corresponding `.agent/domains/<domain>.md` or `.agent/decisions/<topic>.md`. Do **NOT** document trivial implementation details.
+
+---
+
+## Plan Generation Standard
+
+Once the Stop Condition is reached, generate the implementation plan with:
+1. **Feature Boundary**: What is changing and what is explicitly OUT of scope.
+2. **Existing Architecture**: Relevant systems and existing patterns being extended.
+3. **Implementation Points**: Exact files, classes, methods, and line regions to modify.
+4. **Data & Control Flow**: Step-by-step lifecycle from input event to final output.
+5. **Edge Cases & Error Handling**: Failure paths, fallbacks, and boundary conditions.
+6. **Testing**: Concrete test files and assertions to execute.
+
+---
+
+## Developer Commands
+
+- **Run Application**: `.venv/bin/python -m stream_cheremsha`
+- **Run Unit Tests**: `PYTHONPATH=. .venv/bin/pytest tests/test_<target>.py`
+- **Linting**: `.venv/bin/ruff check src tests`
+- **Formatting**: `.venv/bin/ruff format src tests`
 - **Build**: `pip install -e ".[build]" && cheremsha-build`
-- **Database/Persistence**: Handled via `sqlite3` or `qsettings` depending on the module.
-
----
-
-## ARCHITECTURAL RULES
-- **Source of Truth**: The code is the source of truth. Documentation is a navigation index.
-- **Keyring First**: All secrets must be stored in the OS keyring using `config/keyring_store.py`. Never hardcode or store in plain text files.
-- **Asyncio Everywhere**: Most I/O (Chat, TTS, Overlays) is handled via `qasync` and `asyncio`.
-- **Modular Isolation**: Modules should interact through defined interfaces; avoid direct cross-module imports where possible.
-
----
-
-## HIGH-RISK AREAS
-- **TTS Pipeline**: Changes to `pipeline/` can affect all audio output.
-- **Overlay Server**: Errors here can crash the web server serving OBS sources.
-- **Keyring Logic**: Incorrect handling of secrets can lead to data loss or security vulnerabilities.
-
----
-
-## DOCUMENTATION NAVIGATION
-- `PROJECT_MAP.md`: Repository navigation index (Where things are).
-- `ARCHITECTURE.md`: High-level system design (How things work).
-- `.agent/modules/`: Subsystem-specific context and change guides.
-- `.agent/flows/`: Important end-to-end runtime flows.
-- `.agent/decisions/`: Key architectural decisions.

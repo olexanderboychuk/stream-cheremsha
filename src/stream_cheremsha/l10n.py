@@ -2986,6 +2986,11 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "widgets.battle.hide_when_idle": {"uk": "Приховувати, коли спокійно", "en": "Hide when idle"},
     "widgets.battle.font_family": {"uk": "Сімейство шрифту", "en": "Font family"},
     "widgets.battle.decision_layer": {"uk": "Шар рішення", "en": "Decision layer"},
+    "widgets.battle.section_advanced": {"uk": "Розширені", "en": "Advanced"},
+    "widgets.battle.desc_advanced": {
+        "uk": "Технічні налаштування для цього виджета.",
+        "en": "Technical settings for this widget.",
+    },
     "widgets.common.theme": {"uk": "Тема", "en": "Theme"},
     "widgets.common.create": {"uk": "Створити", "en": "Create"},
     "widgets.common.cancel": {"uk": "Скасувати", "en": "Cancel"},

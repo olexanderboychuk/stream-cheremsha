@@ -2974,6 +2974,8 @@ Item {
                                                     {value: "10 000", label: "Ціль", frac: 1.0, color: "#3a4356"}]};
                                             case "battle_royale":
                                                 return {kind: "battle"};
+                                            case "battle":
+                                                return {kind: "battle"};
                                             case "actions":
                                                 return {kind: "emblem", caption: "3 активні алерти", progress: -1};
                                             case "stream_pet":

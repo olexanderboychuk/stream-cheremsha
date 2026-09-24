@@ -22,7 +22,6 @@ Thumbs.db
 Desktop.ini
 .worktrees/
 artifacts/
-docs/
 dist/
 build/
 !build/nsis/
