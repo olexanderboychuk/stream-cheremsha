@@ -3424,6 +3424,7 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "splash.actions": {"uk": "Завантаження дій…", "en": "Loading actions…"},
     "splash.donations": {"uk": "Завантаження донатів…", "en": "Loading donations…"},
     "splash.docks": {"uk": "Завантаження доків…", "en": "Loading docks…"},
+    "splash.settings": {"uk": "Завантаження налаштувань…", "en": "Loading settings…"},
     "splash.overlay": {"uk": "Запуск оверлей-сервера…", "en": "Starting overlay server…"},
 }
 

@@ -153,6 +153,11 @@ from stream_cheremsha.music.yt_dlp_resolver import fetch_youtube_meta, fetch_you
 from stream_cheremsha.online.models import now_hms as online_now_hms
 from stream_cheremsha.online.models import online_state_patch
 from stream_cheremsha.openai_moderation import openai_moderation_flagged
+from stream_cheremsha.overlays.battle_controller import BattleController
+from stream_cheremsha.overlays.battle_overlay_config import (
+    battle_overlay_config_defaults,
+    battle_overlay_config_from_json_text,
+)
 from stream_cheremsha.overlays.battle_royale_overlay_config import (
     load_battle_royale_overlay_config,
 )
@@ -1210,6 +1215,27 @@ class MainWindow(FramelessWindow):
             "live_leaderboard_simple", _make_lb_simple_controller
         )
         self._live_leaderboard_simple.sync_instances(start=False)
+
+        from stream_cheremsha.overlays.instance_groups import (
+            instance_config_loader as _battle_cfg_loader,
+        )
+
+        def _make_battle_controller(instance_id: str) -> BattleController:
+            return BattleController(
+                pubsub=self._overlay_server.pubsub(),
+                get_locale=lambda: self._locale,
+                instance=instance_id,
+                parent=self,
+                config_loader=_battle_cfg_loader(
+                    "battle",
+                    instance_id,
+                    battle_overlay_config_from_json_text,
+                    battle_overlay_config_defaults,
+                ),
+            )
+
+        self._battle_group = InstanceControllerGroup("battle", _make_battle_controller)
+        self._battle_group.sync_instances(start=False)
         self._social_rotator = SocialRotatorController(
             pubsub=self._overlay_server.pubsub(),
             get_locale=lambda: self._locale,
@@ -1291,6 +1317,12 @@ class MainWindow(FramelessWindow):
         # _ensure_actions_widgets), never on the startup path.
         self._actions_qml_api: ActionsQmlApi | None = None
         self._qml_actions: QQuickWidget | None = None
+        # Settings tab is lazy like the heavy QML tabs: a placeholder keeps
+        # _IX_SETTINGS stable; the real page is built on first open or
+        # splash warm-up (see _ensure_settings_widgets), never in _build_ui.
+        self._settings_page: QWidget | None = None
+        self._settings_placeholder: QWidget | None = None
+        self._settings_fields_loaded: bool = False
         self._widgets_qml_api: WidgetsQmlApi | None = None
         self._docks_qml_api: DocksQmlApi | None = None
         self._overlay_tunnel_qml_api: OverlayTunnelQmlApi | None = None
@@ -1559,6 +1591,7 @@ class MainWindow(FramelessWindow):
         self._widgets_qml_api.set_stream_goal_controller(self._stream_goal)
         self._widgets_qml_api.set_live_leaderboard_controller(self._live_leaderboard)
         self._widgets_qml_api.set_live_leaderboard_simple_controller(self._live_leaderboard_simple)
+        self._widgets_qml_api.set_battle_controller(self._battle_group)
         self._widgets_qml_api.set_social_rotator_controller(self._social_rotator)
         self._widgets_qml_api.set_webcam_frame_controller(self._webcam_frame)
         self._widgets_qml_api.set_signal_system_controller(self._signal_system)
@@ -1781,7 +1814,10 @@ class MainWindow(FramelessWindow):
         right.addWidget(self._stack, stretch=1)
 
         self._stack.addWidget(self._qml_conn)
-        self._stack.addWidget(self._build_settings_tab())
+        # Lazy Settings: placeholder keeps _IX_SETTINGS stable; real page via
+        # _ensure_settings_widgets() on first open / splash warm-up.
+        self._settings_placeholder = QWidget(self)
+        self._stack.addWidget(self._settings_placeholder)
         self._stack.addWidget(self._build_chat_tab())
         self._stack.addWidget(self._build_audio_tab())
         self._stack.addWidget(self._qml_donations)
@@ -2193,6 +2229,44 @@ class MainWindow(FramelessWindow):
                 self._stack.addWidget(widget)
         return widget
 
+    def _ensure_settings_widgets(self) -> QWidget:
+        """Lazily build the Settings page (first open / splash warm-up only)."""
+        if self._settings_page is not None:
+            return self._settings_page
+        page = self._build_settings_tab()
+        placeholder = getattr(self, "_settings_placeholder", None)
+        if placeholder is not None and hasattr(self, "_stack"):
+            idx = self._stack.indexOf(placeholder)
+            if idx == self._IX_SETTINGS:
+                # Remove first, then insert: insert-then-remove shifts
+                # currentIndex onto the neighbour tab. Restore explicitly.
+                showing_placeholder = self._stack.currentIndex() == idx
+                current_widget = self._stack.currentWidget()
+                self._stack.removeWidget(placeholder)
+                placeholder.setParent(None)
+                placeholder.deleteLater()
+                self._stack.insertWidget(self._IX_SETTINGS, page)
+                if showing_placeholder:
+                    self._stack.setCurrentIndex(self._IX_SETTINGS)
+                elif current_widget is not None:
+                    self._stack.setCurrentWidget(current_widget)
+                self._settings_placeholder = None
+            else:
+                self._stack.addWidget(page)
+        self._settings_page = page
+        # _build_settings_tab() calls _apply_settings_tab_texts() at build
+        # time, but the pre-build guard makes that call a no-op; re-apply it
+        # here so the freshly built page has its texts on first paint.
+        self._apply_settings_tab_texts()
+        if not self._settings_fields_loaded:
+            try:
+                self._load_settings_fields()
+            except (RuntimeError, AttributeError, OSError):
+                logger.debug("Lazy settings fields load failed", exc_info=True)
+            else:
+                self._settings_fields_loaded = True
+        return page
+
     def _qml_widget_for_stack_index(self, index: int) -> QQuickWidget | None:
         if index == self._IX_ACTIONS:
             try:
@@ -2293,7 +2367,14 @@ class MainWindow(FramelessWindow):
         #    needs its one-time lazy load below.
         if self._stack.currentIndex() != index:
             self._stack.setCurrentIndex(index)
-        # 2. Audio devices enumerate on first open of the TTS/audio tab only
+        # 2. Settings is a lazy QWidget tab (not QML): build it synchronously
+        #    on first open so the already-visible index shows real content.
+        if index == self._IX_SETTINGS:
+            try:
+                self._ensure_settings_widgets()
+            except Exception:
+                logger.debug("Lazy settings build failed", exc_info=True)
+        # 3. Audio devices enumerate on first open of the TTS/audio tab only
         #    (QMediaDevices + QtMultimedia import stay off the startup path).
         if index == self._IX_AUDIO and not self._audio_devices_ready:
             self._audio_devices_ready = True
@@ -2301,7 +2382,7 @@ class MainWindow(FramelessWindow):
                 self._refresh_audio_devices()
             except (RuntimeError, AttributeError, OSError):
                 logger.debug("Lazy audio device refresh failed", exc_info=True)
-        # 3. Cached QML page: only visibility changes. First open: loading
+        # 4. Cached QML page: only visibility changes. First open: loading
         #    veil first, blocking load deferred so the veil can paint.
         #    No backend/network/database work happens here.
         self._ensure_qml_page_visible(index)
@@ -2373,6 +2454,7 @@ class MainWindow(FramelessWindow):
             self._stream_goal,
             self._live_leaderboard,
             self._live_leaderboard_simple,
+            self._battle_group,
             self._social_rotator,
             self._community_world,
             self._webcam_frame,
@@ -2390,7 +2472,8 @@ class MainWindow(FramelessWindow):
         """Staged splash-phase preload of heavy QML pages into the navigation cache.
 
         Priority order is Widgets, then Actions (so the Actions tab is ready
-        early), then Layouts, Donations, and Docks. Layouts goes after
+        early), then Layouts, Donations, Docks, and Settings last. Layouts
+        goes after
         Actions deliberately: it compiles the same giant WidgetsView.qml a
         second time (separate engine per QQuickWidget), so the more
         frequently used page is ready first. Each load is the same
@@ -2406,6 +2489,7 @@ class MainWindow(FramelessWindow):
             (self._IX_LAYOUTS, "splash.layouts"),
             (self._IX_DONATIONS, "splash.donations"),
             (self._IX_DOCKS, "splash.docks"),
+            (self._IX_SETTINGS, "splash.settings"),
         )
         total = len(order)
         for pos, (qml_index, key) in enumerate(order):
@@ -2424,7 +2508,10 @@ class MainWindow(FramelessWindow):
             if self._closing:
                 return
             try:
-                self._load_qml_page(qml_index)
+                if qml_index == self._IX_SETTINGS:
+                    self._ensure_settings_widgets()
+                else:
+                    self._load_qml_page(qml_index)
             except Exception:
                 # One page must never abort the rest of the warm-up; the
                 # failed page loads lazily on first open as before.
@@ -4012,6 +4099,8 @@ class MainWindow(FramelessWindow):
         return w
 
     def _apply_settings_tab_texts(self) -> None:
+        if getattr(self, "_settings_page", None) is None:
+            return
         self._lbl_locale.setText(self._tr("settings.lang_label"))
         self._combo_locale.setItemText(0, self._tr("settings.lang.uk"))
         self._combo_locale.setItemText(1, self._tr("settings.lang.en"))
@@ -4109,6 +4198,8 @@ class MainWindow(FramelessWindow):
         if hasattr(self, "_live_leaderboard") and self._live_leaderboard is not None:
             self._live_leaderboard.schedule_publish()
             self._live_leaderboard_simple.schedule_publish()
+        if hasattr(self, "_battle_group") and self._battle_group is not None:
+            self._battle_group.schedule_publish()
         if hasattr(self, "_webcam_frame") and self._webcam_frame is not None:
             self._webcam_frame.schedule_publish()
 
@@ -4157,13 +4248,9 @@ class MainWindow(FramelessWindow):
             self._qml_api.refresh()
 
     def _post_show_startup_ui(self) -> None:
-        """Deferred post-show UI work (secondary pages; never blocks first paint)."""
+        """Deferred post-show UI work: connection panels; settings loads with its lazy build."""
         if self._closing:
             return
-        try:
-            self._load_settings_fields()
-        except (RuntimeError, AttributeError, OSError):
-            logger.debug("Deferred settings fields load failed", exc_info=True)
         self._refresh_connection_panels_after_show()
 
     def _refresh_connection_panels_after_show(self) -> None:
@@ -5389,6 +5476,10 @@ class MainWindow(FramelessWindow):
         await old.aclose()
 
     def _load_settings_fields(self) -> None:
+        """Populate settings widgets from QSettings/keyring (once, via
+        _ensure_settings_widgets)."""
+        if getattr(self, "_settings_page", None) is None:
+            return
         env_cid = os.environ.get(constants.ENV_TWITCH_CLIENT_ID, "").strip()
         cid = env_cid or (keyring_store.get_password(constants.KEY_TWITCH_CLIENT_ID) or "")
         if cid.strip():
@@ -6414,7 +6505,11 @@ class MainWindow(FramelessWindow):
 
     def _sync_leaderboard_groups(self) -> None:
         """Reconcile per-instance leaderboard engines with the instance store."""
-        for group in (self._live_leaderboard, self._live_leaderboard_simple):
+        groups = [self._live_leaderboard, self._live_leaderboard_simple]
+        battle_group = getattr(self, "_battle_group", None)
+        if battle_group is not None:
+            groups.append(battle_group)
+        for group in groups:
             try:
                 group.sync_instances()
             except Exception:  # noqa: BLE001 - never break UI on sync failure
@@ -6566,6 +6661,17 @@ class MainWindow(FramelessWindow):
             return
         if self._battle_controller.tick():
             self._schedule_battle_overlay_publish()
+        grp = getattr(self, "_battle_group", None)
+        members = getattr(grp, "_members", None) or {}
+        try:
+            ctls = list(members.values())
+        except Exception:
+            ctls = []
+        for ctl in ctls:
+            try:
+                ctl.tick_advance()
+            except Exception:
+                continue
 
     def _schedule_battle_overlay_publish(self) -> None:
         if self._closing:
@@ -6878,6 +6984,10 @@ class MainWindow(FramelessWindow):
         self._stream_goal.reset_for_new_stream()
         self._live_leaderboard.reset_for_new_stream()
         self._live_leaderboard_simple.reset_for_new_stream()
+        try:
+            self._battle_group.reset_for_new_stream()
+        except Exception:
+            pass
         self._social_rotator.reset_for_new_stream()
         self._community_world.reset_session()
         loop = self._asyncio_loop
@@ -7325,6 +7435,16 @@ class MainWindow(FramelessWindow):
                 sender_avatar_url=str(sender_avatar_url or ""),
                 sender_user_key=sender_user_key,
             )
+            try:
+                self._battle_group.on_gift(
+                    sender=sender,
+                    count=count,
+                    tiktok_coin_each=tiktok_coin_each,
+                    sender_avatar_url=str(sender_avatar_url or ""),
+                    sender_user_key=sender_user_key,
+                )
+            except Exception:
+                pass
             self._social_rotator.on_tiktok_gift(
                 sender=sender,
                 count=count,

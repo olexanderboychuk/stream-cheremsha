@@ -16,6 +16,12 @@ from stream_cheremsha.overlays.actions_config import (
     load_actions_config,
     save_actions_config,
 )
+from stream_cheremsha.overlays.battle_overlay_config import (
+    battle_overlay_config_from_json_text,
+    battle_overlay_config_to_json_text,
+    load_battle_overlay_config,
+    save_battle_overlay_config,
+)
 from stream_cheremsha.overlays.battle_royale_overlay_config import (
     battle_royale_overlay_config_from_json_text,
     battle_royale_overlay_config_to_json_text,
@@ -225,6 +231,7 @@ class WidgetsQmlApi(QObject):
         self._signal_system_instance = str(online_instance or "main").strip() or "main"
         self._music_instance = str(online_instance or "main").strip() or "main"
         self._battle_host: Any | None = None
+        self._battle_controller: Any | None = None
         self._stream_goal_controller: Any | None = None
         self._live_leaderboard_controller: Any | None = None
         self._live_leaderboard_simple_controller: Any | None = None
@@ -246,6 +253,9 @@ class WidgetsQmlApi(QObject):
 
     def set_live_leaderboard_simple_controller(self, controller: Any) -> None:
         self._live_leaderboard_simple_controller = controller
+
+    def set_battle_controller(self, controller: Any) -> None:
+        self._battle_controller = controller
 
     def set_social_rotator_controller(self, controller: Any) -> None:
         self._social_rotator_controller = controller
@@ -514,6 +524,8 @@ class WidgetsQmlApi(QObject):
             self.previewCommunityWorldOverlay(inst)
         elif typ == "battle_royale":
             self.previewBattleRoyaleOverlay(inst)
+        elif typ == "battle":
+            self.previewBattleOverlay(inst)
         elif typ == "top_likers":
             self.previewTopLikersOverlay(inst)
         elif typ == "top_gifters":
@@ -1318,6 +1330,47 @@ class WidgetsQmlApi(QObject):
         }
         self._publish_patch(topic=topic, patch=patch)
 
+    @Slot(str)
+    @Slot()
+    def previewBattleOverlay(self, instance: str | None = None) -> None:
+        token = str(instance or "").strip()
+        if not token:
+            return
+        topic = f"overlay:battle:{token}"
+        cfg = self._preview_config(
+            "battle",
+            token,
+            load_battle_overlay_config,
+            battle_overlay_config_from_json_text,
+        )
+        patch: dict[str, Any] = {
+            "config": json.loads(battle_overlay_config_to_json_text(cfg)),
+            "battle_id": "preview1",
+            "status": "active",
+            "round": 2,
+            "best_of": 3,
+            "round_wins": {"left": 1, "right": 0},
+            "duration_s": int(getattr(cfg, "round_duration_s", 60)),
+            "remaining_seconds": 43,
+            "countdown_remaining_s": 0,
+            "participants": [
+                {"id": "mira", "name": "Mira", "avatar_url": "", "team_id": "left", "score": 62},
+                {"id": "lera", "name": "Lera", "avatar_url": "", "team_id": "right", "score": 102},
+            ],
+            "teams": [
+                {"id": "left", "score": 62, "round_wins": 1},
+                {"id": "right", "score": 102, "round_wins": 0},
+            ],
+            "combo": {"team_id": "right", "count": 6, "multiplier": 2.0},
+            "flags": {"is_close": False, "is_comeback": False, "final_push": False},
+            "events": [
+                {"type": "combo_updated", "team_id": "right", "payload": {"count": 6}, "at": 0.0}
+            ],
+            "winner": None,
+            "locale": _ui_locale(),
+        }
+        self._publish_patch(topic=topic, patch=patch)
+
     @Slot(result=bool)
     def battleRoyaleStartFromLeaders(self) -> bool:
         host = self._battle_host
@@ -1886,6 +1939,52 @@ class WidgetsQmlApi(QObject):
         _LOG.info("widgets ConfigMap save: battle_royale ok json_len=%d", len(txt))
         self.saveBattleRoyaleOverlayConfigJson(txt)
 
+    @Slot(result="QVariantMap")
+    def loadBattleOverlayConfigMap(self) -> dict[str, Any]:
+        routed = self._load_cfg_or_instance("battle")
+        if routed is not None:
+            return routed
+        cfg = load_battle_overlay_config()
+        return json.loads(battle_overlay_config_to_json_text(cfg))
+
+    @Slot(result=str)
+    def loadBattleOverlayConfigJson(self) -> str:
+        cfg = load_battle_overlay_config()
+        return battle_overlay_config_to_json_text(cfg)
+
+    @Slot(str)
+    def saveBattleOverlayConfigJson(self, cfg_json: str) -> None:
+        txt = str(cfg_json or "").strip()
+        if not txt:
+            return
+        try:
+            cfg = battle_overlay_config_from_json_text(txt)
+        except (ValueError, TypeError, json.JSONDecodeError):
+            return
+        if self._save_cfg_to_instance(
+            "battle", json.loads(battle_overlay_config_to_json_text(cfg))
+        ):
+            return
+        save_battle_overlay_config(cfg)
+        _LOG.info("widgets overlay persisted: battle")
+        # No singleton-topic publish here: battle has no singleton instance attr.
+        # Per-instance saves publish via _save_cfg_to_instance above.
+
+    @Slot(QJSValue)
+    def saveBattleOverlayConfigMap(self, cfg_js: QJSValue) -> None:
+        try:
+            plain = cfg_js.toVariant()
+        except Exception:
+            _LOG.warning("widgets ConfigMap save: battle rejected (null/undefined)")
+            return
+        try:
+            txt = json.dumps(plain, ensure_ascii=False)
+        except (TypeError, ValueError):
+            _LOG.warning("widgets ConfigMap save: battle rejected empty_or_non_serializable")
+            return
+        _LOG.info("widgets ConfigMap save: battle ok json_len=%d", len(txt))
+        self.saveBattleOverlayConfigJson(txt)
+
     @Slot(str, result="QVariantMap")
     def streamPetPresetDefaultsMap(self, preset: str) -> dict[str, Any]:
         cfg = apply_stream_pet_preset(stream_pet_overlay_config_defaults(), preset)
@@ -2423,6 +2522,7 @@ class WidgetsQmlApi(QObject):
         for _attr in (
             "_live_leaderboard_controller",
             "_live_leaderboard_simple_controller",
+            "_battle_controller",
             "_stream_goal_controller",
             "_social_rotator_controller",
             "_webcam_frame_controller",

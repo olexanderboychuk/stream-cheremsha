@@ -115,6 +115,7 @@ Item {
         {type: "top_gifters", label: "Топ GIFтерів", iconName: "gift.svg"},
         {type: "king_of_live", label: "King of the Live", iconName: "web_crown.svg"},
         {type: "battle_royale", label: "Battle Royale", iconName: "web_swords.svg"},
+        {type: "battle", label: "Battle", iconName: "web_swords.svg"},
         {type: "stream_pet", label: "Stream Pet", iconName: "web_paw.svg"},
         {type: "community_world", label: "Community World", iconName: "web_globe.svg"},
         {type: "stream_goal", label: "Stream Goal", iconName: "web_target.svg"},
@@ -136,6 +137,7 @@ Item {
             case "top_gifters": return {w: 340, h: 260};
             case "king_of_live": return {w: 360, h: 220};
             case "battle_royale": return {w: 420, h: 280};
+            case "battle": return {w: 640, h: 220};
             case "stream_pet": return {w: 240, h: 240};
             case "community_world": return {w: 480, h: 320};
             case "stream_goal": return {w: 400, h: 160};
@@ -610,7 +612,7 @@ Item {
     }
 
     readonly property int titleBarH: 44
-    property string widgetMode: "grid" // grid | chat | actions | online | top_likers | top_gifters | king_of_live | battle_royale | stream_pet | community_world | stream_goal | live_leaderboard | live_leaderboard_simple | social_rotator | webcam_frame | signal_system
+    property string widgetMode: "grid" // grid | chat | actions | online | top_likers | top_gifters | king_of_live | battle_royale | battle | stream_pet | community_world | stream_goal | live_leaderboard | live_leaderboard_simple | social_rotator | webcam_frame | signal_system
     readonly property bool universalEditorActive: root.editingInstanceId !== "" && root.widgetMode !== "grid" && root.widgetMode !== "layout"
 
     function universalInstance() {
@@ -642,6 +644,7 @@ Item {
             return item;
         };
         var bl = function(key) { return root.loc("widgets.battle_royale." + key); };
+        var bt = function(key) { return root.loc("widgets.battle." + key); };
         var s = function(title, description, controls, icon, expanded) {
             return {title: title, description: description, icon: icon || "", controls: controls, expanded: expanded !== false};
         };
@@ -764,6 +767,12 @@ Item {
             general = [c(bl("hide_when_idle"), "hide_when_idle", "toggle", true), c(bl("max_hp"), "max_hp", "number", 1000, {minimum: 100, maximum: 10000}), c(bl("round_duration"), "round_duration_s", "number", 120, {minimum: 30, maximum: 600}), c(bl("critical_threshold"), "crit_threshold_diamonds", "number", 500, {minimum: 50, maximum: 50000}), c(bl("gifts_per_fighter"), "gifts_per_fighter", "number", 3, {minimum: 1, maximum: 6}), c(bl("auto_start"), "auto_arm_enabled", "toggle", true)];
             appearance = [c(bl("base_font_size"), "base_font_size_px", "number", 14, {minimum: 10, maximum: 32}), c(bl("scale_percent"), "scale_percent", "number", 100, {minimum: 40, maximum: 250})];
             behavior = [c(bl("automatic_threshold"), "auto_threshold_each", "number", 100, {minimum: 1, maximum: 10000}), c(bl("automatic_window"), "auto_window_s", "number", 30, {minimum: 5, maximum: 120})];
+        } else if (typeId === "battle") {
+            general = [c(bt("battle_name"), "battle_name", "text", "BATTLE"), c(bt("best_of"), "best_of", "select", 3, {options: [1, 3, 5]}), c(bt("round_duration"), "round_duration_s", "number", 60, {minimum: 30, maximum: 300}), c(bt("countdown"), "countdown_s", "number", 5, {minimum: 1, maximum: 10}), c(bt("auto_start"), "auto_start", "toggle", true), c(bt("auto_threshold"), "auto_threshold_each", "number", 100, {minimum: 1, maximum: 10000}), c(bt("auto_window"), "auto_window_s", "number", 30, {minimum: 5, maximum: 120}), c(bt("auto_reset"), "auto_reset", "toggle", true)];
+            appearance = [c(bt("theme"), "theme", "select", "cheremsha_neon", {options: ["cheremsha_neon", "cyber", "arcade", "minimal"]}), c(bt("layout_mode"), "layout_mode", "select", "normal", {options: ["normal", "compact"]}), c(bt("show_avatars"), "show_avatars", "toggle", true), c(bt("scale"), "scale_percent", "number", 100, {minimum: 40, maximum: 250}), c(bt("font_size"), "base_font_size_px", "number", 14, {minimum: 10, maximum: 32})];
+            behavior = [c(bt("gift_multiplier"), "gift_multiplier", "number", 1.0, {minimum: 0.1, maximum: 10}), c(bt("combo_enabled"), "combo_enabled", "toggle", true), c(bt("combo_threshold"), "combo_threshold", "number", 5, {minimum: 2, maximum: 20}), c(bt("comeback_enabled"), "comeback_enabled", "toggle", true), c(bt("final_push"), "final_push_seconds", "number", 10, {minimum: 3, maximum: 30})];
+            animation = [c(bt("event_animations"), "event_animations", "toggle", true), c(bt("animation_intensity"), "animation_intensity_pct", "number", 100, {minimum: 25, maximum: 200}), c(bt("show_badges"), "show_event_badges", "toggle", true), c(bt("show_winner"), "show_winner_screen", "toggle", true)];
+            advanced = [c(bt("victory_display"), "victory_display_s", "number", 8, {minimum: 3, maximum: 15}), c(bt("hide_when_idle"), "hide_when_idle", "toggle", false), c(bt("font_family"), "font_family", "text", "Segoe UI"), c(bt("decision_layer"), "decision_layer_enabled", "toggle", false)];
         } else if (typeId === "stream_pet") {
             general = [c("Preset", "preset", "select", "classic_gold", {options: ["classic_gold", "cyber_purple", "cotton_candy", "forest_fox", "midnight_shadow", "sunset_shiba", "custom"]}), c("Enabled", "enabled", "toggle", true), c("Show energy bar", "show_energy_bar", "toggle", true), c("Evolution enabled", "evolution_enabled", "toggle", true), c("Pet scale", "pet_scale_pct", "number", 100, {minimum: 50, maximum: 200})];
             appearance = [c("Collar enabled", "collar_enabled", "toggle", true), c("Blush enabled", "blush_enabled", "toggle", true), c("Body color", "pet_body_color", "color", "#fbbf24"), c("Ear color", "pet_ear_color", "color", "#f59e0b"), c("Collar color", "collar_color", "color", "#ef4444"), c("Bubble color", "bubble_bg_color", "color", "#ffffff")];
@@ -834,11 +843,13 @@ Item {
             c("Global cooldown", "global_cooldown_ms", "number", 3000, {minimum: 0, maximum: 60000}), c("AI cooldown", "ai_observation_cooldown_ms", "number", 3000, {minimum: 0, maximum: 60000}), c("AI max per hour", "ai_observation_max_per_hour", "number", 10, {minimum: 0, maximum: 1000}), c("Unknown signal cooldown", "unknown_signal_cooldown_ms", "number", 3000, {minimum: 0, maximum: 60000})
         ]);
 
-        if (general.length) sections.push(s(typeId === "battle_royale" ? bl("section_general") : "General", typeId === "battle_royale" ? bl("desc_general") : "Core settings for this widget instance.", general, "◇"));
-        if (appearance.length) sections.push(s(typeId === "battle_royale" ? bl("section_appearance") : "Appearance", typeId === "battle_royale" ? bl("desc_appearance") : "Visual presentation and display options.", appearance, "✦"));
-        if (behavior.length) sections.push(s(typeId === "battle_royale" ? bl("section_behavior") : "Gameplay / Behavior", typeId === "battle_royale" ? bl("desc_behavior") : "Rules, sources, timing, and widget behavior.", behavior, "≡"));
+        var _isBr = typeId === "battle_royale" || typeId === "battle";
+        var _bl = function(key) { return typeId === "battle" ? bt(key) : bl(key); };
+        if (general.length) sections.push(s(_isBr ? _bl("section_general") : "General", _isBr ? _bl("desc_general") : "Core settings for this widget instance.", general, "◇"));
+        if (appearance.length) sections.push(s(_isBr ? _bl("section_appearance") : "Appearance", _isBr ? _bl("desc_appearance") : "Visual presentation and display options.", appearance, "✦"));
+        if (behavior.length) sections.push(s(_isBr ? _bl("section_behavior") : "Gameplay / Behavior", _isBr ? _bl("desc_behavior") : "Rules, sources, timing, and widget behavior.", behavior, "≡"));
         if (animation.length) sections.push(s("Animation", "Motion and visual effect controls.", animation, "⌁"));
-        if (advanced.length) sections.push(s(typeId === "battle_royale" ? bl("section_advanced") : "Advanced", typeId === "battle_royale" ? bl("desc_advanced") : "Technical settings for this widget.", advanced, "⚙", false));
+        if (advanced.length) sections.push(s(_isBr ? _bl("section_advanced") : "Advanced", _isBr ? _bl("desc_advanced") : "Technical settings for this widget.", advanced, "⚙", false));
         return sections;
     }
 
