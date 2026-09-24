@@ -464,19 +464,19 @@ class BattleEngine:
         if top <= 0:
             return []
         gap = abs(a - b) / max(1, top)
-        leader = "left" if a >= b else "right"
         trailer = "right" if a >= b else "left"
         # Arm comeback when trailing by threshold with noise floor.
         if not self._comeback_armed and top >= 50 and gap >= comeback_pct / 100.0:
             self._comeback_armed = True
             self._trailer = trailer
-        # Overtake → comeback once.
+        # Overtake → comeback once. The stored trailer was trailing at arm time;
+        # it has completed an overtake as soon as it now leads the opposing team.
         if self._comeback_armed and self._trailer is not None:
             tr_team = st.team(self._trailer)
-            ld_team = st.team(leader)
+            opp_team = st.team("right" if self._trailer == "left" else "left")
             tr_score = int(tr_team.score) if tr_team is not None else 0
-            ld_score = int(ld_team.score) if ld_team is not None else 0
-            if tr_team is not None and ld_team is not None and tr_score > ld_score:
+            opp_score = int(opp_team.score) if opp_team is not None else 0
+            if tr_team is not None and opp_team is not None and tr_score > opp_score:
                 ev = BattleEvent(
                     type="comeback",
                     team_id=self._trailer,

@@ -860,6 +860,7 @@ Item {
         if (root.widgetMode === "top_likers" || root.widgetMode === "top_gifters") return root.tierOverlayCfg;
         if (root.widgetMode === "king_of_live") return root.kingCfg;
         if (root.widgetMode === "battle_royale") return root.battleCfg;
+        if (root.widgetMode === "battle") return root.battleCfg2;
         if (root.widgetMode === "stream_pet") return root.streamPetCfg;
         if (root.widgetMode === "community_world") return root.communityWorldCfg;
         if (root.widgetMode === "stream_goal") return root.streamGoalCfg;
@@ -1945,6 +1946,12 @@ Item {
     property var battleCfg: null
     property bool _loadingBattleCfg: false
     property int battleCfgEpoch: 0
+    // battleCfg2 is the 1v1 battle (TikTok-gift race) config. It is instance-routed
+    // through loadBattleOverlayConfigMap() / saveBattleOverlayConfigJson(), so it can
+    // be saved per-instance when an instance is selected and falls back to the shared
+    // overlay key otherwise (unlike battle_royale, whose config is always global).
+    property var battleCfg2: null
+    property int battleCfg2Epoch: 0
     property var streamPetCfg: null
     property bool _loadingStreamPetCfg: false
     property int streamPetCfgEpoch: 0
@@ -2160,6 +2167,7 @@ Item {
             ((root.widgetMode === "top_likers" || root.widgetMode === "top_gifters") && root.tierOverlayCfg !== null) ||
             (root.widgetMode === "king_of_live" && root.kingCfg !== null) ||
             (root.widgetMode === "battle_royale" && root.battleCfg !== null) ||
+            (root.widgetMode === "battle" && root.battleCfg2 !== null) ||
             (root.widgetMode === "stream_pet" && root.streamPetCfg !== null) ||
             (root.widgetMode === "community_world" && root.communityWorldCfg !== null) ||
             (root.widgetMode === "stream_goal" && root.streamGoalCfg !== null) ||
@@ -2185,6 +2193,8 @@ Item {
             root._saveKing();
         } else if (root.widgetMode === "battle_royale") {
             root._saveBattle();
+        } else if (root.widgetMode === "battle") {
+            root._saveBattle2();
         } else if (root.widgetMode === "stream_pet") {
             root._saveStreamPet();
         } else if (root.widgetMode === "community_world") {
@@ -2327,6 +2337,16 @@ Item {
         if (!txt || txt === "{}")
             return;
         api.saveBattleRoyaleOverlayConfigJson(txt);
+    }
+
+    function _saveBattle2() {
+        if (!api || root.battleCfg2 === null) return;
+        root.battleCfg2Epoch += 1;
+        // battleCfg2 is a cloned plain JS object; JSON.stringify is reliable (ConfigMap/toVariant often is not).
+        var txt = JSON.stringify(root.battleCfg2);
+        if (!txt || txt === "{}")
+            return;
+        api.saveBattleOverlayConfigJson(txt);
     }
 
     function _saveStreamPet() {
@@ -5303,6 +5323,11 @@ Item {
                     bgobj = {};
                 root.battleCfg = JSON.parse(JSON.stringify(bgobj));
                 root.battleCfgEpoch += 1;
+                var b2obj = api.loadBattleOverlayConfigMap();
+                if (!b2obj || typeof b2obj !== "object")
+                    b2obj = {};
+                root.battleCfg2 = JSON.parse(JSON.stringify(b2obj));
+                root.battleCfg2Epoch += 1;
                 var spobj = api.loadStreamPetOverlayConfigMap();
                 if (!spobj || typeof spobj !== "object")
                     spobj = {};
