@@ -96,7 +96,7 @@ WIDGET_TYPES: dict[str, dict[str, Any]] = {
     },
     "battle": {
         "name": "Battle",
-        "description": "Битва 1v1: топ-2 GIFтери, раунди best-of.",
+        "description": "Битва 1v1: топ-2 дарувальники, раунди best-of.",
         "icon": "⚔️",
         "icon_svg": "icons/web_swords.svg",
         "accent": "#a855f7",

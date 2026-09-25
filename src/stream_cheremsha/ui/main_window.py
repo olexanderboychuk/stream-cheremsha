@@ -1159,6 +1159,11 @@ class MainWindow(FramelessWindow):
         self._battle_tick_timer = QTimer(self)
         self._battle_tick_timer.setInterval(1000)
         self._battle_tick_timer.timeout.connect(self._on_battle_tick)
+        # Shared 1s tick drives battle_royale AND per-instance Battle widgets
+        # (BattleController.tick_advance). It must run for the whole app
+        # lifetime — never stop it, even when battle_royale is idle — otherwise
+        # Battle countdowns/rounds/timers freeze (engine time only advances here).
+        self._battle_tick_timer.start()
         self._stream_pet = StreamPetController(
             pubsub=self._overlay_server.pubsub(),
             get_locale=lambda: self._locale,
@@ -6742,11 +6747,9 @@ class MainWindow(FramelessWindow):
                 avatar_url=winner.avatar_url,
             )
         self._schedule_battle_overlay_publish()
-        phase = self._battle_controller.state().phase
-        if phase in (BattlePhase.COUNTDOWN, BattlePhase.ACTIVE, BattlePhase.VICTORY):
-            self._battle_tick_timer.start()
-        else:
-            self._battle_tick_timer.stop()
+        # Keep the shared 1s battle tick running: per-instance Battle widgets
+        # need it even when battle_royale is idle (see __init__ note).
+        self._battle_tick_timer.start()
 
     def battle_royale_start_from_leaders(self) -> bool:
         cfg = load_battle_royale_overlay_config()
@@ -6777,7 +6780,8 @@ class MainWindow(FramelessWindow):
     def battle_royale_stop(self) -> None:
         self._battle_controller.stop()
         self._battle_auto_arm_hint_count = 0
-        self._battle_tick_timer.stop()
+        # Do NOT stop _battle_tick_timer here: it is shared with per-instance
+        # Battle widgets and must keep running (see __init__ note).
         self._publish_battle_overlay_patch_sync()
         self._schedule_battle_overlay_publish()
 

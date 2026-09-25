@@ -9,7 +9,17 @@ BATTLE_OVERLAY_CONFIG_SCHEMA_VERSION = 1
 BATTLE_OVERLAY_CONFIG_QSETTINGS_KEY = "overlays/battle/main/config_json"
 _BATTLE_OVERLAY_CONFIG_QSETTINGS_BACKUP_KEY = "overlays/battle/main/config_json_backup"
 
-BATTLE_THEMES = frozenset({"cheremsha_neon", "cyber", "arcade", "minimal"})
+BATTLE_THEMES = frozenset({
+    "cheremsha_neon",
+    "cyber",
+    "arcade",
+    "minimal",
+    "halloween",
+    "anime",
+    "glitch",
+    "fantasy",
+    "newyear",
+})
 BATTLE_LAYOUTS = frozenset({"normal", "compact"})
 
 
