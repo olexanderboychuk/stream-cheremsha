@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.23.4] - 2026-09-25
+
+### Added
+
+- Added battle overlay widget: full-width 3-column grid, score bar, gift prompt, and winner screen.
+- Added battle engine with event reactions and settings-tab lazy warm-up.
+
+### Fixed
+
+- Fixed battle tick and live overlay rendering.
+
 ## [0.23.3] - 2026-09-23
 
 ### Fixed
