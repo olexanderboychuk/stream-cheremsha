@@ -104,3 +104,30 @@ def test_js_no_webengine() -> None:
 def test_js_contains_offset_path() -> None:
     _, script = _render()
     assert "offset-path" in script
+
+
+def test_html_contains_jackpot_flash() -> None:
+    html, _ = _render()
+    assert 'id="btJackpotFlash"' in html
+    assert ".bt-jackpot-flash.show" in html
+
+
+def test_js_contains_flash_jackpot_and_round_pulse() -> None:
+    _, script = _render()
+    assert "flashJackpot" in script
+    assert "flashRoundPulse" in script
+    assert "roundPulseTimer" in script
+
+
+def test_casino_locale_keys_localized() -> None:
+    html, _ = _render()
+    assert "ДЖЕКПОТ!" in html
+    assert "JACKPOT!" in html
+    assert "НІКТО НЕ ВІГРАВ" in html
+    assert "DRAW — NO WINNER" in html
+
+
+def test_js_idle_coin_present() -> None:
+    html, script = _render()
+    assert ".bt-idle-coin" in html
+    assert "COIN_SVG" in script

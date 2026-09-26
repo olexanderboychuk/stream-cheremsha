@@ -555,6 +555,79 @@ class BattleOverlayType:
       .bt-title {{ font-size:calc(2.6 * var(--bt-f)); }}
       .bt-center {{ gap:calc(1 * var(--bt-f)); }}
     }}
+    /* ====== Casino moments: jackpot flash, round spin, draw badge, idle coin ====== */
+    .bt-jackpot-flash {{
+      position:absolute; inset:0;
+      border-radius:inherit; z-index:4;
+      pointer-events:none;
+      background:
+        radial-gradient(ellipse at 50% 55%, rgba(253,218,113,0.5), transparent 62%),
+        radial-gradient(ellipse at 50% 50%, rgba(245,158,11,0.18), transparent 80%);
+      display:none;
+    }}
+    .bt-jackpot-flash.show {{
+      display:block;
+      animation:btJackpotFlash 0.9s ease-out forwards;
+    }}
+    @keyframes btJackpotFlash {{
+      0% {{ opacity:0; transform:scale(0.92); }}
+      35% {{ opacity:1; }}
+      100% {{ opacity:0; transform:scale(1.15); }}
+    }}
+    @keyframes btRoundSpin {{
+      0% {{ box-shadow:inset 0 1px 0 rgba(255,255,255,0.07),
+           inset 0 0 calc(24 * var(--bt-f)) rgba(0,0,0,0.45),
+           0 8px 30px rgba(0,0,0,0.5); }}
+      35% {{ box-shadow:inset 0 1px 0 rgba(255,255,255,0.07),
+           inset 0 0 calc(24 * var(--bt-f)) rgba(0,0,0,0.45),
+           0 8px 30px rgba(0,0,0,0.5),
+           0 0 calc(14 * var(--bt-f)) rgba(253,218,113,0.5),
+           0 0 calc(28 * var(--bt-f)) rgba(251,191,36,0.25); }}
+      100% {{ box-shadow:inset 0 1px 0 rgba(255,255,255,0.07),
+           inset 0 0 calc(24 * var(--bt-f)) rgba(0,0,0,0.45),
+           0 8px 30px rgba(0,0,0,0.5); }}
+    }}
+    .bt-card.round-pulse {{ animation:btRoundSpin 0.7s ease-out; }}
+    .bt-badge--draw, .bt-badge--jackpot {{
+      border-color:var(--gold);
+      color:var(--gold);
+      box-shadow:0 0 calc(8 * var(--bt-f)) rgba(251,191,36,0.6);
+    }}
+    @keyframes btJackpotBadge {{
+      0% {{ transform:translateX(-50%) translateY(calc(1.5 * var(--bt-f))) scale(0.55); opacity:0; }}
+      60% {{ transform:translateX(-50%) translateY(calc(1.5 * var(--bt-f))) scale(1.08); opacity:1; }}
+      100% {{ transform:translateX(-50%) translateY(calc(1.5 * var(--bt-f))) scale(1); opacity:1; }}
+    }}
+    .bt-badge--jackpot.show {{ animation:btJackpotBadge 0.7s ease-out; }}
+    .bt-idle-coin {{
+      display:inline-block;
+      vertical-align:middle;
+      margin-right:calc(0.9 * var(--bt-f));
+      width:calc(2.2 * var(--bt-f));
+      height:calc(2.2 * var(--bt-f));
+      border-radius:50%;
+      background:linear-gradient(135deg, #fde68a 0%, #eab308 55%, #b45309 100%);
+      box-shadow:0 0 calc(4 * var(--bt-f)) rgba(251,191,36,0.55);
+      animation:btIdleCoinSpin 5s linear infinite;
+    }}
+    @keyframes btIdleCoinSpin {{
+      from {{ transform:rotate(0deg) translateY(0); }}
+      to {{ transform:rotate(360deg) translateY(calc(-0.5 * var(--bt-f))); }}
+    }}
+    .ev-item {{
+      display:inline-flex; align-items:center; gap:calc(1.2 * var(--bt-f));
+      min-width:0;
+      padding:calc(0.45 * var(--bt-f)) calc(1.3 * var(--bt-f));
+      border-radius:999px;
+      background:rgba(253,218,113,0.06);
+      border:1px solid rgba(253,218,113,0.16);
+    }}
+    .ev-item--left  {{ border-color:rgba(34,211,238,0.28); }}
+    .ev-item--right {{ border-color:rgba(244,114,182,0.28); }}
+    .ev-val {{
+      color:#fde68a;
+      text-shadow:0 0 calc(3 * var(--bt-f)) rgba(251,191,36,0.7);
+    }}
     /* ====== Event Reactions Layer ====== */
     .bt-root.anim-off .gift-projectile,
     .bt-root.anim-off .gift-impact,
@@ -562,11 +635,14 @@ class BattleOverlayType:
     .bt-root.anim-off .bt-score.pulse-enhanced,
     .bt-root.anim-off .bt-combo.pulse-enhanced,
     .bt-root.anim-off .bt-badge,
-    .bt-root.anim-off .bt-round-badge {{
+    .bt-root.anim-off .bt-round-badge,
+    .bt-root.anim-off .bt-idle-coin,
+    .bt-root.anim-off .bt-card.round-pulse {{
       animation: none !important;
       transition: none !important;
     }}
     .bt-root.anim-off .gift-projectile {{ display: none !important; }}
+    .bt-root.anim-off .bt-jackpot-flash.show {{ display:none; }}
     .bt-root.anim-off .bt-score-float,
     .bt-root.anim-off .fill-left,
     .bt-root.anim-off .fill-right {{ animation: none !important; }}
@@ -811,6 +887,7 @@ class BattleOverlayType:
       </div>
       <div class="bt-projectile-layer" id="btProjectileLayer"></div>
       <div class="gift-impact-layer" id="btImpactLayer"></div>
+      <div class="bt-jackpot-flash" id="btJackpotFlash"></div>
       <div class="bt-badge bt-lead-change" id="btLeadBadge" style="display:none"></div>
       <div class="bt-badge bt-round-badge" id="btRoundBadge" style="display:none"></div>
     </div>
@@ -840,6 +917,7 @@ class BattleOverlayType:
           lastRoundWins: null,
           leadFlashTimer: null,
           roundFlashTimer: null,
+          roundPulseTimer: null,
           suppressCTA(durationMs) {{
             const prompt = $('btGiftPrompt');
             if (!prompt) return;
@@ -868,6 +946,7 @@ class BattleOverlayType:
             BVC.impactPool.length = 0;
             if (BVC.leadFlashTimer) {{ clearTimeout(BVC.leadFlashTimer); BVC.leadFlashTimer = null; }}
             if (BVC.roundFlashTimer) {{ clearTimeout(BVC.roundFlashTimer); BVC.roundFlashTimer = null; }}
+            if (BVC.roundPulseTimer) {{ clearTimeout(BVC.roundPulseTimer); BVC.roundPulseTimer = null; }}
             if (BVC.ctaSuppressionTimer) {{ clearTimeout(BVC.ctaSuppressionTimer); BVC.ctaSuppressionTimer = null; }}
             if (BVC.ctaRotateTimer) {{ clearTimeout(BVC.ctaRotateTimer); BVC.ctaRotateTimer = null; }}
             if (BVC.scoreAnimTimerL) {{ clearInterval(BVC.scoreAnimTimerL); BVC.scoreAnimTimerL = null; }}
@@ -918,6 +997,8 @@ class BattleOverlayType:
             rightLead: 'ВЕДУТЬ ПРАВІ',
             winner: 'ПЕРЕМОЖЕЦЬ',
             score: 'РАХУНОК',
+            draw: 'НІКТО НЕ ВІГРАВ',
+            jackpot: 'ДЖЕКПОТ!',
             finalPushCta: 'ФІНАЛЬНИЙ РИВОК — ПІДТРИМАЙ СВОЇХ',
             cta: [
               'Підтримай свою сторону',
@@ -948,6 +1029,8 @@ class BattleOverlayType:
             rightLead: 'RIGHT LEAD',
             winner: 'WINNER',
             score: 'SCORE',
+            draw: 'DRAW — NO WINNER',
+            jackpot: 'JACKPOT!',
             finalPushCta: 'FINAL PUSH — SUPPORT YOUR SIDE',
             cta: [
               'Support your side',
@@ -1168,6 +1251,37 @@ class BattleOverlayType:
             BVC.roundFlashTimer = null;
           }}, 900);
         }}
+        /* ====== Round Spin (casino spin-up) ====== */
+        function flashRoundPulse() {{
+          const card = $('btCard');
+          if (!card) return;
+          if (BVC.roundPulseTimer) {{ clearTimeout(BVC.roundPulseTimer); BVC.roundPulseTimer = null; }}
+          card.classList.remove('round-pulse');
+          void card.offsetWidth;
+          card.classList.add('round-pulse');
+          BVC.roundPulseTimer = setTimeout(() => {{
+            card.classList.remove('round-pulse');
+            BVC.roundPulseTimer = null;
+          }}, 750);
+        }}
+        /* ====== Jackpot Moment ====== */
+        function flashJackpot() {{
+          const jf = $('btJackpotFlash');
+          if (jf) {{
+            jf.classList.remove('show');
+            void jf.offsetWidth;
+            jf.classList.add('show');
+          }}
+          const loc = LOCALE();
+          const b = $('btBadge');
+          b.className = 'bt-badge bt-badge--jackpot';
+          b.textContent = loc.jackpot;
+          if (!b.classList.contains('show')) b.classList.add('show');
+          if (badgeTimer) clearTimeout(badgeTimer);
+          badgeTimer = setTimeout(() => {{
+            b.classList.remove('show');
+          }}, 2500);
+        }}
         /* ====== Comeback Enhancement ====== */
         function triggerComebackEnhance(side) {{
           flashSide(side);
@@ -1265,6 +1379,9 @@ class BattleOverlayType:
               if (from !== to) {{
                 animateScore(e.team_id === 'left' ? 'btScoreL' : 'btScoreR', from, to);
               }}
+              if (e.type === 'big_gift') {{
+                flashJackpot();
+              }}
             }} else if (e.type === 'combo_started' || e.type === 'combo_updated') {{
               const side = (p.team_id) || (state.combo && state.combo.team_id) || 'left';
               const count = p.count || (state.combo && state.combo.count) || 1;
@@ -1287,16 +1404,22 @@ class BattleOverlayType:
               const round = p.round || (state.round || 1);
               const bestOf = p.best_of || (state.best_of || 3);
               flashRound(round, bestOf);
+              flashRoundPulse();
             }} else if (e.type === 'round_finished') {{
-              const winnerTeam = p.winner_team || p.winner || 'left';
-              const winnerAv = winnerTeam === 'left' ? $('btAvatarL') : $('btAvatarR');
-              if (winnerAv) {{
-                winnerAv.classList.remove('pulse-enhanced');
-                void winnerAv.offsetWidth;
-                winnerAv.classList.add('pulse-enhanced');
+              if (p.draw === true) {{
+                showBadge(LOCALE().draw, 'draw');
+              }} else {{
+                const winnerTeam = p.winner_team || p.winner || 'left';
+                const winnerAv = winnerTeam === 'left' ? $('btAvatarL') : $('btAvatarR');
+                if (winnerAv) {{
+                  winnerAv.classList.remove('pulse-enhanced');
+                  void winnerAv.offsetWidth;
+                  winnerAv.classList.add('pulse-enhanced');
+                }}
               }}
             }} else if (e.type === 'battle_finished') {{
               showBattleWinnerEnhance();
+              flashJackpot();
             }}
           }}
         }}
@@ -1394,6 +1517,14 @@ class BattleOverlayType:
         const NEUTRAL_AV = 'data:image/svg+xml;'
           + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1">'
           + '<rect fill="%231e1b2a"/></svg>');
+        const COIN_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
+          + '<defs><linearGradient id="btCoinG" x1="0" y1="0" x2="1" y2="1">'
+          + '<stop offset="0" stop-color="%23fde68a"/>'
+          + '<stop offset="1" stop-color="%23b45309"/></linearGradient></defs>'
+          + '<circle cx="12" cy="12" r="11" fill="url(#btCoinG)"/>'
+          + '<circle cx="12" cy="12" r="7.2" fill="none" stroke="%2392400e" stroke-opacity="0.5" stroke-width="1.3"/>'
+          + '<path d="M12 6.5l1.7 4.2 4.5.8-3.4 3.1 1.4 4.4-4.5-2.6-4.5 2.6 1.4-4.4 1.8-1.7z" fill="%2392400e" fill-opacity="0.6"/>'
+          + '</svg>';
         function renderEventRow(row, state, L, R) {{
           if (!row) return;
           if (!state || state.status === 'idle' || state.status === 'countdown'
@@ -1610,7 +1741,18 @@ class BattleOverlayType:
           const idleMsg = $('btIdle');
           if (status === 'idle') {{
             idleMsg.style.display = 'block';
-            idleMsg.textContent = t.idle;
+            const idleText = idleMsg.querySelector('.bt-idle-text');
+            if (!idleText) {{
+              idleMsg.innerHTML = '';
+              const coin = document.createElement('span');
+              coin.className = 'bt-idle-coin';
+              coin.innerHTML = COIN_SVG;
+              const txt = document.createElement('span');
+              txt.className = 'bt-idle-text';
+              idleMsg.appendChild(coin);
+              idleMsg.appendChild(txt);
+            }}
+            idleMsg.querySelector('.bt-idle-text').textContent = t.idle;
           }} else {{
             idleMsg.style.display = 'none';
           }}
