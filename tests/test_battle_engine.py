@@ -304,17 +304,39 @@ def test_final_push_fires_once() -> None:
     assert sum(1 for e in s["events"] if e["type"] == "final_push") == 1
 
 
-def test_round_zero_zero_is_draw_replay() -> None:
+def test_round_zero_zero_is_draw_next_round() -> None:
     eng = _eng(combo_enabled=False, countdown_s=5, round_duration_s=60)
     t0 = 1000.0
     _start_active(eng, t0)
     _resolve(eng)
     s = eng.snapshot()
-    assert s["status"] == "countdown"  # replayed, not finished
-    assert s["round"] == 1  # same round replayed
+    assert s["status"] == "countdown"  # next round, not finished
+    assert s["round"] == 2  # drawn round advances (no endless replay of round 1)
     assert s["round_wins"] == {"left": 0, "right": 0}
     assert _score(eng, "left") == 0 and _score(eng, "right") == 0
     assert any(e["type"] == "round_finished" and e["payload"]["draw"] is True for e in s["events"])
+
+
+def test_consecutive_draws_advance_round() -> None:
+    """Three 0-0 rounds in a row must produce round 4, still no wins."""
+    eng = _eng(combo_enabled=False, countdown_s=1, round_duration_s=60)
+    t0 = 1000.0
+    _start_active(eng, t0)
+
+    def _play_zero_round(eng: BattleEngine) -> None:
+        st = eng._state
+        if st.status.value == "countdown" and st.countdown_deadline is not None:
+            eng.tick(now=st.countdown_deadline + 0.5)  # -> ACTIVE
+        rd = eng._state.round_deadline
+        assert rd is not None
+        eng.tick(now=rd + 0.1)  # 0-0 round resolves
+
+    for _ in range(3):
+        _play_zero_round(eng)
+    s = eng.snapshot()
+    assert s["round"] == 4
+    assert s["status"] == "countdown"
+    assert s["round_wins"] == {"left": 0, "right": 0}
 
 
 def test_exact_tie_positive_goes_left() -> None:

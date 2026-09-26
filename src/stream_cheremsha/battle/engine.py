@@ -526,6 +526,11 @@ class BattleEngine:
             )
             st.push_event(ev)
             out.append(ev)
+            # A drawn round consumes itself: replaying the same round would
+            # freeze the live widget (spectator gifts score nothing, so rounds
+            # end 0-0) in an endless round-1 countdown/active loop.
+            st.round += 1
+            st.round_deadline = None
             st.status = BattleStatus.COUNTDOWN
             st.countdown_deadline = t + countdown_s
             st.countdown_remaining_s = countdown_s
