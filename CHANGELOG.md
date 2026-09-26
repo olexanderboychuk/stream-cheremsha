@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.23.5] - 2026-09-26
+
+### Added
+
+- Casino-style Battle overlay moments: JACKPOT flash on big gifts and wins, gold round-spin glow at new round start, "no winner" badge for drawn rounds, animated idle coin, and chip-styled event log.
+
+### Fixed
+
+- Battle widget stuck on round 1: drawn (0-0) rounds now advance to the next round instead of replaying round 1 endlessly.
+
 ## [0.23.4] - 2026-09-25
 
 ### Added
