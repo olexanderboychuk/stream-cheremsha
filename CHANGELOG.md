@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.23.6] - 2026-09-26
+
+### Added
+
+- Guard tests: every widget type is present in the layout whitelist and in the layout browser.
+
+### Fixed
+
+- Gift Rush: template braces (f-string style `{{ }}`) are now collapsed before rendering, so CSS/JS render correctly; SVG fills use inline styles so CSS variables resolve; gift text no longer wraps; concurrent gifts are jittered so bursts do not stack in the same spot.
+- Gift Rush: gift icons fall back to the bundled 451-gift catalog when a live event carries no icon, and to the generic SVG when the image fails to load.
+- Layouts: `battle` and `gift_rush` are now in `SUPPORTED_LAYOUT_WIDGETS` (they were silently dropped from layouts on save).
+
 ## [0.23.5] - 2026-09-26
 
 ### Added
