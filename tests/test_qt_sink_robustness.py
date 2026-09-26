@@ -119,15 +119,18 @@ async def test_play_mp3_locked_watchdog_timeout(monkeypatch: pytest.MonkeyPatch)
     fake_player.stop.assert_called()
 
 
-def test_ensure_ready_creates_distinct_sfx_player() -> None:
+def test_ensure_ready_creates_distinct_sfx_players() -> None:
     sink = qt_sink.QtAudioSink()
     sink.ensure_ready()
     assert sink._player is not None
     assert sink._audio is not None
-    assert sink._sfx_player is not None
-    assert sink._sfx_audio is not None
-    # Verify SFX player has its own distinct audio output and does not hijack _audio
+    # A pool of SFX players, each with its own distinct audio output, and none
+    # of them is the TTS player/audio (so SFX never hijacks self._audio).
+    assert sink._sfx_players
+    assert len(sink._sfx_players) == len(sink._sfx_audios)
     assert sink._player.audioOutput() is sink._audio
-    assert sink._sfx_player.audioOutput() is sink._sfx_audio
-    assert sink._audio is not sink._sfx_audio
+    for player, audio in zip(sink._sfx_players, sink._sfx_audios):
+        assert player.audioOutput() is audio
+        assert sink._audio is not audio
+        assert player is not sink._player
     sink.shutdown()

@@ -104,7 +104,6 @@ def test_js_pool_caps_present() -> None:
     assert "MAX_PROJECTILES" in script
     assert "MAX_COINS" in script
     assert "MAX_SPARKS" in script
-    assert "MAX_RIBBONS" in script
 
 
 def test_js_pool_caps_values() -> None:
@@ -112,14 +111,12 @@ def test_js_pool_caps_values() -> None:
     assert "const MAX_PROJECTILES = 12" in script
     assert "const MAX_COINS = 24" in script
     assert "const MAX_SPARKS = 24" in script
-    assert "const MAX_RIBBONS = 8" in script
 
 
 def test_js_pool_onscreen_caps() -> None:
     _, script = _render()
     assert "MAX_COINS_ON_SCREEN" in script
     assert "MAX_SPARKS_ON_SCREEN" in script
-    assert "MAX_RIBBONS_ON_SCREEN" in script
 
 
 def test_js_active_event_cap_read_from_config() -> None:
@@ -152,7 +149,7 @@ def test_css_theme_variable_blocks() -> None:
     assert ".gr-theme-celebration" in html
     assert ".gr-theme-arcade" in html
     # each theme block defines the accent variables
-    for token in ("--gr-acc1", "--gr-coin", "--gr-glow", "--gr-ribbon"):
+    for token in ("--gr-acc1", "--gr-coin", "--gr-glow"):
         assert token in html
 
 
@@ -180,7 +177,6 @@ def test_js_contains_impact_and_popups() -> None:
     assert "spawnImpactRing" in script
     assert "spawnGlowFlash" in script
     assert "spawnCoins" in script
-    assert "spawnRibbons" in script
     assert "spawnSparks" in script
     assert "spawnScorePopup" in script
     assert "spawnComboCounter" in script
@@ -222,6 +218,15 @@ def test_svg_colors_use_style_not_presentation_attributes() -> None:
     html, _ = _render()
     assert 'fill="var(' not in html
     assert 'stroke="var(' not in html
+
+
+def test_root_fills_whole_available_area() -> None:
+    """The gift-rush layer must span the whole source like stream_goal's
+    ``.root { position: absolute; inset: 0; }`` (not a relative 100vw/100vh
+    box), so VFX can appear anywhere in the OBS source."""
+    html, _ = _render()
+    assert "position: absolute;" in html
+    assert "inset: 0;" in html
 
 
 def test_projectile_anchored_at_origin_for_absolute_motion_path() -> None:

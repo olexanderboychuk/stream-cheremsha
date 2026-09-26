@@ -230,6 +230,7 @@ class WidgetsQmlApi(QObject):
         self._battle_royale_instance = str(online_instance or "main").strip() or "main"
         self._stream_pet_instance = str(online_instance or "main").strip() or "main"
         self._stream_goal_instance = str(online_instance or "main").strip() or "main"
+        self._gift_rush_instance = str(online_instance or "main").strip() or "main"
         self._live_leaderboard_instance = str(online_instance or "main").strip() or "main"
         self._social_rotator_instance = str(online_instance or "main").strip() or "main"
         self._community_world_instance = str(online_instance or "main").strip() or "main"
@@ -2025,6 +2026,16 @@ class WidgetsQmlApi(QObject):
             return
         save_gift_rush_overlay_config(cfg)
         _LOG.info("widgets overlay persisted: gift_rush")
+        # Live-apply the config to the preview (mirrors stream_goal / stream_pet /
+        # community_world). The per-instance path above already publishes via
+        # _save_cfg_to_instance, so this only runs for the legacy singleton save.
+        if self._pubsub is not None:
+            topic = f"overlay:gift_rush:{self._gift_rush_instance}"
+            patch = {
+                "config": json.loads(gift_rush_overlay_config_to_json_text(cfg)),
+                "timestamp": time.time(),
+            }
+            self._publish_patch(topic=topic, patch=patch)
 
     @Slot(QJSValue)
     def saveGiftRushOverlayConfigMap(self, cfg_js: QJSValue) -> None:

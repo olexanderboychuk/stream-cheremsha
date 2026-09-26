@@ -1259,6 +1259,7 @@ class MainWindow(FramelessWindow):
                     gift_rush_overlay_config_from_json_text,
                     gift_rush_overlay_config_defaults,
                 ),
+                audio_sink=self._sink,
             )
 
         self._gift_rush_group = InstanceControllerGroup(

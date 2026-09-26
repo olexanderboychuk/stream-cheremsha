@@ -16,10 +16,12 @@ import asyncio
 import logging
 import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QObject
 
+from stream_cheremsha.domain.protocols import AudioSink
 from stream_cheremsha.overlays.gift_rush_config import (
     GiftRushOverlayConfig,
     gift_rush_overlay_config_defaults,
@@ -37,6 +39,15 @@ _AGGREGATION_WINDOW_S = 2.0
 # Hard cap on stored events (JS dedupes on `at`, so this is a memory guard).
 _MAX_EVENTS = 32
 
+# SFX flight times match the page's tierCounts() (flightMs).
+_SFX_FLIGHT_MS = {"LOW": 520, "MEDIUM": 650, "HIGH": 750, "EPIC": 900}
+_SFX_IMPACT = {
+    "LOW": "sfx_impact_low",
+    "MEDIUM": "sfx_impact_mid",
+    "HIGH": "sfx_impact_mid",
+    "EPIC": "sfx_impact_epic",
+}
+
 
 class GiftRushController(QObject):
     OVERLAY_TYPE = "gift_rush"
@@ -49,12 +60,14 @@ class GiftRushController(QObject):
         instance: str = "main",
         parent: QObject | None = None,
         config_loader: Callable[[], Any] | None = None,
+        audio_sink: AudioSink | None = None,
     ) -> None:
         super().__init__(parent)
         self._pubsub = pubsub
         self._get_locale = get_locale
         self._instance = str(instance or "main").strip() or "main"
         self._config_loader = config_loader
+        self._audio_sink: AudioSink | None = audio_sink
         self._publish_handle: asyncio.TimerHandle | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
 
@@ -64,6 +77,7 @@ class GiftRushController(QObject):
         # Bounded event list, oldest first. Each item is
         # {"type": "gift", "at": float, "payload": {...}}.
         self._events: list[dict[str, Any]] = []
+        self._sfx_cache: dict[str, bytes] = {}
         self._load_cfg()  # prime state so initial_state works before start()
 
     def _load_cfg(self) -> GiftRushOverlayConfig:
@@ -189,6 +203,9 @@ class GiftRushController(QObject):
                     self._publish_patch_sync()
                     return
 
+        # A new projected burst is visible, so fire its sounds (app-side).
+        self._play_gift_sfx(cfg, intensity, payload, combo)
+
         event = {"type": "gift", "at": now, "payload": payload}
         self._events.append(event)
         if len(self._events) > _MAX_EVENTS:
@@ -281,6 +298,96 @@ class GiftRushController(QObject):
         self._gift_timestamps.clear()
         self.schedule_publish()
         self._publish_patch_sync()
+
+    # -- sfx (app-side, via the app's AudioSink) ------------------------------
+
+    def _sfx_bytes(self, name: str) -> bytes:
+        """Cached MP3 bytes for a named sound (empty bytes if absent)."""
+        if name not in self._sfx_cache:
+            p = Path(__file__).resolve().parents[1] / "assets" / "sounds" / f"{name}.mp3"
+            try:
+                self._sfx_cache[name] = p.read_bytes() if p.is_file() else b""
+            except OSError:
+                self._sfx_cache[name] = b""
+        return self._sfx_cache[name]
+
+    def _play_gift_sfx(
+        self, cfg: GiftRushOverlayConfig, intensity: str, payload: dict[str, Any], combo: int
+    ) -> None:
+        """Play the gift's sounds from the app process (no autoplay policy;
+        works in OBS and a plain browser alike). Silent when sound is off,
+        the sink is missing, or the event loop is gone.
+
+        The launch whoosh fires immediately; the impact/coins/ding/tick/combo
+        sequence is delayed by the intensity flight time so the audio lands
+        with the visual burst."""
+        if not bool(getattr(cfg, "sound_enabled", False)):
+            return
+        sink = self._audio_sink
+        loop = self._loop
+        if sink is None or loop is None:
+            return
+        play = getattr(sink, "play_mp3_parallel_with_volume", None)
+        if not callable(play):
+            return
+        reduced = bool(getattr(cfg, "reduced_effects", False))
+        scale = 0.5 if reduced else 1.0
+        flight_ms = int(_SFX_FLIGHT_MS.get(intensity, 650) * (0.7 if reduced else 1.0))
+
+        def _clip(name: str, gain: float) -> None:
+            data = self._sfx_bytes(name)
+            if not data:
+                return
+            g = max(0.0, min(1.0, gain * scale))
+
+            async def _run() -> None:
+                try:
+                    await play(data, g)
+                except Exception as exc:  # noqa: BLE001 - never break the gift flow
+                    _LOG.debug("gift_rush sfx %s failed: %s", name, exc)
+
+            loop.create_task(_run())
+
+        def _burst() -> None:
+            seq: list[tuple[str, float]] = [(_SFX_IMPACT.get(intensity, "sfx_impact_low"), 1.0)]
+            if bool(getattr(cfg, "effects_coins", True)):
+                seq.append(("sfx_coins", 0.7))
+            if bool(getattr(cfg, "show_value", True)):
+                seq.append(("sfx_score_ding", 0.6))
+            if bool(getattr(cfg, "effects_sparks", True)):
+                seq.append(("sfx_spark_tink", 0.4))
+            if (
+                combo > 1
+                and bool(getattr(cfg, "show_combo", True))
+                and bool(getattr(cfg, "combo_enabled", True))
+            ):
+                seq.append(("sfx_combo_tick", 0.5))
+
+            # Fire every burst clip as its own concurrent task so they overlap
+            # on the sink's player pool (like the old Web Audio engine). Default
+            # args capture the loop variables (late-binding bug otherwise).
+            for name, gain in seq:
+                data = self._sfx_bytes(name)
+                if not data:
+                    continue
+                g = max(0.0, min(1.0, gain * scale))
+
+                async def _one(_n=name, _d=data, _g=g) -> None:
+                    try:
+                        await play(_d, _g)
+                    except Exception as exc:  # noqa: BLE001
+                        _LOG.debug("gift_rush sfx %s failed: %s", _n, exc)
+
+                loop.create_task(_one())
+
+        _clip("sfx_gift_launch", 0.8)
+        if flight_ms <= 0:
+            _burst()
+        else:
+            try:
+                loop.call_later(flight_ms / 1000.0, _burst)
+            except Exception:  # noqa: BLE001 - loop closed mid-stream
+                _burst()
 
     # -- no-op fan-out (group may call any of these) ------------------------
 

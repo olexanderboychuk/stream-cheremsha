@@ -1,7 +1,7 @@
 """Config schema for the ``gift_rush`` overlay.
 
 The ``gift_rush`` overlay is a transparent, premium VFX reaction layer: a
-gift flies in on a curved ``offset-path`` and bursts into coins, ribbons,
+gift flies in on a curved ``offset-path`` and bursts into coins,
 sparks, an impact ring and a ``+VALUE`` popup on each gift event. Rapid
 consecutive gifts overlap and escalate into a ``COMBO`` counter.
 
@@ -87,7 +87,6 @@ class GiftRushOverlayConfig:
     show_combo: bool = True
     show_intensity_badge: bool = True
     effects_coins: bool = True
-    effects_ribbons: bool = True
     effects_sparks: bool = True
     effects_impact_ring: bool = True
     camera_impact: bool = True
@@ -96,6 +95,7 @@ class GiftRushOverlayConfig:
     combo_escalation: bool = True
     max_simultaneous_events: int = 10
     reduced_effects: bool = False
+    sound_enabled: bool = False
 
     def _ensure(self) -> GiftRushOverlayConfig:
         """Return a cloned instance with every field clamped / normalized."""
@@ -112,7 +112,6 @@ class GiftRushOverlayConfig:
             show_combo=_clamp_bool(self.show_combo),
             show_intensity_badge=_clamp_bool(self.show_intensity_badge),
             effects_coins=_clamp_bool(self.effects_coins),
-            effects_ribbons=_clamp_bool(self.effects_ribbons),
             effects_sparks=_clamp_bool(self.effects_sparks),
             effects_impact_ring=_clamp_bool(self.effects_impact_ring),
             camera_impact=_clamp_bool(self.camera_impact),
@@ -123,6 +122,7 @@ class GiftRushOverlayConfig:
                 self.max_simultaneous_events, _MAX_SIMUL_MIN, _MAX_SIMUL_MAX
             ),
             reduced_effects=_clamp_bool(self.reduced_effects),
+            sound_enabled=_clamp_bool(self.sound_enabled),
         )
 
     def clamp(self) -> GiftRushOverlayConfig:

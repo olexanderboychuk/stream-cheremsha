@@ -173,8 +173,15 @@ class QtAudioSink(QObject):
         # entry points ensure them; pure setters work without backends.
         self._player: QMediaPlayer | None = None
         self._audio: QAudioOutput | None = None
-        self._sfx_player: QMediaPlayer | None = None
-        self._sfx_audio: QAudioOutput | None = None
+        # SFX is played on a small pool of dedicated players so burst clips can
+        # overlap (like the old Web Audio engine). Creating more than a few
+        # QAudioOutput at once is risky (PipeWire/Qt6 SEGV race — see
+        # ensure_ready), so the pool is small and each is built serialised.
+        self._sfx_pool_size = 4
+        self._sfx_players: list[QMediaPlayer] = []
+        self._sfx_audios: list[QAudioOutput] = []
+        self._sfx_busy: set[int] = set()
+        self._sfx_player_lock = asyncio.Lock()
         self._sfx_lock = asyncio.Lock()
         self._play_lock = asyncio.Lock()
         self._sound_dedupe_lock = asyncio.Lock()
@@ -209,13 +216,17 @@ class QtAudioSink(QObject):
             self._player = player
             self._audio = audio
 
-            # Separate dedicated SFX player + audio output so SFX never
-            # hijacks self._audio or disrupts TTS playback.
-            sfx_player = QMediaPlayer(self)
-            sfx_audio = QAudioOutput(self)
-            sfx_player.setAudioOutput(sfx_audio)
-            self._sfx_player = sfx_player
-            self._sfx_audio = sfx_audio
+            # Separate SFX player pool so SFX never hijacks self._audio or
+            # disrupts TTS playback, and so burst clips can overlap. Built
+            # serialised (one per iteration under _BACKEND_LOCK) to avoid the
+            # PipeWire/Qt6 concurrent-construction SEGV.
+            if not self._sfx_players:
+                for _ in range(max(1, int(self._sfx_pool_size))):
+                    sfx_player = QMediaPlayer(self)
+                    sfx_audio = QAudioOutput(self)
+                    sfx_player.setAudioOutput(sfx_audio)
+                    self._sfx_players.append(sfx_player)
+                    self._sfx_audios.append(sfx_audio)
 
             if self._pending_volume is not None:
                 audio.setVolume(self._pending_volume)
@@ -236,8 +247,8 @@ class QtAudioSink(QObject):
             for dev in QMediaDevices.audioOutputs():
                 if dev.description() == description:
                     self._audio.setDevice(dev)
-                    if self._sfx_audio is not None:
-                        self._sfx_audio.setDevice(dev)
+                    for sfx_audio in self._sfx_audios:
+                        sfx_audio.setDevice(dev)
                     return
             logger.warning("Audio device %r not found, using default", description)
         except Exception as e:
@@ -451,27 +462,43 @@ class QtAudioSink(QObject):
         """Play one clip at the given volume (atomic with playback lock)."""
         await self._play_sequential_with_volume(data, linear)
 
-    async def _play_mp3_parallel(self, data: bytes, linear: float) -> None:
-        """Play one clip without waiting on the FIFO lock (allows overlap with TTS)."""
-        self.ensure_ready()
-        assert self._sfx_player is not None
-        assert self._sfx_audio is not None
+    async def _acquire_sfx_player(self) -> int:
+        """Take a free player from the SFX pool and return its index.
 
-        v = max(0.0, min(1.0, float(linear)))
-        scaled = await asyncio.to_thread(_try_apply_volume, data, v)
-        if scaled is data:
-            # No DSP scaling (volume ~100% or ffmpeg unavailable): keep legacy behavior
-            # of putting the level on this clip's own QAudioOutput.
-            file_path = await asyncio.to_thread(_write_temp_audio, data)
-            out_volume = v
-        else:
-            # Volume already baked into the bytes; play at unity output volume.
-            # SFX must not go through the TTS loudness chain.
-            file_path = await asyncio.to_thread(_write_temp_audio, scaled)
-            out_volume = 1.0
+        Poll-waits if the pool is exhausted (all players busy), so a burst
+        clip is never dropped — it simply starts as soon as a peer finishes.
+        """
+        while True:
+            async with self._sfx_player_lock:
+                for i in range(len(self._sfx_players)):
+                    if i not in self._sfx_busy:
+                        self._sfx_busy.add(i)
+                        return i
+            await asyncio.sleep(0.02)
+
+    async def _release_sfx_player(self, idx: int) -> None:
+        async with self._sfx_player_lock:
+            self._sfx_busy.discard(idx)
+
+    async def _play_mp3_parallel(self, data: bytes, linear: float) -> None:
+        """Play one clip on a free pool player (so burst clips can overlap)."""
+        self.ensure_ready()
+        if not self._sfx_players:
+            return
+        # SFX clips may now overlap (player pool), so the level is set on the
+        # clip's own QAudioOutput directly. Avoid re-encoding through ffmpeg: it
+        # adds per-clip subprocess latency (which made the SFX lag the visuals)
+        # and would feed the AI-generated mp3s through a second ffmpeg pass.
+        out_volume = max(0.0, min(1.0, float(linear)))
+        file_path = await asyncio.to_thread(_write_temp_audio, data)
 
         loop = asyncio.get_running_loop()
         fut: asyncio.Future[None] = loop.create_future()
+        # Guard against the spurious StoppedState that setSource() fires *before*
+        # play() (Qt re-fires StoppedState on every setSource). Must be flipped
+        # only after setSource — same pattern as _tts_play_started in
+        # _play_mp3_locked — so the future is not resolved before audio started.
+        play_started = False
 
         def _on_sfx_status(st: QMediaPlayer.MediaStatus) -> None:
             if st == QMediaPlayer.MediaStatus.EndOfMedia:
@@ -483,20 +510,19 @@ class QtAudioSink(QObject):
             self._safe_resolve_fut(fut, exception=RuntimeError(f"SFX error: {error_string}"))
 
         def _on_sfx_state(st: QMediaPlayer.PlaybackState) -> None:
-            if st == QMediaPlayer.PlaybackState.StoppedState:
+            if st == QMediaPlayer.PlaybackState.StoppedState and play_started:
                 self._safe_resolve_fut(fut)
 
-        async with self._sfx_lock:
-            player = self._sfx_player
-            audio = self._sfx_audio
-
+        # Acquire a pool player; the lock is NOT held across playback, so other
+        # clips can use other players concurrently (overlap).
+        idx = await self._acquire_sfx_player()
+        player = self._sfx_players[idx]
+        audio = self._sfx_audios[idx]
+        try:
             if player.audioOutput() != audio:
                 player.setAudioOutput(audio)
 
-            if scaled is data:
-                audio.setVolume(max(0.0, min(1.0, float(out_volume))))
-            else:
-                audio.setVolume(1.0)
+            audio.setVolume(out_volume)
 
             conn_status = player.mediaStatusChanged.connect(_on_sfx_status)
             conn_err = player.errorOccurred.connect(_on_sfx_error)
@@ -504,6 +530,9 @@ class QtAudioSink(QObject):
 
             timeout_sec = max(10.0, 8.0 + (len(data) / 4000.0))
             player.setSource(QUrl.fromLocalFile(str(file_path)))
+            # Now that setSource() has delivered its spurious StoppedState, the
+            # handler can safely resolve the future on a real StoppedState.
+            play_started = True
             player.play()
             try:
                 await asyncio.wait_for(fut, timeout=timeout_sec)
@@ -531,6 +560,8 @@ class QtAudioSink(QObject):
                     file_path.unlink(missing_ok=True)
                 except OSError as e:
                     logger.debug("Temp audio cleanup: %s", e)
+        finally:
+            await self._release_sfx_player(idx)
 
     async def play_mp3_parallel_with_volume(self, data: bytes, linear: float) -> None:
         """Public API: play immediately, even if others queued."""
@@ -574,10 +605,10 @@ class QtAudioSink(QObject):
                 self._player.setSource(QUrl())
             except RuntimeError:
                 pass
-        if self._sfx_player is not None:
+        self._sfx_busy.clear()
+        for player in self._sfx_players:
             try:
-                self._sfx_player.stop()
-                self._sfx_player.setSource(QUrl())
+                player.stop()
+                player.setSource(QUrl())
             except RuntimeError:
                 pass
-

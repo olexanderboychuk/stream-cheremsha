@@ -8,6 +8,7 @@ flag round-trip, stream reset, and the debounced publish path.
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 from dataclasses import replace
 from typing import Any
 from unittest import mock
@@ -332,3 +333,233 @@ def test_publish_debounce() -> None:
     topic, patch = pubsub.published[0]
     assert topic == "overlay:gift_rush:test"
     assert len(patch["events"]) == 5
+
+
+# ---------------------------------------------------------------------------
+# App-side SFX (played from the app process via the AudioSink, not the page).
+# ---------------------------------------------------------------------------
+
+
+class _SfxSink:
+    """Fake ``AudioSink`` recording every parallel-play (data, linear) pair.
+
+    Mirrors ``QtAudioSink.play_mp3_parallel_with_volume``. The recorded
+    ``data`` is a deterministic stub (see ``_sfx_bytes`` below) so clip
+    payloads never depend on the real ``assets/sounds/*.mp3`` files."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[bytes, float]] = []
+
+    async def play_mp3_parallel_with_volume(self, data: bytes, linear: float) -> None:
+        self.calls.append((data, linear))
+
+
+def make_sfx_ctl(**overrides: Any):
+    """Controller wired for SFX tests.
+
+    A recording sink is installed and ``self._loop`` is a real (unstarted)
+    ``asyncio`` loop so the launch clip and the ``call_later`` burst both
+    run. ``_sfx_bytes`` is stubbed to deterministic per-name payloads."""
+    ctl, pubsub = make_controller(cfg=_make_cfg(**overrides))
+    sink = _SfxSink()
+    ctl._audio_sink = sink
+    ctl._loop = asyncio.new_event_loop()
+    ctl._sfx_bytes = lambda name: f"MP3:{name}".encode()
+    return ctl, pubsub, sink
+
+
+def _fire(ctl: GiftRushController, now: float, **gift_kw: Any) -> None:
+    """Dispatch one gift at wall-clock ``now`` (controller ``time`` patched)."""
+    params: dict[str, Any] = {
+        "sender": "A",
+        "gift_id": "g",
+        "sender_user_key": "uk1",
+        "count": 1,
+        "tiktok_coin_each": 1,
+        "gift_name": "x",
+    }
+    params.update(gift_kw)
+    with mock.patch(_TIME, return_value=now):
+        ctl.on_gift(**params)
+
+
+def _advance(ctl: GiftRushController, seconds: float) -> None:
+    """Run the controller loop until ``seconds`` of loop time elapse, so any
+    ``loop.call_later`` burst fires. (Real-time cost ~= ``seconds``.)"""
+
+    async def _wait() -> None:
+        await asyncio.sleep(seconds)
+
+    ctl._loop.run_until_complete(_wait())
+
+
+def _names(sink: _SfxSink) -> list[str]:
+    return [d.decode() for d, _ in sink.calls]
+
+
+def _assert_calls(sink: _SfxSink, expected: list[tuple[str, float]]) -> None:
+    # Multiset comparison: the burst clips fire as concurrent tasks, so their
+    # completion order is not deterministic. Compare (name, volume) as a set.
+    got = Counter((d.decode(), round(ln, 6)) for d, ln in sink.calls)
+    exp = Counter((n, round(ln, 6)) for n, ln in expected)
+    assert got == exp, f"got={dict(got)} expected={dict(exp)}"
+
+
+def _close(ctl: GiftRushController) -> None:
+    try:
+        ctl._loop.close()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def test_sfx_silent_when_sound_disabled() -> None:
+    """Default config has sound off -> no clip played."""
+    ctl, _pub, sink = make_sfx_ctl()  # sound_enabled defaults to False
+    _fire(ctl, 1000.0, tiktok_coin_each=25)
+    _advance(ctl, 1.0)
+    assert sink.calls == []
+    _close(ctl)
+
+
+def test_sfx_silent_when_animations_off() -> None:
+    """event_animations=False gates out the whole gift flow, sounds included."""
+    ctl, _pub, sink = make_sfx_ctl(sound_enabled=True, event_animations=False)
+    _fire(ctl, 1000.0, tiktok_coin_each=25)
+    _advance(ctl, 1.0)
+    assert sink.calls == []
+    _close(ctl)
+
+
+def test_sfx_does_not_raise_without_audio_sink() -> None:
+    """Sound on but no sink wired -> early return, never crashes."""
+    ctl, _pub = make_controller(cfg=_make_cfg(sound_enabled=True))
+    ctl._loop = asyncio.new_event_loop()
+    ctl._sfx_bytes = lambda name: b"x"  # noqa: E731
+    _fire(ctl, 1000.0, tiktok_coin_each=25)
+    _advance(ctl, 1.0)
+    ctl._loop.close()
+
+
+def test_sfx_plays_launch_and_full_burst() -> None:
+    """MEDIUM gift (combo=1, all gates on): launch whoosh first, then the
+    impact/coins/ding/sparks burst, in order and at configured gains."""
+    ctl, _pub, sink = make_sfx_ctl(sound_enabled=True)
+    _fire(ctl, 1000.0, tiktok_coin_each=25)  # MEDIUM, combo=1
+    _advance(ctl, 1.0)
+    _assert_calls(
+        sink,
+        [
+            ("MP3:sfx_gift_launch", 0.8),
+            ("MP3:sfx_impact_mid", 1.0),
+            ("MP3:sfx_coins", 0.7),
+            ("MP3:sfx_score_ding", 0.6),
+            ("MP3:sfx_spark_tink", 0.4),
+        ],
+    )
+    _close(ctl)
+
+
+def test_sfx_impact_matches_intensity_tier() -> None:
+    """The burst impact clip follows the tier mapping (LOW / MID / EPIC)."""
+    for value, want in [
+        (5, "sfx_impact_low"),
+        (25, "sfx_impact_mid"),
+        (150, "sfx_impact_mid"),
+        (250, "sfx_impact_epic"),
+    ]:
+        ctl, _pub, sink = make_sfx_ctl(sound_enabled=True)
+        _fire(ctl, 1000.0, tiktok_coin_each=value)
+        _advance(ctl, 1.0)
+        assert f"MP3:{want}" in _names(sink)
+        _close(ctl)
+
+
+def test_sfx_respects_effect_gates() -> None:
+    """coins / ding / sparks are individually gated by their config flags."""
+    ctl, _pub, sink = make_sfx_ctl(
+        sound_enabled=True,
+        effects_coins=False,
+        effects_sparks=False,
+    )
+    _fire(ctl, 1000.0, tiktok_coin_each=25)
+    _advance(ctl, 1.0)
+    names = _names(sink)
+    assert "MP3:sfx_coins" not in names
+    assert "MP3:sfx_spark_tink" not in names
+    assert "MP3:sfx_impact_mid" in names
+    assert "MP3:sfx_score_ding" in names
+    assert "MP3:sfx_gift_launch" in names
+    _close(ctl)
+
+
+def test_sfx_reduced_halves_gain_and_shortens_flight() -> None:
+    """reduced_effects: half gain and the burst lands before the full flight.
+
+    Full MEDIUM flight = 650 ms, reduced = int(650 * 0.7) = 455 ms. At 600
+    ms the full-mode burst is still pending while the reduced-mode burst has
+    already fired."""
+    # full mode, 600 ms in -> only the launch, burst pending
+    ctl_full, _pub, sink_full = make_sfx_ctl(sound_enabled=True)
+    _fire(ctl_full, 1000.0, tiktok_coin_each=25)
+    _advance(ctl_full, 0.60)
+    assert len(sink_full.calls) == 1
+    assert sink_full.calls[0][0].decode() == "MP3:sfx_gift_launch"
+    _close(ctl_full)
+
+    # reduced mode, 600 ms in -> full burst fired, at half gain
+    ctl_red, _pub2, sink_red = make_sfx_ctl(sound_enabled=True, reduced_effects=True)
+    _fire(ctl_red, 1000.0, tiktok_coin_each=25)
+    _advance(ctl_red, 0.60)
+    _assert_calls(
+        sink_red,
+        [
+            ("MP3:sfx_gift_launch", 0.4),
+            ("MP3:sfx_impact_mid", 0.5),
+            ("MP3:sfx_coins", 0.35),
+            ("MP3:sfx_score_ding", 0.3),
+            ("MP3:sfx_spark_tink", 0.2),
+        ],
+    )
+    _close(ctl_red)
+
+
+def test_sfx_combo_tick_fires_for_combo_gates_on() -> None:
+    """A second gift (combo=2) adds the combo tick; the first (combo=1) does
+    not. Distinct gift_ids keep both gifts from aggregating."""
+    ctl, _pub, sink = make_sfx_ctl(sound_enabled=True)
+    _fire(ctl, 1000.0, tiktok_coin_each=1, gift_id="g1", sender_user_key="uk1")
+    _fire(
+        ctl,
+        1000.1,
+        tiktok_coin_each=1,
+        gift_id="g2",
+        sender_user_key="uk2",
+    )
+    _advance(ctl, 1.0)
+    names = _names(sink)
+    assert "MP3:sfx_combo_tick" in names
+    assert names.count("MP3:sfx_combo_tick") == 1
+    _close(ctl)
+
+
+def test_sfx_no_combo_tick_when_gates_off() -> None:
+    """combo tick needs show_combo AND combo_enabled; either off kills it."""
+    for off in [dict(show_combo=False), dict(combo_enabled=False)]:
+        ctl, _pub, sink = make_sfx_ctl(sound_enabled=True, **off)
+        _fire(
+            ctl,
+            1000.0,
+            tiktok_coin_each=1,
+            gift_id="g1",
+            sender_user_key="uk1",
+        )
+        _fire(
+            ctl,
+            1000.1,
+            tiktok_coin_each=1,
+            gift_id="g2",
+            sender_user_key="uk2",
+        )
+        _advance(ctl, 1.0)
+        assert "MP3:sfx_combo_tick" not in _names(sink)
+        _close(ctl)

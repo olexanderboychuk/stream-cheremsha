@@ -1,6 +1,6 @@
 """``gift_rush`` overlay — a transparent, premium VFX reaction layer.
 
-A gift flies in on a curved ``offset-path`` and bursts into coins, ribbons,
+A gift flies in on a curved ``offset-path`` and bursts into coins,
 sparks, an impact ring and a ``+VALUE`` popup on every gift event. Rapid
 consecutive gifts overlap and escalate into a ``COMBO`` counter. All motion
 is CSS (custom properties + keyframes + ``offset-path``); JS parameterizes
@@ -37,8 +37,8 @@ _HTML_TEMPLATE = """<!doctype html>
     }}
     * {{ box-sizing: border-box; }}
     #grRoot {{
-      position: relative;
-      width: 100vw; height: 100vh;
+      position: absolute;
+      inset: 0;
       overflow: hidden;
       background: transparent;
       pointer-events: none;
@@ -65,15 +65,15 @@ _HTML_TEMPLATE = """<!doctype html>
     /* ---- themes (applied to #grRoot) ---- */
     .gr-theme-cheremsha {{
       --gr-acc1:#22d3ee; --gr-acc2:#ec4899; --gr-acc3:#a78bfa;
-      --gr-glow:rgba(34,211,238,0.55); --gr-coin:#facc15; --gr-ribbon:#ec4899;
+      --gr-glow:rgba(34,211,238,0.55); --gr-coin:#facc15;
     }}
     .gr-theme-celebration {{
       --gr-acc1:#fde68a; --gr-acc2:#fbbff5; --gr-acc3:#ffffff;
-      --gr-glow:rgba(253,230,130,0.55); --gr-coin:#fbbf24; --gr-ribbon:#f472b6;
+      --gr-glow:rgba(253,230,130,0.55); --gr-coin:#fbbf24;
     }}
     .gr-theme-arcade {{
       --gr-acc1:#4ade80; --gr-acc2:#60a5fa; --gr-acc3:#facc15;
-      --gr-glow:rgba(74,222,128,0.55); --gr-coin:#facc15; --gr-ribbon:#4ade80;
+      --gr-glow:rgba(74,222,128,0.55); --gr-coin:#facc15;
     }}
 
     /* ---- projectile ---- */
@@ -156,26 +156,6 @@ _HTML_TEMPLATE = """<!doctype html>
       0%   {{ transform: translate(0, 0) rotate(0deg); opacity: 1; }}
       55%  {{ transform: translate(var(--gr-mx, 40px), var(--gr-my, -40px)) rotate(360deg); opacity: 1; }}
       100% {{ transform: translate(var(--gr-dx, 80px), var(--gr-dy, 90px)) rotate(720deg) scale(0.7); opacity: 0; }}
-    }}
-
-    /* ---- ribbon / streamer ---- */
-    .gr-ribbon {{
-      position: absolute;
-      width: calc(140px * var(--gr-scale, 1));
-      height: calc(8px * var(--gr-scale, 1));
-      margin-left: calc(-70px * var(--gr-scale, 1));
-      margin-top: calc(-4px * var(--gr-scale, 1));
-      border-radius: 999px;
-      background: linear-gradient(90deg, var(--gr-ribbon), var(--gr-acc1) 55%, var(--gr-acc3));
-      opacity: 0.9;
-      animation: grRibbonFly linear forwards;
-      pointer-events: none;
-      will-change: transform;
-    }}
-    @keyframes grRibbonFly {{
-      0%   {{ transform: translate(0, 0) rotate(var(--gr-rot, 0deg)); opacity: 0.9; }}
-      60%  {{ transform: translate(var(--gr-mx, 60px), var(--gr-my, -50px)) rotate(calc(var(--gr-rot, 0deg) + 90deg)); opacity: 0.85; }}
-      100% {{ transform: translate(var(--gr-dx, 120px), var(--gr-dy, 80px)) rotate(calc(var(--gr-rot, 0deg) + 240deg)); opacity: 0; }}
     }}
 
     /* ---- spark ---- */
@@ -307,13 +287,10 @@ _HTML_TEMPLATE = """<!doctype html>
       const MAX_COINS_ON_SCREEN = 32;
       const MAX_SPARKS = 24;
       const MAX_SPARKS_ON_SCREEN = 48;
-      const MAX_RIBBONS = 8;
-      const MAX_RIBBONS_ON_SCREEN = 24;
 
       let activeEvents = 0;
       let coinsOnScreen = 0;
       let sparksOnScreen = 0;
-      let ribbonsOnScreen = 0;
 
       const GIFT_SVG = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
         '<rect x="4" y="9.5" width="16" height="11" rx="1" style="fill:var(--gr-acc1)"/>' +
@@ -356,19 +333,18 @@ _HTML_TEMPLATE = """<!doctype html>
         return '';
       }}
       function tierCounts(intensity) {{
-        let coins, sparks, ribbons, rings, flightMs, coinDist;
-        if (intensity === 'EPIC') {{ coins = MAX_COINS; sparks = MAX_SPARKS; ribbons = 8; rings = 3; flightMs = 900; coinDist = 1.35; }}
-        else if (intensity === 'HIGH') {{ coins = 18; sparks = 20; ribbons = 5; rings = 2; flightMs = 750; coinDist = 1.15; }}
-        else if (intensity === 'MEDIUM') {{ coins = 11; sparks = 14; ribbons = 4; rings = 1; flightMs = 650; coinDist = 1.0; }}
-        else {{ coins = 6; sparks = 8; ribbons = 0; rings = 1; flightMs = 520; coinDist = 0.8; }}
+        let coins, sparks, rings, flightMs, coinDist;
+        if (intensity === 'EPIC') {{ coins = MAX_COINS; sparks = MAX_SPARKS; rings = 3; flightMs = 900; coinDist = 1.35; }}
+        else if (intensity === 'HIGH') {{ coins = 18; sparks = 20; rings = 2; flightMs = 750; coinDist = 1.15; }}
+        else if (intensity === 'MEDIUM') {{ coins = 11; sparks = 14; rings = 1; flightMs = 650; coinDist = 1.0; }}
+        else {{ coins = 6; sparks = 8; rings = 1; flightMs = 520; coinDist = 0.8; }}
         if (reduced) {{
           coins = Math.ceil(coins / 2);
           sparks = Math.ceil(sparks / 2);
-          ribbons = Math.ceil(ribbons / 2);
           rings = 1;
           flightMs = flightMs * 0.7;
         }}
-        return {{ coins, sparks, ribbons, rings, flightMs, coinDist }};
+        return {{ coins, sparks, rings, flightMs, coinDist }};
       }}
 
       function nodeCleanup(el, durationMs, dec) {{
@@ -504,7 +480,6 @@ _HTML_TEMPLATE = """<!doctype html>
         if (cfg && cfg.effects_impact_ring !== false) spawnImpactRing(x, y, intensity, tier.rings);
         spawnGlowFlash(x, y, intensity);
         if (cfg && cfg.effects_coins !== false) spawnCoins(x, y, tier.coins, tier.coinDist);
-        if (cfg && cfg.effects_ribbons !== false && tier.ribbons > 0) spawnRibbons(x, y, tier.ribbons);
         if (cfg && cfg.effects_sparks !== false) spawnSparks(x, y, tier.sparks, tier.coinDist);
         if (cfg && cfg.show_value !== false) spawnScorePopup(x, y, p, intensity);
         if (cfg && cfg.show_sender !== false) spawnSenderLine(x, y, p, intensity);
@@ -567,30 +542,6 @@ _HTML_TEMPLATE = """<!doctype html>
           grBurst.appendChild(el);
           coinsOnScreen++;
           nodeCleanup(el, dur, function() { coinsOnScreen--; });
-        }}
-      }}
-
-      function spawnRibbons(x, y, n) {{
-        if (!grBurst) return;
-        for (let i = 0; i < n; i++) {{
-          if (ribbonsOnScreen >= MAX_RIBBONS_ON_SCREEN) break;
-          if (n > MAX_RIBBONS && i >= MAX_RIBBONS) break;
-          const el = document.createElement('div');
-          el.className = 'gr-ribbon';
-          el.style.left = x + 'px';
-          el.style.top = y + 'px';
-          const angle = rand(0, Math.PI * 2);
-          const dist = rand(60, 160);
-          el.style.setProperty('--gr-rot', (i * 30).toString());
-          el.style.setProperty('--gr-dx', (Math.cos(angle) * dist).toFixed(1) + 'px');
-          el.style.setProperty('--gr-dy', (Math.sin(angle) * dist * 0.7 - dist * 0.3).toFixed(1) + 'px');
-          el.style.setProperty('--gr-mx', (Math.cos(angle) * dist * 0.5).toFixed(1) + 'px');
-          el.style.setProperty('--gr-my', (Math.sin(angle) * dist * 0.4).toFixed(1) + 'px');
-          const dur = 900 + rand(0, 900);
-          el.style.animationDuration = dur + 'ms';
-          grBurst.appendChild(el);
-          ribbonsOnScreen++;
-          nodeCleanup(el, dur, function() { ribbonsOnScreen--; });
         }}
       }}
 

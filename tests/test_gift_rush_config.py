@@ -29,7 +29,6 @@ def test_defaults() -> None:
     assert cfg.show_combo is True
     assert cfg.show_intensity_badge is True
     assert cfg.effects_coins is True
-    assert cfg.effects_ribbons is True
     assert cfg.effects_sparks is True
     assert cfg.effects_impact_ring is True
     assert cfg.camera_impact is True
@@ -38,6 +37,8 @@ def test_defaults() -> None:
     assert cfg.combo_escalation is True
     assert cfg.max_simultaneous_events == 10
     assert cfg.reduced_effects is False
+    # SFX are opt-in: default must be silent.
+    assert cfg.sound_enabled is False
 
 
 def test_json_round_trip() -> None:
@@ -72,6 +73,7 @@ def test_clamping() -> None:
         "max_simultaneous_events": 999,
         "reduced_effects": True,
         "event_animations": False,
+        "sound_enabled": "yes",
     }
     cfg = gift_rush_overlay_config_from_json_text(__import__("json").dumps(raw))
     # scale_percent clamps to [40, 250]
@@ -86,6 +88,8 @@ def test_clamping() -> None:
     assert cfg.target_mode == "left"
     assert cfg.reduced_effects is True
     assert cfg.event_animations is False
+    # truthy junk clamps to a plain bool, like the other toggles
+    assert cfg.sound_enabled is True
 
 
 def test_clamping_low_bound() -> None:
@@ -132,6 +136,7 @@ def test_missing_fields_fill_defaults() -> None:
     assert cfg.intensity_percent == 100
     assert cfg.combo_window_s == 10
     assert cfg.max_simultaneous_events == 10
+    assert cfg.sound_enabled is False
 
 
 def test_load_default_settings() -> None:
