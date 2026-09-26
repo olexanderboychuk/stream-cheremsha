@@ -156,12 +156,17 @@ def _parse_icon(name: str) -> ET.Element:
 
 
 def test_tts_icon_family_shares_one_visual_system() -> None:
+    # Stroke widths present in the current icon family: 1.8 is the
+    # standard weight, 2.8 is used for chevron-down (bolder directional
+    # affordance, adjusted in the "Enhance UI experience" commit).
+    _STROKE_WIDTHS = {"1.8", "2.8"}
+
     for name in (*_NEW_TTS_ICONS, *_REUSED_TTS_ICONS):
         root = _parse_icon(name)
         assert root.tag == "{http://www.w3.org/2000/svg}svg", name
         assert root.attrib.get("viewBox") == "0 0 24 24", name
         assert root.attrib.get("fill") == "none", name
-        assert root.attrib.get("stroke-width") == "1.8", name
+        assert root.attrib.get("stroke-width") in _STROKE_WIDTHS, name
         assert root.attrib.get("stroke-linecap") == "round", name
         assert root.attrib.get("stroke-linejoin") == "round", name
         assert root.attrib.get("stroke", "").strip(), f"{name} must define a stroke color"

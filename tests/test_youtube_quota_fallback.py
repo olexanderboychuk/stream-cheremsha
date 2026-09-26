@@ -144,7 +144,14 @@ def test_youtube_switches_to_fallback_on_quota_exceeded(monkeypatch: pytest.Monk
         get_locale=lambda: "uk",
     )
 
-    async def _fake_fallback_watch(_self: YouTubeChatSource, _url: str) -> None:
+    # Fallback method signature is (self, watch_url, *, creds=..., video_ids=...).
+    async def _fake_fallback_watch(
+        _self: YouTubeChatSource,
+        _url: str,
+        *,
+        creds: object | None = None,
+        video_ids: list[str] | None = None,
+    ) -> None:
         await coord.enqueue_chat(
             ChatMessage(
                 author="a",
@@ -191,7 +198,14 @@ def test_youtube_switches_to_fallback_when_api_disabled(monkeypatch: pytest.Monk
         get_locale=lambda: "uk",
     )
 
-    async def _fake_fallback_watch(_self: YouTubeChatSource, _url: str) -> None:
+    # Fallback method signature is (self, watch_url, *, creds=..., video_ids=...).
+    async def _fake_fallback_watch(
+        _self: YouTubeChatSource,
+        _url: str,
+        *,
+        creds: object | None = None,
+        video_ids: list[str] | None = None,
+    ) -> None:
         await coord.enqueue_chat(
             ChatMessage(
                 author="a",
