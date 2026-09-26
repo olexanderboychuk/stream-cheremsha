@@ -7484,13 +7484,26 @@ class MainWindow(FramelessWindow):
             except Exception:
                 pass
             try:
+                # Live events often carry no icon (library/version-dependent),
+                # so fall back to the bundled 451-gift catalog — same pattern
+                # as _on_tiktok_gift_analytics_any. Without this the overlay
+                # only ever renders the generic SVG instead of the real gift.
+                _gr_icon = str(icon_url or "").strip()
+                if not _gr_icon:
+                    try:
+                        _gr_icon = tiktok_catalog_gift_image_url(
+                            gift_id=str(gift_id or ""),
+                            gift_name=str(gift_name or ""),
+                        )
+                    except Exception:  # noqa: BLE001 - keep live on bad catalog
+                        _gr_icon = ""
                 self._gift_rush_group.on_gift(
                     sender=sender,
                     gift_name=gift_name,
                     gift_id=gift_id,
                     count=count,
                     tiktok_coin_each=tiktok_coin_each,
-                    icon_url=str(icon_url or ""),
+                    icon_url=_gr_icon,
                     sender_avatar_url=str(sender_avatar_url or ""),
                     sender_user_key=sender_user_key,
                     platform=ChatPlatform.TIKTOK.value,

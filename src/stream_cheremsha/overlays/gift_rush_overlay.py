@@ -83,6 +83,7 @@ _HTML_TEMPLATE = """<!doctype html>
       height: calc(56px * var(--gr-scale, 1));
       display: flex; align-items: center; justify-content: center;
       border-radius: 50%;
+      overflow: hidden;
       opacity: 0;
       pointer-events: none;
       z-index: 2;
@@ -225,6 +226,11 @@ _HTML_TEMPLATE = """<!doctype html>
       text-shadow: 0 1px 3px rgba(0,0,0,0.7);
       animation: grRise 0.9s ease-out forwards;
       pointer-events: none;
+      white-space: nowrap;
+      text-align: center;
+      max-width: 60vw;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }}
     .gr-combo {{
       position: absolute;
@@ -310,20 +316,20 @@ _HTML_TEMPLATE = """<!doctype html>
       let ribbonsOnScreen = 0;
 
       const GIFT_SVG = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
-        '<rect x="4" y="9.5" width="16" height="11" rx="1" fill="var(--gr-acc1)"/>' +
-        '<rect x="4" y="9.5" width="16" height="3" rx="0.5" fill="var(--gr-acc3)"/>' +
-        '<path d="M12 9.5V20.5" stroke="var(--gr-acc2)" stroke-width="1.4"/>' +
-        '<circle cx="8.6" cy="7" r="2.4" fill="var(--gr-acc2)"/>' +
-        '<circle cx="12" cy="5.8" r="2.6" fill="var(--gr-acc2)"/>' +
-        '<circle cx="15.4" cy="7" r="2.4" fill="var(--gr-acc2)"/>' +
+        '<rect x="4" y="9.5" width="16" height="11" rx="1" style="fill:var(--gr-acc1)"/>' +
+        '<rect x="4" y="9.5" width="16" height="3" rx="0.5" style="fill:var(--gr-acc3)"/>' +
+        '<path d="M12 9.5V20.5" fill="none" style="stroke:var(--gr-acc2)" stroke-width="1.4"/>' +
+        '<circle cx="8.6" cy="7" r="2.4" style="fill:var(--gr-acc2)"/>' +
+        '<circle cx="12" cy="5.8" r="2.6" style="fill:var(--gr-acc2)"/>' +
+        '<circle cx="15.4" cy="7" r="2.4" style="fill:var(--gr-acc2)"/>' +
         '</svg>';
       const COIN_SVG = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
-        '<circle cx="12" cy="12" r="11" fill="var(--gr-coin)" stroke="rgba(0,0,0,0.25)" stroke-width="1"/>' +
+        '<circle cx="12" cy="12" r="11" style="fill:var(--gr-coin)" stroke="rgba(0,0,0,0.25)" stroke-width="1"/>' +
         '<circle cx="12" cy="12" r="7.5" fill="none" stroke="rgba(0,0,0,0.25)" stroke-width="1.2"/>' +
         '<path d="M7.5 12a4.5 4.5 0 1 0 9 0" fill="none" stroke="rgba(0,0,0,0.2)" stroke-width="1.2"/>' +
         '</svg>';
       const SPARK_SVG = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
-        '<path d="M12 2l3.4 6.9L22 10l-5.6 4.1L20 22l-5.6-3.9-5.6 3.9L12 13.9l-5.6 4.1 5.6-4.1-5.4-3.9z" fill="var(--gr-acc1)"/>' +
+        '<path d="M12 2l3.4 6.9L22 10l-5.6 4.1L20 22l-5.6-3.9-5.6 3.9L12 13.9l-5.6 4.1 5.6-4.1-5.4-3.9z" style="fill:var(--gr-acc1)"/>' +
         '</svg>';
 
       function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -420,6 +426,10 @@ _HTML_TEMPLATE = """<!doctype html>
         if (activeEvents >= maxSimultaneous && intensity === 'LOW') return;
         const mode = p.target || (cfg && cfg.target_mode) || 'center';
         const ip = impactPoint(mode);
+        // Jitter so concurrent gifts sharing one mode don't stack exactly on
+        // top of each other (bursts + popups would fully overlap).
+        ip.x = clamp(ip.x + rand(-0.035, 0.035), 0.05, 0.95);
+        ip.y = clamp(ip.y + rand(-0.025, 0.025), 0.10, 0.90);
         const sp = sourcePoint(mode);
         activeEvents++;
         const r = (grCam || root).getBoundingClientRect();
@@ -451,16 +461,19 @@ _HTML_TEMPLATE = """<!doctype html>
           img.className = 'gr-gift-img';
           img.src = p.icon_url;
           img.alt = '';
+          img.onerror = function() {{ el.innerHTML = GIFT_SVG; }};
           el.appendChild(img);
         }} else {{
-          const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-          svg.setAttribute('viewBox', '0 0 24 24');
-          svg.innerHTML = GIFT_SVG;
-          el.appendChild(svg);
+          el.innerHTML = GIFT_SVG;
         }}
-        el.style.left = sx + 'px';
-        el.style.top = sy + 'px';
+        // Anchor at the layer origin: the motion path already carries absolute
+        // coordinates. Keeping left/top at the start point would double-offset
+        // the projectile (up to 2x off-screen, hidden by overflow) and the
+        // fly-in would never be seen.
+        el.style.left = '0px';
+        el.style.top = '0px';
         el.style.setProperty('offset-path', 'path("' + pathD + '")');
+        el.style.setProperty('offset-rotate', '0deg');
         el.style.setProperty('offset-distance', '0%');
         el.style.opacity = '0';
         el.style.transitionProperty = 'opacity';
@@ -615,7 +628,7 @@ _HTML_TEMPLATE = """<!doctype html>
         if (count > 1) txt += ' x' + count;
         el.textContent = txt;
         el.style.left = x + 'px';
-        el.style.top = (y - 40) + 'px';
+        el.style.top = (y - 52) + 'px';
         grPopup.appendChild(el);
         const dur = 600 + rand(0, 300);
         el.style.animationDuration = dur + 'ms';
@@ -630,7 +643,7 @@ _HTML_TEMPLATE = """<!doctype html>
         el.className = 'gr-sender';
         el.textContent = 'from ' + sender;
         el.style.left = x + 'px';
-        el.style.top = (y - 18) + 'px';
+        el.style.top = (y + 40) + 'px';
         grPopup.appendChild(el);
         const dur = 700 + rand(0, 300);
         el.style.animationDuration = dur + 'ms';
@@ -647,7 +660,7 @@ _HTML_TEMPLATE = """<!doctype html>
         if (intensity === 'EPIC') el.classList.add('is-epic');
         el.textContent = 'COMBO x' + combo;
         el.style.left = x + 'px';
-        el.style.top = (y - 70) + 'px';
+        el.style.top = (y - 116) + 'px';
         grPopup.appendChild(el);
         const dur = 900 + rand(0, 300);
         el.style.animationDuration = dur + 'ms';
@@ -661,7 +674,7 @@ _HTML_TEMPLATE = """<!doctype html>
         if (intensity === 'EPIC') el.classList.add('is-epic');
         el.textContent = txt;
         el.style.left = x + 'px';
-        el.style.top = (y - 95) + 'px';
+        el.style.top = (y - 165) + 'px';
         grPopup.appendChild(el);
         nodeCleanup(el, 850);
       }}
@@ -729,7 +742,12 @@ class GiftRushOverlayType:
             instance = "default"
         # JSON-encode the instance so it is a safe JS string literal.
         instance_lit = json.dumps(instance)
-        return _HTML_TEMPLATE.replace("__GR_INSTANCE__", instance_lit)
+        # Template was authored with doubled braces (f-string style) but is
+        # stored as a plain string — collapse to single braces for valid
+        # CSS/JS before injecting the instance (instance ids never contain
+        # braces, so collapse-first is safe).
+        html = _HTML_TEMPLATE.replace("{{", "{").replace("}}", "}")
+        return html.replace("__GR_INSTANCE__", instance_lit)
 
     def initial_state(self, params: dict[str, Any]) -> dict[str, Any]:
         from stream_cheremsha.overlays.gift_rush_config import (

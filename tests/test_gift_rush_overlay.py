@@ -199,3 +199,56 @@ def test_integrity_no_unbalanced_script_tags() -> None:
     # exactly one <script>...</script> block
     assert html.count("<script>") == 1
     assert html.count("</script>") == 1
+
+
+def test_rendered_html_has_single_braces_only() -> None:
+    """Regression: template uses doubled braces but render must collapse them.
+
+    A plain (non-f) string template shipped `{{`/`}}` verbatim, which is
+    invalid CSS (rules dropped) and invalid JS (`return {{ x...}}` ->
+    SyntaxError, whole page dead). Preview and by-id pages showed nothing.
+    """
+    html, _ = _render()
+    assert "{{" not in html
+    assert "}}" not in html
+
+
+def test_svg_colors_use_style_not_presentation_attributes() -> None:
+    """Regression: var() in fill=""/stroke="" attributes never resolves.
+
+    Presentation attributes don't support var(), so the gift/coin/spark SVGs
+    rendered black/invisible. Colors must go through style="...".
+    """
+    html, _ = _render()
+    assert 'fill="var(' not in html
+    assert 'stroke="var(' not in html
+
+
+def test_projectile_anchored_at_origin_for_absolute_motion_path() -> None:
+    """Regression: left/top at the start point double-offset the projectile.
+
+    The offset-path already carries absolute coordinates, so anchoring the
+    element at (sx, sy) pushed it up to 2x off-screen (hidden by overflow) —
+    the fly-in icon was never seen while bursts/popups (absolute) worked.
+    """
+    _, script = _render()
+    assert "el.style.left = '0px'" in script
+    assert "el.style.top = '0px'" in script
+
+
+def test_popup_stack_does_not_overlap() -> None:
+    """Regression: score/sender/combo/badge shared one x with offsets smaller
+    than their line heights, so every popup overlapped its neighbours (worse
+    on EPIC sizes). Stack must be ordered badge < combo < value above the
+    impact point with line-height clearance, sender below it."""
+    _, script = _render()
+    assert "(y - 52)" in script  # value
+    assert "(y + 40)" in script  # sender, below impact
+    assert "(y - 116)" in script  # combo
+    assert "(y - 165)" in script  # badge
+
+
+def test_sender_line_clamped_to_single_line() -> None:
+    """Long nicknames must not wrap into the value popup above."""
+    html, _ = _render()
+    assert "text-overflow: ellipsis" in html
