@@ -126,9 +126,7 @@ def test_layout_overlay_renders_by_id_when_bound(monkeypatch) -> None:
 
     inst = wi.create_instance("chat", "Bound Chat", None)
     bound_w = L.LayoutWidget("w2", "chat", "main", 0, 0, 100, 100, widget_instance_id=inst.id)
-    lay = L.StreamLayout(
-        id="default", name="X", width=1920, height=1080, widgets=(bound_w,)
-    )
+    lay = L.StreamLayout(id="default", name="X", width=1920, height=1080, widgets=(bound_w,))
     L.save_layouts([lay])
 
     html = LayoutOverlayType().render_html({"instance": "main", "layout": "default"})
@@ -140,3 +138,69 @@ def test_layout_overlay_renders_by_id_when_bound(monkeypatch) -> None:
     L.save_layouts([lay2])
     html2 = LayoutOverlayType().render_html({"instance": "main", "layout": "default"})
     assert "<iframe" not in html2
+
+
+def test_battle_and_gift_rush_widgets_survive_save_roundtrip() -> None:
+    # Regression: QML layout editor offers Battle/Gift Rush, but the
+    # persistence whitelist dropped their widgets silently on save.
+    s = _fresh()
+    L.ensure_layouts(s)
+    a = L.create_layout("Battle scene", settings=s)
+    battle_w = L.LayoutWidget(
+        "w-battle",
+        "battle",
+        "main",
+        120,
+        240,
+        640,
+        220,
+        widget_instance_id="inst-battle",
+    )
+    rush_w = L.LayoutWidget(
+        "w-rush",
+        "gift_rush",
+        "main",
+        0,
+        0,
+        1920,
+        1080,
+        z_index=1,
+        widget_instance_id="inst-rush",
+    )
+    L.upsert_layout(
+        L.StreamLayout(
+            id=a.id, name=a.name, width=a.width, height=a.height, widgets=(battle_w, rush_w)
+        ),
+        s,
+    )
+
+    restored = L.get_layout(a.id, s)
+    assert restored is not None
+    assert [w.type for w in restored.widgets] == ["battle", "gift_rush"]
+    assert restored.widgets[0].widget_instance_id == "inst-battle"
+    assert (
+        restored.widgets[1].x,
+        restored.widgets[1].y,
+        restored.widgets[1].width,
+        restored.widgets[1].height,
+    ) == (0, 0, 1920, 1080)
+
+
+def test_unknown_widget_type_still_dropped_on_load() -> None:
+    s = _fresh()
+    L.ensure_layouts(s)
+    a = L.create_layout("A", settings=s)
+    ghost = L.LayoutWidget("w-ghost", "no_such_type", "main", 0, 0, 100, 100)
+    L.upsert_layout(
+        L.StreamLayout(id=a.id, name=a.name, width=a.width, height=a.height, widgets=(ghost,)), s
+    )
+    restored = L.get_layout(a.id, s)
+    assert restored is not None
+    assert restored.widgets == ()
+
+
+def test_layout_whitelist_covers_all_widget_types() -> None:
+    # Regression rule: a new overlay type registered in WIDGET_TYPES must be
+    # placeable in layouts; a missing entry here is silently dropped on save.
+    missing = set(wi.WIDGET_TYPES) - set(L.SUPPORTED_LAYOUT_WIDGETS)
+    assert not missing, f"Missing from SUPPORTED_LAYOUT_WIDGETS: {sorted(missing)}"

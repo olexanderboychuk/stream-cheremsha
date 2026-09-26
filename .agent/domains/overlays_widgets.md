@@ -32,12 +32,17 @@ Serves web-based widgets and OBS browser source overlays via an internal `aiohtt
 - **Chat / Donations**: Ingested events trigger state mutations in active widget controllers.
 
 ## Common Extension Points
-1. **Adding a New Widget Type (5-step checklist)**:
+1. **Adding a New Widget Type (6-step checklist)**:
    - Step 1: Create `src/stream_cheremsha/overlays/<name>_overlay.py` implementing `OverlayType`.
    - Step 2: Register in `src/stream_cheremsha/overlays/registry.py` inside `OverlayRegistry.__init__`.
    - Step 3: Add type metadata and defaults loader to `WIDGET_TYPES` in `src/stream_cheremsha/overlays/widget_instances.py`.
    - Step 4: Wire controller group and event fan-out in `src/stream_cheremsha/ui/main_window.py`.
-   - Step 5: Expose config load/save and preview methods in `widgets_qml_api.py` and editor in `WidgetsView.qml`.
+   - Step 5: Expose config load/save and preview methods in `widgets_qml_api.py` and editor in `WidgetsView.qml` — add the type to `layoutWidgetTypes` (and `defaultWidgetSize`) in `src/stream_cheremsha/qml/WidgetsView.qml`.
+   - Step 6: Make the type placeable in layouts by adding its `type_id` to `SUPPORTED_LAYOUT_WIDGETS` in `src/stream_cheremsha/overlays/layout.py`. **A type missing here is silently dropped from layouts on save — the same failure mode as the missing `battle`/`gift_rush` entries.**
+
+   Guard tests (must pass when adding a widget type):
+   - `tests/test_layout_instances.py:test_layout_whitelist_covers_all_widget_types` — every `WIDGET_TYPES` key must be in `SUPPORTED_LAYOUT_WIDGETS`.
+   - `tests/test_layout_editor_controls.py:test_layout_browser_offers_all_widget_types` — every `WIDGET_TYPES` key must be offered in the QML `layoutWidgetTypes`.
 
 ## Relevant Invariants
 - Browser source URLs (`/overlay/by-id/{id}`) must remain backward-compatible.

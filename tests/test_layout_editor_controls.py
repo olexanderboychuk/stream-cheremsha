@@ -181,6 +181,21 @@ def test_resize_grid_snap_preserves_minimums():
     assert "snapGridSize(nextH, 24)" in source
 
 
+def test_layout_browser_offers_all_widget_types():
+    # A type missing from the QML layout library cannot be placed on a
+    # canvas at all; keep it in lockstep with WIDGET_TYPES.
+    import re
+
+    from stream_cheremsha.overlays import widget_instances as wi
+
+    source = WIDGETS_VIEW.read_text(encoding="utf-8")
+    block = re.search(r"layoutWidgetTypes:\s*\[[^\]]*\]", source)
+    assert block is not None, "layoutWidgetTypes block not found"
+    offered = set(re.findall(r'type:\s*"([^"]+)"', block.group(0)))
+    missing = set(wi.WIDGET_TYPES) - offered
+    assert not missing, f"Missing from layoutWidgetTypes: {sorted(missing)}"
+
+
 def test_grid_is_editor_only_layer():
     # Grid Canvas lives inside layoutCanvas (moves/scales with it) and is
     # never referenced by save/export paths.

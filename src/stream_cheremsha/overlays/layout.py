@@ -25,6 +25,8 @@ SUPPORTED_LAYOUT_WIDGETS = (
     "top_gifters",
     "king_of_live",
     "battle_royale",
+    "battle",
+    "gift_rush",
     "stream_pet",
     "community_world",
     "stream_goal",
