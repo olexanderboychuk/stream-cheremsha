@@ -116,6 +116,7 @@ Item {
         {type: "king_of_live", label: "King of the Live", iconName: "web_crown.svg"},
         {type: "battle_royale", label: "Battle Royale", iconName: "web_swords.svg"},
         {type: "battle", label: "Battle", iconName: "web_swords.svg"},
+        {type: "gift_rush", label: "Gift Rush", iconName: "gift.svg"},
         {type: "stream_pet", label: "Stream Pet", iconName: "web_paw.svg"},
         {type: "community_world", label: "Community World", iconName: "web_globe.svg"},
         {type: "stream_goal", label: "Stream Goal", iconName: "web_target.svg"},
@@ -138,6 +139,7 @@ Item {
             case "king_of_live": return {w: 360, h: 220};
             case "battle_royale": return {w: 420, h: 280};
             case "battle": return {w: 640, h: 220};
+            case "gift_rush": return {w: 1920, h: 1080};
             case "stream_pet": return {w: 240, h: 240};
             case "community_world": return {w: 480, h: 320};
             case "stream_goal": return {w: 400, h: 160};
@@ -773,6 +775,10 @@ Item {
             behavior = [c(bt("gift_multiplier"), "gift_multiplier", "number", 1.0, {minimum: 0.1, maximum: 10}), c(bt("combo_enabled"), "combo_enabled", "toggle", true), c(bt("combo_threshold"), "combo_threshold", "number", 5, {minimum: 2, maximum: 20}), c(bt("comeback_enabled"), "comeback_enabled", "toggle", true), c(bt("final_push"), "final_push_seconds", "number", 10, {minimum: 3, maximum: 30})];
             animation = [c(bt("event_animations"), "event_animations", "toggle", true), c(bt("animation_intensity"), "animation_intensity_pct", "number", 100, {minimum: 25, maximum: 200}), c(bt("show_badges"), "show_event_badges", "toggle", true), c(bt("show_winner"), "show_winner_screen", "toggle", true)];
             advanced = [c(bt("victory_display"), "victory_display_s", "number", 8, {minimum: 3, maximum: 15}), c(bt("hide_when_idle"), "hide_when_idle", "toggle", false), c(bt("font_family"), "font_family", "text", "Segoe UI"), c(bt("decision_layer"), "decision_layer_enabled", "toggle", false)];
+        } else if (typeId === "gift_rush") {
+            general = [c("Theme", "theme", "select", "cheremsha", {options: ["cheremsha", "celebration", "arcade"]}), c("Target mode", "target_mode", "select", "center", {options: ["center", "left", "right", "random"]}), c("Scale", "scale_percent", "number", 100, {minimum: 40, maximum: 250}), c("Intensity", "intensity_percent", "number", 100, {minimum: 25, maximum: 200})];
+            appearance = [c("Gift image", "show_gift_image", "toggle", true), c("Value popup", "show_value", "toggle", true), c("Sender line", "show_sender", "toggle", true), c("Combo counter", "show_combo", "toggle", true), c("Intensity badge", "show_intensity_badge", "toggle", true)];
+            behavior = [c("Event animations", "event_animations", "toggle", true), c("Coins", "effects_coins", "toggle", true), c("Ribbons", "effects_ribbons", "toggle", true), c("Sparks", "effects_sparks", "toggle", true), c("Impact ring", "effects_impact_ring", "toggle", true), c("Camera impact", "camera_impact", "toggle", true), c("Combo enabled", "combo_enabled", "toggle", true), c("Combo window (seconds)", "combo_window_s", "number", 10, {minimum: 3, maximum: 30}), c("Combo escalation", "combo_escalation", "toggle", true), c("Max simultaneous events", "max_simultaneous_events", "number", 10, {minimum: 4, maximum: 12}), c("Reduced effects", "reduced_effects", "toggle", false)];
         } else if (typeId === "stream_pet") {
             general = [c("Preset", "preset", "select", "classic_gold", {options: ["classic_gold", "cyber_purple", "cotton_candy", "forest_fox", "midnight_shadow", "sunset_shiba", "custom"]}), c("Enabled", "enabled", "toggle", true), c("Show energy bar", "show_energy_bar", "toggle", true), c("Evolution enabled", "evolution_enabled", "toggle", true), c("Pet scale", "pet_scale_pct", "number", 100, {minimum: 50, maximum: 200})];
             appearance = [c("Collar enabled", "collar_enabled", "toggle", true), c("Blush enabled", "blush_enabled", "toggle", true), c("Body color", "pet_body_color", "color", "#fbbf24"), c("Ear color", "pet_ear_color", "color", "#f59e0b"), c("Collar color", "collar_color", "color", "#ef4444"), c("Bubble color", "bubble_bg_color", "color", "#ffffff")];
@@ -861,6 +867,7 @@ Item {
         if (root.widgetMode === "king_of_live") return root.kingCfg;
         if (root.widgetMode === "battle_royale") return root.battleCfg;
         if (root.widgetMode === "battle") return root.battleCfg2;
+        if (root.widgetMode === "gift_rush") return root.giftRushCfg;
         if (root.widgetMode === "stream_pet") return root.streamPetCfg;
         if (root.widgetMode === "community_world") return root.communityWorldCfg;
         if (root.widgetMode === "stream_goal") return root.streamGoalCfg;
@@ -1952,6 +1959,12 @@ Item {
     // overlay key otherwise (unlike battle_royale, whose config is always global).
     property var battleCfg2: null
     property int battleCfg2Epoch: 0
+    // giftRushCfg is the gift-rush VFX config (transparent reaction layer).
+    // Instance-routed like battle: loadGiftRushOverlayConfigMap() /
+    // saveGiftRushOverlayConfigJson() so it saves per-instance when one is selected.
+    property var giftRushCfg: null
+    property bool _loadingGiftRushCfg: false
+    property int giftRushCfgEpoch: 0
     property var streamPetCfg: null
     property bool _loadingStreamPetCfg: false
     property int streamPetCfgEpoch: 0
@@ -2168,6 +2181,7 @@ Item {
             (root.widgetMode === "king_of_live" && root.kingCfg !== null) ||
             (root.widgetMode === "battle_royale" && root.battleCfg !== null) ||
             (root.widgetMode === "battle" && root.battleCfg2 !== null) ||
+            (root.widgetMode === "gift_rush" && root.giftRushCfg !== null) ||
             (root.widgetMode === "stream_pet" && root.streamPetCfg !== null) ||
             (root.widgetMode === "community_world" && root.communityWorldCfg !== null) ||
             (root.widgetMode === "stream_goal" && root.streamGoalCfg !== null) ||
@@ -2195,6 +2209,8 @@ Item {
             root._saveBattle();
         } else if (root.widgetMode === "battle") {
             root._saveBattle2();
+        } else if (root.widgetMode === "gift_rush") {
+            root._saveGiftRush();
         } else if (root.widgetMode === "stream_pet") {
             root._saveStreamPet();
         } else if (root.widgetMode === "community_world") {
@@ -2347,6 +2363,16 @@ Item {
         if (!txt || txt === "{}")
             return;
         api.saveBattleOverlayConfigJson(txt);
+    }
+
+    function _saveGiftRush() {
+        if (!api || root.giftRushCfg === null) return;
+        root.giftRushCfgEpoch += 1;
+        // giftRushCfg is a cloned plain JS object; JSON.stringify is reliable (ConfigMap/toVariant often is not).
+        var txt = JSON.stringify(root.giftRushCfg);
+        if (!txt || txt === "{}")
+            return;
+        api.saveGiftRushOverlayConfigJson(txt);
     }
 
     function _saveStreamPet() {
@@ -5262,6 +5288,7 @@ Item {
                     root._loadingTopGiftersCfg = false;
                     root._loadingKingCfg = false;
                     root._loadingBattleCfg = false;
+                    root._loadingGiftRushCfg = false;
                     root._loadingStreamPetCfg = false;
                     root._loadingCommunityWorldCfg = false;
                     root._loadingStreamGoalCfg = false;
@@ -5281,6 +5308,7 @@ Item {
                 root._loadingTopGiftersCfg = true;
                 root._loadingKingCfg = true;
                 root._loadingBattleCfg = true;
+                root._loadingGiftRushCfg = true;
                 root._loadingStreamPetCfg = true;
                 root._loadingCommunityWorldCfg = true;
                 root._loadingStreamGoalCfg = true;
@@ -5330,6 +5358,11 @@ Item {
                     b2obj = {};
                 root.battleCfg2 = JSON.parse(JSON.stringify(b2obj));
                 root.battleCfg2Epoch += 1;
+                var grobj = api.loadGiftRushOverlayConfigMap();
+                if (!grobj || typeof grobj !== "object")
+                    grobj = {};
+                root.giftRushCfg = JSON.parse(JSON.stringify(grobj));
+                root.giftRushCfgEpoch += 1;
                 var spobj = api.loadStreamPetOverlayConfigMap();
                 if (!spobj || typeof spobj !== "object")
                     spobj = {};

@@ -28,6 +28,12 @@ from stream_cheremsha.overlays.battle_royale_overlay_config import (
     load_battle_royale_overlay_config,
     save_battle_royale_overlay_config,
 )
+from stream_cheremsha.overlays.gift_rush_config import (
+    gift_rush_overlay_config_from_json_text,
+    gift_rush_overlay_config_to_json_text,
+    load_gift_rush_overlay_config,
+    save_gift_rush_overlay_config,
+)
 from stream_cheremsha.overlays.chat_config import (
     chat_config_from_json_text,
     chat_config_to_json_text,
@@ -232,6 +238,7 @@ class WidgetsQmlApi(QObject):
         self._music_instance = str(online_instance or "main").strip() or "main"
         self._battle_host: Any | None = None
         self._battle_controller: Any | None = None
+        self._gift_rush_group: Any | None = None
         self._stream_goal_controller: Any | None = None
         self._live_leaderboard_controller: Any | None = None
         self._live_leaderboard_simple_controller: Any | None = None
@@ -256,6 +263,9 @@ class WidgetsQmlApi(QObject):
 
     def set_battle_controller(self, controller: Any) -> None:
         self._battle_controller = controller
+
+    def set_gift_rush_group(self, controller: Any) -> None:
+        self._gift_rush_group = controller
 
     def set_social_rotator_controller(self, controller: Any) -> None:
         self._social_rotator_controller = controller
@@ -526,6 +536,8 @@ class WidgetsQmlApi(QObject):
             self.previewBattleRoyaleOverlay(inst)
         elif typ == "battle":
             self.previewBattleOverlay(inst)
+        elif typ == "gift_rush":
+            self.previewGiftRushOverlay(inst)
         elif typ == "top_likers":
             self.previewTopLikersOverlay(inst)
         elif typ == "top_gifters":
@@ -1985,6 +1997,89 @@ class WidgetsQmlApi(QObject):
         _LOG.info("widgets ConfigMap save: battle ok json_len=%d", len(txt))
         self.saveBattleOverlayConfigJson(txt)
 
+    @Slot(result="QVariantMap")
+    def loadGiftRushOverlayConfigMap(self) -> dict[str, Any]:
+        routed = self._load_cfg_or_instance("gift_rush")
+        if routed is not None:
+            return routed
+        cfg = load_gift_rush_overlay_config()
+        return json.loads(gift_rush_overlay_config_to_json_text(cfg))
+
+    @Slot(result=str)
+    def loadGiftRushOverlayConfigJson(self) -> str:
+        cfg = load_gift_rush_overlay_config()
+        return gift_rush_overlay_config_to_json_text(cfg)
+
+    @Slot(str)
+    def saveGiftRushOverlayConfigJson(self, cfg_json: str) -> None:
+        txt = str(cfg_json or "").strip()
+        if not txt:
+            return
+        try:
+            cfg = gift_rush_overlay_config_from_json_text(txt)
+        except (ValueError, TypeError, json.JSONDecodeError):
+            return
+        if self._save_cfg_to_instance(
+            "gift_rush", json.loads(gift_rush_overlay_config_to_json_text(cfg))
+        ):
+            return
+        save_gift_rush_overlay_config(cfg)
+        _LOG.info("widgets overlay persisted: gift_rush")
+
+    @Slot(QJSValue)
+    def saveGiftRushOverlayConfigMap(self, cfg_js: QJSValue) -> None:
+        try:
+            plain = cfg_js.toVariant()
+        except Exception:
+            _LOG.warning("widgets ConfigMap save: gift_rush rejected (null/undefined)")
+            return
+        try:
+            txt = json.dumps(plain, ensure_ascii=False)
+        except (TypeError, ValueError):
+            _LOG.warning("widgets ConfigMap save: gift_rush rejected empty_or_non_serializable")
+            return
+        _LOG.info("widgets ConfigMap save: gift_rush ok json_len=%d", len(txt))
+        self.saveGiftRushOverlayConfigJson(txt)
+
+    @Slot(str)
+    @Slot()
+    def previewGiftRushOverlay(self, instance: str | None = None) -> None:
+        token = str(instance or "").strip()
+        if not token:
+            return
+        topic = f"overlay:gift_rush:{token}"
+        cfg = self._preview_config(
+            "gift_rush",
+            token,
+            load_gift_rush_overlay_config,
+            gift_rush_overlay_config_from_json_text,
+        )
+        patch: dict[str, Any] = {
+            "config": json.loads(gift_rush_overlay_config_to_json_text(cfg)),
+            "locale": _ui_locale(),
+            "events": [
+                {
+                    "type": "gift",
+                    "at": time.time(),
+                    "payload": {
+                        "sender": "Preview Viewer",
+                        "gift_name": "Lily",
+                        "gift_id": "gift-preview",
+                        "count": 1,
+                        "aggregated_count": 1,
+                        "value": 25,
+                        "icon_url": "",
+                        "sender_avatar_url": "",
+                        "platform": "tiktok",
+                        "combo": 3,
+                        "intensity": "MEDIUM",
+                        "target": "center",
+                    },
+                }
+            ],
+        }
+        self._publish_patch(topic=topic, patch=patch)
+
     @Slot(str, result="QVariantMap")
     def streamPetPresetDefaultsMap(self, preset: str) -> dict[str, Any]:
         cfg = apply_stream_pet_preset(stream_pet_overlay_config_defaults(), preset)
@@ -2523,6 +2618,7 @@ class WidgetsQmlApi(QObject):
             "_live_leaderboard_controller",
             "_live_leaderboard_simple_controller",
             "_battle_controller",
+            "_gift_rush_group",
             "_stream_goal_controller",
             "_social_rotator_controller",
             "_webcam_frame_controller",

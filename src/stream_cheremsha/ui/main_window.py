@@ -161,6 +161,11 @@ from stream_cheremsha.overlays.battle_overlay_config import (
 from stream_cheremsha.overlays.battle_royale_overlay_config import (
     load_battle_royale_overlay_config,
 )
+from stream_cheremsha.overlays.gift_rush_controller import GiftRushController
+from stream_cheremsha.overlays.gift_rush_config import (
+    gift_rush_overlay_config_defaults,
+    gift_rush_overlay_config_from_json_text,
+)
 from stream_cheremsha.overlays.chat_overlay import chat_message_to_patch
 from stream_cheremsha.overlays.community_world_controller import CommunityWorldController
 from stream_cheremsha.overlays.instance_groups import (
@@ -1241,6 +1246,26 @@ class MainWindow(FramelessWindow):
 
         self._battle_group = InstanceControllerGroup("battle", _make_battle_controller)
         self._battle_group.sync_instances(start=False)
+
+        def _make_gift_rush_controller(instance_id: str) -> GiftRushController:
+            return GiftRushController(
+                pubsub=self._overlay_server.pubsub(),
+                get_locale=lambda: self._locale,
+                instance=instance_id,
+                parent=self,
+                config_loader=_battle_cfg_loader(
+                    "gift_rush",
+                    instance_id,
+                    gift_rush_overlay_config_from_json_text,
+                    gift_rush_overlay_config_defaults,
+                ),
+            )
+
+        self._gift_rush_group = InstanceControllerGroup(
+            "gift_rush", _make_gift_rush_controller
+        )
+        self._gift_rush_group.sync_instances(start=False)
+
         self._social_rotator = SocialRotatorController(
             pubsub=self._overlay_server.pubsub(),
             get_locale=lambda: self._locale,
@@ -1597,6 +1622,7 @@ class MainWindow(FramelessWindow):
         self._widgets_qml_api.set_live_leaderboard_controller(self._live_leaderboard)
         self._widgets_qml_api.set_live_leaderboard_simple_controller(self._live_leaderboard_simple)
         self._widgets_qml_api.set_battle_controller(self._battle_group)
+        self._widgets_qml_api.set_gift_rush_group(self._gift_rush_group)
         self._widgets_qml_api.set_social_rotator_controller(self._social_rotator)
         self._widgets_qml_api.set_webcam_frame_controller(self._webcam_frame)
         self._widgets_qml_api.set_signal_system_controller(self._signal_system)
@@ -6992,6 +7018,10 @@ class MainWindow(FramelessWindow):
             self._battle_group.reset_for_new_stream()
         except Exception:
             pass
+        try:
+            self._gift_rush_group.reset_for_new_stream()
+        except Exception:
+            pass
         self._social_rotator.reset_for_new_stream()
         self._community_world.reset_session()
         loop = self._asyncio_loop
@@ -7446,6 +7476,20 @@ class MainWindow(FramelessWindow):
                     tiktok_coin_each=tiktok_coin_each,
                     sender_avatar_url=str(sender_avatar_url or ""),
                     sender_user_key=sender_user_key,
+                )
+            except Exception:
+                pass
+            try:
+                self._gift_rush_group.on_gift(
+                    sender=sender,
+                    gift_name=gift_name,
+                    gift_id=gift_id,
+                    count=count,
+                    tiktok_coin_each=tiktok_coin_each,
+                    icon_url=str(icon_url or ""),
+                    sender_avatar_url=str(sender_avatar_url or ""),
+                    sender_user_key=sender_user_key,
+                    platform=ChatPlatform.TIKTOK.value,
                 )
             except Exception:
                 pass
