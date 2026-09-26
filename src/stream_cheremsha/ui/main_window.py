@@ -2486,6 +2486,7 @@ class MainWindow(FramelessWindow):
             self._live_leaderboard,
             self._live_leaderboard_simple,
             self._battle_group,
+            self._gift_rush_group,
             self._social_rotator,
             self._community_world,
             self._webcam_frame,
@@ -6540,6 +6541,9 @@ class MainWindow(FramelessWindow):
         battle_group = getattr(self, "_battle_group", None)
         if battle_group is not None:
             groups.append(battle_group)
+        gift_rush_group = getattr(self, "_gift_rush_group", None)
+        if gift_rush_group is not None:
+            groups.append(gift_rush_group)
         for group in groups:
             try:
                 group.sync_instances()
