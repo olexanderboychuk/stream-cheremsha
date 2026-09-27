@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.23.7] - 2026-09-27
+
+### Added
+
+- Gift Rush: opt-in sound effects (`sound_enabled`, off by default) played through a small QMediaPlayer pool so overlapping SFX do not hijack TTS audio or race during backend construction.
+- Gift Rush: live preview patch — config saves now apply to the running overlay preview in real time via pubsub.
+
+### Removed
+
+- Gift Rush: ribbon effects removed from the burst effect set.
+
 ## [0.23.6] - 2026-09-26
 
 ### Added
