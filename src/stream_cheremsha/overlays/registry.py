@@ -21,6 +21,7 @@ from stream_cheremsha.overlays.online_overlay import OnlineOverlayType
 from stream_cheremsha.overlays.signal_system_overlay import SignalSystemOverlayType
 from stream_cheremsha.overlays.social_rotator_overlay import SocialRotatorOverlayType
 from stream_cheremsha.overlays.stream_goal_overlay import StreamGoalOverlayType
+from stream_cheremsha.overlays.stream_info_overlay import StreamInfoOverlayType
 from stream_cheremsha.overlays.stream_pet_overlay import StreamPetOverlayType
 from stream_cheremsha.overlays.top_gifters_overlay import TopGiftersOverlayType
 from stream_cheremsha.overlays.top_likers_overlay import TopLikersOverlayType
@@ -150,6 +151,7 @@ class OverlayRegistry:
         self.register(LiveLeaderboardOverlayType())
         self.register(LiveLeaderboardSimpleOverlayType())
         self.register(SocialRotatorOverlayType())
+        self.register(StreamInfoOverlayType())
         self.register(CommunityWorldOverlayType())
         self.register(ActionsOverlayType())
         self.register(WebcamFrameOverlayType())
