@@ -659,6 +659,10 @@ Item {
 
         if (typeId === "chat") {
             general = [
+                c("Twitch", "platform_twitch_enabled", "toggle", true),
+                c("YouTube", "platform_youtube_enabled", "toggle", true),
+                c("TikTok", "platform_tiktok_enabled", "toggle", true),
+                c("Kick", "platform_kick_enabled", "toggle", true),
                 c("Maximum messages", "max_items", "number", 12, {minimum: 1, maximum: 200}),
                 c("Font family", "font_family", "text", "Segoe UI"),
                 c("Font size", "font_size_px", "number", 18, {minimum: 8, maximum: 96}),
@@ -2000,6 +2004,10 @@ Item {
         // Platform text labels are deprecated in UI (icons cover it).
         if (obj.show_platform === undefined) obj.show_platform = false;
         if (obj.show_platform_icon === undefined) obj.show_platform_icon = true;
+        if (obj.platform_twitch_enabled === undefined) obj.platform_twitch_enabled = true;
+        if (obj.platform_youtube_enabled === undefined) obj.platform_youtube_enabled = true;
+        if (obj.platform_tiktok_enabled === undefined) obj.platform_tiktok_enabled = true;
+        if (obj.platform_kick_enabled === undefined) obj.platform_kick_enabled = true;
         if (obj.fade_seconds === undefined) obj.fade_seconds = 0;
         if (obj.widget_bg_enabled === undefined) obj.widget_bg_enabled = false;
         if (!obj.widget_bg_rgba) obj.widget_bg_rgba = "rgba(10,12,18,0.45)";

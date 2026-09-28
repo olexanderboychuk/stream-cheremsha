@@ -30,6 +30,10 @@ class ChatOverlayConfig:
     widget_bg_padding_px: int
     show_platform: bool
     show_platform_icon: bool
+    platform_twitch_enabled: bool
+    platform_youtube_enabled: bool
+    platform_tiktok_enabled: bool
+    platform_kick_enabled: bool
     bubble_bg_enabled: bool
     bubble_bg_rgba: str
     bubble_radius_px: int
@@ -59,6 +63,10 @@ def chat_config_defaults() -> ChatOverlayConfig:
         widget_bg_padding_px=10,
         show_platform=True,
         show_platform_icon=True,
+        platform_twitch_enabled=True,
+        platform_youtube_enabled=True,
+        platform_tiktok_enabled=True,
+        platform_kick_enabled=True,
         bubble_bg_enabled=True,
         bubble_bg_rgba="rgba(10,12,18,0.55)",
         bubble_radius_px=10,
@@ -102,6 +110,10 @@ def chat_config_to_json_text(cfg: ChatOverlayConfig) -> str:
         "widget_bg_padding_px": int(cfg.widget_bg_padding_px),
         "show_platform": bool(cfg.show_platform),
         "show_platform_icon": bool(cfg.show_platform_icon),
+        "platform_twitch_enabled": bool(cfg.platform_twitch_enabled),
+        "platform_youtube_enabled": bool(cfg.platform_youtube_enabled),
+        "platform_tiktok_enabled": bool(cfg.platform_tiktok_enabled),
+        "platform_kick_enabled": bool(cfg.platform_kick_enabled),
         "bubble_bg_enabled": bool(cfg.bubble_bg_enabled),
         "bubble_bg_rgba": str(cfg.bubble_bg_rgba),
         "bubble_radius_px": int(cfg.bubble_radius_px),
@@ -153,6 +165,10 @@ def chat_config_from_json_text(text: str) -> ChatOverlayConfig:
     widget_bg_padding_px = min(48, widget_bg_padding_px)
     show_platform = bool(raw.get("show_platform", d.show_platform))
     show_platform_icon = bool(raw.get("show_platform_icon", d.show_platform_icon))
+    platform_twitch_enabled = bool(raw.get("platform_twitch_enabled", d.platform_twitch_enabled))
+    platform_youtube_enabled = bool(raw.get("platform_youtube_enabled", d.platform_youtube_enabled))
+    platform_tiktok_enabled = bool(raw.get("platform_tiktok_enabled", d.platform_tiktok_enabled))
+    platform_kick_enabled = bool(raw.get("platform_kick_enabled", d.platform_kick_enabled))
     bubble_bg_enabled = bool(raw.get("bubble_bg_enabled", d.bubble_bg_enabled))
     bubble_bg_rgba = str(raw.get("bubble_bg_rgba") or d.bubble_bg_rgba)
     bubble_radius_px = max(0, _ensure_int(raw.get("bubble_radius_px"), default=d.bubble_radius_px))
@@ -176,6 +192,10 @@ def chat_config_from_json_text(text: str) -> ChatOverlayConfig:
         widget_bg_padding_px=widget_bg_padding_px,
         show_platform=show_platform,
         show_platform_icon=show_platform_icon,
+        platform_twitch_enabled=platform_twitch_enabled,
+        platform_youtube_enabled=platform_youtube_enabled,
+        platform_tiktok_enabled=platform_tiktok_enabled,
+        platform_kick_enabled=platform_kick_enabled,
         bubble_bg_enabled=bubble_bg_enabled,
         bubble_bg_rgba=bubble_bg_rgba,
         bubble_radius_px=bubble_radius_px,

@@ -208,6 +208,14 @@ class ChatOverlayType:
           return autoUserColor(it.author);
         }}
 
+        function platformAllowed(platform) {{
+          const p = String(platform || '').toLowerCase();
+          if (!cfg) return true;
+          const key = 'platform_' + p + '_enabled';
+          if (Object.prototype.hasOwnProperty.call(cfg, key)) return !!cfg[key];
+          return true;
+        }}
+
         function platformIconEl(platform) {{
           const p = String(platform || '').toLowerCase();
           const img = document.createElement('img');
@@ -363,6 +371,7 @@ class ChatOverlayType:
             if (obj.op === 'initial_state') {{
               cfg = (obj.state && obj.state.config) ? obj.state.config : null;
               items = (obj.state && obj.state.items) ? obj.state.items : [];
+              items = items.filter(x => platformAllowed(x.platform));
               applyCfg();
               render();
               return;
@@ -371,6 +380,7 @@ class ChatOverlayType:
               const p = obj.patch || {{}};
               if (p.append) {{
                 const it = Object.assign({{}}, p.append);
+                if (!platformAllowed(it.platform)) return;
                 it.id = (++_id);
                 items.push(it);
                 // Prevent unbounded growth: keep a small buffer beyond visible window.
@@ -390,6 +400,7 @@ class ChatOverlayType:
               }}
               if (p.config) {{
                 cfg = p.config;
+                items = items.filter(x => platformAllowed(x.platform));
                 applyCfg();
                 render();
               }}

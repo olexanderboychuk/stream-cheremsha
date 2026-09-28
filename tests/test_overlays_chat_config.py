@@ -78,3 +78,45 @@ def test_chat_config_future_schema_preserves_known_fields() -> None:
     out = chat_config_from_json_text(json.dumps(obj))
     assert out.max_items == 3
     assert out.show_platform_icon is False
+
+
+def test_chat_config_platform_filters_default_enabled() -> None:
+    cfg = chat_config_defaults()
+    assert cfg.platform_twitch_enabled is True
+    assert cfg.platform_youtube_enabled is True
+    assert cfg.platform_tiktok_enabled is True
+    assert cfg.platform_kick_enabled is True
+
+
+def test_chat_config_json_roundtrip_platform_filters() -> None:
+    cfg = chat_config_defaults().replace(
+        platform_twitch_enabled=False,
+        platform_kick_enabled=False,
+    )
+    txt = chat_config_to_json_text(cfg)
+    obj = json.loads(txt)
+    assert obj["platform_twitch_enabled"] is False
+    assert obj["platform_youtube_enabled"] is True
+    assert obj["platform_tiktok_enabled"] is True
+    assert obj["platform_kick_enabled"] is False
+    out = chat_config_from_json_text(txt)
+    assert out.platform_twitch_enabled is False
+    assert out.platform_youtube_enabled is True
+    assert out.platform_tiktok_enabled is True
+    assert out.platform_kick_enabled is False
+
+
+def test_chat_config_missing_platform_keys_default_to_true() -> None:
+    obj = json.loads(chat_config_to_json_text(chat_config_defaults()))
+    for key in (
+        "platform_twitch_enabled",
+        "platform_youtube_enabled",
+        "platform_tiktok_enabled",
+        "platform_kick_enabled",
+    ):
+        del obj[key]
+    out = chat_config_from_json_text(json.dumps(obj))
+    assert out.platform_twitch_enabled is True
+    assert out.platform_youtube_enabled is True
+    assert out.platform_tiktok_enabled is True
+    assert out.platform_kick_enabled is True
