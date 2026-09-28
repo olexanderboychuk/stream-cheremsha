@@ -318,7 +318,7 @@ def test_round_zero_zero_is_draw_next_round() -> None:
 
 
 def test_consecutive_draws_advance_round() -> None:
-    """Three 0-0 rounds in a row must produce round 4, still no wins."""
+    """Two 0-0 rounds in BO3 must produce round 3, still no wins."""
     eng = _eng(combo_enabled=False, countdown_s=1, round_duration_s=60)
     t0 = 1000.0
     _start_active(eng, t0)
@@ -331,12 +331,79 @@ def test_consecutive_draws_advance_round() -> None:
         assert rd is not None
         eng.tick(now=rd + 0.1)  # 0-0 round resolves
 
+    for _ in range(2):
+        _play_zero_round(eng)
+    s = eng.snapshot()
+    assert s["round"] == 3
+    assert s["status"] == "countdown"
+    assert s["round_wins"] == {"left": 0, "right": 0}
+
+
+def test_bo3_all_draws_finishes_as_draw() -> None:
+    """BO3 with three 0-0 rounds must end as a draw — no endless round 4."""
+    eng = _eng(combo_enabled=False, countdown_s=1, round_duration_s=60)
+    t0 = 1000.0
+    _start_active(eng, t0)
+
+    def _play_zero_round(eng: BattleEngine) -> None:
+        st = eng._state
+        if st.status.value == "countdown" and st.countdown_deadline is not None:
+            eng.tick(now=st.countdown_deadline + 0.5)  # -> ACTIVE
+        rd = eng._state.round_deadline
+        assert rd is not None
+        eng.tick(now=rd + 0.1)
+
     for _ in range(3):
         _play_zero_round(eng)
     s = eng.snapshot()
-    assert s["round"] == 4
-    assert s["status"] == "countdown"
+    assert s["status"] == "finished"
+    assert s["winner"] is None
     assert s["round_wins"] == {"left": 0, "right": 0}
+    assert s["round"] <= 3  # round number never advances past best_of
+    fin = [e for e in s["events"] if e["type"] == "battle_finished"]
+    assert fin and fin[-1]["payload"]["draw"] is True
+
+
+def test_mixed_draw_exhausts_series_as_draw() -> None:
+    """BO3: left wins R1, draw R2, right wins R3 -> 1-1 after best_of -> draw."""
+    eng = _eng(combo_enabled=False, countdown_s=1, round_duration_s=60)
+    t0 = 1000.0
+    _start_active(eng, t0)
+    # Round 1: left wins (50 > 10).
+    _play_round(eng, 50, 10)
+    assert eng.snapshot()["round_wins"] == {"left": 1, "right": 0}
+    # Round 2: draw (no gifts score).
+    st = eng._state
+    if st.status.value == "countdown" and st.countdown_deadline is not None:
+        eng.tick(now=st.countdown_deadline + 0.5)  # -> ACTIVE
+    rd = eng._state.round_deadline
+    assert rd is not None
+    eng.tick(now=rd + 0.1)
+    s = eng.snapshot()
+    assert s["round"] == 3 and s["status"] == "countdown"
+    # Round 3: right wins -> 1-1, series exhausted -> draw finish.
+    _play_round(eng, 10, 50)
+    s = eng.snapshot()
+    assert s["status"] == "finished"
+    assert s["winner"] is None
+    assert s["round_wins"] == {"left": 1, "right": 1}
+    fin = [e for e in s["events"] if e["type"] == "battle_finished"]
+    assert fin and fin[-1]["payload"]["draw"] is True
+
+
+def test_best_of_1_draw_finishes() -> None:
+    """BO1 with a 0-0 round must finish as a draw, not loop."""
+    eng = _eng(combo_enabled=False, countdown_s=1, round_duration_s=60, best_of=1)
+    t0 = 1000.0
+    _start_active(eng, t0)
+    rd = eng._state.round_deadline
+    assert rd is not None
+    eng.tick(now=rd + 0.1)  # 0-0 round resolves
+    s = eng.snapshot()
+    assert s["status"] == "finished"
+    assert s["winner"] is None
+    fin = [e for e in s["events"] if e["type"] == "battle_finished"]
+    assert fin and fin[-1]["payload"]["draw"] is True
 
 
 def test_exact_tie_positive_goes_left() -> None:

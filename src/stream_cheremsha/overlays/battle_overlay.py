@@ -1478,8 +1478,9 @@ class BattleOverlayType:
             // pill hidden here to avoid duplicating the same text twice.
             prompt.style.display = 'none';
           }} else if (state.status === 'finished') {{
-            const nm = (state.winner && (state.winner.name || state.winner.team_id)) || '';
-            if (msgEl) msgEl.textContent = nm ? (loc.winner + ' — ' + nm) : loc.winner;
+            const nm = state.winner && (state.winner.name || state.winner.team_id);
+            // No winner (drawn series) -> show the draw line, not "WINNER".
+            if (msgEl) msgEl.textContent = nm ? (loc.winner + ' — ' + nm) : loc.draw;
           }} else if (state.flags && state.flags.final_push) {{
             if (msgEl) msgEl.textContent = loc.finalPushCta;
             BVC.ctaRotateTimer = setTimeout(rotateCTA, 5000);
@@ -1702,11 +1703,14 @@ class BattleOverlayType:
           const need = Math.floor((state.best_of || 3) / 2) + 1;
           // Highlight the current round only while a battle is actually
           // running — in idle all dots stay neutral (nothing won yet).
+          // Rounds beyond `need` (deciders, e.g. BO3 round 3 after draws or
+          // 1-1) clamp to the last slot: both sides contest the final win there.
+          const cur = Math.min(state.round || 1, need) - 1;
           const inBattle = status === 'countdown' || status === 'active';
           for (let i = 0; i < need; i++) {{
             const a = document.createElement('i');
             if (inBattle) {{
-              if (i === state.round - 1) a.className = 'active';
+              if (i === cur) a.className = 'active';
               else if ((wins.left || 0) > i) a.className = 'won-left';
             }} else if (status === 'finished' && (wins.left || 0) > i) {{
               a.className = 'won-left';
@@ -1714,7 +1718,7 @@ class BattleOverlayType:
             dots.appendChild(a);
             const b = document.createElement('i');
             if (inBattle) {{
-              if (i === state.round - 1) b.className = 'active';
+              if (i === cur) b.className = 'active';
               else if ((wins.right || 0) > i) b.className = 'won-right';
             }} else if (status === 'finished' && (wins.right || 0) > i) {{
               b.className = 'won-right';

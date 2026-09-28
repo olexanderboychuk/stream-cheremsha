@@ -500,6 +500,33 @@ class BattleEngine:
             self._close_fired = False
         return out
 
+    def _finish_draw(self, t: float, a: int, b: int) -> list[BattleEvent]:
+        """End the battle as a draw: series exhausted without a majority winner."""
+        st = self._state
+        cfg = self._cfg()
+        try:
+            victory_s = max(3, min(15, int(getattr(cfg, "victory_display_s", 8))))
+        except (TypeError, ValueError):
+            victory_s = 8
+        st.status = BattleStatus.FINISHED
+        st.winner_team_id = None
+        st.victory_deadline = t + victory_s
+        st.remaining_seconds = 0
+        fin = BattleEvent(
+            type="battle_finished",
+            team_id=None,
+            payload={
+                "winner": None,
+                "draw": True,
+                "left": a,
+                "right": b,
+                "round_wins": {t2.id: int(t2.round_wins) for t2 in st.teams},
+            },
+            at=t,
+        )
+        st.push_event(fin)
+        return [fin]
+
     def _resolve_round(self, t: float) -> list[BattleEvent]:
         st = self._state
         cfg = self._cfg()
@@ -526,6 +553,11 @@ class BattleEngine:
             )
             st.push_event(ev)
             out.append(ev)
+            if st.round >= best_of:
+                # Series exhausted without a majority -> draw finish. Without
+                # this cap, endless 0-0 rounds (spectator gifts score nothing)
+                # would loop countdown/active forever.
+                return out + self._finish_draw(t, a, b)
             # A drawn round consumes itself: replaying the same round would
             # freeze the live widget (spectator gifts score nothing, so rounds
             # end 0-0) in an endless round-1 countdown/active loop.
@@ -584,6 +616,9 @@ class BattleEngine:
             st.push_event(fin)
             out.append(fin)
             return out
+        if st.round >= best_of:
+            # e.g. BO3 with a drawn round: 1-1 after three rounds, no majority.
+            return out + self._finish_draw(t, a, b)
         # Next round.
         st.round += 1
         st.status = BattleStatus.COUNTDOWN

@@ -122,3 +122,20 @@ def test_round_dots_neutral_in_idle() -> None:
     neutral so the widget doesn't look like rounds were already won."""
     _, script = _render()
     assert "inBattle" in script
+
+
+def test_round_dots_clamp_current_round_to_last_slot() -> None:
+    """Decider rounds (state.round beyond needed wins, e.g. BO3 round 3 after
+    draws or 1-1) must still highlight a current dot — clamp to the last slot
+    instead of going out of range and leaving all dots neutral."""
+    _, script = _render()
+    assert "const cur = Math.min(state.round || 1, need) - 1;" in script
+    assert "if (i === cur) a.className = 'active';" in script
+    assert "i === state.round - 1" not in script
+
+
+def test_finished_without_winner_shows_draw_line() -> None:
+    """A drawn series (finished, no winner) must show the draw line in the
+    prompt pill instead of a bare 'WINNER' label."""
+    _, script = _render()
+    assert "nm ? (loc.winner + ' — ' + nm) : loc.draw;" in script

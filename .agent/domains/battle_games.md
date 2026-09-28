@@ -6,6 +6,7 @@ Manages interactive real-time stream mini-games driven by viewer interactions (T
 ## Important Concepts
 - **Deterministic Battle Engine (`src/stream_cheremsha/battle/engine.py`)**: Pure Python engine without Qt or I/O dependencies. Tracks rounds (best-of-N), auto-locks top gifters as participants, calculates points, combo multipliers, comebacks, and close-finish states with an injectable clock.
 - **Drawn rounds**: A 0–0 round is a wash — `st.round` advances to the next round (see `BattleEngine._resolve_round`). Replay of the same round was a freeze in the live UI (spectator gifts score nothing by design, so rounds can end 0–0 while the overlay is in play).
+- **Series cap**: Total rounds are capped at `best_of`. If a round resolves with no team at majority wins and `st.round >= best_of` (e.g. endless 0–0 rounds, or BO3 ending 1–1 after a drawn round), the battle finishes as a draw via `BattleEngine._finish_draw`: status FINISHED, `winner_team_id=None`, `battle_finished` event with `payload.draw=True`. The overlay hides the winner screen when `state.winner` is null.
 - **Battle Royale (`src/stream_cheremsha/battle_royale/`)**: Singleton HP-duel system where viewer gifts heal or damage competing fighters.
 - **Overlay State Sync**: Game engines emit normalized event/state snapshots that controllers broadcast over WebSocket to overlay browser sources.
 - **Participant Locking**: Auto-locks the first qualifying viewers into fighter slots; spectator gifts during active rounds do not alter fighter scores.
