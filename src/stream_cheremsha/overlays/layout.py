@@ -33,6 +33,7 @@ SUPPORTED_LAYOUT_WIDGETS = (
     "live_leaderboard",
     "live_leaderboard_simple",
     "social_rotator",
+    "stream_info",
     "webcam_frame",
     "music",
     "signal_system",

@@ -123,6 +123,7 @@ Item {
         {type: "live_leaderboard", label: "Live Leaderboard", iconName: "web_trophy.svg"},
         {type: "live_leaderboard_simple", label: "Live Leaderboard Simple", iconName: "web_trophy.svg"},
         {type: "social_rotator", label: "Social Rotator", iconName: "web_refresh.svg"},
+        {type: "stream_info", label: "Stream Info", iconName: "web_signal.svg"},
         {type: "webcam_frame", label: "Webcam Frame", iconName: "web_camera.svg"},
         {type: "signal_system", label: "Signal System", iconName: "web_signal.svg"},
         {type: "music", label: "Музика", iconName: "web_music.svg"}

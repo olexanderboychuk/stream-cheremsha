@@ -3165,6 +3165,11 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     },
     "widgets.type.social_rotator.name": {"uk": "Social Rotator", "en": "Social Rotator"},
     "widgets.type.social_rotator.desc": {"uk": "Ротація соцмереж.", "en": "Social media rotation."},
+    "widgets.type.stream_info.name": {"uk": "Stream Info", "en": "Stream Info"},
+    "widgets.type.stream_info.desc": {
+        "uk": "Час стріму, топ донатер, онлайн.",
+        "en": "Stream time, top donator, online.",
+    },
     "widgets.type.webcam_frame.name": {"uk": "Webcam Frame", "en": "Webcam Frame"},
     "widgets.type.webcam_frame.desc": {
         "uk": "Рамка камери (CAM/LINK).",
@@ -3302,6 +3307,12 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "social_rotator.stat.stream_time": {"uk": "ЧАС СТРІМУ", "en": "STREAM TIME"},
     "social_rotator.stat.top_donator": {"uk": "ТОП ДОНАТЕР", "en": "TOP DONATOR"},
     "social_rotator.stat.online": {"uk": "ОНЛАЙН", "en": "ONLINE"},
+    # Stream Info overlay (stats strip split out of Social Rotator)
+    "stream_info.stat.latest_follower": {"uk": "ОСТАННІЙ ФОЛОВЕР", "en": "LATEST FOLLOWER"},
+    "stream_info.stat.latest_donation": {"uk": "ОСТАННІЙ ДОНАТ", "en": "LATEST DONATION"},
+    "stream_info.stat.stream_time": {"uk": "ЧАС СТРІМУ", "en": "STREAM TIME"},
+    "stream_info.stat.top_donator": {"uk": "ТОП ДОНАТЕР", "en": "TOP DONATOR"},
+    "stream_info.stat.online": {"uk": "ОНЛАЙН", "en": "ONLINE"},
     "social_rotator.empty": {"uk": "ОЧІКУЄМО ПЛАТФОРМИ", "en": "AWAITING PLATFORMS"},
     "social_rotator.ui.platforms": {"uk": "ПЛАТФОРМИ", "en": "PLATFORMS"},
     "social_rotator.ui.url_override": {"uk": "URL (опційно)", "en": "URL override"},

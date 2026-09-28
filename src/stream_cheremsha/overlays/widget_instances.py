@@ -158,6 +158,14 @@ WIDGET_TYPES: dict[str, dict[str, Any]] = {
         "accent": "#38bdf8",
         "platforms": ["all"],
     },
+    "stream_info": {
+        "name": "Stream Info",
+        "description": "Час стріму, топ донатер, онлайн.",
+        "icon": "📊",
+        "icon_svg": "icons/web_signal.svg",
+        "accent": "#2dd4bf",
+        "platforms": ["all"],
+    },
     "webcam_frame": {
         "name": "Webcam Frame",
         "description": "Рамка камери (CAM/LINK).",
@@ -200,6 +208,7 @@ _DEFAULTS_LOADERS: dict[str, str] = {
     "live_leaderboard": "stream_cheremsha.overlays.live_leaderboard_overlay_config:live_leaderboard_overlay_config_defaults:live_leaderboard_overlay_config_to_json_text",
     "live_leaderboard_simple": "stream_cheremsha.overlays.live_leaderboard_simple_config:live_leaderboard_simple_config_defaults:live_leaderboard_simple_config_to_json_text",
     "social_rotator": "stream_cheremsha.overlays.social_rotator_overlay_config:social_rotator_overlay_config_defaults:social_rotator_overlay_config_to_json_text",
+    "stream_info": "stream_cheremsha.overlays.stream_info_overlay_config:stream_info_overlay_config_defaults:stream_info_overlay_config_to_json_text",
     "webcam_frame": "stream_cheremsha.overlays.webcam_frame_overlay_config:webcam_frame_overlay_config_defaults:webcam_frame_overlay_config_to_json_text",
     "signal_system": "stream_cheremsha.overlays.signal_system_overlay_config:signal_system_overlay_config_defaults:signal_system_overlay_config_to_json_text",
 }
