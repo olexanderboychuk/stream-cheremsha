@@ -182,6 +182,7 @@ from stream_cheremsha.overlays.server import OverlayServer
 from stream_cheremsha.overlays.signal_system_controller import SignalSystemController
 from stream_cheremsha.overlays.social_rotator_controller import SocialRotatorController
 from stream_cheremsha.overlays.stream_goal_controller import StreamGoalController
+from stream_cheremsha.overlays.stream_info_controller import StreamInfoController
 from stream_cheremsha.overlays.stream_pet_controller import StreamPetController
 from stream_cheremsha.overlays.top_gifters_overlay_config import load_top_gifters_overlay_config
 from stream_cheremsha.overlays.top_gifters_session import TikTokSessionTopGifters
@@ -1273,6 +1274,12 @@ class MainWindow(FramelessWindow):
             instance="main",
             parent=self,
         )
+        self._stream_info = StreamInfoController(
+            pubsub=self._overlay_server.pubsub(),
+            get_locale=lambda: self._locale,
+            instance="main",
+            parent=self,
+        )
         self._community_world = CommunityWorldController(
             pubsub=self._overlay_server.pubsub(),
             get_locale=lambda: self._locale,
@@ -1625,6 +1632,7 @@ class MainWindow(FramelessWindow):
         self._widgets_qml_api.set_battle_controller(self._battle_group)
         self._widgets_qml_api.set_gift_rush_group(self._gift_rush_group)
         self._widgets_qml_api.set_social_rotator_controller(self._social_rotator)
+        self._widgets_qml_api.set_stream_info_controller(self._stream_info)
         self._widgets_qml_api.set_webcam_frame_controller(self._webcam_frame)
         self._widgets_qml_api.set_signal_system_controller(self._signal_system)
         # Keep per-instance engines in sync with user-created widget instances.
@@ -2489,6 +2497,7 @@ class MainWindow(FramelessWindow):
             self._battle_group,
             self._gift_rush_group,
             self._social_rotator,
+            self._stream_info,
             self._community_world,
             self._webcam_frame,
             self._signal_system,
@@ -5968,6 +5977,7 @@ class MainWindow(FramelessWindow):
             if self._tiktok_enabled:
                 await self._start_tiktok()
                 self._social_rotator.on_stream_live(True)
+                self._stream_info.on_stream_live(True)
                 self._schedule_king_overlay_publish()
                 if self._widgets_qml_api is not None:
                     self._widgets_qml_api.kingOfLiveOverlayUrlChanged.emit()
@@ -5976,6 +5986,8 @@ class MainWindow(FramelessWindow):
                 self._tiktok_analytics.resetSession()
                 self._social_rotator.on_stream_live(False)
                 self._social_rotator.on_viewers("tiktok", 0)
+                self._stream_info.on_stream_live(False)
+                self._stream_info.on_viewers("tiktok", 0)
                 self._schedule_king_overlay_publish()
                 if self._widgets_qml_api is not None:
                     self._widgets_qml_api.kingOfLiveOverlayUrlChanged.emit()
@@ -6256,16 +6268,19 @@ class MainWindow(FramelessWindow):
         self._stream_pet.on_follow(user=user)
         self._stream_goal.on_follow(user=user, stable_key=stable_key)
         self._social_rotator.on_follow(user=user, stable_key=stable_key)
+        self._stream_info.on_follow(user=user, stable_key=stable_key)
         self._community_world.on_follow(user=user, user_key=stable_key)
         self._signal_system.on_follow(user=user, stable_key=stable_key, unique_id=unique_id)
 
     def _on_tiktok_room_viewers_current(self, n: int) -> None:
         self._tiktok_analytics.enqueue_viewers_current(int(n))
         self._social_rotator.on_viewers("tiktok", int(n))
+        self._stream_info.on_viewers("tiktok", int(n))
 
     def _on_youtube_viewers_current(self, n: int) -> None:
         self._youtube_analytics.enqueue_viewers(int(n))
         self._social_rotator.on_viewers("youtube", int(n))
+        self._stream_info.on_viewers("youtube", int(n))
 
     def _on_external_donation(
         self,
@@ -6278,6 +6293,7 @@ class MainWindow(FramelessWindow):
         if self._closing:
             return
         self._social_rotator.on_donation(name=name, amount=amount, source=source)
+        self._stream_info.on_donation(name=name, amount=amount, source=source)
         # Route new Donatik / Donatello donations into the Actions engine
         # (rules stored under tiktok/app, trigger platform donatik/donatello/all).
         try:
@@ -7028,6 +7044,7 @@ class MainWindow(FramelessWindow):
         except Exception:
             pass
         self._social_rotator.reset_for_new_stream()
+        self._stream_info.reset_for_new_stream()
         self._community_world.reset_session()
         loop = self._asyncio_loop
         if loop is not None:
@@ -7518,6 +7535,13 @@ class MainWindow(FramelessWindow):
                 sender_avatar_url=str(sender_avatar_url or ""),
                 sender_user_key=sender_user_key,
             )
+            self._stream_info.on_tiktok_gift(
+                sender=sender,
+                count=count,
+                tiktok_coin_each=tiktok_coin_each,
+                sender_avatar_url=str(sender_avatar_url or ""),
+                sender_user_key=sender_user_key,
+            )
             self._community_world.on_gift(
                 user=sender,
                 user_key=sender_user_key,
@@ -7937,6 +7961,7 @@ class MainWindow(FramelessWindow):
                 if v is not None:
                     self._twitch_analytics.enqueue_viewers(v)
                     self._social_rotator.on_viewers("twitch", int(v))
+                    self._stream_info.on_viewers("twitch", int(v))
                 backoff = 10.0
             except asyncio.CancelledError:
                 raise
@@ -8124,6 +8149,7 @@ class MainWindow(FramelessWindow):
                 if count is not None:
                     self._kick_analytics.enqueue_viewers(max(0, count))
                     self._social_rotator.on_viewers("kick", max(0, int(count)))
+                    self._stream_info.on_viewers("kick", max(0, int(count)))
                 backoff = 30.0
             except (ValueError, httpx.HTTPError, OSError, RuntimeError) as exc:
                 logger.debug("Kick viewers poll error: %s", exc)

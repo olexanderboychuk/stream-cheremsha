@@ -244,6 +244,7 @@ class WidgetsQmlApi(QObject):
         self._live_leaderboard_controller: Any | None = None
         self._live_leaderboard_simple_controller: Any | None = None
         self._social_rotator_controller: Any | None = None
+        self._stream_info_controller: Any | None = None
         self._webcam_frame_controller: Any | None = None
         self._signal_system_controller: Any | None = None
         self._system_font_families: list[str] | None = None
@@ -270,6 +271,9 @@ class WidgetsQmlApi(QObject):
 
     def set_social_rotator_controller(self, controller: Any) -> None:
         self._social_rotator_controller = controller
+
+    def set_stream_info_controller(self, controller: Any) -> None:
+        self._stream_info_controller = controller
 
     def set_webcam_frame_controller(self, controller: Any) -> None:
         self._webcam_frame_controller = controller
