@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.24.0] - 2026-09-29
+
+### Added
+
+- Stream Info overlay widget: new standalone widget type showing stream info, split out of the social rotator (`social_rotator` is now social-only), with editor, preview, and layout support.
+- Per-platform chat message filters in the Chat widget settings.
+- Battle Royale: DRAW banner and localized toast when a battle ends without a winner.
+
+### Changed
+
+- Battles end as a draw when the series is exhausted (no team has a majority after the configured best-of rounds).
+
 ## [0.23.7] - 2026-09-27
 
 ### Added
