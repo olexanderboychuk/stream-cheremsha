@@ -230,6 +230,12 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "ui.big_picture_analytics": {"uk": "Аналітика", "en": "Analytics"},
     "ui.nav_music": {"uk": "Музика", "en": "Music"},
     "ui.nav_music_hint": {"uk": "Черга музики", "en": "Music queue"},
+    "ui.nav_soundpad": {"uk": "Саундпад", "en": "Soundpad"},
+    "ui.nav_soundpad_hint": {
+        "uk": "Миттєві звуки та хоткеї",
+        "en": "Instant sounds and hotkeys",
+    },
+    "soundpad.title": {"uk": "Soundpad", "en": "Soundpad"},
     # App chrome (QML + shell)
     "ui.app_header_title": {"uk": "Stream Cheremsha", "en": "Stream Cheremsha"},
     "ui.twitch_head": {"uk": "Twitch", "en": "Twitch"},
@@ -3577,6 +3583,7 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "splash.donations": {"uk": "Завантаження донатів…", "en": "Loading donations…"},
     "splash.docks": {"uk": "Завантаження доків…", "en": "Loading docks…"},
     "splash.settings": {"uk": "Завантаження налаштувань…", "en": "Loading settings…"},
+    "splash.soundpad": {"uk": "Завантаження саундпаду…", "en": "Loading soundpad…"},
     "splash.overlay": {"uk": "Запуск оверлей-сервера…", "en": "Starting overlay server…"},
 }
 
