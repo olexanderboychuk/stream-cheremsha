@@ -1070,14 +1070,6 @@ class WidgetsQmlApi(QObject):
         patch = {
             "config": json.loads(social_rotator_overlay_config_to_json_text(cfg)),
             "locale": _ui_locale(),
-            "stats": {
-                "latest_follower": {"name": "kittencat_42"},
-                "latest_donation": {"name": "Dimon4ik", "value": 250, "source": "donatik"},
-                "top_donator": {"name": "Diamond_ua", "value": 1500},
-                "stream_started_at_ms": int(time.time() * 1000) - 95 * 60 * 1000,
-                "viewers_by_platform": {"tiktok": 100, "twitch": 40, "kick": 12},
-                "viewers_total": 152,
-            },
         }
         self._publish_patch(topic=topic, patch=patch)
 

@@ -5976,7 +5976,6 @@ class MainWindow(FramelessWindow):
             self._tiktok_enabled = bool(enabled)
             if self._tiktok_enabled:
                 await self._start_tiktok()
-                self._social_rotator.on_stream_live(True)
                 self._stream_info.on_stream_live(True)
                 self._schedule_king_overlay_publish()
                 if self._widgets_qml_api is not None:
@@ -5984,8 +5983,6 @@ class MainWindow(FramelessWindow):
             else:
                 await self._tiktok.stop()
                 self._tiktok_analytics.resetSession()
-                self._social_rotator.on_stream_live(False)
-                self._social_rotator.on_viewers("tiktok", 0)
                 self._stream_info.on_stream_live(False)
                 self._stream_info.on_viewers("tiktok", 0)
                 self._schedule_king_overlay_publish()
@@ -6267,19 +6264,16 @@ class MainWindow(FramelessWindow):
         self._publish_activity_item(it)
         self._stream_pet.on_follow(user=user)
         self._stream_goal.on_follow(user=user, stable_key=stable_key)
-        self._social_rotator.on_follow(user=user, stable_key=stable_key)
         self._stream_info.on_follow(user=user, stable_key=stable_key)
         self._community_world.on_follow(user=user, user_key=stable_key)
         self._signal_system.on_follow(user=user, stable_key=stable_key, unique_id=unique_id)
 
     def _on_tiktok_room_viewers_current(self, n: int) -> None:
         self._tiktok_analytics.enqueue_viewers_current(int(n))
-        self._social_rotator.on_viewers("tiktok", int(n))
         self._stream_info.on_viewers("tiktok", int(n))
 
     def _on_youtube_viewers_current(self, n: int) -> None:
         self._youtube_analytics.enqueue_viewers(int(n))
-        self._social_rotator.on_viewers("youtube", int(n))
         self._stream_info.on_viewers("youtube", int(n))
 
     def _on_external_donation(
@@ -6292,7 +6286,6 @@ class MainWindow(FramelessWindow):
     ) -> None:
         if self._closing:
             return
-        self._social_rotator.on_donation(name=name, amount=amount, source=source)
         self._stream_info.on_donation(name=name, amount=amount, source=source)
         # Route new Donatik / Donatello donations into the Actions engine
         # (rules stored under tiktok/app, trigger platform donatik/donatello/all).
@@ -7528,13 +7521,6 @@ class MainWindow(FramelessWindow):
                 )
             except Exception:
                 pass
-            self._social_rotator.on_tiktok_gift(
-                sender=sender,
-                count=count,
-                tiktok_coin_each=tiktok_coin_each,
-                sender_avatar_url=str(sender_avatar_url or ""),
-                sender_user_key=sender_user_key,
-            )
             self._stream_info.on_tiktok_gift(
                 sender=sender,
                 count=count,
@@ -7960,7 +7946,6 @@ class MainWindow(FramelessWindow):
                 v = await helix.get_stream_viewers(broadcaster_id)
                 if v is not None:
                     self._twitch_analytics.enqueue_viewers(v)
-                    self._social_rotator.on_viewers("twitch", int(v))
                     self._stream_info.on_viewers("twitch", int(v))
                 backoff = 10.0
             except asyncio.CancelledError:
@@ -8148,7 +8133,6 @@ class MainWindow(FramelessWindow):
                     count = int(info.viewer_count)
                 if count is not None:
                     self._kick_analytics.enqueue_viewers(max(0, count))
-                    self._social_rotator.on_viewers("kick", max(0, int(count)))
                     self._stream_info.on_viewers("kick", max(0, int(count)))
                 backoff = 30.0
             except (ValueError, httpx.HTTPError, OSError, RuntimeError) as exc:

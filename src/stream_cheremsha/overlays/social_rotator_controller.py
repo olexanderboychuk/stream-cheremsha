@@ -19,7 +19,6 @@ from stream_cheremsha.overlays.social_rotator_rotation import (
     enabled_rotation_entries,
     entry_public_dict,
 )
-from stream_cheremsha.overlays.social_rotator_stats import SocialRotatorStatsSession
 
 _LOG = logging.getLogger(__name__)
 _PUBLISH_DEBOUNCE_MS = 200
@@ -41,7 +40,6 @@ class SocialRotatorController(QObject):
         self._instance = str(instance or "main").strip() or "main"
         self._publish_handle: asyncio.TimerHandle | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._stats = SocialRotatorStatsSession()
 
         cfg = load_social_rotator_overlay_config()
         entries = enabled_rotation_entries(parse_platforms(cfg))
@@ -72,11 +70,7 @@ class SocialRotatorController(QObject):
             self._publish_handle = None
 
     def reset_for_new_stream(self) -> None:
-        self._stats.reset()
-        # TikTok stream-start resets session stats; restart the elapsed timer here.
-        # (on_stream_live(True) alone is not enough — connect often fires after it and
-        # would clear the timestamp via this reset.)
-        self._stats.set_stream_started_at_ms(int(time.time() * 1000))
+        # Restart the rotation elapsed timer for a fresh stream.
         self._rotation.started_at_ms = int(time.time() * 1000)
         self.schedule_publish()
 
@@ -86,77 +80,6 @@ class SocialRotatorController(QObject):
 
     def initial_state(self) -> dict[str, Any]:
         return self._build_state()
-
-    def on_follow(
-        self,
-        user: str,
-        stable_key: str = "",
-        unique_id: str = "",
-    ) -> None:
-        _ = stable_key, unique_id
-        cfg = load_social_rotator_overlay_config()
-        if not cfg.enabled:
-            return
-        self._stats.on_follow(user)
-        self.schedule_publish()
-
-    def on_tiktok_gift(
-        self,
-        sender: str,
-        count: int,
-        tiktok_coin_each: int = 0,
-        sender_avatar_url: str = "",
-        sender_user_key: str = "",
-    ) -> None:
-        _ = sender_avatar_url, sender_user_key
-        cfg = load_social_rotator_overlay_config()
-        if not cfg.enabled:
-            return
-        try:
-            c = max(1, int(count))
-        except (TypeError, ValueError):
-            c = 1
-        try:
-            each = max(0, int(tiktok_coin_each or 0))
-        except (TypeError, ValueError):
-            each = 0
-        coins = float(c * each if each > 0 else c)
-        self._stats.on_donation(
-            name=sender,
-            amount=coins,
-            source="tiktok_gift",
-            coin_rate=float(cfg.tiktok_coin_to_value_rate),
-        )
-        self.schedule_publish()
-
-    def on_donation(self, name: str, amount: float, source: str) -> None:
-        cfg = load_social_rotator_overlay_config()
-        if not cfg.enabled:
-            return
-        self._stats.on_donation(
-            name=name,
-            amount=amount,
-            source=source,
-            coin_rate=float(cfg.tiktok_coin_to_value_rate),
-        )
-        self.schedule_publish()
-
-    def on_viewers(self, platform: str, count: int) -> None:
-        cfg = load_social_rotator_overlay_config()
-        if not cfg.enabled:
-            return
-        self._stats.set_viewers(platform, count)
-        self.schedule_publish()
-
-    def on_stream_live(self, started: bool) -> None:
-        cfg = load_social_rotator_overlay_config()
-        if not cfg.enabled:
-            return
-        if started:
-            self._stats.set_stream_started_at_ms(int(time.time() * 1000))
-        else:
-            self._stats.set_stream_started_at_ms(None)
-        self.schedule_publish()
 
     def schedule_publish(self) -> None:
         loop = self._loop
@@ -206,7 +129,6 @@ class SocialRotatorController(QObject):
             "platforms_enabled": [
                 entry_public_dict(e, order=i) for i, e in enumerate(enabled)
             ],
-            "stats": self._stats.to_public_dict(),
             "locale": str(self._get_locale() or "uk"),
         }
 

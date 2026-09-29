@@ -7,45 +7,20 @@ from stream_cheremsha.overlays.social_rotator_rotation import (
 )
 
 
-def test_events_do_not_advance_rotation() -> None:
+def test_initial_state_is_rotation_only() -> None:
     ctl = SocialRotatorController(pubsub=None, get_locale=lambda: "en", instance="test")
-    ctl._rotation = SocialRotatorRotationEngine.from_entries(
-        [
-            SocialRotationEntry("1", "twitch", "a", "https://twitch.tv/a"),
-            SocialRotationEntry("2", "youtube", "b", "https://youtube.com/@b"),
-        ],
-        interval_ms=60_000,
-        now_ms=1000,
-    )
-    before = ctl.initial_state()["rotation"]["transition_token"]
-    ctl.on_follow("X")
-    ctl.on_tiktok_gift(sender="Y", count=1, tiktok_coin_each=10)
-    ctl.on_donation(name="Z", amount=5, source="donatik")
-    ctl.on_viewers("tiktok", 9)
-    after = ctl.initial_state()["rotation"]["transition_token"]
-    assert after == before
-    assert ctl.initial_state()["stats"]["latest_follower"]["name"] == "X"
-    assert ctl.initial_state()["stats"]["viewers_total"] == 9
+    st = ctl.initial_state()
+    assert "rotation" in st
+    assert "platforms_enabled" in st
+    assert "stats" not in st
 
 
-def test_reset_for_new_stream_starts_stream_timer() -> None:
+def test_reset_for_new_stream_restarts_rotation_timer() -> None:
     ctl = SocialRotatorController(pubsub=None, get_locale=lambda: "en", instance="test")
-    ctl.on_follow("old")
-    ctl.on_stream_live(False)
-    assert ctl.initial_state()["stats"]["stream_started_at_ms"] is None
+    ctl._rotation.started_at_ms = 0
     ctl.reset_for_new_stream()
-    st = ctl.initial_state()["stats"]
-    assert st["latest_follower"] is None
-    assert isinstance(st["stream_started_at_ms"], int)
-    assert st["stream_started_at_ms"] > 0
-
-
-def test_on_stream_live_sets_and_clears_timer() -> None:
-    ctl = SocialRotatorController(pubsub=None, get_locale=lambda: "en", instance="test")
-    ctl.on_stream_live(True)
-    assert isinstance(ctl.initial_state()["stats"]["stream_started_at_ms"], int)
-    ctl.on_stream_live(False)
-    assert ctl.initial_state()["stats"]["stream_started_at_ms"] is None
+    assert isinstance(ctl._rotation.started_at_ms, int)
+    assert ctl._rotation.started_at_ms > 0
 
 
 def test_rotation_tick_advances() -> None:

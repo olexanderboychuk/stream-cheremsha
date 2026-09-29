@@ -27,7 +27,6 @@ def test_defaults_have_five_platforms() -> None:
     assert cfg.rotation_interval_ms == 8000
     assert cfg.transition == "glitch_morph"
     assert cfg.theme == "neon_cyber"
-    assert cfg.tiktok_coin_to_value_rate == 1.0
     assert cfg.background_opacity_percent == 85
 
 
@@ -37,7 +36,6 @@ def test_roundtrip_clamps() -> None:
         scale_percent=10,
         transition="nope",
         theme="nope",
-        tiktok_coin_to_value_rate=-1,
     )
     cfg2 = social_rotator_overlay_config_from_json_text(
         social_rotator_overlay_config_to_json_text(cfg)
@@ -46,7 +44,6 @@ def test_roundtrip_clamps() -> None:
     assert cfg2.scale_percent == 40
     assert cfg2.transition == "glitch_morph"
     assert cfg2.theme == "neon_cyber"
-    assert cfg2.tiktok_coin_to_value_rate == 0.0
 
 
 def test_drops_unknown_platform_entries() -> None:

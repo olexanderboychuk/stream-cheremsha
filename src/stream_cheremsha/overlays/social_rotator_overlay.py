@@ -17,18 +17,12 @@ from stream_cheremsha.overlays.social_rotator_rotation import (
     enabled_rotation_entries,
     entry_public_dict,
 )
-from stream_cheremsha.overlays.social_rotator_stats import SocialRotatorStatsSession
 from stream_cheremsha.overlays.ui_locale import load_ui_locale
 
 _I18N_KEYS = (
     "kicker",
     "next",
     "sec",
-    "stat.latest_follower",
-    "stat.latest_donation",
-    "stat.stream_time",
-    "stat.top_donator",
-    "stat.online",
     "empty",
 )
 
@@ -81,7 +75,6 @@ class SocialRotatorOverlayType:
             "config": cfg_dict,
             "rotation": rotation.presentation_dict(),
             "platforms_enabled": [entry_public_dict(e, order=i) for i, e in enumerate(entries)],
-            "stats": SocialRotatorStatsSession().to_public_dict(),
             "locale": locale,
         }
         subscribe_msg = {
@@ -422,51 +415,6 @@ class SocialRotatorOverlayType:
         background: rgba(255,255,255,0.25);
       }}
       .pager-dots span.on {{ background: var(--sr-accent); box-shadow: 0 0 6px var(--sr-accent); }}
-      .panel-stats {{
-        position: relative; z-index: 2;
-        flex: 0 0 auto;
-        margin-top: clamp(6px, 0.8vw, 10px);
-        display: grid;
-        grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.35fr) minmax(0, 1.15fr) minmax(0, 1.35fr) minmax(0, 0.7fr);
-        gap: clamp(6px, 0.7vw, 8px);
-        width: 100%;
-      }}
-      .stat-cell {{
-        min-width: 0;
-        padding: calc((6px + 0.2vw) * var(--sr-u) * var(--sr-read))
-                 calc((8px + 0.25vw) * var(--sr-u) * var(--sr-read));
-        border: 1px solid color-mix(in srgb, var(--sr-accent) 40%, transparent);
-        background: rgba(0,0,0,calc(var(--sr-bg-a) * 0.42));
-      }}
-      .stat-cell.hidden {{ display: none; }}
-      .stat-label {{
-        font-family: var(--sr-font-display);
-        font-size: clamp(8px, calc((8px + 0.25vw) * var(--sr-u)), 11px);
-        color: var(--sr-accent);
-        margin-bottom: 3px;
-        letter-spacing: 0.03em;
-        line-height: 1.3;
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      }}
-      .stat-value {{
-        font-family: 'VT323', monospace;
-        font-size: clamp(16px, calc((16px + 0.55vw) * var(--sr-u)), 23px);
-        color: #fff;
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        line-height: 1.1;
-        min-width: 0;
-      }}
-      .stat-value.big {{
-        color: var(--sr-accent);
-        font-size: clamp(19px, calc((20px + 0.7vw) * var(--sr-u)), 28px);
-        text-shadow: 0 0 10px color-mix(in srgb, var(--sr-accent) 50%, transparent);
-      }}
-      .stat-value.is-empty {{
-        opacity: 0.55;
-        text-align: left;
-        letter-spacing: 0.15em;
-      }}
-      .stat-cell[data-stat="stream_time"] .stat-value {{ font-variant-numeric: tabular-nums; }}
       .root.short .hud-frame {{
         padding: calc((5px + 0.2vw) * var(--sr-u) * var(--sr-read));
       }}
@@ -616,9 +564,6 @@ class SocialRotatorOverlayType:
       }}
       .root.w-sm .secondary-wrap {{ grid-column: 1 / -1; height: auto; min-height: 0; }}
       .root.w-sm .secondary {{ height: auto; }}
-      .root.w-sm .panel-stats {{
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-      }}
       .root.w-xs .panel-top,
       .root.w-xs.hide-countdown .panel-top,
       .root.w-xs.hide-secondary .panel-top,
@@ -631,7 +576,6 @@ class SocialRotatorOverlayType:
         min-width: 0; width: 100%; max-width: none;
         justify-content: center;
       }}
-      .root.w-xs .panel-stats {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
       @media (max-width: 720px) {{
         .panel-top,
         .root.hide-countdown .panel-top,
@@ -645,7 +589,6 @@ class SocialRotatorOverlayType:
           min-width: 0; width: 100%; max-width: none;
           justify-content: center;
         }}
-        .panel-stats {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
       }}
       .root.narrow-xs .url {{ display: none; }}
       .root.narrow-xs .username {{
@@ -686,28 +629,6 @@ class SocialRotatorOverlayType:
             <div class="pager-dots" id="pager"></div>
           </div>
         </div>
-        <div class="panel-stats" id="stats">
-          <div class="stat-cell" data-stat="latest_follower">
-            <div class="stat-label" data-i18n="stat.latest_follower">{pack.get("stat.latest_follower") or "LATEST FOLLOWER"}</div>
-            <div class="stat-value" id="statFollow">—</div>
-          </div>
-          <div class="stat-cell" data-stat="latest_donation">
-            <div class="stat-label" data-i18n="stat.latest_donation">{pack.get("stat.latest_donation") or "LATEST DONATION"}</div>
-            <div class="stat-value" id="statDonation">—</div>
-          </div>
-          <div class="stat-cell" data-stat="stream_time">
-            <div class="stat-label" data-i18n="stat.stream_time">{pack.get("stat.stream_time") or "STREAM TIME"}</div>
-            <div class="stat-value big" id="statTime">00:00:00</div>
-          </div>
-          <div class="stat-cell" data-stat="top_donator">
-            <div class="stat-label" data-i18n="stat.top_donator">{pack.get("stat.top_donator") or "TOP DONATOR"}</div>
-            <div class="stat-value" id="statTop">—</div>
-          </div>
-          <div class="stat-cell" data-stat="online">
-            <div class="stat-label" data-i18n="stat.online">{pack.get("stat.online") or "ONLINE"}</div>
-            <div class="stat-value big" id="statOnline">0</div>
-          </div>
-        </div>
         <div class="empty" id="empty" style="display:none">{pack.get("empty") or "AWAITING PLATFORMS"}</div>
       </div>
     </div>
@@ -719,7 +640,6 @@ class SocialRotatorOverlayType:
         let config = state.config || {{}};
         let rotation = state.rotation || {{}};
         let platformsEnabled = state.platforms_enabled || [];
-        let stats = state.stats || {{}};
         let locale = String(state.locale || 'uk');
         let lastToken = -1;
         let lastTransitionName = '';
@@ -741,7 +661,6 @@ class SocialRotatorOverlayType:
         const particlesEl = document.getElementById('particles');
         const emptyEl = document.getElementById('empty');
         const panelTop = document.getElementById('panelTop');
-        const statsPanel = document.getElementById('stats');
         const fxLayer = document.getElementById('fxLayer');
 
         function esc(s) {{
@@ -947,59 +866,6 @@ class SocialRotatorOverlayType:
           rootEl.classList.toggle('hide-secondary', config.show_secondary_platforms === false);
         }}
 
-        function fmtDiamond(name, value) {{
-          if (!name) return '—';
-          return esc(name) + ' - ' + String(value != null ? value : 0) + ' ◆';
-        }}
-
-        function fmtTime(ms) {{
-          if (!ms) return '00:00:00';
-          const now = Date.now() + clockSkew;
-          let sec = Math.max(0, Math.floor((now - Number(ms)) / 1000));
-          const h = Math.floor(sec / 3600); sec %= 3600;
-          const m = Math.floor(sec / 60); const s = sec % 60;
-          return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
-        }}
-
-        function setStat(el, text, isEmpty) {{
-          el.textContent = text;
-          el.classList.toggle('is-empty', !!isEmpty);
-        }}
-        function renderStats() {{
-          const st = stats || {{}};
-          const followName = (st.latest_follower && st.latest_follower.name) ? st.latest_follower.name : '';
-          setStat(document.getElementById('statFollow'), followName || '—', !followName);
-          const donationEl = document.getElementById('statDonation');
-          if (st.latest_donation) {{
-            donationEl.innerHTML = fmtDiamond(st.latest_donation.name, st.latest_donation.value);
-            donationEl.classList.remove('is-empty');
-          }} else {{
-            donationEl.textContent = '—';
-            donationEl.classList.add('is-empty');
-          }}
-          const topEl = document.getElementById('statTop');
-          if (st.top_donator) {{
-            topEl.innerHTML = fmtDiamond(st.top_donator.name, st.top_donator.value);
-            topEl.classList.remove('is-empty');
-          }} else {{
-            topEl.textContent = '—';
-            topEl.classList.add('is-empty');
-          }}
-          setStat(document.getElementById('statOnline'), String(st.viewers_total || 0), !st.viewers_total);
-          document.getElementById('statTime').textContent = fmtTime(st.stream_started_at_ms);
-          const map = {{
-            latest_follower: config.show_latest_follower !== false,
-            latest_donation: config.show_latest_donation !== false,
-            stream_time: config.show_stream_time !== false,
-            top_donator: config.show_top_donator !== false,
-            online: config.show_online !== false
-          }};
-          Array.prototype.forEach.call(document.querySelectorAll('.stat-cell'), function(el) {{
-            const key = el.getAttribute('data-stat');
-            el.classList.toggle('hidden', map[key] === false);
-          }});
-        }}
-
         function remainingMs() {{
           if (!platformsEnabled || platformsEnabled.length < 2) return 0;
           const started = Number(rotation.started_at_ms || 0);
@@ -1066,7 +932,6 @@ class SocialRotatorOverlayType:
             lastTransitionName = nextTransition || 'glitch_morph';
           }}
           if (st.platforms_enabled) platformsEnabled = st.platforms_enabled;
-          if (st.stats) stats = st.stats;
 
           let shouldTransition = false;
           let nextRotation = rotation;
@@ -1088,7 +953,6 @@ class SocialRotatorOverlayType:
             applyLook();
             renderHero();
             renderSecondary();
-            renderStats();
             renderCountdown();
           }}
 
@@ -1100,7 +964,6 @@ class SocialRotatorOverlayType:
           applyLook();
           renderHero();
           renderSecondary();
-          renderStats();
           renderCountdown();
           if (transitionPresetChanged) {{
             playTransition(config.transition || 'glitch_morph');
@@ -1146,9 +1009,6 @@ class SocialRotatorOverlayType:
         updateReadableScale();
         setInterval(function() {{
           renderCountdown();
-          if (stats && stats.stream_started_at_ms != null && Number(stats.stream_started_at_ms) > 0) {{
-            document.getElementById('statTime').textContent = fmtTime(stats.stream_started_at_ms);
-          }}
         }}, 250);
         setInterval(function() {{
           const others = platformsEnabled.filter(function(p) {{
@@ -1187,6 +1047,5 @@ class SocialRotatorOverlayType:
             "config": social_rotator_overlay_config_to_public_dict(cfg),
             "rotation": rotation.presentation_dict(),
             "platforms_enabled": [entry_public_dict(e, order=i) for i, e in enumerate(entries)],
-            "stats": SocialRotatorStatsSession().to_public_dict(),
             "locale": load_ui_locale(),
         }

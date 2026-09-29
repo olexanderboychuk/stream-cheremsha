@@ -18,7 +18,8 @@ def test_overlay_renderer_and_registry() -> None:
     assert "hero-icon" in html
     assert "next-box" in html
     assert "secondary" in html
-    assert "panel-stats" in html
+    assert "panel-stats" not in html
+    assert "statTime" not in html
     assert "orbit-ring" in html
     assert "glitch_morph" in html
     assert "playTransition" in html
@@ -41,9 +42,26 @@ def test_overlay_renderer_and_registry() -> None:
     st = overlay.initial_state({"instance": "main"})
     assert "config" in st
     assert "rotation" in st
-    assert "stats" in st
+    assert "stats" not in st
     reg = OverlayRegistry()
     assert reg.get("social_rotator").type == "social_rotator"
+
+
+def test_social_rotator_is_social_only() -> None:
+    from stream_cheremsha.overlays.social_rotator_overlay_config import (
+        social_rotator_overlay_config_defaults,
+    )
+
+    overlay = SocialRotatorOverlayType()
+    html = overlay.render_html({"instance": "main"})
+    assert "hero-icon" in html
+    assert "panel-stats" not in html
+    assert "statTime" not in html
+    st = overlay.initial_state({"instance": "main"})
+    assert "rotation" in st and "stats" not in st
+    cfg = social_rotator_overlay_config_defaults()
+    assert not hasattr(cfg, "show_top_donator")
+    assert not hasattr(cfg, "show_stream_time")
 
 
 def test_registry_has_social_rotator_overlay() -> None:

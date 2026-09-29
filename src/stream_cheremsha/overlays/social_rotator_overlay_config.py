@@ -59,12 +59,6 @@ class SocialRotatorOverlayConfig:
     enable_particles: bool
     enable_crt: bool
     background_opacity_percent: int
-    show_latest_follower: bool
-    show_latest_donation: bool
-    show_stream_time: bool
-    show_top_donator: bool
-    show_online: bool
-    tiktok_coin_to_value_rate: float
     scale_percent: int
     accent_color: str
 
@@ -87,12 +81,6 @@ def social_rotator_overlay_config_defaults() -> SocialRotatorOverlayConfig:
         enable_particles=True,
         enable_crt=True,
         background_opacity_percent=85,
-        show_latest_follower=True,
-        show_latest_donation=True,
-        show_stream_time=True,
-        show_top_donator=True,
-        show_online=True,
-        tiktok_coin_to_value_rate=1.0,
         scale_percent=100,
         accent_color="#00ffff",
     )
@@ -101,13 +89,6 @@ def social_rotator_overlay_config_defaults() -> SocialRotatorOverlayConfig:
 def _ensure_int(v: object, *, default: int) -> int:
     try:
         return int(v)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return default
-
-
-def _ensure_float(v: object, *, default: float) -> float:
-    try:
-        return float(v)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return default
 
@@ -158,10 +139,6 @@ def _validate_background_opacity_percent(v: object) -> int:
 
 def _validate_interval_ms(v: object) -> int:
     return max(1000, min(120_000, _ensure_int(v, default=8000)))
-
-
-def _validate_coin_rate(v: object) -> float:
-    return max(0.0, _ensure_float(v, default=1.0))
 
 
 def _normalize_platform_row(raw: object, *, order_fallback: int) -> dict[str, object] | None:
@@ -252,18 +229,6 @@ def social_rotator_overlay_config_from_json_text(text: str) -> SocialRotatorOver
         background_opacity_percent=_validate_background_opacity_percent(
             d.get("background_opacity_percent", defaults.background_opacity_percent)
         ),
-        show_latest_follower=_ensure_bool(
-            d.get("show_latest_follower"), default=defaults.show_latest_follower
-        ),
-        show_latest_donation=_ensure_bool(
-            d.get("show_latest_donation"), default=defaults.show_latest_donation
-        ),
-        show_stream_time=_ensure_bool(d.get("show_stream_time"), default=defaults.show_stream_time),
-        show_top_donator=_ensure_bool(d.get("show_top_donator"), default=defaults.show_top_donator),
-        show_online=_ensure_bool(d.get("show_online"), default=defaults.show_online),
-        tiktok_coin_to_value_rate=_validate_coin_rate(
-            d.get("tiktok_coin_to_value_rate", defaults.tiktok_coin_to_value_rate)
-        ),
         scale_percent=_validate_scale_percent(d.get("scale_percent")),
         accent_color=_ensure_hex_color(d.get("accent_color"), default=defaults.accent_color),
     )
@@ -286,12 +251,6 @@ def social_rotator_overlay_config_to_public_dict(
         "enable_particles": bool(cfg.enable_particles),
         "enable_crt": bool(cfg.enable_crt),
         "background_opacity_percent": int(cfg.background_opacity_percent),
-        "show_latest_follower": bool(cfg.show_latest_follower),
-        "show_latest_donation": bool(cfg.show_latest_donation),
-        "show_stream_time": bool(cfg.show_stream_time),
-        "show_top_donator": bool(cfg.show_top_donator),
-        "show_online": bool(cfg.show_online),
-        "tiktok_coin_to_value_rate": float(cfg.tiktok_coin_to_value_rate),
         "scale_percent": int(cfg.scale_percent),
         "accent_color": str(cfg.accent_color),
         "known_platforms": list(ALL_PLATFORM_IDS),
