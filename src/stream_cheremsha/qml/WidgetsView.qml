@@ -147,6 +147,7 @@ Item {
             case "live_leaderboard": return {w: 360, h: 280};
             case "live_leaderboard_simple": return {w: 300, h: 280};
             case "social_rotator": return {w: 360, h: 120};
+            case "stream_info": return {w: 360, h: 90};
             case "webcam_frame": return {w: 480, h: 360};
             case "signal_system": return {w: 1920, h: 1080};
             case "music": return {w: 340, h: 140};
@@ -608,6 +609,7 @@ Item {
             root._loadingCommunityWorldCfg = false;
             root._loadingStreamGoalCfg = false;
             root._loadingSocialRotatorCfg = false;
+            root._loadingStreamInfoCfg = false;
             root._loadingLiveLeaderboardCfg = false;
             root._loadingWebcamFrameCfg = false;
             root._loadingSignalSystemCfg = false;
@@ -615,7 +617,7 @@ Item {
     }
 
     readonly property int titleBarH: 44
-    property string widgetMode: "grid" // grid | chat | actions | online | top_likers | top_gifters | king_of_live | battle_royale | battle | stream_pet | community_world | stream_goal | live_leaderboard | live_leaderboard_simple | social_rotator | webcam_frame | signal_system
+    property string widgetMode: "grid" // grid | chat | actions | online | top_likers | top_gifters | king_of_live | battle_royale | battle | stream_pet | community_world | stream_goal | live_leaderboard | live_leaderboard_simple | social_rotator | stream_info | webcam_frame | signal_system
     readonly property bool universalEditorActive: root.editingInstanceId !== "" && root.widgetMode !== "grid" && root.widgetMode !== "layout"
 
     function universalInstance() {
@@ -812,6 +814,10 @@ Item {
             general = [c("Enabled", "enabled", "toggle", true), c("Platforms", "platforms", "social_platforms", "", {options: ["twitch", "youtube", "kick", "telegram", "tiktok", "instagram", "discord", "x", "facebook"]}), c("Rotation interval", "rotation_interval_ms", "number", 8000, {minimum: 1000, maximum: 120000})];
             appearance = [c("Transition", "transition", "select", "glitch_morph", {options: ["glitch_morph", "data_stream", "energy_burst", "scan", "pixel_dissolve", "fade"]}), c("Theme", "theme", "select", "neon_cyber", {options: ["neon_cyber", "synthwave", "toxic", "ice", "amber"]}), c("Background opacity", "background_opacity_percent", "slider", 85, {minimum: 0, maximum: 100}), c("Scale", "scale_percent", "number", 100, {minimum: 40, maximum: 250})];
             behavior = [c("Show URL", "show_url", "toggle", true), c("Secondary platforms", "show_secondary_platforms", "toggle", true), c("Countdown", "show_countdown", "toggle", true), c("Glow", "enable_glow", "toggle", true), c("Particles", "enable_particles", "toggle", true), c("CRT", "enable_crt", "toggle", true), c("Latest follower", "show_latest_follower", "toggle", true), c("Latest donation", "show_latest_donation", "toggle", true), c("Stream time", "show_stream_time", "toggle", true), c("Top donator", "show_top_donator", "toggle", true), c("Online count", "show_online", "toggle", true), c("TikTok coin rate", "tiktok_coin_to_value_rate", "text", 1.0)];
+        } else if (typeId === "stream_info") {
+            general = [c("Enabled", "enabled", "toggle", true)];
+            appearance = [c("Theme", "theme", "select", "neon_cyber", {options: ["neon_cyber", "synthwave", "toxic", "ice", "amber"]}), c("Background opacity", "background_opacity_percent", "slider", 85, {minimum: 0, maximum: 100}), c("Scale", "scale_percent", "number", 100, {minimum: 40, maximum: 250})];
+            behavior = [c("Latest follower", "show_latest_follower", "toggle", true), c("Latest donation", "show_latest_donation", "toggle", true), c("Stream time", "show_stream_time", "toggle", true), c("Top donator", "show_top_donator", "toggle", true), c("Online count", "show_online", "toggle", true), c("TikTok coin rate", "tiktok_coin_to_value_rate", "text", 1.0)];
         } else if (typeId === "webcam_frame") {
             general = [c("Enabled", "enabled", "toggle", true), c("Theme", "theme", "select", "neon_cyber", {options: ["neon_cyber", "synthwave", "toxic", "ice", "amber", "critical", "aurora", "royal", "sakura", "mono"]}), c("Intensity", "intensity", "select", "medium", {options: ["low", "medium", "high"]}), c("Frame style", "frame_style", "select", "primary", {options: ["primary", "minimal", "tactical", "broadcast", "hologram", "anime", "fantasy", "glitch", "cosmic"]}), c("Camera label", "cam_label", "text", "CAM // 01"), c("Scale", "scale_percent", "number", 100, {minimum: 40, maximum: 250})];
             animation = [c("Energy flow", "enable_energy_flow", "toggle", true), c("Breathing glow", "enable_breathing_glow", "toggle", true), c("Light sweep", "enable_light_sweep", "toggle", true), c("Micro glitch", "enable_micro_glitch", "toggle", true), c("Sparks", "enable_sparks", "toggle", true), c("CRT", "enable_crt", "toggle", true), c("Status indicator", "enable_status_indicator", "toggle", true), c("Boot animation", "enable_boot_animation", "toggle", true), c("Shutdown animation", "enable_shutdown_animation", "toggle", true)];
@@ -848,6 +854,7 @@ Item {
         if (typeId === "live_leaderboard") advanced = advanced.concat([c("Accent color", "accent_color", "color", "#14b8a6"), c("Like weight", "weight_like", "number", 1, {minimum: 0, maximum: 100}), c("Gift weight", "weight_gift_coin", "number", 1, {minimum: 0, maximum: 100}), c("Share weight", "weight_share", "number", 1, {minimum: 0, maximum: 100}), c("Comment weight", "weight_comment", "number", 1, {minimum: 0, maximum: 100})]);
         if (typeId === "live_leaderboard_simple") advanced = advanced.concat([c("Like weight", "weight_like", "number", 1, {minimum: 0, maximum: 100}), c("Gift weight", "weight_gift_coin", "number", 1, {minimum: 0, maximum: 100}), c("Share weight", "weight_share", "number", 1, {minimum: 0, maximum: 100}), c("Comment weight", "weight_comment", "number", 1, {minimum: 0, maximum: 100})]);
         if (typeId === "social_rotator") advanced = advanced.concat([c("Accent color", "accent_color", "color", "#14b8a6")]);
+        if (typeId === "stream_info") advanced = advanced.concat([c("Accent color", "accent_color", "color", "#14b8a6")]);
         if (typeId === "signal_system") advanced = advanced.concat([
             c("Font family", "font_family", "text", "Segoe UI"), c("Intensity multiplier", "intensity_multiplier", "number", 1, {minimum: 0, maximum: 10}), c("Primary accent", "primary_accent", "color", "#14b8a6"), c("Secondary accent", "secondary_accent", "color", "#a78bfa"),
             c("Frame detail level", "frame_detail_level", "number", 1, {minimum: 0, maximum: 10}), c("Particle density", "particle_density", "number", 1, {minimum: 0, maximum: 10}), c("Gift icon", "gift_icon_enabled", "toggle", true), c("Gift quantity", "show_gift_quantity", "toggle", true), c("Coin value", "show_coin_value", "toggle", true), c("Gift name", "show_gift_name", "toggle", true), c("Reduced motion", "reduced_motion", "toggle", false),
@@ -879,6 +886,7 @@ Item {
         if (root.widgetMode === "live_leaderboard") return root.liveLeaderboardCfg;
         if (root.widgetMode === "live_leaderboard_simple") return root.liveLeaderboardSimpleCfg;
         if (root.widgetMode === "social_rotator") return root.socialRotatorCfg;
+        if (root.widgetMode === "stream_info") return root.streamInfoCfg;
         if (root.widgetMode === "webcam_frame") return root.webcamFrameCfg;
         if (root.widgetMode === "signal_system") return root.signalSystemCfg;
         return null;
@@ -1988,6 +1996,9 @@ Item {
     property var socialRotatorCfg: null
     property bool _loadingSocialRotatorCfg: false
     property int socialRotatorCfgEpoch: 0
+    property var streamInfoCfg: null
+    property bool _loadingStreamInfoCfg: false
+    property int streamInfoCfgEpoch: 0
     property var webcamFrameCfg: null
     property bool _loadingWebcamFrameCfg: false
     property int webcamFrameCfgEpoch: 0
@@ -2197,6 +2208,7 @@ Item {
             (root.widgetMode === "live_leaderboard" && root.liveLeaderboardCfg !== null) ||
             (root.widgetMode === "live_leaderboard_simple" && root.liveLeaderboardSimpleCfg !== null) ||
             (root.widgetMode === "social_rotator" && root.socialRotatorCfg !== null) ||
+            (root.widgetMode === "stream_info" && root.streamInfoCfg !== null) ||
             (root.widgetMode === "webcam_frame" && root.webcamFrameCfg !== null) ||
             (root.widgetMode === "signal_system" && root.signalSystemCfg !== null)
         )
@@ -2232,6 +2244,8 @@ Item {
             root._saveLiveLeaderboardSimple();
         } else if (root.widgetMode === "social_rotator") {
             root._saveSocialRotator();
+        } else if (root.widgetMode === "stream_info") {
+            root._saveStreamInfo();
         } else if (root.widgetMode === "webcam_frame") {
             root._saveWebcamFrame();
         } else if (root.widgetMode === "signal_system") {
@@ -2284,6 +2298,12 @@ Item {
         if (!api || root.socialRotatorCfg === null) return;
         root.socialRotatorCfgEpoch += 1;
         api.saveSocialRotatorOverlayConfigJson(JSON.stringify(root.socialRotatorCfg));
+    }
+
+    function _saveStreamInfo() {
+        if (!api || root.streamInfoCfg === null) return;
+        root.streamInfoCfgEpoch += 1;
+        api.saveStreamInfoOverlayConfigJson(JSON.stringify(root.streamInfoCfg));
     }
 
     function _saveWebcamFrame() {
@@ -5304,6 +5324,7 @@ Item {
                     root._loadingLiveLeaderboardCfg = false;
                     root._loadingLiveLeaderboardSimpleCfg = false;
                     root._loadingSocialRotatorCfg = false;
+                    root._loadingStreamInfoCfg = false;
                     root._loadingWebcamFrameCfg = false;
                     root._loadingSignalSystemCfg = false;
                 }
@@ -5324,6 +5345,7 @@ Item {
                 root._loadingLiveLeaderboardCfg = true;
                 root._loadingLiveLeaderboardSimpleCfg = true;
                 root._loadingSocialRotatorCfg = true;
+                root._loadingStreamInfoCfg = true;
                 root._loadingWebcamFrameCfg = true;
                 root._loadingSignalSystemCfg = true;
 
@@ -5412,6 +5434,11 @@ Item {
                 root.socialRotatorCfgEpoch += 1;
                 if (root.socialRotatorCfg && !root.socialRotatorCfg.platforms)
                     root.socialRotatorCfg.platforms = [];
+                var siobj = api.loadStreamInfoOverlayConfigMap();
+                if (!siobj || typeof siobj !== "object")
+                    siobj = {};
+                root.streamInfoCfg = JSON.parse(JSON.stringify(siobj));
+                root.streamInfoCfgEpoch += 1;
                 var wfobj = api.loadWebcamFrameOverlayConfigMap();
                 if (!wfobj || typeof wfobj !== "object")
                     wfobj = {};

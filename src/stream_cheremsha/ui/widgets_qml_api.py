@@ -28,12 +28,6 @@ from stream_cheremsha.overlays.battle_royale_overlay_config import (
     load_battle_royale_overlay_config,
     save_battle_royale_overlay_config,
 )
-from stream_cheremsha.overlays.gift_rush_config import (
-    gift_rush_overlay_config_from_json_text,
-    gift_rush_overlay_config_to_json_text,
-    load_gift_rush_overlay_config,
-    save_gift_rush_overlay_config,
-)
 from stream_cheremsha.overlays.chat_config import (
     chat_config_from_json_text,
     chat_config_to_json_text,
@@ -45,6 +39,12 @@ from stream_cheremsha.overlays.community_world_config import (
     community_world_overlay_config_to_json_text,
     load_community_world_overlay_config,
     save_community_world_overlay_config,
+)
+from stream_cheremsha.overlays.gift_rush_config import (
+    gift_rush_overlay_config_from_json_text,
+    gift_rush_overlay_config_to_json_text,
+    load_gift_rush_overlay_config,
+    save_gift_rush_overlay_config,
 )
 from stream_cheremsha.overlays.king_of_live_overlay_config import (
     king_of_live_overlay_config_from_json_text,
@@ -95,6 +95,12 @@ from stream_cheremsha.overlays.stream_goal_overlay_config import (
     save_stream_goal_overlay_config,
     stream_goal_overlay_config_from_json_text,
     stream_goal_overlay_config_to_json_text,
+)
+from stream_cheremsha.overlays.stream_info_overlay_config import (
+    load_stream_info_overlay_config,
+    save_stream_info_overlay_config,
+    stream_info_overlay_config_from_json_text,
+    stream_info_overlay_config_to_json_text,
 )
 from stream_cheremsha.overlays.stream_pet_overlay_config import (
     apply_stream_pet_preset,
@@ -233,6 +239,7 @@ class WidgetsQmlApi(QObject):
         self._gift_rush_instance = str(online_instance or "main").strip() or "main"
         self._live_leaderboard_instance = str(online_instance or "main").strip() or "main"
         self._social_rotator_instance = str(online_instance or "main").strip() or "main"
+        self._stream_info_instance = str(online_instance or "main").strip() or "main"
         self._community_world_instance = str(online_instance or "main").strip() or "main"
         self._webcam_frame_instance = str(online_instance or "main").strip() or "main"
         self._signal_system_instance = str(online_instance or "main").strip() or "main"
@@ -557,6 +564,8 @@ class WidgetsQmlApi(QObject):
             self.previewLiveLeaderboardSimpleOverlay(inst)
         elif typ == "social_rotator":
             self.previewSocialRotatorOverlay(inst)
+        elif typ == "stream_info":
+            self.previewStreamInfoOverlay(inst)
         elif typ == "webcam_frame":
             self.previewWebcamFrameOverlay(inst)
         elif typ == "activity":
@@ -1060,6 +1069,63 @@ class WidgetsQmlApi(QObject):
                 _LOG.warning("previewSocialRotatorOverlay controller state failed: %s", exc)
         patch = {
             "config": json.loads(social_rotator_overlay_config_to_json_text(cfg)),
+            "locale": _ui_locale(),
+            "stats": {
+                "latest_follower": {"name": "kittencat_42"},
+                "latest_donation": {"name": "Dimon4ik", "value": 250, "source": "donatik"},
+                "top_donator": {"name": "Diamond_ua", "value": 1500},
+                "stream_started_at_ms": int(time.time() * 1000) - 95 * 60 * 1000,
+                "viewers_by_platform": {"tiktok": 100, "twitch": 40, "kick": 12},
+                "viewers_total": 152,
+            },
+        }
+        self._publish_patch(topic=topic, patch=patch)
+
+    streamInfoOverlayUrlChanged = Signal()
+
+    @Property(str, notify=streamInfoOverlayUrlChanged)
+    def streamInfoOverlayUrlValue(self) -> str:  # noqa: ANN201 - PySide pattern
+        return self.streamInfoOverlayUrl()
+
+    @Slot(result=str)
+    def streamInfoOverlayUrl(self) -> str:
+        if not self._base:
+            return ""
+        return f"{self._base}/overlay/stream_info?instance={self._stream_info_instance}"
+
+    @Slot()
+    def copyStreamInfoOverlayUrl(self) -> None:
+        url = self.streamInfoOverlayUrl()
+        if not url:
+            return
+        clip = QGuiApplication.clipboard()
+        if clip is None:
+            return
+        clip.setText(url)
+
+    @Slot(str)
+    @Slot()
+    def previewStreamInfoOverlay(self, instance: str | None = None) -> None:
+        token = str(instance or "").strip()
+        if not token:
+            return
+        topic = f"overlay:stream_info:{token}"
+        cfg = self._preview_config(
+            "stream_info",
+            token,
+            load_stream_info_overlay_config,
+            stream_info_overlay_config_from_json_text,
+        )
+        if self._stream_info_controller is not None:
+            try:
+                patch = self._stream_info_controller.initial_state()
+                patch["config"] = json.loads(stream_info_overlay_config_to_json_text(cfg))
+                self._publish_patch(topic=topic, patch=patch)
+                return
+            except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+                _LOG.warning("previewStreamInfoOverlay controller state failed: %s", exc)
+        patch = {
+            "config": json.loads(stream_info_overlay_config_to_json_text(cfg)),
             "locale": _ui_locale(),
             "stats": {
                 "latest_follower": {"name": "kittencat_42"},
@@ -2446,6 +2512,71 @@ class WidgetsQmlApi(QObject):
         self.saveSocialRotatorOverlayConfigJson(txt)
 
     @Slot(result="QVariant")
+    def loadStreamInfoOverlayConfigMap(self) -> dict[str, Any]:
+        routed = self._load_cfg_or_instance("stream_info")
+        if routed is not None:
+            return routed
+        cfg = load_stream_info_overlay_config()
+        return json.loads(stream_info_overlay_config_to_json_text(cfg))
+
+    @Slot(result=str)
+    def loadStreamInfoOverlayConfigJson(self) -> str:
+        cfg = load_stream_info_overlay_config()
+        return stream_info_overlay_config_to_json_text(cfg)
+
+    @Slot(str)
+    def saveStreamInfoOverlayConfigJson(self, cfg_json: str) -> None:
+        txt = (cfg_json or "").strip()
+        if not txt:
+            return
+        try:
+            cfg = stream_info_overlay_config_from_json_text(txt)
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            _LOG.warning(
+                "saveStreamInfoOverlayConfigJson: rejected payload (%s): %s",
+                exc.__class__.__name__,
+                exc,
+            )
+            return
+        if self._save_cfg_to_instance(
+            "stream_info", json.loads(stream_info_overlay_config_to_json_text(cfg))
+        ):
+            return
+        save_stream_info_overlay_config(cfg)
+        _LOG.info("widgets overlay persisted: stream_info")
+        if self._stream_info_controller is not None:
+            try:
+                self._stream_info_controller.reload_config()
+            except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+                _LOG.warning("Failed to reload stream_info_controller config: %s", exc)
+        if self._pubsub is not None:
+            topic = f"overlay:stream_info:{self._stream_info_instance}"
+            if self._stream_info_controller is not None:
+                try:
+                    patch = self._stream_info_controller.initial_state()
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    patch = {"config": json.loads(stream_info_overlay_config_to_json_text(cfg))}
+            else:
+                patch = {"config": json.loads(stream_info_overlay_config_to_json_text(cfg))}
+            self._publish_patch(topic=topic, patch=patch)
+
+    @Slot(QJSValue)
+    def saveStreamInfoOverlayConfigMap(self, cfg_js: QJSValue) -> None:
+        plain = _qml_js_to_plain_cfg(cfg_js)
+        _LOG.info("widgets ConfigMap save: stream_info (plain_type=%s)", type(plain).__name__)
+        if plain is None:
+            _LOG.warning("widgets ConfigMap save: stream_info rejected (null/undefined)")
+            return
+        txt = _qml_cfg_map_to_json_text(plain)
+        if not txt or txt == "{}":
+            _LOG.warning(
+                "widgets ConfigMap save: stream_info rejected empty_or_non_serializable"
+            )
+            return
+        _LOG.info("widgets ConfigMap save: stream_info ok json_len=%d", len(txt))
+        self.saveStreamInfoOverlayConfigJson(txt)
+
+    @Slot(result="QVariant")
     def loadWebcamFrameOverlayConfigMap(self) -> dict[str, Any]:
         routed = self._load_cfg_or_instance("webcam_frame")
         if routed is not None:
@@ -2636,6 +2767,7 @@ class WidgetsQmlApi(QObject):
             "_gift_rush_group",
             "_stream_goal_controller",
             "_social_rotator_controller",
+            "_stream_info_controller",
             "_webcam_frame_controller",
             "_signal_system_controller",
         ):
