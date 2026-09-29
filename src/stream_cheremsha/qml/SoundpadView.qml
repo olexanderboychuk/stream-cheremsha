@@ -42,6 +42,7 @@ Item {
     property string pendingFileUrl: ""
     property string addHotkeyDraft: ""
     property bool showAddModal: false
+    property string suggestedName: ""
 
     // Relink flow for broken cards (spec §45-46): pick a replacement file.
     property string relinkTargetId: ""
@@ -163,7 +164,7 @@ Item {
     function openAddModal(fileUrl) {
         root.pendingFileUrl = String(fileUrl || "");
         root.addHotkeyDraft = "";
-        addNameField.text = root._stemFromUrl(root.pendingFileUrl);
+        root.suggestedName = root._stemFromUrl(root.pendingFileUrl);
         root.showAddModal = true;
     }
 
@@ -820,6 +821,15 @@ Item {
                     text: "Додати"
                     onClicked: root._saveAddSound()
                     background: Rectangle { radius: 8; color: root.primaryPurple }
+                }
+            }
+        }
+
+        Connections {
+            target: addModal
+            function onOpenedChanged() {
+                if (addModal.opened) {
+                    addNameField.text = root.suggestedName;
                 }
             }
         }
