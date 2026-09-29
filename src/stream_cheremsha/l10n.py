@@ -1129,6 +1129,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "BATTLE ROYALE: переможець {user} — може замовити 1 трек у Telegram /music",
         "en": "BATTLE ROYALE: winner {user} — may request 1 track via Telegram /music",
     },
+    "battle.draw_toast": {
+        "uk": "BATTLE ROYALE: нічия — переможця немає",
+        "en": "BATTLE ROYALE: draw — no winner",
+    },
     "battle.auto_started": {
         "uk": "BATTLE ROYALE: авто-старт — {fighters}",
         "en": "BATTLE ROYALE: auto-start — {fighters}",

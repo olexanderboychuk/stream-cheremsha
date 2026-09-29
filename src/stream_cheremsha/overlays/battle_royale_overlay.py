@@ -468,6 +468,7 @@ class BattleRoyaleOverlayType:
             lastAttack: 'ОСТАННЯ АТАКА: ',
             duelLive: 'ДУЕЛЬ ТРИВАЄ',
             fight: 'БІЙ!',
+            draw: 'НІЧИЯ',
             koWins: (nick) => 'K.O. — перемагає ' + nick,
             waiting: (thr) => '\\u26A1 Очікування дуелі: 2 різні глядачі \\u2265 ' + thr + ' \\uD83D\\uDC8E',
             pressStart: 'Натисніть «Старт» у Віджетах Cheremsha',
@@ -482,6 +483,7 @@ class BattleRoyaleOverlayType:
             lastAttack: 'LAST ATTACK: ',
             duelLive: 'DUEL LIVE',
             fight: 'FIGHT!',
+            draw: 'DRAW',
             koWins: (nick) => 'K.O. — ' + nick + ' WINS',
             waiting: (thr) => '\\u26A1 Waiting for a duel: 2 different viewers \\u2265 ' + thr + ' \\uD83D\\uDC8E',
             pressStart: 'Press "Start" in Cheremsha Widgets',
@@ -713,12 +715,18 @@ class BattleRoyaleOverlayType:
             stage.style.display = 'none';
           }}
 
-          if (phase === 'victory' && winner) {{
+          if (phase === 'victory') {{
             const vb = document.createElement('div');
             vb.className = 'victory-banner';
-            vb.textContent = L().koWins(nickAt(winner));
+            if (winner) {{
+              vb.textContent = L().koWins(nickAt(winner));
+              playTone(440, 130);
+            }} else {{
+              // HP tie / all fighters down: controller ends the battle with no winner.
+              vb.textContent = L().draw;
+              playTone(220, 160);
+            }}
             root.appendChild(vb);
-            playTone(440, 130);
           }}
         }}
 

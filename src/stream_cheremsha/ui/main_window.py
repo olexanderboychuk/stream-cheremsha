@@ -6811,6 +6811,10 @@ class MainWindow(FramelessWindow):
                 user_key=winner.user_key,
                 avatar_url=winner.avatar_url,
             )
+        else:
+            # HP tie (or all fighters down): the controller ends the battle
+            # with no winner — announce the draw instead of staying silent.
+            self._on_user_status(self._tr("battle.draw_toast"))
         # Shared 1s battle tick keeps running (see __init__ note); members
         # publish their own victory patches.
 
