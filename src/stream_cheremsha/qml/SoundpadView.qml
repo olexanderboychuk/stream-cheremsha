@@ -521,6 +521,19 @@ Item {
                 Layout.alignment: Qt.AlignVCenter
             }
 
+            CheckBox {
+                id: monitorCheck
+                text: "Monitor"
+                checked: true
+                onToggled: spApi.setMonitor(checked)
+            }
+            CheckBox {
+                id: streamOutCheck
+                text: "Stream Output"
+                checked: true
+                onToggled: spApi.setStreamOut(checked)
+            }
+
             Button {
                 id: npStopBtn
                 visible: root.nowPlayingId !== ""
@@ -844,6 +857,13 @@ Item {
         root.refresh();
         var st = null;
         try { st = JSON.parse(spApi.globalStateJson()); } catch (err) { st = null; }
-        if (st && typeof st.volume === "number") volSlider.value = st.volume;
+        if (!st) return;
+        if (typeof st.volume === "number") volSlider.value = st.volume;
+        if (typeof st.monitor === "boolean") monitorCheck.checked = st.monitor;
+        if (typeof st.stream_out === "boolean") streamOutCheck.checked = st.stream_out;
+        if (typeof st.output_device === "string" && st.output_device !== "") {
+            var idx = outBox.model.indexOf(st.output_device);
+            if (idx >= 0) outBox.currentIndex = idx;
+        }
     }
 }

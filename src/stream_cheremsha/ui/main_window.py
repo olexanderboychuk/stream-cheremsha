@@ -2343,6 +2343,8 @@ class MainWindow(FramelessWindow):
         store = SoundpadStore(settings=self._settings)
         engine = SoundpadAudioEngine(parent=self)
         engine.set_global_volume(store.global_volume())
+        engine.set_monitor(store.monitor())
+        engine.set_stream_out(store.stream_out())
         try:
             backend = PynputHotkeyBackend(on_fire=lambda _c: None, parent=self)
         except RuntimeError:
@@ -2358,7 +2360,35 @@ class MainWindow(FramelessWindow):
         self._soundpad_store = store
         self._soundpad_engine = engine
         self._soundpad_hotkeys = hotkeys
+        try:
+            engine.duckingChanged.connect(lambda active: self._on_soundpad_ducking(active))
+            engine.playbackStarted.connect(
+                lambda _sid: self._soundpad_api.soundsChanged.emit()
+            )
+            engine.playbackFinished.connect(
+                lambda _sid: self._soundpad_api.soundsChanged.emit()
+            )
+        except RuntimeError:
+            pass
         return api
+
+    def _on_soundpad_ducking(self, active: bool) -> None:
+        """Dip music volume while a soundpad sound plays; restore on stop.
+
+        The dip is live-only (never persisted); the restore reads the user's
+        saved volume so we never clobber it with 35 or hardcode 100.
+        """
+        player = getattr(self, "_music_player", None)
+        set_vol = getattr(player, "set_volume_percent", None)
+        if not callable(set_vol):
+            return
+        try:
+            if active:
+                set_vol(35)
+            else:
+                set_vol(int(self._settings.value("music/volume_percent", 100)))
+        except (TypeError, ValueError, RuntimeError):
+            return
 
     def _qml_widget_for_stack_index(self, index: int) -> QQuickWidget | None:
         if index == self._IX_ACTIONS:

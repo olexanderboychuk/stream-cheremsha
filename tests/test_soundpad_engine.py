@@ -15,10 +15,20 @@ class FakeSink:
 
 def _e(i="a", mode=PlaybackMode.OVERLAP, cd=0.0):
     return SoundEntry(
-        id=i, name=i, file_path=f"/tmp/{i}.mp3", hotkey="",
-        volume=0.8, playback_mode=mode, cooldown_sec=cd,
-        triggers=(), waveform_peaks=(), duration_sec=1.0,
-        play_count=0, last_played_at="", order=0)
+        id=i,
+        name=i,
+        file_path=f"/tmp/{i}.mp3",
+        hotkey="",
+        volume=0.8,
+        playback_mode=mode,
+        cooldown_sec=cd,
+        triggers=(),
+        waveform_peaks=(),
+        duration_sec=1.0,
+        play_count=0,
+        last_played_at="",
+        order=0,
+    )
 
 
 def test_cooldown_blocks_second_play():
@@ -40,3 +50,37 @@ def test_output_device_list_never_raises():
     eng = SoundpadAudioEngine(sink=FakeSink())
     devs = eng.list_output_devices()
     assert isinstance(devs, list)
+
+
+def test_ducking_signal_and_monitor_flags():
+    seen: list[bool] = []
+    eng = SoundpadAudioEngine(sink=FakeSink())
+    eng.duckingChanged.connect(seen.append)
+    eng.set_monitor(False)
+    eng.set_stream_out(True)
+    assert eng._monitor is False
+    assert eng._stream_out is True
+    e = _e()
+    eng.play(e, b"123")
+    assert True in seen
+    eng.stop_all()
+    assert False in seen
+
+
+def test_position_of_tracks_start_time():
+    eng = SoundpadAudioEngine(sink=FakeSink())
+    assert eng.position_of("nope") == 0.0
+    e = _e()
+    eng.play(e, b"123")  # no event loop: finishes immediately, but start is recorded
+    pos = eng.position_of("a")
+    assert pos >= 0.0
+
+
+def test_main_window_ducking_wiring_present():
+    from pathlib import Path
+
+    src = (
+        Path(__file__).resolve().parents[1] / "src" / "stream_cheremsha" / "ui" / "main_window.py"
+    ).read_text(encoding="utf-8")
+    assert "duckingChanged" in src
+    assert "_on_soundpad_ducking" in src

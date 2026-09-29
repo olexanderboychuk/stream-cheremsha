@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from PySide6.QtCore import QObject, Signal, Slot
+from PySide6.QtCore import QObject, QTimer, Signal, Slot
 
 from stream_cheremsha.soundpad.models import (
     ALLOWED_AUDIO_SUFFIXES,
@@ -59,12 +59,39 @@ class SoundpadQmlApi(QObject):
             self._hotkeys.hotkeyPressed.connect(self._on_hotkey_pressed)
         except RuntimeError:
             pass
+        # Now-playing position ticker: 250 ms, only runs while a sound is active.
+        self._np_timer = QTimer(self)
+        self._np_timer.setInterval(250)
+        try:
+            self._np_timer.timeout.connect(self._tick_now_playing)
+            self._engine.playbackStarted.connect(self._on_playback_started)
+            self._engine.playbackFinished.connect(self._on_playback_finished)
+        except RuntimeError:
+            pass
 
     def _on_hotkey_pressed(self, sound_id: str) -> None:
         try:
             self.playSound(sound_id)
         except (RuntimeError, ValueError, OSError) as e:
             logger.debug("hotkey play failed: %s", e)
+
+    def _on_playback_started(self, _sound_id: str) -> None:
+        if self._engine.active_ids():
+            self._np_timer.start()
+
+    def _on_playback_finished(self, _sound_id: str) -> None:
+        if not self._engine.active_ids():
+            self._np_timer.stop()
+
+    def _tick_now_playing(self) -> None:
+        for sid in self._engine.active_ids():
+            try:
+                position = float(self._engine.position_of(sid))
+            except (AttributeError, RuntimeError):
+                continue
+            entry = self._store.get(sid)
+            duration = float(entry.duration_sec or 0.0) if entry is not None else 0.0
+            self.nowPlayingChanged.emit(sid, position, duration)
 
     def _payload(self) -> list[dict]:
         from stream_cheremsha.soundpad.store import _entry_to_dict
@@ -314,6 +341,26 @@ class SoundpadQmlApi(QObject):
     @Slot(result=str)
     def outputDevices(self) -> str:
         return json.dumps(self._engine.list_output_devices(), ensure_ascii=False)
+
+    @Slot(bool)
+    def setMonitor(self, b: bool) -> None:
+        self._engine.set_monitor(bool(b))
+        self._store.set_monitor(bool(b))
+
+    @Slot(bool)
+    def setStreamOut(self, b: bool) -> None:
+        self._engine.set_stream_out(bool(b))
+        self._store.set_stream_out(bool(b))
+
+    @Slot(result=str)
+    def globalStateJson(self) -> str:
+        state = {
+            "volume": float(self._store.global_volume()),
+            "output_device": str(self._engine.output_device() or ""),
+            "monitor": bool(self._store.monitor()),
+            "stream_out": bool(self._store.stream_out()),
+        }
+        return json.dumps(state, ensure_ascii=False)
 
     @Slot(str, result=str)
     def importDroppedUrls(self, urls_json: str) -> str:

@@ -233,3 +233,23 @@ class SoundpadStore:
     def set_global_volume(self, v: float) -> None:
         self._settings.setValue(_K_VOL, max(0.0, min(1.0, float(v))))
         self._settings.sync()
+
+    def monitor(self) -> bool:
+        try:
+            return bool(self._settings.value(_K_MON, True))
+        except (TypeError, ValueError):
+            return True
+
+    def set_monitor(self, b: bool) -> None:
+        self._settings.setValue(_K_MON, bool(b))
+        self._settings.sync()
+
+    def stream_out(self) -> bool:
+        try:
+            return bool(self._settings.value(_K_STREAM, True))
+        except (TypeError, ValueError):
+            return True
+
+    def set_stream_out(self, b: bool) -> None:
+        self._settings.setValue(_K_STREAM, bool(b))
+        self._settings.sync()

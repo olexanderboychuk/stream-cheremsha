@@ -75,6 +75,16 @@ class SoundpadAudioEngine(QObject):
     def active_ids(self) -> list[str]:
         return sorted(self._playing)
 
+    def position_of(self, sound_id: str) -> float:
+        """Elapsed seconds since this sound started (0.0 if not tracked)."""
+        last = self._last_start.get(sound_id)
+        if last is None:
+            return 0.0
+        return max(0.0, time.monotonic() - last)
+
+    def output_device(self) -> str:
+        return self._output_device
+
     def queued_count(self, sound_id: str) -> int:
         return len(self._queues.get(sound_id, []))
 
