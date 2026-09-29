@@ -179,7 +179,7 @@ def test_registry_has_social_rotator_overlay() -> None:
     st = t.initial_state({"instance": "main"})
     assert "config" in st
     assert "rotation" in st
-    assert "stats" in st
+    assert "stats" not in st
 
 
 def test_pubsub_publishes_to_subscribers() -> None:
