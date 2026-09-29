@@ -540,6 +540,7 @@ Item {
         delegate: Timer {
             interval: Math.max(50, model.delayMs)
             repeat: false
+            running: true
             onTriggered: root.refresh()
         }
     }
@@ -585,8 +586,37 @@ Item {
                 RowLayout {
                     spacing: 10
                     Text { text: "Хоткей (необов'язково)"; color: root.muted; font.pixelSize: 12 }
-                    CheremshaKeycap { keyText: root.addHotkeyDraft }
+                    CheremshaKeycap {
+                        keyText: root.addHotkeyDraft
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                if (root.addHotkeyDraft !== "") root.addHotkeyDraft = "";
+                                else addCaptureZone.forceActiveFocus();
+                            }
+                        }
+                    }
                     Item { Layout.fillWidth: true }
+                }
+
+                // Invisible focus target that captures the next key press.
+                Item {
+                    id: addCaptureZone
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 8
+                    Keys.onPressed: function (event) {
+                        if (event.key === Qt.Key_Escape) {
+                            event.accepted = true; // keep the modal open, just drop capture focus
+                            addCaptureZone.activeFocus = false;
+                            return;
+                        }
+                        var combo = root._comboFromEvent(event);
+                        if (combo !== "") {
+                            event.accepted = true;
+                            root.addHotkeyDraft = combo;
+                        }
+                    }
                 }
                 Text {
                     id: addErrText
