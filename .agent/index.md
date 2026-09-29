@@ -18,7 +18,8 @@ Lightweight index of architectural symbols, interfaces, and patterns to answer *
 | `ActionEngine` | `src/stream_cheremsha/actions/engine.py` | Asynchronous trigger execution (keystrokes, commands) |
 | `ActionRegistry` | `src/stream_cheremsha/actions/registry.py` | Type registry for automation action models |
 | `BattleEngine` | `src/stream_cheremsha/battle/engine.py` | Deterministic 1v1/2v2 score, combo, and comeback state machine |
-| `BattleRoyaleController` | `src/stream_cheremsha/battle_royale/controller.py` | Singleton HP duel game controller |
+| `BattleRoyaleController` | `src/stream_cheremsha/battle_royale/controller.py` | Per-instance HP duel game engine (optional config loader) |
+| `BattleRoyaleInstanceController` | `src/stream_cheremsha/overlays/battle_royale_controller.py` | Per-instance QObject adapter, topic `overlay:battle_royale:{instance}` |
 | `ObsWsClient` | `src/stream_cheremsha/obs_ws/control.py` | OBS WebSocket v5 client for scenes and sources |
 | `KeyringStore` | `src/stream_cheremsha/config/keyring_store.py` | Secure OS Keyring abstraction for tokens and passwords |
 
@@ -60,7 +61,7 @@ Located in `src/stream_cheremsha/ui/main_window.py`:
 | Topic Format | Emitter | Subscriber | Purpose |
 |--------------|---------|------------|---------|
 | `overlay:{type}:{instance_id}` | `InstanceControllerGroup` | OBS Browser Source | Per-instance real-time state sync (battle, leaderboard) |
-| `overlay:battle_royale:*` | `BattleRoyaleController` | OBS Browser Source | Singleton battle royale HP & events |
+| `overlay:battle_royale:{instance_id}` | `BattleRoyaleInstanceController` | OBS Browser Source | Per-instance battle royale HP & events |
 | `overlay:chat:*` | Chat dock / controllers | OBS Browser Source | Real-time chat messages |
 | `overlay:now_playing:*` | `MusicQueueController` | OBS Browser Source | Album art, title, and playback state |
 

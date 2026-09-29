@@ -85,7 +85,7 @@
 ### BattleGames
 - **Responsibility**: Interactive viewer mini-games (1v1/2v2 Battle score races, Battle Royale HP duels).
 - **Location**: `src/stream_cheremsha/battle/engine.py`, `src/stream_cheremsha/battle_royale/controller.py`
-- **Important Symbols**: `BattleEngine`, `BattleRoyaleController`, `BattleState`, `Participant`
+- **Important Symbols**: `BattleEngine`, `BattleRoyaleController` (per-instance engine), `BattleRoyaleInstanceController` (per-instance QObject adapter), `BattleState`, `Participant`
 - **Depends On**: Pure Python models, `InstanceControllerGroup`
 - **Related Domains**: `ChatAggregation`, `OverlaysWidgets`, `Persistence`
 - **Domain Guide**: [.agent/domains/battle_games.md](file:///home/oleksandrboichuk/Dev/Self/stream-cheremsha/.agent/domains/battle_games.md)

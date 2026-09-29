@@ -9,17 +9,19 @@ BATTLE_OVERLAY_CONFIG_SCHEMA_VERSION = 1
 BATTLE_OVERLAY_CONFIG_QSETTINGS_KEY = "overlays/battle/main/config_json"
 _BATTLE_OVERLAY_CONFIG_QSETTINGS_BACKUP_KEY = "overlays/battle/main/config_json_backup"
 
-BATTLE_THEMES = frozenset({
-    "cheremsha_neon",
-    "cyber",
-    "arcade",
-    "minimal",
-    "halloween",
-    "anime",
-    "glitch",
-    "fantasy",
-    "newyear",
-})
+BATTLE_THEMES = frozenset(
+    {
+        "cheremsha_neon",
+        "cyber",
+        "arcade",
+        "minimal",
+        "halloween",
+        "anime",
+        "glitch",
+        "fantasy",
+        "newyear",
+    }
+)
 BATTLE_LAYOUTS = frozenset({"normal", "compact"})
 
 
@@ -222,7 +224,7 @@ def battle_overlay_config_from_json_text(text: str) -> BattleOverlayConfig:
         auto_threshold_each=max(
             1, min(10000, _ensure_int(d.get("auto_threshold_each"), default=100))
         ),
-        auto_window_s=max(5, min(120, _ensure_int(d.get("auto_window_s"), default=30))),
+        auto_window_s=max(5, _ensure_int(d.get("auto_window_s"), default=30)),
         auto_reset=_ensure_bool(d.get("auto_reset"), default=True),
         auto_reset_delay_s=max(5, min(60, _ensure_int(d.get("auto_reset_delay_s"), default=10))),
         gifts_enabled=_ensure_bool(d.get("gifts_enabled"), default=True),

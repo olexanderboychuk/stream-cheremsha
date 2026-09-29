@@ -306,9 +306,12 @@ class GiftRushController(QObject):
         if name not in self._sfx_cache:
             p = Path(__file__).resolve().parents[1] / "assets" / "sounds" / f"{name}.mp3"
             try:
-                self._sfx_cache[name] = p.read_bytes() if p.is_file() else b""
+                data = p.read_bytes() if p.is_file() else b""
             except OSError:
-                self._sfx_cache[name] = b""
+                data = b""
+            if not data:
+                _LOG.warning("gift_rush sfx %s missing at %s — gift will be silent", name, p)
+            self._sfx_cache[name] = data
         return self._sfx_cache[name]
 
     def _play_gift_sfx(
@@ -344,7 +347,7 @@ class GiftRushController(QObject):
                 try:
                     await play(data, g)
                 except Exception as exc:  # noqa: BLE001 - never break the gift flow
-                    _LOG.debug("gift_rush sfx %s failed: %s", name, exc)
+                    _LOG.warning("gift_rush sfx %s failed: %s", name, exc)
 
             loop.create_task(_run())
 

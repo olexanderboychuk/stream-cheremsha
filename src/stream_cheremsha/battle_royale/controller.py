@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -40,12 +41,15 @@ class VipReward:
 class BattleRoyaleController:
     """In-memory battle session state machine."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self, config_loader: Callable[[], BattleRoyaleOverlayConfig] | None = None
+    ) -> None:
         self._state = BattleState()
         self._auto_buffer: list[_AutoGiftEntry] = []
         self._vip: VipReward | None = None
         self._on_battle_ended: list[Any] = []
         self._session_cfg: BattleRoyaleOverlayConfig | None = None
+        self._config_loader = config_loader
 
     def reset(self) -> None:
         self._state = BattleState()
@@ -69,6 +73,8 @@ class BattleRoyaleController:
         return self._state
 
     def config(self) -> BattleRoyaleOverlayConfig:
+        if self._config_loader is not None:
+            return self._config_loader()
         return load_battle_royale_overlay_config()
 
     def vip_reward(self) -> VipReward | None:
@@ -284,8 +290,13 @@ class BattleRoyaleController:
         if len(alive) == 1:
             self._end_battle(alive[0], cfg)
             return
-        best = max(self._state.fighters, key=lambda f: f.hp)
-        self._end_battle(best, cfg)
+        best_hp = max(f.hp for f in self._state.fighters)
+        leaders = [f for f in self._state.fighters if f.hp == best_hp]
+        if len(leaders) == 1:
+            self._end_battle(leaders[0], cfg)
+            return
+        # Exact HP tie among the living: a draw, not a slot-0 coin flip.
+        self._end_battle(None, cfg)
 
     def _end_battle(self, winner: BattleFighter | None, cfg: BattleRoyaleOverlayConfig) -> None:
         st = self._state

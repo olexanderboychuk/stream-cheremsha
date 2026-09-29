@@ -7,7 +7,7 @@ Manages interactive real-time stream mini-games driven by viewer interactions (T
 - **Deterministic Battle Engine (`src/stream_cheremsha/battle/engine.py`)**: Pure Python engine without Qt or I/O dependencies. Tracks rounds (best-of-N), auto-locks top gifters as participants, calculates points, combo multipliers, comebacks, and close-finish states with an injectable clock.
 - **Drawn rounds**: A 0–0 round is a wash — `st.round` advances to the next round (see `BattleEngine._resolve_round`). Replay of the same round was a freeze in the live UI (spectator gifts score nothing by design, so rounds can end 0–0 while the overlay is in play).
 - **Series cap**: Total rounds are capped at `best_of`. If a round resolves with no team at majority wins and `st.round >= best_of` (e.g. endless 0–0 rounds, or BO3 ending 1–1 after a drawn round), the battle finishes as a draw via `BattleEngine._finish_draw`: status FINISHED, `winner_team_id=None`, `battle_finished` event with `payload.draw=True`. The overlay hides the winner screen when `state.winner` is null.
-- **Battle Royale (`src/stream_cheremsha/battle_royale/`)**: Singleton HP-duel system where viewer gifts heal or damage competing fighters.
+- **Battle Royale (`src/stream_cheremsha/battle_royale/`)**: Per-instance HP-duel system where viewer gifts heal or damage competing fighters. One engine per widget instance via `InstanceControllerGroup("battle_royale", ...)`; no shared singleton state.
 - **Overlay State Sync**: Game engines emit normalized event/state snapshots that controllers broadcast over WebSocket to overlay browser sources.
 - **Participant Locking**: Auto-locks the first qualifying viewers into fighter slots; spectator gifts during active rounds do not alter fighter scores.
 
@@ -15,7 +15,8 @@ Manages interactive real-time stream mini-games driven by viewer interactions (T
 - `src/stream_cheremsha/battle/engine.py`: Core deterministic 1v1/2v2 battle engine.
 - `src/stream_cheremsha/battle/models.py`: Dataclasses (`BattleState`, `Participant`, `Team`, `BattleEvent`, `ComboState`).
 - `src/stream_cheremsha/battle/decision.py`: Optional hook layer for game moments / decisions.
-- `src/stream_cheremsha/battle_royale/controller.py`: Battle royale duel controller and state manager.
+- `src/stream_cheremsha/battle_royale/controller.py`: Battle royale duel engine (pure state machine; accepts an optional per-instance config loader).
+- `src/stream_cheremsha/overlays/battle_royale_controller.py`: Per-instance QObject adapter (`BattleRoyaleInstanceController`, topic `overlay:battle_royale:{instance_id}`), mirroring `battle_controller.py`.
 - `src/stream_cheremsha/overlays/battle_overlay.py`: Web overlay implementation for the Battle widget.
 - `src/stream_cheremsha/persistence/battle_royale_wins_sqlite.py`: SQLite persistence for historical win records.
 
