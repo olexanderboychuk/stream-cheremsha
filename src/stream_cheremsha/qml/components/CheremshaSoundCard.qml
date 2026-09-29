@@ -23,9 +23,9 @@ Rectangle {
     signal retryRequested()
     signal relinkRequested()
 
-    implicitWidth: 200
-    implicitHeight: 148
-    radius: 10
+    implicitWidth: 260
+    implicitHeight: 170
+    radius: 12
     color: root.playing ? "#171326" : "#121620"
     border.width: 1
     // Focus outline (a11y): cyan ring when the card is the tab-focus target.
@@ -41,33 +41,65 @@ Rectangle {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 10
-        spacing: 6
+        anchors.margins: 12
+        spacing: 8
 
+        // Top row: name + category tag + menu
         RowLayout {
             Layout.fillWidth: true
             spacing: 6
             Text {
                 text: root.soundName
                 color: "#e8eaed"
-                font.pixelSize: 14
+                font.pixelSize: 15
                 font.bold: true
                 elide: Text.ElideRight
                 Layout.fillWidth: true
             }
-            Text {
-                visible: root.playing || root.cooldownLeft > 0
-                text: root.playing ? "PLAYING" : ("COOLDOWN " + root.cooldownLeft.toFixed(1) + "s")
-                color: "#06b6d4"
-                font.pixelSize: 10
-                font.bold: true
+            // Category tag (small pill)
+            Rectangle {
+                visible: false // Will be set by parent via property binding if needed
+                radius: 4
+                color: "#241b3a"
+                border.width: 1
+                border.color: "#8b5cf6"
+                Text {
+                    anchors.centerIn: parent
+                    text: "Реакції"
+                    color: "#c4b5fd"
+                    font.pixelSize: 9
+                    padding: 2
+                }
+            }
+            // Three-dot menu button
+            Rectangle {
+                id: menuBtn
+                Layout.preferredWidth: 26
+                Layout.preferredHeight: 26
+                radius: 6
+                color: cardMenu.visible || menuMa.containsMouse ? "#1c2434" : "transparent"
+                border.width: 1
+                border.color: cardMenu.visible ? "#3b4458" : "transparent"
+                Image {
+                    anchors.centerIn: parent
+                    width: 14
+                    height: 14
+                    source: Qt.resolvedUrl("../../assets/icons/web_more.svg")
+                }
+                MouseArea {
+                    id: menuMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: cardMenu.visible ? cardMenu.close() : cardMenu.popup()
+                }
             }
         }
 
-        // Waveform: static peaks + progress fill, no Canvas loop.
+        // Waveform visualization (static peaks + progress fill)
         Item {
             Layout.fillWidth: true
-            Layout.preferredHeight: root.broken ? 20 : 34
+            Layout.preferredHeight: root.broken ? 20 : 48
             Repeater {
                 id: peaksRep
                 model: (root.peaks && root.peaks.length > 0) ? root.peaks : [0.2, 0.5, 0.3, 0.6, 0.4]
@@ -81,6 +113,7 @@ Rectangle {
             }
         }
 
+        // Broken state message
         Text {
             Layout.fillWidth: true
             visible: root.broken
@@ -89,22 +122,27 @@ Rectangle {
             font.pixelSize: 12
         }
 
+        // Bottom row: hotkey keycap + duration + play button
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
-            Rectangle { // keycap inline (kept local to avoid extra import path issues)
+            // Keyboard keycap style hotkey badge (using CheremshaKeycap)
+            Item {
                 Layout.preferredWidth: 40
-                Layout.preferredHeight: 24
-                radius: 6
-                color: "#1c2434"
-                border.width: 1
-                border.color: "#3b4458"
-                Text {
-                    anchors.centerIn: parent
-                    text: root.hotkey === "" ? "—" : root.hotkey
-                    color: "#e8eaed"
-                    font.pixelSize: 12
-                    font.bold: true
+                Layout.preferredHeight: 26
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 6
+                    color: "#1c2434"
+                    border.width: 1
+                    border.color: "#3b4458"
+                    Text {
+                        anchors.centerIn: parent
+                        text: root.hotkey === "" ? "—" : root.hotkey
+                        color: "#e8eaed"
+                        font.pixelSize: 12
+                        font.bold: true
+                    }
                 }
                 MouseArea {
                     anchors.fill: parent
@@ -112,6 +150,7 @@ Rectangle {
                     onClicked: root.hotkeyClicked()
                 }
             }
+            // Duration display
             Text {
                 text: root.durationSec.toFixed(1) + "s"
                 color: "#8b95a5"
@@ -119,44 +158,22 @@ Rectangle {
             }
             Item { Layout.fillWidth: true; Layout.preferredHeight: 1 }
 
-            Rectangle { // three-dot menu (spec §42)
-                id: menuBtn
-                Layout.preferredWidth: 26
-                Layout.preferredHeight: 26
-                radius: 6
-                color: cardMenu.visible || menuMa.containsMouse ? "#1c2434" : "transparent"
-                border.width: 1
-                border.color: cardMenu.visible ? "#3b4458" : "transparent"
-                Image {
-                    anchors.centerIn: parent
-                    width: 14
-                    height: 14
-                    source: Qt.resolvedUrl("../assets/icons/web_more.svg")
-                }
-                MouseArea {
-                    id: menuMa
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: cardMenu.visible ? cardMenu.close() : cardMenu.popup()
-                }
-            }
-
+            // Circular play button with hover glow
             Button {
                 id: playBtn
                 Layout.preferredWidth: 36
-                Layout.preferredHeight: 28
+                Layout.preferredHeight: 36
                 enabled: !root.broken
                 hoverEnabled: true
                 focusPolicy: Qt.NoFocus
                 contentItem: Image {
-                    source: Qt.resolvedUrl("../assets/icons/" + (root.playing ? "stop.svg" : "play.svg"))
+                    source: Qt.resolvedUrl("../../assets/icons/" + (root.playing ? "stop.svg" : "play.svg"))
                     width: 14
                     height: 14
                     anchors.centerIn: parent
                 }
                 background: Rectangle {
-                    radius: 6
+                    radius: 18 // Circular
                     color: playBtn.hovered && playBtn.enabled ? "#263246" : "#1c2434"
                     border.width: 1
                     border.color: root.playing ? "#8b5cf6" : "#3b4458"

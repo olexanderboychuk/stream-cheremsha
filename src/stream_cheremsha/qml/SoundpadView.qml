@@ -306,10 +306,26 @@ Item {
             width: pageScroll.availableWidth
             spacing: 14
 
-            // Header
+            // Header — single title, no duplicate
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 12
+                Item {
+                    Layout.preferredWidth: 36
+                    Layout.preferredHeight: 36
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 8
+                        color: root.primaryPurple
+                        opacity: 0.15
+                    }
+                    Image {
+                        anchors.centerIn: parent
+                        source: Qt.resolvedUrl("../assets/icons/web_music.svg")
+                        width: 20
+                        height: 20
+                    }
+                }
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 2
@@ -318,6 +334,21 @@ Item {
                         text: "Миттєві звуки, хоткеї та аудіо-реакції для стріму"
                         color: root.muted
                         font.pixelSize: 13
+                    }
+                }
+                // Compact search (not full width)
+                TextField {
+                    id: headerSearchField
+                    Layout.preferredWidth: 260
+                    placeholderText: "Пошук звуків..."
+                    color: root.ink
+                    selectionColor: "#7c4fee"
+                    onTextChanged: { root.query = text; root.refresh(); }
+                    background: Rectangle {
+                        radius: 8
+                        color: root.fieldBg
+                        border.width: 1
+                        border.color: headerSearchField.activeFocus ? root.primaryPurple : root.cardEdge
                     }
                 }
                 Button {
@@ -371,22 +402,6 @@ Item {
                 }
             }
 
-            // Search (local filter over name/category/hotkey)
-            TextField {
-                id: searchField
-                Layout.fillWidth: true
-                placeholderText: "Пошук звуків..."
-                color: root.ink
-                selectionColor: "#7c4fee"
-                onTextChanged: { root.query = text; root.refresh(); }
-                background: Rectangle {
-                    radius: 8
-                    color: root.fieldBg
-                    border.width: 1
-                    border.color: searchField.activeFocus ? root.primaryPurple : root.cardEdge
-                }
-            }
-
             // Grid / empty states
             CheremshaResponsiveCardGrid {
                 Layout.fillWidth: true
@@ -400,7 +415,7 @@ Item {
                     delegate: CheremshaSoundCard {
                         id: sndCard
                         Layout.fillWidth: true
-                        implicitHeight: 148
+                        implicitHeight: 170
                         soundId: model.id
                         soundName: model.name
                         peaks: model.peaks
@@ -433,38 +448,78 @@ Item {
                 }
             }
 
-            ColumnLayout {
+            // Beautiful empty state card (not just text in middle of page)
+            Item {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 300
                 visible: root._allItems.length === 0
-                spacing: 10
-                Text {
-                    Layout.alignment: Qt.AlignHCenter
-                    text: "Soundpad"
-                    color: root.muted
-                    font.pixelSize: 28
-                    font.bold: true
-                }
-                Text {
-                    Layout.alignment: Qt.AlignHCenter
-                    text: "Додайте перший звук і прив'яжіть його до хоткею."
-                    color: root.muted
-                    font.pixelSize: 14
-                }
-                Button {
-                    id: emptyAddBtn
-                    Layout.alignment: Qt.AlignHCenter
-                    text: "+ Додати звук"
-                    hoverEnabled: true
-                    focusPolicy: Qt.NoFocus
-                    onClicked: fileDialog.open()
-                    background: Rectangle { radius: 8; color: root.primaryPurple }
-                }
-                Text {
-                    Layout.alignment: Qt.AlignHCenter
-                    text: "Перетягніть аудіофайл сюди"
-                    color: "#5b6472"
-                    font.pixelSize: 12
+
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 460
+                    height: 280
+                    radius: 12
+                    color: "#121620"
+                    border.width: 1
+                    border.color: root.cardEdge
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 30
+                        spacing: 14
+
+                        Item {
+                            Layout.alignment: Qt.AlignHCenter
+                            Layout.preferredWidth: 56
+                            Layout.preferredHeight: 56
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: 12
+                                color: root.primaryPurple
+                                opacity: 0.15
+                            }
+                            Image {
+                                anchors.centerIn: parent
+                                source: Qt.resolvedUrl("../assets/icons/web_music.svg")
+                                width: 28
+                                height: 28
+                            }
+                        }
+
+                        Text {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: "Soundpad порожній"
+                            color: root.ink
+                            font.pixelSize: 18
+                            font.bold: true
+                        }
+
+                        Text {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: "Додайте перший звук і прив'яжіть його до хоткею."
+                            color: root.muted
+                            font.pixelSize: 14
+                            wrapMode: Text.Wrap
+                            horizontalAlignment: Text.AlignHCenter
+                        }
+
+                        Button {
+                            id: emptyAddBtn
+                            Layout.alignment: Qt.AlignHCenter
+                            text: "+ Додати звук"
+                            hoverEnabled: true
+                            focusPolicy: Qt.NoFocus
+                            onClicked: fileDialog.open()
+                            background: Rectangle { radius: 8; color: root.primaryPurple }
+                        }
+
+                        Text {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: "Перетягніть аудіофайл сюди"
+                            color: "#5b6472"
+                            font.pixelSize: 12
+                        }
+                    }
                 }
             }
 
@@ -479,14 +534,14 @@ Item {
         }
     }
 
-    // ---- Now-playing bar (fixed bottom) ----
+    // ---- Now-playing bar (fixed bottom, premium compact dock) ----
     Rectangle {
         id: npBar
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: 12
-        height: 56
+        height: 64
         radius: 12
         color: "#0e1420"
         border.width: 1
@@ -497,28 +552,48 @@ Item {
             anchors.margins: 12
             spacing: 12
 
-            Text {
-                text: root.nowPlayingId !== "" ? "NOW PLAYING" : "No sound playing"
-                color: root.nowPlayingId !== "" ? root.secondaryCyan : root.muted
-                font.pixelSize: 10
-                font.bold: true
-                Layout.alignment: Qt.AlignVCenter
+            // Now playing indicator + name
+            Item {
+                Layout.preferredWidth: 300
+                Layout.fillHeight: true
+                RowLayout {
+                    anchors.fill: parent
+                    spacing: 8
+                    Rectangle {
+                        width: 6
+                        height: 6
+                        radius: 3
+                        color: root.nowPlayingId !== "" ? root.secondaryCyan : "#3b4458"
+                        Layout.alignment: Qt.AlignVCenter
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        Text {
+                            text: root.nowPlayingId !== "" ? "NOW PLAYING" : "No sound playing"
+                            color: root.nowPlayingId !== "" ? root.secondaryCyan : root.muted
+                            font.pixelSize: 10
+                            font.bold: true
+                        }
+                        Text {
+                            visible: root.nowPlayingId !== ""
+                            text: root._npName()
+                            color: root.ink
+                            font.pixelSize: 13
+                            elide: Text.ElideRight
+                        }
+                    }
+                }
             }
-            Text {
-                visible: root.nowPlayingId !== ""
-                text: root._npName()
-                color: root.ink
-                font.pixelSize: 13
-                elide: Text.ElideRight
-                Layout.maximumWidth: 200
-                Layout.alignment: Qt.AlignVCenter
-            }
-            Rectangle { // progress track (bound to nowPlayingChanged, no polling)
+
+            // Progress bar (bound to nowPlayingChanged, no polling)
+            Rectangle {
                 visible: root.nowPlayingId !== ""
                 Layout.fillWidth: true
                 Layout.preferredHeight: 4
                 radius: 2
                 color: "#1c2434"
+                Layout.alignment: Qt.AlignVCenter
                 Rectangle {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
@@ -528,6 +603,8 @@ Item {
                     color: root.secondaryCyan
                 }
             }
+
+            // Time display
             Text {
                 visible: root.nowPlayingId !== ""
                 text: root._fmtTime(root.npPosition) + "/" + root._fmtTime(root.npDuration)
@@ -536,6 +613,7 @@ Item {
                 Layout.alignment: Qt.AlignVCenter
             }
 
+            // Output device selector (styled as proper select field)
             ComboBox {
                 id: outBox
                 Layout.preferredWidth: 190
@@ -543,35 +621,83 @@ Item {
                 onActivated: spApi.setOutputDevice(currentText)
             }
 
-            Slider {
-                id: volSlider
-                Layout.preferredWidth: 120
-                from: 0.0
-                to: 1.0
-                value: 0.78
-                onMoved: spApi.setGlobalVolume(value)
-                onPressedChanged: if (pressed) spApi.setGlobalVolume(value)
-            }
-            Text {
-                text: Math.round(volSlider.value * 100) + "%"
-                color: root.muted
-                font.pixelSize: 12
-                Layout.alignment: Qt.AlignVCenter
+            // Volume slider with Cheremsha styling
+            RowLayout {
+                spacing: 6
+                Image {
+                    source: Qt.resolvedUrl("../assets/icons/web_volume.svg")
+                    width: 14
+                    height: 14
+                    Layout.alignment: Qt.AlignVCenter
+                }
+                Slider {
+                    id: volSlider
+                    Layout.preferredWidth: 100
+                    from: 0.0
+                    to: 1.0
+                    value: 0.78
+                    onMoved: spApi.setGlobalVolume(value)
+                    onPressedChanged: if (pressed) spApi.setGlobalVolume(value)
+                }
+                Text {
+                    text: Math.round(volSlider.value * 100) + "%"
+                    color: root.muted
+                    font.pixelSize: 12
+                    Layout.alignment: Qt.AlignVCenter
+                }
             }
 
+            // Monitor toggle (styled as Cheremsha toggle button)
             CheckBox {
                 id: monitorCheck
                 text: "Monitor"
                 checked: true
                 onToggled: spApi.setMonitor(checked)
-            }
-            CheckBox {
-                id: streamOutCheck
-                text: "Stream Output"
-                checked: true
-                onToggled: spApi.setStreamOut(checked)
+                indicator: Rectangle {
+                    width: 28
+                    height: 16
+                    radius: 8
+                    color: monitorCheck.checked ? root.primaryPurple : "#3b4458"
+                    border.width: 0
+                    Rectangle {
+                        id: monitorKnob
+                        y: 2
+                        x: monitorCheck.checked ? 14 : 4
+                        width: 12
+                        height: 12
+                        radius: 6
+                        color: "white"
+                        Behavior on x { NumberAnimation { duration: 100 } }
+                    }
+                }
             }
 
+            // Stream Output toggle (styled as Cheremsha toggle button)
+            CheckBox {
+                id: streamOutCheck
+                text: "Stream"
+                checked: true
+                onToggled: spApi.setStreamOut(checked)
+                indicator: Rectangle {
+                    width: 28
+                    height: 16
+                    radius: 8
+                    color: streamOutCheck.checked ? root.primaryPurple : "#3b4458"
+                    border.width: 0
+                    Rectangle {
+                        id: streamKnob
+                        y: 2
+                        x: streamOutCheck.checked ? 14 : 4
+                        width: 12
+                        height: 12
+                        radius: 6
+                        color: "white"
+                        Behavior on x { NumberAnimation { duration: 100 } }
+                    }
+                }
+            }
+
+            // Stop button (only when playing)
             Button {
                 id: npStopBtn
                 visible: root.nowPlayingId !== ""
