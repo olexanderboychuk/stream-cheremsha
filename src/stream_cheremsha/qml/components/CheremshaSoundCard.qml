@@ -20,17 +20,24 @@ Rectangle {
     signal editRequested()
     signal duplicateRequested()
     signal removeRequested()
+    signal retryRequested()
+    signal relinkRequested()
 
     implicitWidth: 200
     implicitHeight: 148
     radius: 10
     color: root.playing ? "#171326" : "#121620"
     border.width: 1
-    border.color: root.playing ? "#8b5cf6" : (root.broken ? "#7f1d1d" : "#2a3142")
+    // Focus outline (a11y): cyan ring when the card is the tab-focus target.
+    border.color: root.activeFocus ? "#06b6d4"
+        : (root.playing ? "#8b5cf6" : (root.broken ? "#7f1d1d" : "#2a3142"))
     Behavior on border.color { ColorAnimation { duration: 140 } }
 
     Accessible.role: Accessible.Button
     Accessible.name: root.soundName + " " + (root.hotkey !== "" ? root.hotkey : "")
+    activeFocusOnTab: true
+    Keys.onReturnPressed: if (!root.broken) root.playRequested()
+    Keys.onSpacePressed: if (!root.broken) root.playRequested()
 
     ColumnLayout {
         anchors.fill: parent
@@ -165,6 +172,17 @@ Rectangle {
             text: root.playing ? "Стоп" : "Відтворити"
             enabled: !root.broken
             onTriggered: root.playing ? root.stopRequested() : root.playRequested()
+        }
+        // Error-state actions (spec §45-46): re-check, relink to a new file, or remove.
+        MenuItem {
+            text: "Спробувати знову"
+            visible: root.broken
+            onTriggered: root.retryRequested()
+        }
+        MenuItem {
+            text: "Змінити файл…"
+            visible: root.broken
+            onTriggered: root.relinkRequested()
         }
         MenuItem { text: "Хоткей…"; onTriggered: root.hotkeyClicked() }
         MenuItem { text: "Редагувати…"; onTriggered: root.editRequested() }

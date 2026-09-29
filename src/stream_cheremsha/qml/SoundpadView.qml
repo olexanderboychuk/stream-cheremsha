@@ -43,6 +43,9 @@ Item {
     property string addHotkeyDraft: ""
     property bool showAddModal: false
 
+    // Relink flow for broken cards (spec §45-46): pick a replacement file.
+    property string relinkTargetId: ""
+
     property string editingSoundId: ""
     property bool showEditModal: false
     property string editName: ""
@@ -164,6 +167,26 @@ Item {
         root.showAddModal = true;
     }
 
+    // Relink a broken sound: import the replacement first (old entry stays
+    // intact if the new file is rejected), then drop the old one and reclaim
+    // its hotkey combo, which addSound could not register while it was owned.
+    function _relinkSound(fileUrl) {
+        var sid = String(root.relinkTargetId || "");
+        root.relinkTargetId = "";
+        if (sid === "") return;
+        var it = null;
+        for (var i = 0; i < root._allItems.length; ++i) {
+            if (root._allItems[i].id === sid) { it = root._allItems[i]; break; }
+        }
+        if (!it) return;
+        var hk = it.hotkey || "";
+        var newSid = spApi.addSound(String(fileUrl), it.name || "", it.category || "Custom",
+                                    hk, Number(it.volume) || 1.0);
+        if (newSid === "") return; // invalid file: old sound untouched
+        spApi.removeSound(sid);
+        if (hk !== "") spApi.assignHotkey(newSid, hk);
+    }
+
     function openEditModal(soundId) {
         for (var i = 0; i < root._allItems.length; ++i) {
             var it = root._allItems[i];
@@ -259,6 +282,14 @@ Item {
         title: "Оберіть аудіофайл"
         nameFilters: ["Аудіо (*.mp3 *.wav *.ogg)", "MP3 (*.mp3)", "WAV (*.wav)", "OGG (*.ogg)"]
         onAccepted: root.openAddModal(selectedFile.toString())
+    }
+
+    // Replacement picker for broken cards (spec §45-46).
+    FileDialog {
+        id: relinkDialog
+        title: "Оберіть заміну аудіофайлу"
+        nameFilters: ["Аудіо (*.mp3 *.wav *.ogg)", "MP3 (*.mp3)", "WAV (*.wav)", "OGG (*.ogg)"]
+        onAccepted: root._relinkSound(selectedFile.toString())
     }
 
     // ---- Page content (scrollable; now-playing bar stays fixed below) ----
@@ -391,6 +422,13 @@ Item {
                         onEditRequested: root.openEditModal(sndCard.soundId)
                         onDuplicateRequested: spApi.duplicateSound(sndCard.soundId)
                         onRemoveRequested: spApi.removeSound(sndCard.soundId)
+                        // Error-state actions (spec §45-46): retry re-checks the
+                        // file on disk; relink imports a replacement.
+                        onRetryRequested: root.refresh()
+                        onRelinkRequested: {
+                            root.relinkTargetId = sndCard.soundId;
+                            relinkDialog.open();
+                        }
                     }
                 }
             }

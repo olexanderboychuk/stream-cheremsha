@@ -101,6 +101,7 @@ class SoundpadQmlApi(QObject):
         for e in self._store.list_all():
             d = _entry_to_dict(e)
             d["playing"] = e.id in playing
+            d["broken"] = not Path(e.file_path).is_file()
             out.append(d)
         return out
 
