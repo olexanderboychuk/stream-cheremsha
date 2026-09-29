@@ -20,3 +20,5 @@ CheremshaDatePicker 1.0 CheremshaDatePicker.qml
 ServiceHistoryPage 1.0 ServiceHistoryPage.qml
 CheremshaModal 1.0 CheremshaModal.qml
 CheremshaColorPicker 1.0 CheremshaColorPicker.qml
+CheremshaKeycap 1.0 CheremshaKeycap.qml
+CheremshaSoundCard 1.0 CheremshaSoundCard.qml

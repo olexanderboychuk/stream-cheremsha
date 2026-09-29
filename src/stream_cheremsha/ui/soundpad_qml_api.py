@@ -137,9 +137,7 @@ class SoundpadQmlApi(QObject):
 
     def _schedule_metadata(self, sound_id: str, path: Path) -> None:
         if _loop_running():
-            t = asyncio.get_running_loop().create_task(
-                self._apply_metadata_async(sound_id, path)
-            )
+            t = asyncio.get_running_loop().create_task(self._apply_metadata_async(sound_id, path))
             self._meta_tasks.add(t)
             t.add_done_callback(lambda tt: self._meta_tasks.discard(tt))
         else:
@@ -147,9 +145,7 @@ class SoundpadQmlApi(QObject):
             self._apply_metadata(sound_id, path)
 
     @Slot(str, str, str, str, float, result=str)
-    def addSound(
-        self, fileUrl: str, name: str, category: str, hotkey: str, volume: float
-    ) -> str:
+    def addSound(self, fileUrl: str, name: str, category: str, hotkey: str, volume: float) -> str:
         p = file_url_to_path(fileUrl)
         err = self._validate_file(p)
         if err:

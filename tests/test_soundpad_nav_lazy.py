@@ -27,3 +27,9 @@ def test_load_branch_exists():
 
 def test_icon_exists():
     assert pathlib.Path("src/stream_cheremsha/assets/nav/soundpad.svg").is_file()
+
+
+def test_qml_files_exist():
+    assert pathlib.Path("src/stream_cheremsha/qml/SoundpadView.qml").is_file()
+    assert pathlib.Path("src/stream_cheremsha/qml/components/CheremshaSoundCard.qml").is_file()
+    assert pathlib.Path("src/stream_cheremsha/qml/components/CheremshaKeycap.qml").is_file()

@@ -17,10 +17,21 @@ def probe_duration_sec(path: str | Path) -> float:
         return 0.0
     try:
         proc = subprocess.run(
-            [ffprobe, "-hide_banner", "-loglevel", "error",
-             "-show_entries", "format=duration", "-of",
-             "default=noprint_wrappers=1:nokey=1", str(p)],
-            capture_output=True, timeout=10, check=False)
+            [
+                ffprobe,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(p),
+            ],
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
     except (OSError, subprocess.SubprocessError):
         return 0.0
     try:
@@ -45,10 +56,28 @@ def extract_waveform_peaks(path: str | Path, buckets: int = 64) -> list[float]:
         return []
     try:
         proc = subprocess.run(
-            [ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin",
-             "-i", str(p), "-ac", "1", "-ar", "8000", "-f", "s16le",
-             "-acodec", "pcm_s16le", "pipe:1"],
-            capture_output=True, timeout=20, check=False)
+            [
+                ffmpeg,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-nostdin",
+                "-i",
+                str(p),
+                "-ac",
+                "1",
+                "-ar",
+                "8000",
+                "-f",
+                "s16le",
+                "-acodec",
+                "pcm_s16le",
+                "pipe:1",
+            ],
+            capture_output=True,
+            timeout=20,
+            check=False,
+        )
     except (OSError, subprocess.SubprocessError) as e:
         logger.debug("waveform ffmpeg failed: %s", e)
         return []
