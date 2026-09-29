@@ -178,7 +178,7 @@ def battle_royale_overlay_config_from_json_text(text: str) -> BattleRoyaleOverla
         crit_multiplier=max(1.0, min(5.0, _ensure_float(d.get("crit_multiplier"), default=1.5))),
         auto_arm_enabled=_ensure_bool(d.get("auto_arm_enabled"), default=True),
         auto_threshold_each=max(1, _ensure_int(d.get("auto_threshold_each"), default=100)),
-        auto_window_s=max(5, min(120, _ensure_int(d.get("auto_window_s"), default=30))),
+        auto_window_s=max(5, _ensure_int(d.get("auto_window_s"), default=30)),
         max_fighters=max(2, min(4, _ensure_int(d.get("max_fighters"), default=4))),
         gifts_per_fighter=max(1, min(6, _ensure_int(d.get("gifts_per_fighter"), default=3))),
         vip_chat_hours=max(1, min(24, _ensure_int(d.get("vip_chat_hours"), default=1))),

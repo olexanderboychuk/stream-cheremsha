@@ -137,3 +137,17 @@ def test_auto_arm_after_two_qualified_gifts() -> None:
     )
     assert c.state().phase == BattlePhase.COUNTDOWN
     assert len(c.state().fighters) == 2
+
+
+def test_timer_tie_is_draw_not_slot_zero() -> None:
+    c = BattleRoyaleController()
+    cfg = _cfg(countdown_s=0, round_duration_s=10)
+    c.set_session_config(cfg)
+    c.start_manual(_fighters(), cfg=cfg)
+    st = c.state()
+    st.phase = BattlePhase.ACTIVE
+    st.fighters[0].hp = 70
+    st.fighters[1].hp = 70
+    c._resolve_by_hp(cfg)
+    assert c.state().phase == BattlePhase.VICTORY
+    assert c.state().winner_key in (None, "")

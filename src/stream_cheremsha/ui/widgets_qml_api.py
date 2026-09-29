@@ -28,12 +28,6 @@ from stream_cheremsha.overlays.battle_royale_overlay_config import (
     load_battle_royale_overlay_config,
     save_battle_royale_overlay_config,
 )
-from stream_cheremsha.overlays.gift_rush_config import (
-    gift_rush_overlay_config_from_json_text,
-    gift_rush_overlay_config_to_json_text,
-    load_gift_rush_overlay_config,
-    save_gift_rush_overlay_config,
-)
 from stream_cheremsha.overlays.chat_config import (
     chat_config_from_json_text,
     chat_config_to_json_text,
@@ -45,6 +39,12 @@ from stream_cheremsha.overlays.community_world_config import (
     community_world_overlay_config_to_json_text,
     load_community_world_overlay_config,
     save_community_world_overlay_config,
+)
+from stream_cheremsha.overlays.gift_rush_config import (
+    gift_rush_overlay_config_from_json_text,
+    gift_rush_overlay_config_to_json_text,
+    load_gift_rush_overlay_config,
+    save_gift_rush_overlay_config,
 )
 from stream_cheremsha.overlays.king_of_live_overlay_config import (
     king_of_live_overlay_config_from_json_text,
@@ -239,6 +239,7 @@ class WidgetsQmlApi(QObject):
         self._music_instance = str(online_instance or "main").strip() or "main"
         self._battle_host: Any | None = None
         self._battle_controller: Any | None = None
+        self._battle_royale_group: Any | None = None
         self._gift_rush_group: Any | None = None
         self._stream_goal_controller: Any | None = None
         self._live_leaderboard_controller: Any | None = None
@@ -264,6 +265,9 @@ class WidgetsQmlApi(QObject):
 
     def set_battle_controller(self, controller: Any) -> None:
         self._battle_controller = controller
+
+    def set_battle_royale_group(self, controller: Any) -> None:
+        self._battle_royale_group = controller
 
     def set_gift_rush_group(self, controller: Any) -> None:
         self._gift_rush_group = controller
@@ -1408,10 +1412,13 @@ class WidgetsQmlApi(QObject):
         host = self._battle_host
         if host is None:
             return "idle"
-        ctrl = getattr(host, "_battle_controller", None)
-        if ctrl is None:
+        fn = getattr(host, "battle_royale_phase", None)
+        if not callable(fn):
             return "idle"
-        return str(ctrl.state().phase.value)
+        try:
+            return str(fn() or "idle")
+        except Exception:  # noqa: BLE001 - never break QML
+            return "idle"
 
     @Property(str, notify=onlineOverlayUrlChanged)
     def onlineOverlayUrlValue(self) -> str:  # noqa: ANN201 - PySide pattern
@@ -1927,6 +1934,9 @@ class WidgetsQmlApi(QObject):
                 exc,
             )
             return
+        # NOTE: battle_royale engines are per-instance (mirrors battle):
+        # an instance-routed save persists only into the instance store and
+        # hot-reloads that member. No singleton write-through.
         if self._save_cfg_to_instance(
             "battle_royale", json.loads(battle_royale_overlay_config_to_json_text(cfg))
         ):
@@ -2629,6 +2639,7 @@ class WidgetsQmlApi(QObject):
             "_live_leaderboard_controller",
             "_live_leaderboard_simple_controller",
             "_battle_controller",
+            "_battle_royale_group",
             "_gift_rush_group",
             "_stream_goal_controller",
             "_social_rotator_controller",

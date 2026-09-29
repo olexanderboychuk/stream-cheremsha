@@ -23,8 +23,8 @@ import httpx
 import shiboken6
 from PySide6.QtCore import (
     Property,
-    QByteArray,
     QAbstractAnimation,
+    QByteArray,
     QEasingCurve,
     QEvent,
     QObject,
@@ -112,8 +112,7 @@ from stream_cheremsha.activity.models import (
     now_hms,
 )
 from stream_cheremsha.audio.qt_sink import QtAudioSink
-from stream_cheremsha.battle_royale.controller import BattleRoyaleController
-from stream_cheremsha.battle_royale.models import BattleFighter, BattlePhase
+from stream_cheremsha.battle_royale.models import BattleFighter
 from stream_cheremsha.chat import kick_credentials, twitch_credentials, twitch_oauth_device
 from stream_cheremsha.chat.kick_api import (
     KickApiClient,
@@ -158,16 +157,20 @@ from stream_cheremsha.overlays.battle_overlay_config import (
     battle_overlay_config_defaults,
     battle_overlay_config_from_json_text,
 )
-from stream_cheremsha.overlays.battle_royale_overlay_config import (
-    load_battle_royale_overlay_config,
+from stream_cheremsha.overlays.battle_royale_controller import (
+    BattleRoyaleInstanceController,
 )
-from stream_cheremsha.overlays.gift_rush_controller import GiftRushController
+from stream_cheremsha.overlays.battle_royale_overlay_config import (
+    battle_royale_overlay_config_defaults,
+    battle_royale_overlay_config_from_json_text,
+)
+from stream_cheremsha.overlays.chat_overlay import chat_message_to_patch
+from stream_cheremsha.overlays.community_world_controller import CommunityWorldController
 from stream_cheremsha.overlays.gift_rush_config import (
     gift_rush_overlay_config_defaults,
     gift_rush_overlay_config_from_json_text,
 )
-from stream_cheremsha.overlays.chat_overlay import chat_message_to_patch
-from stream_cheremsha.overlays.community_world_controller import CommunityWorldController
+from stream_cheremsha.overlays.gift_rush_controller import GiftRushController
 from stream_cheremsha.overlays.instance_groups import (
     InstanceControllerGroup,
     instance_config_loader,
@@ -176,7 +179,9 @@ from stream_cheremsha.overlays.king_of_live_overlay_config import (
     load_king_of_live_overlay_config,
 )
 from stream_cheremsha.overlays.live_leaderboard_controller import LiveLeaderboardController
-from stream_cheremsha.overlays.live_leaderboard_simple_controller import LiveLeaderboardSimpleController
+from stream_cheremsha.overlays.live_leaderboard_simple_controller import (
+    LiveLeaderboardSimpleController,
+)
 from stream_cheremsha.overlays.registry import OverlayRegistry
 from stream_cheremsha.overlays.server import OverlayServer
 from stream_cheremsha.overlays.signal_system_controller import SignalSystemController
@@ -266,13 +271,13 @@ if TYPE_CHECKING:
     # Static names for linters/type-checkers; the real imports run post-show
     # via _ensure_telegram_libs() (never at application startup).
     from stream_cheremsha.telegram.bot_service import RiskyDecisionResult, TelegramBotService
-    from stream_cheremsha.ui.actions_qml_api import ActionsQmlApi
     from stream_cheremsha.telegram.tiktok_song_filter import (
         TikTokLyricsCheckError,
         analyze_lyrics_with_groq,
         fetch_lyrics_for_youtube_title,
         format_tiktok_reject_reason,
     )
+    from stream_cheremsha.ui.actions_qml_api import ActionsQmlApi
 
 logger = logging.getLogger(__name__)
 
@@ -771,7 +776,9 @@ class _HoverCapsuleView(QWidget):
             bp.setCosmetic(True)
             p.setPen(bp)
             p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawRoundedRect(QRectF(rc.x() + 0.5, rc.y() + 0.5, rc.width() - 1.0, rc.height() - 1.0), r, r)
+            p.drawRoundedRect(
+                QRectF(rc.x() + 0.5, rc.y() + 0.5, rc.width() - 1.0, rc.height() - 1.0), r, r
+            )
         finally:
             p.end()
 
@@ -915,7 +922,14 @@ class _SidebarHoverController(QObject):
 class _SidebarHoverWatcher(QObject):
     """Forwards Enter/Leave of any sidebar surface to the shared pill controller."""
 
-    def __init__(self, controller: _SidebarHoverController, glow: QColor | None, *, swell: bool = False, parent: QObject | None = None) -> None:
+    def __init__(
+        self,
+        controller: _SidebarHoverController,
+        glow: QColor | None,
+        *,
+        swell: bool = False,
+        parent: QObject | None = None,
+    ) -> None:
         super().__init__(parent)
         self._ctl = controller
         self._glow = glow
@@ -1157,10 +1171,32 @@ class MainWindow(FramelessWindow):
         self._king_chat_highlight_seq: int = 0
         self._king_overlay_cached_king_key: str = ""
         self._king_overlay_cached_king_display: str = ""
-        self._battle_controller = BattleRoyaleController()
-        self._battle_controller._on_battle_ended.append(self._on_battle_royale_ended)
-        self._battle_auto_arm_hint_count: int = 0
-        self._battle_overlay_publish_handle: asyncio.TimerHandle | None = None
+        from stream_cheremsha.overlays.instance_groups import (
+            instance_config_loader as _battle_cfg_loader,
+        )
+
+        def _make_battle_royale_controller(
+            instance_id: str,
+        ) -> BattleRoyaleInstanceController:
+            return BattleRoyaleInstanceController(
+                pubsub=self._overlay_server.pubsub(),
+                get_locale=lambda: self._locale,
+                instance=instance_id,
+                parent=self,
+                config_loader=_battle_cfg_loader(
+                    "battle_royale",
+                    instance_id,
+                    battle_royale_overlay_config_from_json_text,
+                    battle_royale_overlay_config_defaults,
+                ),
+                on_battle_ended=self._on_battle_royale_ended,
+            )
+
+        # One engine per widget instance (id-only topics); no shared singleton.
+        self._battle_royale_group = InstanceControllerGroup(
+            "battle_royale", _make_battle_royale_controller
+        )
+        self._battle_royale_group.sync_instances(start=False)
         self._battle_tick_timer = QTimer(self)
         self._battle_tick_timer.setInterval(1000)
         self._battle_tick_timer.timeout.connect(self._on_battle_tick)
@@ -1226,10 +1262,6 @@ class MainWindow(FramelessWindow):
         )
         self._live_leaderboard_simple.sync_instances(start=False)
 
-        from stream_cheremsha.overlays.instance_groups import (
-            instance_config_loader as _battle_cfg_loader,
-        )
-
         def _make_battle_controller(instance_id: str) -> BattleController:
             return BattleController(
                 pubsub=self._overlay_server.pubsub(),
@@ -1262,9 +1294,7 @@ class MainWindow(FramelessWindow):
                 audio_sink=self._sink,
             )
 
-        self._gift_rush_group = InstanceControllerGroup(
-            "gift_rush", _make_gift_rush_controller
-        )
+        self._gift_rush_group = InstanceControllerGroup("gift_rush", _make_gift_rush_controller)
         self._gift_rush_group.sync_instances(start=False)
 
         self._social_rotator = SocialRotatorController(
@@ -1623,6 +1653,7 @@ class MainWindow(FramelessWindow):
         self._widgets_qml_api.set_live_leaderboard_controller(self._live_leaderboard)
         self._widgets_qml_api.set_live_leaderboard_simple_controller(self._live_leaderboard_simple)
         self._widgets_qml_api.set_battle_controller(self._battle_group)
+        self._widgets_qml_api.set_battle_royale_group(self._battle_royale_group)
         self._widgets_qml_api.set_gift_rush_group(self._gift_rush_group)
         self._widgets_qml_api.set_social_rotator_controller(self._social_rotator)
         self._widgets_qml_api.set_webcam_frame_controller(self._webcam_frame)
@@ -2487,6 +2518,7 @@ class MainWindow(FramelessWindow):
             self._live_leaderboard,
             self._live_leaderboard_simple,
             self._battle_group,
+            self._battle_royale_group,
             self._gift_rush_group,
             self._social_rotator,
             self._community_world,
@@ -3391,8 +3423,7 @@ class MainWindow(FramelessWindow):
                 "QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 4px; }"
             )
         categories: list[tuple[str, str, list]] = [
-            ("general", self._tr("settings.general_group"),
-             [self._gb_settings_general]),
+            ("general", self._tr("settings.general_group"), [self._gb_settings_general]),
             ("obs", self._tr("settings.obs_group"), [self._gb_obs]),
             ("telegram", self._tr("settings.telegram_group"), [self._gb_telegram]),
             ("ai", self._tr("settings.ai_shield_group"), [self._gb_ai_shield]),
@@ -3420,13 +3451,15 @@ class MainWindow(FramelessWindow):
         if not _gear_pm.isNull():
             hdr_icon.setPixmap(
                 _gear_pm.scaled(
-                    24, 24,
+                    24,
+                    24,
                     Qt.AspectRatioMode.KeepAspectRatio,
                     Qt.TransformationMode.SmoothTransformation,
                 ),
             )
         hdr_icon.setStyleSheet(
-            "background: #0F1626; border: 1px solid #1e2534; border-radius: 8px;")
+            "background: #0F1626; border: 1px solid #1e2534; border-radius: 8px;"
+        )
         header.addWidget(hdr_icon, alignment=Qt.AlignmentFlag.AlignTop)
         title_col = QVBoxLayout()
         title_col.setSpacing(0)
@@ -3451,7 +3484,8 @@ class MainWindow(FramelessWindow):
         saved_dot = QLabel(self._tr("settings.saved"))
         saved_dot.setStyleSheet(
             "color: #2dd4bf; font-size: 11px; background: rgba(45,212,191,0.08);"
-            " border: 1px solid rgba(45,212,191,0.35); border-radius: 8px; padding: 3px 10px;")
+            " border: 1px solid rgba(45,212,191,0.35); border-radius: 8px; padding: 3px 10px;"
+        )
         saved_dot.setStyleSheet("color: #2dd4bf; font-size: 11px;")
         header.addWidget(saved_dot, alignment=Qt.AlignmentFlag.AlignVCenter)
         page_lay.addLayout(header)
@@ -3478,9 +3512,14 @@ class MainWindow(FramelessWindow):
         )
         stack = QStackedWidget()
         stack.setStyleSheet("QStackedWidget { background: transparent; }")
-        nav_icons = ("icons/settings_general.svg", "icons/settings_obs.svg",
-                     "icons/settings_telegram.svg", "icons/settings_ai.svg",
-                     "icons/settings_music.svg", "icons/settings_updates.svg")
+        nav_icons = (
+            "icons/settings_general.svg",
+            "icons/settings_obs.svg",
+            "icons/settings_telegram.svg",
+            "icons/settings_ai.svg",
+            "icons/settings_music.svg",
+            "icons/settings_updates.svg",
+        )
         for _idx, (_key, _label, _boxes) in enumerate(categories):
             _item = QListWidgetItem(_label)
             _ipm = QPixmap(str(_asset_path(nav_icons[_idx % len(nav_icons)])))
@@ -3490,16 +3529,14 @@ class MainWindow(FramelessWindow):
             cat_scroll = QScrollArea()
             cat_scroll.setWidgetResizable(True)
             cat_scroll.setFrameShape(QFrame.Shape.NoFrame)
-            cat_scroll.setHorizontalScrollBarPolicy(
-                Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            cat_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             cat_page = QWidget()
             cat_lay = QVBoxLayout(cat_page)
             cat_lay.setContentsMargins(2, 2, 2, 2)
             cat_lay.setSpacing(12)
             for _b in _boxes:
                 _b.setParent(cat_page)
-                _b.setSizePolicy(QSizePolicy.Policy.Expanding,
-                                 QSizePolicy.Policy.Maximum)
+                _b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
                 cat_lay.addWidget(_b)
             cat_lay.addStretch(1)
             cat_scroll.setWidget(cat_page)
@@ -3517,8 +3554,11 @@ class MainWindow(FramelessWindow):
                 match = needle in hay
                 for _b in _boxes:
                     try:
-                        hay += " " + _b.title().lower() + " " + _b.text().lower() \
-                            if hasattr(_b, "text") else " " + _b.title().lower()
+                        hay += (
+                            " " + _b.title().lower() + " " + _b.text().lower()
+                            if hasattr(_b, "text")
+                            else " " + _b.title().lower()
+                        )
                     except Exception:
                         pass
                     for _child in _b.findChildren((QLabel, QCheckBox, QPushButton)):
@@ -4227,12 +4267,13 @@ class MainWindow(FramelessWindow):
         self._refresh_footer()
         self._refresh_connection_panels()
         self._schedule_king_overlay_publish()
-        self._schedule_battle_overlay_publish()
         if hasattr(self, "_live_leaderboard") and self._live_leaderboard is not None:
             self._live_leaderboard.schedule_publish()
             self._live_leaderboard_simple.schedule_publish()
         if hasattr(self, "_battle_group") and self._battle_group is not None:
             self._battle_group.schedule_publish()
+        if hasattr(self, "_battle_royale_group") and self._battle_royale_group is not None:
+            self._battle_royale_group.schedule_publish()
         if hasattr(self, "_webcam_frame") and self._webcam_frame is not None:
             self._webcam_frame.schedule_publish()
 
@@ -5467,9 +5508,7 @@ class MainWindow(FramelessWindow):
                         voice = cd.strip()
                 if voice == _TTS_DEFAULT_VOICE_ID:
                     saved = str(
-                        self._settings.value(
-                            _SETTINGS_RESPEECHER_VOICE, _TTS_DEFAULT_VOICE_ID, str
-                        )
+                        self._settings.value(_SETTINGS_RESPEECHER_VOICE, _TTS_DEFAULT_VOICE_ID, str)
                         or _TTS_DEFAULT_VOICE_ID
                     ).strip()
                     if saved:
@@ -6045,7 +6084,7 @@ class MainWindow(FramelessWindow):
                 key = (message.tiktok_stable_key or "").strip()
                 if not key:
                     key = (message.author or "").strip().casefold()
-                if self._battle_controller.is_vip_user(key):
+                if self._is_battle_royale_vip_user(key):
                     append = chat_patch.get("append")
                     if isinstance(append, dict):
                         append["vip_gold"] = True
@@ -6542,6 +6581,9 @@ class MainWindow(FramelessWindow):
         battle_group = getattr(self, "_battle_group", None)
         if battle_group is not None:
             groups.append(battle_group)
+        battle_royale_group = getattr(self, "_battle_royale_group", None)
+        if battle_royale_group is not None:
+            groups.append(battle_royale_group)
         gift_rush_group = getattr(self, "_gift_rush_group", None)
         if gift_rush_group is not None:
             groups.append(gift_rush_group)
@@ -6695,73 +6737,56 @@ class MainWindow(FramelessWindow):
     def _on_battle_tick(self) -> None:
         if self._closing:
             return
-        if self._battle_controller.tick():
-            self._schedule_battle_overlay_publish()
-        grp = getattr(self, "_battle_group", None)
+        for attr in ("_battle_royale_group", "_battle_group"):
+            grp = getattr(self, attr, None)
+            members = getattr(grp, "_members", None) or {}
+            try:
+                ctls = list(members.values())
+            except Exception:
+                ctls = []
+            for ctl in ctls:
+                try:
+                    ctl.tick_advance()
+                except Exception:
+                    continue
+
+    def _battle_royale_member(self, instance_id: str | None) -> Any | None:
+        """Resolve one battle_royale member controller.
+
+        Explicit id wins; a missing id resolves only when exactly one member
+        exists (otherwise the target is ambiguous and None is returned).
+        """
+        grp = getattr(self, "_battle_royale_group", None)
+        members = getattr(grp, "_members", None) or {}
+        try:
+            items = dict(members)
+        except Exception:
+            return None
+        if not items:
+            return None
+        if instance_id is not None:
+            return items.get(str(instance_id))
+        if len(items) == 1:
+            return next(iter(items.values()))
+        return None
+
+    def _is_battle_royale_vip_user(self, user_key: str) -> bool:
+        """True when any battle_royale instance holds a live VIP reward."""
+        grp = getattr(self, "_battle_royale_group", None)
         members = getattr(grp, "_members", None) or {}
         try:
             ctls = list(members.values())
         except Exception:
-            ctls = []
+            return False
         for ctl in ctls:
             try:
-                ctl.tick_advance()
+                if bool(ctl.is_vip_user(user_key)):
+                    return True
             except Exception:
                 continue
+        return False
 
-    def _schedule_battle_overlay_publish(self) -> None:
-        if self._closing:
-            return
-        loop = self._asyncio_loop
-        if loop is None:
-            return
-        prev = self._battle_overlay_publish_handle
-        if prev is not None:
-            prev.cancel()
-        self._battle_overlay_publish_handle = loop.call_later(
-            0.35,
-            self._on_battle_overlay_debounced_fire,
-        )
-
-    def _on_battle_overlay_debounced_fire(self) -> None:
-        self._battle_overlay_publish_handle = None
-        if self._closing:
-            return
-        self._publish_battle_overlay_patch_sync()
-
-    def _build_battle_overlay_patch(self) -> dict[str, Any]:
-        # State-only: per-instance config comes from render / initial_state.
-        return self._battle_controller.overlay_patch()
-
-    def _publish_battle_overlay_patch_sync(self) -> None:
-        if self._closing:
-            return
-        try:
-            ps = self._overlay_server.pubsub()
-        except RuntimeError:
-            return
-        ps.publish_sync("overlay:battle_royale:*", self._build_battle_overlay_patch())
-
-    async def _publish_battle_overlay_patch(self) -> None:
-        self._publish_battle_overlay_patch_sync()
-
-    def _sync_battle_ui_after_gift(self, *, prev_phase: BattlePhase) -> None:
-        st = self._battle_controller.state()
-        if st.phase in (
-            BattlePhase.COUNTDOWN,
-            BattlePhase.ACTIVE,
-            BattlePhase.VICTORY,
-        ):
-            self._battle_tick_timer.start()
-            self._publish_battle_overlay_patch_sync()
-            self._schedule_battle_overlay_publish()
-            if prev_phase == BattlePhase.IDLE and st.phase == BattlePhase.COUNTDOWN:
-                names = ", ".join(f.display_name for f in st.fighters[:4])
-                self._on_user_status(
-                    self._tr("battle.auto_started", fighters=names),
-                )
-
-    def _on_battle_royale_ended(self, winner: BattleFighter | None) -> None:
+    def _on_battle_royale_ended(self, winner: BattleFighter | None, instance_id: str = "") -> None:
         if winner is not None:
             record_battle_win(
                 user_key=winner.user_key,
@@ -6777,44 +6802,74 @@ class MainWindow(FramelessWindow):
                 user_key=winner.user_key,
                 avatar_url=winner.avatar_url,
             )
-        self._schedule_battle_overlay_publish()
-        # Keep the shared 1s battle tick running: per-instance Battle widgets
-        # need it even when battle_royale is idle (see __init__ note).
-        self._battle_tick_timer.start()
+        # Shared 1s battle tick keeps running (see __init__ note); members
+        # publish their own victory patches.
 
-    def battle_royale_start_from_leaders(self) -> bool:
-        cfg = load_battle_royale_overlay_config()
-        leaders = self._tiktok_top_gifters.leaders(limit=cfg.max_fighters, sort="likes_desc")
+    def battle_royale_phase(self, instance_id: str | None = None) -> str:
+        ctl = self._battle_royale_member(instance_id)
+        if ctl is None:
+            return "idle"
+        try:
+            return str(ctl.phase_value())
+        except Exception:
+            return "idle"
+
+    def battle_royale_start_from_leaders(self, instance_id: str | None = None) -> bool:
+        ctl = self._battle_royale_member(instance_id)
+        if ctl is None:
+            self._on_user_status(self._tr("battle.start_failed"))
+            return False
+        try:
+            cfg = ctl.config()
+            limit = max(2, int(getattr(cfg, "max_fighters", 4)))
+        except Exception:
+            limit = 4
+        leaders = self._tiktok_top_gifters.leaders(limit=limit, sort="likes_desc")
         fighters = [
             {
                 "user_key": str(r.get("key") or ""),
                 "user": str(r.get("user") or "?"),
                 "avatar_url": str(r.get("avatar_url") or ""),
             }
-            for r in leaders[: cfg.max_fighters]
+            for r in leaders[:limit]
         ]
-        return self.battle_royale_start_fighters(fighters)
+        return self.battle_royale_start_fighters(fighters, instance_id=instance_id)
 
-    def battle_royale_start_fighters(self, fighters: list[dict[str, str]]) -> bool:
-        cfg = load_battle_royale_overlay_config()
-        ok = self._battle_controller.start_manual(fighters, cfg=cfg)
+    def battle_royale_start_fighters(
+        self, fighters: list[dict[str, str]], instance_id: str | None = None
+    ) -> bool:
+        ctl = self._battle_royale_member(instance_id)
+        if ctl is None:
+            self._on_user_status(self._tr("battle.start_failed"))
+            return False
+        ok = bool(ctl.start_manual(fighters))
         if ok:
             self._battle_tick_timer.start()
-            self._publish_battle_overlay_patch_sync()
-            self._schedule_battle_overlay_publish()
             names = ", ".join(str(f.get("user") or "?") for f in fighters[:4])
             self._on_user_status(self._tr("battle.manual_started", fighters=names))
         else:
             self._on_user_status(self._tr("battle.start_failed"))
         return ok
 
-    def battle_royale_stop(self) -> None:
-        self._battle_controller.stop()
-        self._battle_auto_arm_hint_count = 0
+    def battle_royale_stop(self, instance_id: str | None = None) -> None:
+        grp = getattr(self, "_battle_royale_group", None)
+        members = getattr(grp, "_members", None) or {}
+        try:
+            items = dict(members)
+        except Exception:
+            items = {}
+        if instance_id is not None:
+            ctl = items.get(str(instance_id))
+            targets = [ctl] if ctl is not None else []
+        else:
+            targets = list(items.values())
+        for ctl in targets:
+            try:
+                ctl.stop_battle()
+            except Exception:
+                continue
         # Do NOT stop _battle_tick_timer here: it is shared with per-instance
         # Battle widgets and must keep running (see __init__ note).
-        self._publish_battle_overlay_patch_sync()
-        self._schedule_battle_overlay_publish()
 
     def _load_points_config(self) -> PointsConfig:
         return load_points_config_from_settings(self._settings)
@@ -7011,10 +7066,6 @@ class MainWindow(FramelessWindow):
             hk.cancel()
             self._king_overlay_publish_handle = None
         self.battle_royale_stop()
-        hb = self._battle_overlay_publish_handle
-        if hb is not None:
-            hb.cancel()
-            self._battle_overlay_publish_handle = None
         self._stream_pet.reset_for_new_stream()
         self._stream_goal.reset_for_new_stream()
         self._live_leaderboard.reset_for_new_stream()
@@ -7404,38 +7455,22 @@ class MainWindow(FramelessWindow):
                 delta=self._earn_tracker.config.coins_to_points(total_coins),
                 reason="gift",
             )
-        if total_coins > 0:
-            prev_battle_phase = self._battle_controller.state().phase
-            battle_hit = self._battle_controller.on_gift(
-                sender_user_key=(sender_user_key or "").strip(),
-                sender_display=(sender or "").strip(),
-                sender_avatar_url=(sender_avatar_url or "").strip(),
-                diamonds=total_coins,
+        # Battle Royale is per-instance like Battle: every widget instance gets
+        # every gift (raw count + coin price; each member applies its own
+        # threshold/window and the unknown-price fallback internally).
+        try:
+            self._battle_royale_group.on_gift(
+                sender=sender,
+                count=c,
+                tiktok_coin_each=each,
                 gift_id=(gift_id or "").strip(),
                 gift_name=(gift_name or "").strip(),
+                sender_avatar_url=str(sender_avatar_url or "").strip(),
+                sender_user_key=(sender_user_key or "").strip(),
             )
-            self._sync_battle_ui_after_gift(prev_phase=prev_battle_phase)
-            if (
-                prev_battle_phase == BattlePhase.IDLE
-                and self._battle_controller.state().phase == BattlePhase.IDLE
-            ):
-                br_cfg = load_battle_royale_overlay_config()
-                if br_cfg.auto_arm_enabled:
-                    n = self._battle_controller.count_auto_arm_candidates(cfg=br_cfg)
-                    if n != self._battle_auto_arm_hint_count:
-                        self._battle_auto_arm_hint_count = n
-                        if n == 1:
-                            self._on_user_status(
-                                self._tr(
-                                    "battle.need_second_viewer",
-                                    threshold=br_cfg.auto_threshold_each,
-                                    count=n,
-                                ),
-                            )
-                        self._publish_battle_overlay_patch_sync()
-            if battle_hit is not None:
-                self._publish_battle_overlay_patch_sync()
-                self._schedule_battle_overlay_publish()
+        except Exception:
+            pass
+        if total_coins > 0:
             self._tiktok_top_gifters.add_coins(
                 user_key=(sender_user_key or "").strip(),
                 display_name=(sender or "").strip(),
@@ -8421,7 +8456,11 @@ class MainWindow(FramelessWindow):
                     return
             await self.apply_overlay_tunnel()
             self._schedule_king_overlay_publish()
-            self._publish_battle_overlay_patch_sync()
+            if hasattr(self, "_battle_royale_group"):
+                try:
+                    self._battle_royale_group.schedule_publish()
+                except Exception:
+                    pass
             self._music_player = MusicPlayer(
                 queue=self._music_queue,
                 sink=self._sink,
