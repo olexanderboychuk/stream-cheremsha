@@ -117,14 +117,17 @@ class StreamInfoOverlayType:
       }}
       .panel-stats {{
         position: relative; z-index: 2;
-        flex: 0 1 auto;
+        flex: 1 1 auto;
         display: grid;
         grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.35fr) minmax(0, 1.15fr) minmax(0, 1.35fr) minmax(0, 0.7fr);
         gap: clamp(6px, 0.7vw, 8px);
-        width: 100%;
+        width: 100%; height: 100%;
       }}
       .stat-cell {{
         min-width: 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
         padding: calc((6px + 0.2vw) * var(--sr-u) * var(--sr-read))
                  calc((8px + 0.25vw) * var(--sr-u) * var(--sr-read));
         border: 1px solid color-mix(in srgb, var(--sr-accent) 40%, transparent);

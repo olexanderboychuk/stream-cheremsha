@@ -19,3 +19,19 @@ def test_stream_info_renderer_and_registry() -> None:
     assert "rotation" not in st
     reg = OverlayRegistry()
     assert reg.get("stream_info").type == "stream_info"
+
+
+def _css_rule(html: str, selector: str) -> str:
+    start = html.index(selector)
+    return html[start : html.index("}", start)]
+
+
+def test_stream_info_panel_fills_available_area() -> None:
+    overlay = StreamInfoOverlayType()
+    html = overlay.render_html({"instance": "main"})
+    panel_css = _css_rule(html, ".panel-stats {")
+    assert "width: 100%" in panel_css
+    assert "height: 100%" in panel_css
+    cell_css = _css_rule(html, ".stat-cell {")
+    assert "flex-direction: column" in cell_css
+    assert "justify-content: center" in cell_css
