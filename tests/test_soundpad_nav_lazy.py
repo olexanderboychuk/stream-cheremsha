@@ -33,3 +33,15 @@ def test_qml_files_exist():
     assert pathlib.Path("src/stream_cheremsha/qml/SoundpadView.qml").is_file()
     assert pathlib.Path("src/stream_cheremsha/qml/components/CheremshaSoundCard.qml").is_file()
     assert pathlib.Path("src/stream_cheremsha/qml/components/CheremshaKeycap.qml").is_file()
+
+
+def test_soundpad_api_locale_wiring():
+    i_lazy = MW.find("def _soundpad_api_lazy")
+    i_retr = MW.find("def _retranslate_ui")
+    assert i_lazy != -1 and i_retr > i_lazy, "both methods must exist"
+    lazy_src = MW[i_lazy:i_retr]
+    retr_src = MW[i_retr:]
+    # Lazy creation applies the current locale...
+    assert "set_locale(self._locale)" in lazy_src
+    # ...and a settings language switch re-applies it to the cached api.
+    assert "_soundpad_api" in retr_src and "set_locale(self._locale)" in retr_src

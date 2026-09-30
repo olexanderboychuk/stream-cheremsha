@@ -2356,6 +2356,7 @@ class MainWindow(FramelessWindow):
             if e.hotkey:
                 hotkeys.register_hotkey(e.id, e.hotkey)
         api = SoundpadQmlApi(store=store, engine=engine, hotkeys=hotkeys, parent=self)
+        api.set_locale(self._locale)
         self._soundpad_api = api
         self._soundpad_store = store
         self._soundpad_engine = engine
@@ -4369,6 +4370,8 @@ class MainWindow(FramelessWindow):
         if getattr(self, "_docks_qml_api", None) is not None:
             self._docks_qml_api.set_locale(self._locale)
             self._docks_qml_api.refreshUi()
+        if getattr(self, "_soundpad_api", None) is not None:
+            self._soundpad_api.set_locale(self._locale)
         if self._chat_popout is not None:
             self._chat_popout.apply_texts()
 
