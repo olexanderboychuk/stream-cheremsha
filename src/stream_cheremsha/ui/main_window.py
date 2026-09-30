@@ -984,8 +984,9 @@ class MainWindow(FramelessWindow):
     _IX_ACTIONS = 8
     _IX_MUSIC = 9
     _IX_BIG_PICTURE = 10
+    _IX_SOUNDPAD = 11
     _QML_STACK_INDICES = frozenset(
-        {_IX_CONN, _IX_DONATIONS, _IX_WIDGETS, _IX_LAYOUTS, _IX_DOCKS, _IX_ACTIONS},
+        {_IX_CONN, _IX_DONATIONS, _IX_WIDGETS, _IX_LAYOUTS, _IX_DOCKS, _IX_ACTIONS, _IX_SOUNDPAD},
     )
 
     @staticmethod
@@ -1686,6 +1687,14 @@ class MainWindow(FramelessWindow):
         self._qml_docks.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._qml_docks.setClearColor(QColor(10, 11, 14))
         _setup_qml_import_path(self._qml_docks)
+        # Soundpad: empty QQuickWidget shell only — no setSource here. The real
+        # page loads lazily in _load_qml_page and the store/engine/hotkeys are
+        # built on first open via _soundpad_api_lazy (never during startup).
+        self._qml_soundpad = QQuickWidget(self)
+        self._qml_soundpad.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
+        self._qml_soundpad.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self._qml_soundpad.setClearColor(QColor(10, 11, 14))
+        _setup_qml_import_path(self._qml_soundpad)
         # Placeholder keeps the stacked index stable; the real QQuickWidget
         # is built lazily in _ensure_actions_widgets on first open/warm-up.
         self._qml_actions_placeholder = QWidget(self)
@@ -1825,6 +1834,12 @@ class MainWindow(FramelessWindow):
             fallback=QStyle.StandardPixmap.SP_MediaPlay,
             on_click=lambda: self._set_main_page(self._IX_MUSIC),
         )
+        self._btn_footer_soundpad = _make_nav_btn(
+            nav_id="navSoundpad",
+            asset_name="nav/soundpad.svg",
+            fallback=QStyle.StandardPixmap.SP_MediaPlay,
+            on_click=lambda: self._set_main_page(self._IX_SOUNDPAD),
+        )
         self._btn_footer_chat = _make_nav_btn(
             nav_id="navChat",
             asset_name="nav/chat.svg",
@@ -1847,9 +1862,10 @@ class MainWindow(FramelessWindow):
             "CONTENT",
             [
                 self._btn_footer_widgets,
-                self._btn_footer_layouts,
                 self._btn_footer_docks,
                 self._btn_footer_music,
+                self._btn_footer_soundpad,
+                self._btn_footer_layouts,
             ],
         )
         _add_group(
@@ -1898,6 +1914,8 @@ class MainWindow(FramelessWindow):
         self._stack.addWidget(self._qml_actions_placeholder)
         self._stack.addWidget(self._build_music_tab())
         self._stack.addWidget(self._build_big_picture_tab())
+        # Position 11 == _IX_SOUNDPAD (empty shell; source set lazily).
+        self._stack.addWidget(self._qml_soundpad)
 
         # Lightweight first-open placeholder for heavy QML pages: a static
         # centered label (no spinner, no animation, no CPU use). Shown only
@@ -2338,6 +2356,82 @@ class MainWindow(FramelessWindow):
                 self._settings_fields_loaded = True
         return page
 
+    def _soundpad_api_lazy(self):
+        """Build the Soundpad store/engine/hotkeys/api on first open only.
+
+        Never called from __init__/_build_ui: no QSettings group reads beyond
+        the shared instance, no QtAudioSink/QMediaDevices/pynput construction
+        during startup. The result is cached for the window lifetime.
+        """
+        api = getattr(self, "_soundpad_api", None)
+        if api is not None:
+            return api
+        from stream_cheremsha.soundpad.engine import SoundpadAudioEngine
+        from stream_cheremsha.soundpad.hotkeys import GlobalHotkeyManager, PynputHotkeyBackend
+        from stream_cheremsha.soundpad.store import SoundpadStore
+        from stream_cheremsha.ui.soundpad_qml_api import SoundpadQmlApi
+
+        store = SoundpadStore(settings=self._settings)
+        engine = SoundpadAudioEngine(parent=self)
+        engine.set_global_volume(store.global_volume())
+        engine.set_monitor(store.monitor())
+        engine.set_stream_out(store.stream_out())
+        try:
+            backend = PynputHotkeyBackend(on_fire=lambda _c: None, parent=self)
+        except RuntimeError:
+            from stream_cheremsha.soundpad.hotkeys import FakeHotkeyBackend
+
+            backend = FakeHotkeyBackend()
+        hotkeys = GlobalHotkeyManager(backend=backend, parent=self)
+        for e in store.list_all():
+            if e.hotkey:
+                hotkeys.register_hotkey(e.id, e.hotkey)
+        api = SoundpadQmlApi(store=store, engine=engine, hotkeys=hotkeys, parent=self)
+        api.set_locale(self._locale)
+        self._soundpad_api = api
+        self._soundpad_store = store
+        self._soundpad_engine = engine
+        self._soundpad_hotkeys = hotkeys
+        try:
+            engine.duckingChanged.connect(lambda active: self._on_soundpad_ducking(active))
+            # Deferred past the audio start: these emits run synchronously
+            # inside engine.play()/stop(), before the playback task's first
+            # step — a full grid rebuild here would delay audible output.
+            engine.playbackStarted.connect(
+                lambda _sid: QTimer.singleShot(0, self._soundpad_api.soundsChanged.emit)
+            )
+            engine.playbackFinished.connect(
+                lambda _sid: QTimer.singleShot(0, self._soundpad_api.soundsChanged.emit)
+            )
+        except RuntimeError:
+            pass
+        # Warm the audio backend after first paint: first-ever backend
+        # creation costs 100ms+ and must not sit between hotkey-press
+        # and audible output. Deferred so tab navigation stays instant.
+        try:
+            QTimer.singleShot(0, engine.warmup)
+        except RuntimeError:
+            pass
+        return api
+
+    def _on_soundpad_ducking(self, active: bool) -> None:
+        """Dip music volume while a soundpad sound plays; restore on stop.
+
+        The dip is live-only (never persisted); the restore reads the user's
+        saved volume so we never clobber it with 35 or hardcode 100.
+        """
+        player = getattr(self, "_music_player", None)
+        set_vol = getattr(player, "set_volume_percent", None)
+        if not callable(set_vol):
+            return
+        try:
+            if active:
+                set_vol(35)
+            else:
+                set_vol(int(self._settings.value("music/volume_percent", 100)))
+        except (TypeError, ValueError, RuntimeError):
+            return
+
     def _qml_widget_for_stack_index(self, index: int) -> QQuickWidget | None:
         if index == self._IX_ACTIONS:
             try:
@@ -2351,6 +2445,7 @@ class MainWindow(FramelessWindow):
             self._IX_WIDGETS: "_qml_widgets",
             self._IX_LAYOUTS: "_qml_layouts",
             self._IX_DOCKS: "_qml_docks",
+            self._IX_SOUNDPAD: "_qml_soundpad",
         }.get(index)
         if attr is None:
             return None
@@ -2382,6 +2477,9 @@ class MainWindow(FramelessWindow):
             ctx.setContextProperty("api", self._qml_api)
             ctx.setContextProperty("actApi", self._actions_qml_api)
             ctx.setContextProperty("navApi", self._qml_api)
+        elif index == self._IX_SOUNDPAD:
+            ctx.setContextProperty("spApi", self._soundpad_api_lazy())
+            ctx.setContextProperty("navApi", self._qml_api)
 
     def _load_qml_page(self, index: int) -> None:
         """Instantiate one QML tab once (each QQuickWidget has its own QQmlEngine/context).
@@ -2406,6 +2504,8 @@ class MainWindow(FramelessWindow):
             qml_path = _qml_path("DocksView.qml")
         elif index == self._IX_ACTIONS:
             qml_path = _qml_path("ActionsView.qml")
+        elif index == self._IX_SOUNDPAD:
+            qml_path = _qml_path("SoundpadView.qml")
         else:
             return
         if not qml_path.is_file():
@@ -2564,6 +2664,8 @@ class MainWindow(FramelessWindow):
             (self._IX_DONATIONS, "splash.donations"),
             (self._IX_DOCKS, "splash.docks"),
             (self._IX_SETTINGS, "splash.settings"),
+            # Soundpad last: its first open also builds store/engine/hotkeys.
+            (self._IX_SOUNDPAD, "splash.soundpad"),
         )
         total = len(order)
         for pos, (qml_index, key) in enumerate(order):
@@ -2641,6 +2743,7 @@ class MainWindow(FramelessWindow):
         "_btn_footer_layouts": "#67e8f9",
         "_btn_footer_docks": "#c084fc",
         "_btn_footer_music": "#93c5fd",
+        "_btn_footer_soundpad": "#8b5cf6",
         "_btn_footer_chat": "#5eead4",
         "_btn_footer_tts": "#e879f9",
     }
@@ -2745,6 +2848,7 @@ class MainWindow(FramelessWindow):
         on_layouts = self._stack.currentIndex() == self._IX_LAYOUTS
         on_docks = self._stack.currentIndex() == self._IX_DOCKS
         on_music = self._stack.currentIndex() == self._IX_MUSIC
+        on_soundpad = self._stack.currentIndex() == self._IX_SOUNDPAD
         for b, active in (
             (getattr(self, "_btn_footer_home", None), on_conn),
             (getattr(self, "_btn_footer_donations", None), on_don),
@@ -2753,6 +2857,7 @@ class MainWindow(FramelessWindow):
             (getattr(self, "_btn_footer_layouts", None), on_layouts),
             (getattr(self, "_btn_footer_docks", None), on_docks),
             (getattr(self, "_btn_footer_music", None), on_music),
+            (getattr(self, "_btn_footer_soundpad", None), on_soundpad),
             (self._btn_footer_chat, on_chat),
             (self._btn_footer_tts, on_tts),
         ):
@@ -2840,6 +2945,11 @@ class MainWindow(FramelessWindow):
             self._btn_footer_music.setText(self._nav_text("ui.nav_music"))
             self._btn_footer_music.setToolTip(self._tr("ui.nav_music_hint"))
             self._btn_footer_music.setAccessibleName(self._tr("ui.nav_music"))
+        if hasattr(self, "_btn_footer_soundpad"):
+            ts = self._tr("ui.nav_soundpad")
+            self._btn_footer_soundpad.setText(self._nav_text("ui.nav_soundpad"))
+            self._btn_footer_soundpad.setToolTip(self._tr("ui.nav_soundpad_hint"))
+            self._btn_footer_soundpad.setAccessibleName(ts)
         if hasattr(self, "_btn_side_settings"):
             self._btn_side_settings.setText(self._nav_text("ui.open_settings"))
             self._btn_side_settings.setToolTip(self._tr("ui.open_settings_hint"))
@@ -4301,6 +4411,8 @@ class MainWindow(FramelessWindow):
         if getattr(self, "_docks_qml_api", None) is not None:
             self._docks_qml_api.set_locale(self._locale)
             self._docks_qml_api.refreshUi()
+        if getattr(self, "_soundpad_api", None) is not None:
+            self._soundpad_api.set_locale(self._locale)
         if self._chat_popout is not None:
             self._chat_popout.apply_texts()
 

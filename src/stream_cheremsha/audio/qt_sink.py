@@ -181,6 +181,11 @@ class QtAudioSink(QObject):
         self._sfx_players: list[QMediaPlayer] = []
         self._sfx_audios: list[QAudioOutput] = []
         self._sfx_busy: set[int] = set()
+        # Pool-player index -> in-flight SFX key (e.g. "soundpad:<id>:<mode>").
+        # Lets stop() halt a specific voice: player.stop() drives the existing
+        # StoppedState handler, so the awaiting coroutine tears down cleanly
+        # through its normal finally blocks. Same-thread (GUI/loop) only.
+        self._sfx_track: dict[int, str] = {}
         self._sfx_player_lock = asyncio.Lock()
         self._sfx_lock = asyncio.Lock()
         self._play_lock = asyncio.Lock()
@@ -480,7 +485,7 @@ class QtAudioSink(QObject):
         async with self._sfx_player_lock:
             self._sfx_busy.discard(idx)
 
-    async def _play_mp3_parallel(self, data: bytes, linear: float) -> None:
+    async def _play_mp3_parallel(self, data: bytes, linear: float, *, sfx_key: str = "") -> None:
         """Play one clip on a free pool player (so burst clips can overlap)."""
         self.ensure_ready()
         if not self._sfx_players:
@@ -515,7 +520,10 @@ class QtAudioSink(QObject):
 
         # Acquire a pool player; the lock is NOT held across playback, so other
         # clips can use other players concurrently (overlap).
+        idx = -1
         idx = await self._acquire_sfx_player()
+        if sfx_key:
+            self._sfx_track[idx] = sfx_key
         player = self._sfx_players[idx]
         audio = self._sfx_audios[idx]
         try:
@@ -561,11 +569,16 @@ class QtAudioSink(QObject):
                 except OSError as e:
                     logger.debug("Temp audio cleanup: %s", e)
         finally:
+            self._sfx_track.pop(idx, None)
             await self._release_sfx_player(idx)
 
-    async def play_mp3_parallel_with_volume(self, data: bytes, linear: float) -> None:
+    async def play_mp3_parallel_with_volume(
+        self, data: bytes, linear: float, *, sfx_key: str = ""
+    ) -> None:
         """Public API: play immediately, even if others queued."""
-        t = asyncio.create_task(self._play_mp3_parallel(data, linear), name="audio-parallel")
+        t = asyncio.create_task(
+            self._play_mp3_parallel(data, linear, sfx_key=sfx_key), name="audio-parallel"
+        )
         self._parallel_tasks.add(t)
 
         def _done(_t: asyncio.Task[None]) -> None:
@@ -588,11 +601,31 @@ class QtAudioSink(QObject):
                 return False
             self._sound_dedupe_keys.add(k)
         try:
-            await self.play_mp3_parallel_with_volume(data, linear)
+            await self.play_mp3_parallel_with_volume(data, linear, sfx_key=k)
             return True
         finally:
             async with self._sound_dedupe_lock:
                 self._sound_dedupe_keys.discard(k)
+
+    def stop_sfx_by_key_prefix(self, prefix: str) -> None:
+        """Halt pool voices whose SFX key starts with ``prefix`` (sync).
+
+        Stopping the QMediaPlayer fires StoppedState, which the per-clip
+        state handler turns into future resolution — the awaiting coroutine
+        then runs its normal cleanup (disconnects, source reset, temp file
+        removal, player release, dedupe-key release). Other voices playing
+        different keys are untouched. Safe to call when idle.
+        """
+        p = str(prefix or "")
+        if not p:
+            return
+        for idx, key in list(self._sfx_track.items()):
+            if not key.startswith(p):
+                continue
+            try:
+                self._sfx_players[idx].stop()
+            except (RuntimeError, IndexError):
+                pass
 
     def shutdown(self) -> None:
         fut = self._pending_fut

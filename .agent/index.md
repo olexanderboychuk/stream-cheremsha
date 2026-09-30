@@ -22,6 +22,7 @@ Lightweight index of architectural symbols, interfaces, and patterns to answer *
 | `BattleRoyaleInstanceController` | `src/stream_cheremsha/overlays/battle_royale_controller.py` | Per-instance QObject adapter, topic `overlay:battle_royale:{instance}` |
 | `ObsWsClient` | `src/stream_cheremsha/obs_ws/control.py` | OBS WebSocket v5 client for scenes and sources |
 | `KeyringStore` | `src/stream_cheremsha/config/keyring_store.py` | Secure OS Keyring abstraction for tokens and passwords |
+| `MyInstantsClient` | `src/stream_cheremsha/soundpad/myinstants.py` | Rate-limited MyInstants fetcher with bounded index/MP3 caches (lazy curl_cffi) |
 
 ---
 
@@ -53,6 +54,7 @@ Located in `src/stream_cheremsha/ui/main_window.py`:
 | 6 | `_IX_DOCKS` | Docks | Lazy / Warm | `_ensure_qml_page_visible(_IX_DOCKS)` |
 | 7 | `_IX_AUDIO` | Audio | Eager | Default |
 | 8 | `_IX_MUSIC` | Music | Eager | Default |
+| 11 | `_IX_SOUNDPAD` | Soundpad | Lazy / Warm | `_load_qml_page(11)` + `_soundpad_api_lazy()` (context prop `spApi`) |
 
 ---
 
