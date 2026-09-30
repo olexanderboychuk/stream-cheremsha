@@ -74,13 +74,36 @@ class SoundpadQmlApi(QObject):
     hotkeyConflict = Signal(str, str)
     importNeeded = Signal(str)
     stringsChanged = Signal()  # locale changed; QML re-reads libraryStrings
+    libraryRowsChanged = Signal()
+    libraryStatusChanged = Signal(str)
+    libraryPageChanged = Signal(int)
+    previewPlayingChanged = Signal(str)
+    libraryAdded = Signal(str)  # sound id successfully added from the library
+    libraryAddFailed = Signal(str)  # sound path that failed to add
 
-    def __init__(self, *, store, engine, hotkeys, parent: QObject | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        store,
+        engine,
+        hotkeys,
+        parent: QObject | None = None,
+        library_client=None,
+    ) -> None:
         super().__init__(parent)
         self._store = store
         self._engine = engine
         self._hotkeys = hotkeys
         self._meta_tasks: set[asyncio.Task] = set()
+        # Library (MyInstants): lazy client + UI state.
+        self._library = library_client  # MyInstantsClient | None; created on first use
+        self._lib_rows: list[dict] = []
+        self._lib_status = ""  # "", "loading", "error"
+        self._lib_page = 1
+        self._lib_inflight = False
+        self._lib_add_inflight = False
+        self._preview_playing_id = ""
+        self._lib_tasks: set[asyncio.Task] = set()
         try:
             self._hotkeys.hotkeyPressed.connect(self._on_hotkey_pressed)
         except RuntimeError:
@@ -519,3 +542,223 @@ class SoundpadQmlApi(QObject):
         if first:
             self.importNeeded.emit(first[0])
         return json.dumps(first, ensure_ascii=False)
+
+    # ------------------------------------------------------------------ library
+    def _library_client(self):
+        if self._library is None:
+            from stream_cheremsha.soundpad.myinstants import MyInstantsClient
+
+            self._library = MyInstantsClient()
+        return self._library
+
+    @Property(str, notify=libraryRowsChanged)
+    def libraryRowsJson(self) -> str:
+        return json.dumps(self._lib_rows, ensure_ascii=False)
+
+    @Property(str, notify=libraryStatusChanged)
+    def libraryStatus(self) -> str:
+        return self._lib_status
+
+    @Property(int, notify=libraryPageChanged)
+    def libraryPage(self) -> int:
+        return self._lib_page
+
+    @Property(str, notify=previewPlayingChanged)
+    def previewPlayingId(self) -> str:
+        return self._preview_playing_id
+
+    def _set_library_status(self, status: str) -> None:
+        if status == self._lib_status:
+            return
+        self._lib_status = status
+        self.libraryStatusChanged.emit(status)
+
+    def _set_library_page(self, page: int) -> None:
+        p = max(1, int(page))
+        if p == self._lib_page:
+            return
+        self._lib_page = p
+        self.libraryPageChanged.emit(p)
+
+    def _load_page_worker(self, page: int) -> list[dict]:
+        from stream_cheremsha.soundpad.myinstants import candidate_langs
+
+        client = self._library_client()
+        last_err: Exception | None = None
+        for lang in candidate_langs(self._locale):
+            try:
+                entries = client.fetch_index_entries(lang, page)
+            except Exception as e:  # noqa: BLE001 - network/HTTP failure: next language
+                last_err = e
+                continue
+            if entries:
+                return [{"path": s.path, "title": s.title} for s in entries]
+        if last_err is not None:
+            raise RuntimeError(f"myinstants fetch failed: {last_err}") from last_err
+        return []
+
+    def _finish_library_load(self, rows: list[dict] | None, err: Exception | None) -> None:
+        self._lib_inflight = False
+        if err is not None or rows is None:
+            logger.warning("soundpad library load failed: %s", err)
+            self._set_library_status("error")
+            return
+        self._lib_rows = rows
+        self._set_library_status("")
+        self.libraryRowsChanged.emit()
+
+    @Slot(int)
+    def loadLibraryPage(self, page: int) -> None:
+        try:
+            page = max(1, int(page))
+        except (TypeError, ValueError):
+            page = 1
+        if self._lib_inflight:
+            return
+        self.stopPreview()
+        self._set_library_page(page)
+        self._set_library_status("loading")
+        self._lib_inflight = True
+
+        async def _job() -> None:
+            try:
+                rows = await asyncio.to_thread(self._load_page_worker, page)
+            except Exception as e:  # noqa: BLE001
+                self._finish_library_load(None, e)
+                return
+            self._finish_library_load(rows, None)
+
+        if _loop_running():
+            t = asyncio.get_running_loop().create_task(_job())
+            self._lib_tasks.add(t)
+            t.add_done_callback(self._lib_tasks.discard)
+        else:  # no running loop (unit tests): run inline
+            try:
+                rows = self._load_page_worker(page)
+            except Exception as e:  # noqa: BLE001
+                self._finish_library_load(None, e)
+            else:
+                self._finish_library_load(rows, None)
+
+    @Slot()
+    def openLibrary(self) -> None:
+        self.loadLibraryPage(1)
+
+    @Slot(str)
+    def previewSound(self, sound_path: str) -> None:
+        p = (sound_path or "").strip()
+        if not p.startswith("/"):
+            return
+        client = self._library_client()
+
+        async def _job() -> None:
+            try:
+                mp3_url = await asyncio.to_thread(client.resolve_mp3_url, p)
+                local = await asyncio.to_thread(client.ensure_cached_mp3, mp3_url)
+                data = await asyncio.to_thread(Path(local).read_bytes)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("soundpad preview failed for %s: %s", p, e)
+                return
+            if self._engine.play_preview(data) == "PLAYING":
+                self._preview_playing_id = p
+                self.previewPlayingChanged.emit(p)
+
+        if _loop_running():
+            t = asyncio.get_running_loop().create_task(_job())
+            self._lib_tasks.add(t)
+            t.add_done_callback(self._lib_tasks.discard)
+        else:  # no running loop (unit tests): run inline
+            try:
+                mp3_url = client.resolve_mp3_url(p)
+                local = client.ensure_cached_mp3(mp3_url)
+                data = Path(local).read_bytes()
+            except Exception as e:  # noqa: BLE001
+                logger.warning("soundpad preview failed for %s: %s", p, e)
+            else:
+                if self._engine.play_preview(data) == "PLAYING":
+                    self._preview_playing_id = p
+                    self.previewPlayingChanged.emit(p)
+
+    @Slot()
+    def stopPreview(self) -> None:
+        self._engine.stop_preview()
+        if self._preview_playing_id:
+            self._preview_playing_id = ""
+            self.previewPlayingChanged.emit("")
+
+    def _library_title_for(self, sound_path: str) -> str:
+        for row in self._lib_rows:
+            if row.get("path") == sound_path:
+                t = str(row.get("title") or "").strip()
+                if t:
+                    return t
+        slug = (sound_path.strip("/").split("/")[-2] or "").strip()
+        return slug.replace("-", " ").strip()
+
+    def _commit_library_add(self, sound_path: str, local: Path) -> str:
+        title = self._library_title_for(sound_path) or Path(local).stem or "Sound"
+        sid = f"sp-{uuid.uuid4().hex[:8]}"
+        dest = self._store.resolve_library_path(local, sid)
+        entry = SoundEntry(
+            id=sid,
+            name=title.strip()[:80] or "Sound",
+            file_path=str(dest),
+            category="Library",
+            hotkey="",
+            volume=1.0,
+            playback_mode=PlaybackMode.RESTART,
+            cooldown_sec=0.0,
+            triggers=(),
+            waveform_peaks=(),
+            duration_sec=0.0,
+            play_count=0,
+            last_played_at="",
+            order=self._store.next_order(),
+        )
+        errs = self._store.upsert(entry)
+        if errs:
+            logger.warning("soundpad library add rejected %s: %s", sound_path, errs)
+            return ""
+        self.soundsChanged.emit()
+        self._schedule_metadata(sid, dest)
+        return sid
+
+    @Slot(str)
+    def addLibrarySound(self, sound_path: str) -> None:
+        p = (sound_path or "").strip()
+        if not p.startswith("/") or self._lib_add_inflight:
+            return
+        client = self._library_client()
+        self._lib_add_inflight = True
+
+        def _finish(local: Path | None, err: Exception | None) -> None:
+            self._lib_add_inflight = False
+            if local is None or err is not None:
+                logger.warning("soundpad library add failed for %s: %s", p, err)
+                self.libraryAddFailed.emit(p)
+                return
+            sid = self._commit_library_add(p, Path(local))
+            if sid:
+                self.libraryAdded.emit(sid)
+
+        async def _job() -> None:
+            try:
+                mp3_url = await asyncio.to_thread(client.resolve_mp3_url, p)
+                local = await asyncio.to_thread(client.ensure_cached_mp3, mp3_url)
+            except Exception as e:  # noqa: BLE001
+                _finish(None, e)
+                return
+            _finish(Path(local), None)
+
+        if _loop_running():
+            t = asyncio.get_running_loop().create_task(_job())
+            self._lib_tasks.add(t)
+            t.add_done_callback(self._lib_tasks.discard)
+        else:  # no running loop (unit tests): run inline
+            try:
+                mp3_url = client.resolve_mp3_url(p)
+                local = client.ensure_cached_mp3(mp3_url)
+            except Exception as e:  # noqa: BLE001
+                _finish(None, e)
+            else:
+                _finish(Path(local), None)
