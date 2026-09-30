@@ -38,6 +38,8 @@ from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from typing import Any, Final, Literal
 
+from stream_cheremsha.x11_auth import ensure_x_authority
+
 _TAG_PATTERN = re.compile(r"\{([^}]*)\}")
 
 _user32_lock = threading.Lock()
@@ -171,6 +173,7 @@ def _is_known_tag(tag: str) -> bool:
 
 
 def _pynput_key_table() -> dict[str, Any]:
+    ensure_x_authority()  # must run before the pynput import (X cookie lookup)
     from pynput.keyboard import Key as K
 
     t: dict[str, Any] = {
@@ -316,6 +319,7 @@ def _pynput_send_sequence(
     with_alt: bool,
     with_shift: bool,
 ) -> None:
+    ensure_x_authority()  # must run before the pynput import (X cookie lookup)
     from pynput.keyboard import Controller as KeyboardController
     from pynput.keyboard import Key
     from pynput.mouse import Button

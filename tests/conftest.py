@@ -16,6 +16,14 @@ import pytest
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication
 
+from stream_cheremsha.x11_auth import ensure_x_authority as _ensure_x_authority
+
+# pynput connects to X at import time; some sessions ship $XAUTHORITY entries
+# keyed by a stale hostname, which python-xlib rejects. Self-heal before any
+# test module imports pynput (no-op when DISPLAY is unset or the file already
+# matches this host).
+_ensure_x_authority()
+
 _PROD_ORG = "stream-cheremsha"
 _PROD_APP = "cheremsha"
 

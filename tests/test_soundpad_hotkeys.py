@@ -1,14 +1,102 @@
 from __future__ import annotations
 
+import os
+import struct
 import time
+from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
 
 from stream_cheremsha.soundpad.hotkeys import FakeHotkeyBackend, GlobalHotkeyManager
 
+_COOKIE = b"\x66\x53\xef\x48"
+
+
+def _write_xauth(path: Path, *entries) -> None:
+    raw = b""
+    for fam, addr, num, name, data in entries:
+        raw += struct.pack(">H", fam) + struct.pack(">H", len(addr)) + addr
+        raw += struct.pack(">H", len(num)) + num
+        raw += struct.pack(">H", len(name)) + name
+        raw += struct.pack(">H", len(data)) + data
+    path.write_bytes(raw)
+
+
+def _read_xauth(path: Path):
+    from Xlib import xauth as _xauth
+
+    return _xauth.Xauthority(str(path)).entries
+
+
 # NOTE: the `qapp` session fixture lives in tests/conftest.py (exactly one
 # QApplication per pytest process). Do NOT define module-scoped duplicates:
 # they get garbage-collected mid-session, breaking later suites.
+
+
+def test_ensure_x_authority_repairs_stale_host_entry(tmp_path, monkeypatch):
+    import socket
+
+    from stream_cheremsha import x11_auth
+
+    source = tmp_path / "xauth_src"
+    _write_xauth(source, (256, b"stale-host", b"0", b"MIT-MAGIC-COOKIE-1", _COOKIE))
+    monkeypatch.setenv("DISPLAY", ":0")
+    monkeypatch.setenv("XAUTHORITY", str(source))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+
+    x11_auth.ensure_x_authority()
+
+    target = Path(os.environ["XAUTHORITY"])
+    assert target == tmp_path / "cache" / "cheremsha" / "xauth"
+    entries = _read_xauth(target)
+    host = socket.gethostname().encode()
+    assert (256, host, b"0", b"MIT-MAGIC-COOKIE-1", _COOKIE) in entries
+    # Original stale entry preserved.
+    assert (256, b"stale-host", b"0", b"MIT-MAGIC-COOKIE-1", _COOKIE) in entries
+    # Source file untouched.
+    assert len(_read_xauth(source)) == 1
+
+
+def test_ensure_x_authority_noop_when_host_entry_exists(tmp_path, monkeypatch):
+    import socket
+
+    from stream_cheremsha import x11_auth
+
+    source = tmp_path / "xauth_src"
+    _write_xauth(source, (256, socket.gethostname().encode(), b"0", b"MIT-MAGIC-COOKIE-1", _COOKIE))
+    monkeypatch.setenv("DISPLAY", ":0")
+    monkeypatch.setenv("XAUTHORITY", str(source))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+
+    x11_auth.ensure_x_authority()
+
+    assert os.environ["XAUTHORITY"] == str(source)
+    assert not (tmp_path / "cache" / "cheremsha").exists()
+
+
+def test_ensure_x_authority_missing_source_is_noop(tmp_path, monkeypatch):
+    from stream_cheremsha import x11_auth
+
+    monkeypatch.setenv("DISPLAY", ":0")
+    monkeypatch.setenv("XAUTHORITY", str(tmp_path / "nope"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+
+    x11_auth.ensure_x_authority()  # must not raise
+
+    assert os.environ["XAUTHORITY"] == str(tmp_path / "nope")
+
+
+def test_ensure_x_authority_skipped_without_display(tmp_path, monkeypatch):
+    from stream_cheremsha import x11_auth
+
+    source = tmp_path / "xauth_src"
+    _write_xauth(source, (256, b"stale-host", b"0", b"MIT-MAGIC-COOKIE-1", _COOKIE))
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.setenv("XAUTHORITY", str(source))
+
+    x11_auth.ensure_x_authority()
+
+    assert os.environ["XAUTHORITY"] == str(source)
 
 
 def _pump() -> None:

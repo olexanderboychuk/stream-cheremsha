@@ -7,8 +7,10 @@ from typing import Protocol
 from PySide6.QtCore import QObject, Signal
 
 from stream_cheremsha.soundpad.models import normalize_hotkey
+from stream_cheremsha.x11_auth import ensure_x_authority
 
 logger = logging.getLogger(__name__)
+
 
 # X11 key auto-repeat emits synthetic release+press pairs for a physically
 # held key, and pynput forwards them unfiltered. Without debouncing, every
@@ -112,6 +114,7 @@ class PynputHotkeyBackend(QObject):
         return frozenset(tokens)
 
     def grab(self, combo: str) -> bool:
+        ensure_x_authority()
         try:
             from pynput import keyboard as _kb  # noqa: F401 (validates X availability)
         except ImportError as e:
@@ -176,6 +179,7 @@ class PynputHotkeyBackend(QObject):
     def _ensure_listener_locked(self) -> None:
         if self._listener is not None:
             return
+        ensure_x_authority()
         try:
             from pynput import keyboard as _kb
         except ImportError:

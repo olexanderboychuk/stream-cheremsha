@@ -38,3 +38,4 @@ Executes platform-specific automation triggers, such as simulating keystrokes, r
 - Action execution must never block the main Qt event loop.
 - Platform-specific code must check OS compatibility before executing.
 - Process execution must sanitize arguments to avoid shell injection.
+- Linux keystroke simulation calls `x11_auth.ensure_x_authority()` **before** importing pynput — pynput connects to X at import time and python-xlib rejects `$XAUTHORITY` entries keyed by a stale hostname (see `.agent/domains/soundpad.md`).
