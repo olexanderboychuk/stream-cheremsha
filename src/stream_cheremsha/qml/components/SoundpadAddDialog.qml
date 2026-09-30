@@ -35,7 +35,7 @@ ColumnLayout {
         Layout.fillWidth: true
     }
 
-    FieldLabel { label: "Назва звуку" }
+    FieldLabel { label: spApi.strings.name_label || "Назва звуку" }
     Rectangle {
         Layout.fillWidth: true; Layout.preferredHeight: 40
         radius: 9; color: "#0c0f16"
@@ -57,7 +57,7 @@ ColumnLayout {
         }
     }
 
-    FieldLabel { label: "Категорія" }
+    FieldLabel { label: spApi.strings.category_label || "Категорія" }
     ComboBox {
         id: catBox
         Layout.fillWidth: true
@@ -107,7 +107,7 @@ ColumnLayout {
         }
     }
 
-    FieldLabel { label: "Режим відтворення" }
+    FieldLabel { label: spApi.strings.mode_label || "Режим відтворення" }
     ComboBox {
         id: modeBox
         Layout.fillWidth: true
@@ -165,7 +165,7 @@ ColumnLayout {
         RowLayout {
             anchors.fill: parent; anchors.margins: 12; spacing: 10
             Image { source: Qt.resolvedUrl("../../assets/icons/web_volume.svg"); width: 15; height: 15 }
-            Text { text: "Гучність"; color: "#9aa4b8"; font.pixelSize: 12 }
+            Text { text: spApi.strings.volume_label || "Гучність"; color: "#9aa4b8"; font.pixelSize: 12 }
             CheremshaSlider {
                 id: volS
                 Layout.fillWidth: true
@@ -202,7 +202,7 @@ ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 10
                 Image { source: Qt.resolvedUrl("../../assets/icons/web_key.svg"); width: 15; height: 15 }
-                Text { text: "Хоткей"; color: "#9aa4b8"; font.pixelSize: 12 }
+                Text { text: spApi.strings.hotkey_label || "Хоткей"; color: "#9aa4b8"; font.pixelSize: 12 }
                 // listening prompt (pulsing dot + instructions)
                 RowLayout {
                     visible: root.listening
@@ -215,7 +215,7 @@ ColumnLayout {
                             NumberAnimation { to: 1.0; duration: 500 } }
                     }
                     Text {
-                        text: "Натисніть клавіші… (Esc — скасувати)"
+                        text: spApi.strings.hotkey_listening || "Натисніть клавіші… (Esc — скасувати)"
                         color: "#c4b5fd"
                         font.pixelSize: 12
                         font.weight: Font.Medium
@@ -235,7 +235,7 @@ ColumnLayout {
                     Text {
                         id: assignLbl
                         anchors.centerIn: parent
-                        text: "+ Призначити"
+                        text: spApi.strings.hotkey_assign || "+ Призначити"
                         color: "#c9d1e0"
                         font.pixelSize: 12
                         font.weight: Font.Medium
@@ -280,14 +280,15 @@ ColumnLayout {
                 Item { Layout.fillWidth: true }
                 Text {
                     visible: !root.listening && root.hotkeyDraft === ""
-                    text: "необов'язково"
+                    text: spApi.strings.optional || "необов'язково"
                     color: "#5b6472"; font.pixelSize: 11
                 }
             }
             Text {
                 visible: root.conflictText !== ""
                 Layout.fillWidth: true
-                text: "Вже використовується: " + root.conflictText
+                text: (spApi.strings.hotkey_in_use || "Вже використовується: {name}")
+                       .replace("{name}", root.conflictText)
                 color: "#fbbf24"
                 font.pixelSize: 11
                 wrapMode: Text.Wrap

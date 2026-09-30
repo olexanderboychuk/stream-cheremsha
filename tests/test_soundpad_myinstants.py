@@ -11,16 +11,6 @@ def _fixture(name: str) -> str:
     return (pathlib.Path(__file__).parent / "fixtures" / name).read_text(encoding="utf-8")
 
 
-def test_candidate_langs_mapping():
-    from stream_cheremsha.soundpad.myinstants import candidate_langs
-
-    assert candidate_langs("uk") == ["ua", "en"]
-    assert candidate_langs("UA ") == ["ua", "en"]
-    assert candidate_langs("en") == ["en"]
-    assert candidate_langs("") == ["en"]
-    assert candidate_langs("xx") == ["en"]
-
-
 def test_extract_instant_entries_from_fixture():
     from stream_cheremsha.soundpad.myinstants import LibrarySound, extract_instant_entries
 
@@ -100,15 +90,15 @@ def _client(tmp_path, routes, **kw):
     return c, fake
 
 
-def test_fetch_index_page_urls(tmp_path):
+def test_fetch_trending_page_urls(tmp_path):
     index_html = _fixture("myinstants_ua_index.html")
-    c, fake = _client(tmp_path, {"/en/index/ua/": FakeResponse(text=index_html)})
-    assert len(c.fetch_index_entries("ua", 1)) >= 5
-    assert fake.requests[0][0] == "https://www.myinstants.com/en/index/ua/"
+    c, fake = _client(tmp_path, {"/en/trending/": FakeResponse(text=index_html)})
+    assert len(c.fetch_trending(1)) >= 5
+    assert fake.requests[0][0] == "https://www.myinstants.com/en/trending/"
 
-    c2, fake2 = _client(tmp_path, {"/en/index/ua/?page=3": FakeResponse(text=index_html)})
-    c2.fetch_index_entries("ua", 3)
-    assert fake2.requests[0][0] == "https://www.myinstants.com/en/index/ua/?page=3"
+    c2, fake2 = _client(tmp_path, {"/en/trending/?page=3": FakeResponse(text=index_html)})
+    c2.fetch_trending(3)
+    assert fake2.requests[0][0] == "https://www.myinstants.com/en/trending/?page=3"
 
 
 def test_rate_limit_sleeps_between_requests(monkeypatch, tmp_path):
@@ -129,12 +119,12 @@ def test_rate_limit_sleeps_between_requests(monkeypatch, tmp_path):
     monkeypatch.setattr(mi, "time", _FakeTime)
     index_html = _fixture("myinstants_ua_index.html")
     c, fake = _client(
-        tmp_path, {"/en/index/ua/": FakeResponse(text=index_html)}, min_interval_sec=0.3
+        tmp_path, {"/en/trending/": FakeResponse(text=index_html)}, min_interval_sec=0.3
     )
     # page 1 and page 2 are different cache keys -> two network calls back-to-back
-    c.fetch_index_entries("ua", 1)
+    c.fetch_trending(1)
     c._index_cache.clear()
-    c.fetch_index_entries("ua", 2)
+    c.fetch_trending(2)
     assert len(fake.requests) == 2
     assert sleeps, "expected a rate-limit sleep between requests"
     assert sleeps[0] >= 0.25
@@ -206,25 +196,25 @@ def test_enforce_cache_bounds_bytes(tmp_path):
 
 def test_index_cache_hit_avoids_network(tmp_path):
     index_html = _fixture("myinstants_ua_index.html")
-    c, fake = _client(tmp_path, {"/en/index/ua/": FakeResponse(text=index_html)})
-    c.fetch_index_entries("ua", 1)
-    c.fetch_index_entries("ua", 1)
+    c, fake = _client(tmp_path, {"/en/trending/": FakeResponse(text=index_html)})
+    c.fetch_trending(1)
+    c.fetch_trending(1)
     assert len(fake.requests) == 1
 
 
 def test_index_cache_ttl_expiry(tmp_path):
     index_html = _fixture("myinstants_ua_index.html")
-    c, fake = _client(tmp_path, {"/en/index/ua/": FakeResponse(text=index_html)}, index_ttl_sec=0.0)
-    c.fetch_index_entries("ua", 1)
-    c.fetch_index_entries("ua", 1)
+    c, fake = _client(tmp_path, {"/en/trending/": FakeResponse(text=index_html)}, index_ttl_sec=0.0)
+    c.fetch_trending(1)
+    c.fetch_trending(1)
     assert len(fake.requests) == 2
 
 
 def test_index_cache_bounded_pages(tmp_path):
     index_html = _fixture("myinstants_ua_index.html")
     c, fake = _client(
-        tmp_path, {"/en/index/ua/": FakeResponse(text=index_html)}, max_cached_pages=2
+        tmp_path, {"/en/trending/": FakeResponse(text=index_html)}, max_cached_pages=2
     )
     for page in (1, 2, 3):
-        c.fetch_index_entries("ua", page)
-    assert set(c._index_cache) == {("ua", 2), ("ua", 3)}
+        c.fetch_trending(page)
+    assert set(c._index_cache) == {2, 3}

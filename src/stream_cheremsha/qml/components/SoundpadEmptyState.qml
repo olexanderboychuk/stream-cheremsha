@@ -41,14 +41,15 @@ Rectangle {
         }
         Text {
             Layout.alignment: Qt.AlignHCenter
-            text: "Soundpad порожній"
+            text: spApi.strings.empty_title || "Soundpad порожній"
             color: "#e8ecf5"
             font.pixelSize: 19
             font.weight: Font.DemiBold
         }
         Text {
             Layout.alignment: Qt.AlignHCenter
-            text: root.dragHover ? "Перетягніть файл сюди" : "Додайте перший звук або перетягніть аудіофайл сюди"
+            text: root.dragHover ? (spApi.strings.empty_drag || "Перетягніть файл сюди")
+                                : (spApi.strings.empty_hint || "Додайте перший звук або перетягніть аудіофайл сюди")
             color: root.dragHover ? "#c4b5fd" : "#7f8aa3"
             font.pixelSize: 13
             font.weight: root.dragHover ? Font.DemiBold : Font.Normal
@@ -57,7 +58,7 @@ Rectangle {
         }
         Button {
             Layout.alignment: Qt.AlignHCenter
-            text: "+ Додати звук"
+            text: spApi.strings.add_button || "+ Додати звук"
             hoverEnabled: true
             focusPolicy: Qt.TabFocus
             font.pixelSize: 13

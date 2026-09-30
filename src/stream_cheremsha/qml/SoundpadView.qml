@@ -32,7 +32,10 @@ Item {
     readonly property color secondaryCyan: "#20d7f5"
 
     // ---- State (stable contract names) ----
-    property string selectedCategory: "Усі"
+    // Internal sentinel for the "All categories" chip — never displayed raw;
+    // the visible label comes from spApi.strings.category_all.
+    readonly property string allCat: "__all__"
+    property string selectedCategory: root.allCat
     property string query: ""
     property var categoryList: []
     property var _allItems: []
@@ -78,7 +81,7 @@ Item {
     ListModel { id: soundModel }
 
     function _matches(it) {
-        if (root.selectedCategory !== "Усі" && it.category !== root.selectedCategory) return false;
+        if (root.selectedCategory !== root.allCat && it.category !== root.selectedCategory) return false;
         var q = String(root.query || "").trim().toLowerCase();
         if (q === "") return true;
         return (it.name || "").toLowerCase().indexOf(q) >= 0
@@ -112,7 +115,7 @@ Item {
         }
         var keys = Object.keys(extra).sort();
         for (var k = 0; k < keys.length; ++k) out.push(keys[k]);
-        return ["Усі"].concat(out);
+        return [root.allCat].concat(out);
     }
 
     // Full grid rebuilds are expensive (JSON + model + delegates) and a
@@ -305,7 +308,7 @@ Item {
             root.addConflictOwner = "";
             root.addErrorMsg = "";
         } else {
-            root.addErrorMsg = "Файл відхилено (формат або розмір)";
+            root.addErrorMsg = spApi.strings.add_error_file || "Файл відхилено (формат або розмір)";
         }
     }
 
@@ -398,9 +401,9 @@ Item {
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 2
-                Text { text: "Soundpad"; color: root.ink; font.pixelSize: 29; font.weight: Font.Bold }
+                Text { text: spApi.strings.title || "Soundpad"; color: root.ink; font.pixelSize: 29; font.weight: Font.Bold }
                 Text {
-                    text: "Миттєві звуки, хоткеї та аудіо-реакції для стріму"
+                    text: spApi.strings.subtitle || "Миттєві звуки, хоткеї та аудіо-реакції для стріму"
                     color: root.muted; font.pixelSize: 13
                 }
             }
@@ -422,7 +425,7 @@ Item {
                     TextField {
                         id: headerSearchField
                         Layout.fillWidth: true
-                        placeholderText: "Пошук звуків…"
+                        placeholderText: spApi.strings.search_ph || "Пошук звуків…"
                         placeholderTextColor: "#4b5568"
                         color: root.ink
                         selectionColor: "#7c4fee"
@@ -460,7 +463,7 @@ Item {
             // primary add
             Button {
                 id: addBtn
-                text: "+ Додати звук"
+                text: spApi.strings.add_button || "+ Додати звук"
                 hoverEnabled: true
                 focusPolicy: Qt.TabFocus
                 font.pixelSize: 13
@@ -506,7 +509,7 @@ Item {
                     Repeater {
                         model: root.categoryList
                         delegate: CheremshaCategoryChip {
-                            text: modelData
+                            text: modelData === root.allCat ? (spApi.strings.category_all || "Усі") : modelData
                             active: root.selectedCategory === modelData
                             onClicked: { root.selectedCategory = modelData; root.refresh(); }
                         }
@@ -515,7 +518,7 @@ Item {
             }
             Text {
                 visible: soundModel.count > 0
-                text: soundModel.count + " звуків"
+                text: (spApi.strings.count || "{n} звуків").replace("{n}", String(soundModel.count))
                 color: "#5b6472"
                 font.pixelSize: 12
             }
@@ -600,7 +603,7 @@ Item {
                     Layout.fillWidth: true
                     Layout.topMargin: 40
                     visible: root._allItems.length > 0 && soundModel.count === 0
-                    text: "Нічого не знайдено"
+                    text: spApi.strings.no_results || "Нічого не знайдено"
                     color: root.muted
                     font.pixelSize: 14
                     horizontalAlignment: Text.AlignHCenter
@@ -660,8 +663,9 @@ Item {
     CheremshaModal {
         id: addModal
         anchors.fill: parent
-        title: "Додати звук"
-        subtitle: "Додайте звук до Soundpad · " + (root._stemFromUrl(root.pendingFileUrl) || "")
+        title: spApi.strings.add_title || "Додати звук"
+        subtitle: (spApi.strings.add_subtitle || "Додайте звук до Soundpad · {name}")
+                   .replace("{name}", root._stemFromUrl(root.pendingFileUrl) || "")
         opened: root.showAddModal
         onCloseRequested: { root.showAddModal = false; root.addListening = false; }
 
@@ -696,7 +700,7 @@ Item {
                 spacing: 10
                 Item { Layout.fillWidth: true }
                 Button {
-                    text: "Скасувати"
+                    text: spApi.strings.cancel || "Скасувати"
                     hoverEnabled: true
                     focusPolicy: Qt.TabFocus
                     font.pixelSize: 13
@@ -713,7 +717,7 @@ Item {
                     onClicked: addModal.closeRequested()
                 }
                 Button {
-                    text: "Додати звук"
+                    text: spApi.strings.add_title || "Додати звук"
                     hoverEnabled: true
                     focusPolicy: Qt.TabFocus
                     font.pixelSize: 13
@@ -738,7 +742,7 @@ Item {
     CheremshaModal {
         id: libraryModal
         anchors.fill: parent
-        preferredWidth: 720
+        preferredWidth: 780
         title: spApi.libraryStrings.title || "Бібліотека звуків"
         subtitle: spApi.libraryStrings.subtitle || ""
         opened: root.showLibraryModal
@@ -777,7 +781,7 @@ Item {
     CheremshaModal {
         id: editModal
         anchors.fill: parent
-        title: "Редагувати звук"
+        title: spApi.strings.edit_title || "Редагувати звук"
         subtitle: root.editName || ""
         opened: root.showEditModal
         onCloseRequested: { root.showEditModal = false; }
@@ -844,7 +848,7 @@ Item {
                     border.width: 1; border.color: "#1e2942"
                     RowLayout {
                         anchors.fill: parent; anchors.margins: 12; spacing: 10
-                        Text { text: "Гучність"; color: "#9aa4b8"; font.pixelSize: 12 }
+                        Text { text: spApi.strings.volume_label || "Гучність"; color: "#9aa4b8"; font.pixelSize: 12 }
                         CheremshaSlider {
                             id: editVolSlider
                             Layout.fillWidth: true
@@ -856,7 +860,7 @@ Item {
                 }
                 RowLayout {
                     spacing: 10
-                    Text { text: "Кулдаун, с"; color: "#9aa4b8"; font.pixelSize: 12 }
+                    Text { text: spApi.strings.cooldown_label || "Кулдаун, с"; color: "#9aa4b8"; font.pixelSize: 12 }
                     SpinBox {
                         id: cdSpin
                         Layout.fillWidth: true
@@ -928,7 +932,7 @@ Item {
                         }
                     }
                 }
-                Text { text: "Режим відтворення"; color: "#9aa4b8"; font.pixelSize: 12; Layout.fillWidth: true }
+                Text { text: spApi.strings.mode_label || "Режим відтворення"; color: "#9aa4b8"; font.pixelSize: 12; Layout.fillWidth: true }
                 ComboBox {
                     id: editModeBox
                     Layout.fillWidth: true
@@ -987,14 +991,14 @@ Item {
                     }
                 }
                 Text {
-                    text: "Кулдаун — пауза між запусками. Режим — що робити, якщо звук уже грає: restart / replace — почати спочатку, overlap — грати поверх, queue — стати в чергу, hold — повторювати, поки тримаєш хоткей."
+                    text: spApi.strings.edit_hint || "Кулдаун — пауза між запусками. Режим — що робити, якщо звук уже грає: restart / replace — почати спочатку, overlap — грати поверх, queue — стати в чергу, hold — повторювати, поки тримаєш хоткей."
                     color: "#5b6472"
                     font.pixelSize: 11
                     wrapMode: Text.Wrap
                     Layout.fillWidth: true
                 }
                 CheremshaToggle {
-                    label: "Увімкнено"
+                    label: spApi.strings.enabled || "Увімкнено"
                     checked: root.editEnabled
                     onToggled: root.editEnabled = on
                 }
@@ -1006,7 +1010,7 @@ Item {
                 spacing: 10
                 Item { Layout.fillWidth: true }
                 Button {
-                    text: "Скасувати"
+                    text: spApi.strings.cancel || "Скасувати"
                     hoverEnabled: true
                     implicitWidth: 120; implicitHeight: 38
                     contentItem: Text {
@@ -1020,7 +1024,7 @@ Item {
                     onClicked: editModal.closeRequested()
                 }
                 Button {
-                    text: "Зберегти"
+                    text: spApi.strings.save || "Зберегти"
                     hoverEnabled: true
                     font.bold: true
                     implicitWidth: 130; implicitHeight: 38
@@ -1039,7 +1043,7 @@ Item {
     CheremshaModal {
         id: hotkeyModal
         anchors.fill: parent
-        title: "Призначити хоткей"
+        title: spApi.strings.hotkey_title || "Призначити хоткей"
         subtitle: root._soundNameById(root.hotkeyTargetId) || ""
         opened: root.showHotkeyModal
         onCloseRequested: { root.showHotkeyModal = false; }
@@ -1055,7 +1059,7 @@ Item {
                 }
                 RowLayout {
                     spacing: 12
-                    Text { text: "Натисніть комбінацію клавіш:"; color: root.muted; font.pixelSize: 13 }
+                    Text { text: spApi.strings.hotkey_prompt || "Натисніть комбінацію клавіш:"; color: root.muted; font.pixelSize: 13 }
                     CheremshaKeycap { keyText: root.capturedCombo }
                 }
                 Item {
@@ -1076,20 +1080,23 @@ Item {
                 }
                 Text {
                     visible: root.conflictOwnerId !== ""
-                    text: root.capturedCombo + " вже призначено: " + root._soundNameById(root.conflictOwnerId)
+                    text: (spApi.strings.hotkey_conflict || "{combo} вже призначено: {name}")
+                           .replace("{combo}", root.capturedCombo)
+                           .replace("{name}", root._soundNameById(root.conflictOwnerId))
                     color: "#fbbf24"; font.pixelSize: 13
                     Layout.fillWidth: true; wrapMode: Text.Wrap
                 }
                 Text {
                     visible: root.capturedCombo !== "" && root.conflictOwnerId === ""
-                    text: "Призначено: " + root.capturedCombo
+                    text: (spApi.strings.hotkey_assigned || "Призначено: {combo}")
+                           .replace("{combo}", root.capturedCombo)
                     color: "#22c55e"; font.pixelSize: 13
                 }
                 RowLayout {
                     visible: root.conflictOwnerId !== ""
                     spacing: 10
                     Button {
-                        text: "Замінити"
+                        text: spApi.strings.hotkey_replace || "Замінити"
                         hoverEnabled: true
                         implicitWidth: 120; implicitHeight: 36
                         contentItem: Text {
@@ -1104,7 +1111,7 @@ Item {
                         }
                     }
                     Button {
-                        text: "Скасувати"
+                        text: spApi.strings.cancel || "Скасувати"
                         hoverEnabled: true
                         implicitWidth: 120; implicitHeight: 36
                         contentItem: Text {
@@ -1121,7 +1128,7 @@ Item {
                     spacing: 10
                     Item { Layout.fillWidth: true }
                     Button {
-                        text: "Очистити"
+                        text: spApi.strings.hotkey_clear || "Очистити"
                         hoverEnabled: true
                         implicitWidth: 110; implicitHeight: 36
                         contentItem: Text {

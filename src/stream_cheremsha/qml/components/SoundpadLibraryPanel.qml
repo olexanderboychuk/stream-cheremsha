@@ -9,6 +9,13 @@ Item {
     id: panel
     implicitHeight: 430
 
+    // Palette — established Cheremsha values only (navy surfaces, purple accent).
+    readonly property color rowBg: "#111a2a"
+    readonly property color rowHoverBg: "#151f32"
+    readonly property color rowBorder: "#26314a"
+    readonly property color accentSoft: "#5a4fcf"   // hover border (rows, pagination)
+    readonly property color accentStrong: "#8b5cf6" // playing / active state
+
     readonly property var rows: _rows()
     function _rows() {
         try { return JSON.parse(spApi.libraryRowsJson || "[]"); } catch (err) { return []; }
@@ -62,11 +69,24 @@ Item {
                     wrapMode: Text.Wrap
                 }
 
-                BusyIndicator {
+                // Lightweight spinner — local SVG arc, no native controls.
+                Item {
                     Layout.alignment: Qt.AlignHCenter
-                    running: panel.loading
+                    width: 26; height: 26
                     visible: panel.loading
-                    width: 28; height: 28
+                    Image {
+                        id: spinnerImg
+                        anchors.centerIn: parent
+                        width: 24; height: 24
+                        source: Qt.resolvedUrl("../../assets/icons/spinner.svg")
+                        RotationAnimation {
+                            target: spinnerImg
+                            from: 0; to: 360
+                            duration: 900
+                            easing.type: Easing.Linear
+                            running: panel.loading
+                        }
+                    }
                 }
 
                 Button {
@@ -78,6 +98,8 @@ Item {
                     font.pixelSize: 13
                     implicitWidth: 170
                     implicitHeight: 36
+                    scale: retryBtn.pressed ? 0.97 : 1.0
+                    Behavior on scale { NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
                     contentItem: Text {
                         text: retryBtn.text; color: "white"; font: retryBtn.font
                         horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
@@ -105,17 +127,37 @@ Item {
             clip: true
             boundsBehavior: Flickable.StopAtBounds
 
+            // Styled scrollbar — no native Qt artifacts.
+            ScrollBar.vertical: ScrollBar {
+                width: 7
+                policy: ScrollBar.AsNeeded
+                background: Rectangle {
+                    implicitWidth: 7
+                    radius: 3
+                    color: "#0f1219"
+                }
+                contentItem: Rectangle {
+                    implicitWidth: 4
+                    radius: 2
+                    color: parent.pressed ? panel.accentStrong : (parent.hovered ? "#52607a" : "#3d4a60")
+                }
+            }
+
             delegate: Rectangle {
                 id: rowItem
                 width: listView.width
-                height: 64
-                radius: 11
-                color: rowMa.containsMouse ? "#151b2a" : "#101827"
+                height: 68
+                radius: 10
+                readonly property bool isPlaying: spApi.previewPlayingId === modelData.path
+                readonly property bool isLoading: spApi.previewLoadingId === modelData.path
+                color: (isPlaying || isLoading) ? panel.rowHoverBg
+                       : (rowMa.containsMouse ? panel.rowHoverBg : panel.rowBg)
                 border.width: 1
-                border.color: spApi.previewPlayingId === modelData.path ? "#8b5cf6"
-                               : (rowMa.containsMouse ? "#4b5876" : "#26314a")
-                Behavior on color { ColorAnimation { duration: 150 } }
-                Behavior on border.color { ColorAnimation { duration: 150 } }
+                border.color: isPlaying ? panel.accentStrong
+                               : (isLoading ? panel.accentSoft
+                               : (rowMa.containsMouse ? panel.accentSoft : panel.rowBorder))
+                Behavior on color { ColorAnimation { duration: 140 } }
+                Behavior on border.color { ColorAnimation { duration: 140 } }
 
                 // Row hover layer FIRST (below content): the play/add controls
                 // declared after it sit on top and receive their own clicks;
@@ -129,69 +171,88 @@ Item {
 
                 RowLayout {
                     anchors.fill: parent
-                    anchors.leftMargin: 14
-                    anchors.rightMargin: 12
-                    spacing: 10
+                    anchors.leftMargin: 16
+                    anchors.rightMargin: 14
+                    spacing: 12
 
                     Text {
                         Layout.fillWidth: true
                         text: modelData.title || modelData.path
-                        color: "#e8ecf5"
-                        font.pixelSize: 14
+                        color: "#e7ebf5"
+                        font.pixelSize: 15
                         font.weight: Font.DemiBold
                         elide: Text.ElideRight
                         verticalAlignment: Text.AlignVCenter
                     }
 
-                    // Play / stop preview — shared component, card-consistent states
+                    // Play / stop preview — shared component, card-consistent states.
+                    // `accented` lights it up while the whole row is hovered;
+                    // `loading` shows a spinner until the audio is cached and playing.
                     CheremshaPlayButton {
                         id: playBtn
-                        diameter: 38
-                        playing: spApi.previewPlayingId === modelData.path
+                        diameter: 40
+                        playing: rowItem.isPlaying
+                        loading: rowItem.isLoading
+                        accented: rowMa.containsMouse && !playBtn.playing && !playBtn.loading
                         onClicked: {
-                            if (playBtn.playing) spApi.stopPreview();
+                            if (playBtn.playing || playBtn.loading) spApi.stopPreview();
                             else spApi.previewSound(modelData.path);
                         }
                     }
 
-                    // Add to soundpad — primary CTA, app-wide gradient style
+                    // Add to soundpad — primary CTA, app-wide gradient style.
                     Button {
                         id: addBtn
                         Layout.preferredWidth: 104
-                        Layout.preferredHeight: 38
+                        Layout.preferredHeight: 40
                         readonly property bool justAdded: panel.addedPath === modelData.path
                         hoverEnabled: true
                         focusPolicy: Qt.NoFocus
                         font.pixelSize: 13
+                        scale: addBtn.pressed && !addBtn.justAdded ? 0.97 : 1.0
+                        Behavior on scale { NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
                         contentItem: RowLayout {
-                            spacing: 6
+                            spacing: 7
                             Image {
-                                width: 14; height: 14
+                                width: 15; height: 15
                                 source: addBtn.justAdded ? Qt.resolvedUrl("../../assets/icons/check.svg")
-                                                         : Qt.resolvedUrl("../../assets/icons/web_plus.svg")
-                                opacity: 0.95
+                                                         : Qt.resolvedUrl("../../assets/icons/plus.svg")
                             }
                             Text {
                                 text: addBtn.justAdded ? (spApi.libraryStrings.added || "Додано")
                                                        : (spApi.libraryStrings.add || "Додати")
-                                color: addBtn.justAdded ? "#34d399" : "white"
+                                color: addBtn.justAdded ? "#34d399" : "#f4f2ff"
                                 font.pixelSize: 13
-                                font.weight: Font.Medium
+                                font.weight: Font.DemiBold
+                                font.letterSpacing: 0.2
                             }
                         }
                         background: Rectangle {
                             radius: 9
                             color: addBtn.justAdded ? "#1d3a2a" : "transparent"
-                            border.width: addBtn.justAdded ? 1 : 0
-                            border.color: "#34d399"
+                            border.width: addBtn.justAdded || addBtn.hovered ? 1 : 0
+                            border.color: addBtn.justAdded ? "#34d399" : "#b3a6ff"
                             Behavior on color { ColorAnimation { duration: 150 } }
+
+                            // Subtle hover glow — soft alpha ring, no blur/shaders.
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: parent.width + 8
+                                height: parent.height + 8
+                                radius: parent.radius + 4
+                                color: "#8b5cf6"
+                                opacity: addBtn.hovered && !addBtn.justAdded ? 0.16 : 0.0
+                                Behavior on opacity { NumberAnimation { duration: 150 } }
+                            }
+
                             Rectangle {
                                 anchors.fill: parent
                                 radius: parent.radius
                                 visible: !addBtn.justAdded
                                 gradient: Gradient {
-                                    GradientStop { position: 0.0; color: addBtn.pressed ? "#7c3aed" : (addBtn.hovered ? "#9d71f7" : "#9b5cff") }
-                                    GradientStop { position: 1.0; color: addBtn.pressed ? "#6d28d9" : (addBtn.hovered ? "#8b5cf6" : "#7c3aed") }
+                                    orientation: Gradient.Vertical
+                                    GradientStop { position: 0.0; color: addBtn.pressed ? "#6a58dd" : (addBtn.hovered ? "#8f7dff" : "#7d6bf4") }
+                                    GradientStop { position: 1.0; color: addBtn.pressed ? "#5b49c9" : (addBtn.hovered ? "#7463e8" : "#6452da") }
                                 }
                             }
                         }
@@ -208,7 +269,7 @@ Item {
         // ---- Pagination ----
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: 34
+            Layout.preferredHeight: 36
             visible: !panel.showStates
             spacing: 10
 
@@ -220,15 +281,17 @@ Item {
                 focusPolicy: Qt.TabFocus
                 font.pixelSize: 12
                 implicitWidth: 96
-                implicitHeight: 34
+                implicitHeight: 36
                 opacity: prevBtn.enabled ? 1.0 : 0.45
+                scale: prevBtn.pressed && prevBtn.enabled ? 0.97 : 1.0
+                Behavior on scale { NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
                 contentItem: Text {
                     text: prevBtn.text; color: "#c7d2e5"; font: prevBtn.font
                     horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
                 }
                 background: Rectangle {
-                    radius: 9; color: (prevBtn.hovered && prevBtn.enabled) ? "#18233c" : "#0f1728"
-                    border.width: 1; border.color: (prevBtn.hovered && prevBtn.enabled) ? "#3a4a6e" : "#26314a"
+                    radius: 9; color: (prevBtn.hovered && prevBtn.enabled) ? "#161d33" : "#0f1728"
+                    border.width: 1; border.color: (prevBtn.hovered && prevBtn.enabled) ? panel.accentSoft : "#26314a"
                 }
                 onClicked: spApi.loadLibraryPage(panel.page - 1)
             }
@@ -251,14 +314,16 @@ Item {
                 focusPolicy: Qt.TabFocus
                 font.pixelSize: 12
                 implicitWidth: 96
-                implicitHeight: 34
+                implicitHeight: 36
+                scale: nextBtn.pressed && nextBtn.enabled ? 0.97 : 1.0
+                Behavior on scale { NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
                 contentItem: Text {
                     text: nextBtn.text; color: "#c7d2e5"; font: nextBtn.font
                     horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
                 }
                 background: Rectangle {
-                    radius: 9; color: nextBtn.hovered ? "#18233c" : "#0f1728"
-                    border.width: 1; border.color: nextBtn.hovered ? "#3a4a6e" : "#26314a"
+                    radius: 9; color: nextBtn.hovered ? "#161d33" : "#0f1728"
+                    border.width: 1; border.color: nextBtn.hovered ? panel.accentSoft : "#26314a"
                 }
                 onClicked: spApi.loadLibraryPage(panel.page + 1)
             }

@@ -84,6 +84,7 @@ Item {
         Behavior on opacity { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
         Behavior on scale { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
 
+        // Top accent hairline — barely-there purple→cyan signature line.
         Rectangle {
             anchors.top: parent.top
             anchors.left: parent.left
@@ -91,12 +92,12 @@ Item {
             anchors.topMargin: 1
             anchors.leftMargin: 13
             anchors.rightMargin: 13
-            height: 2
-            radius: 1
+            height: 1
+            radius: 0
             gradient: Gradient {
                 orientation: Gradient.Horizontal
-                GradientStop { position: 0.0; color: "#557c3aed" }
-                GradientStop { position: 1.0; color: "#5522d3ee" }
+                GradientStop { position: 0.0; color: "#667c3aed" }
+                GradientStop { position: 1.0; color: "#6622d3ee" }
             }
         }
 
@@ -114,8 +115,8 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            anchors.leftMargin: 22
-            anchors.rightMargin: 22
+            anchors.leftMargin: 24
+            anchors.rightMargin: 24
             anchors.topMargin: 20
             spacing: 0
 
@@ -131,7 +132,7 @@ Item {
                     Text {
                         text: modal.title
                         color: "#e8eaed"
-                        font.pixelSize: 17
+                        font.pixelSize: 18
                         font.weight: Font.DemiBold
                         elide: Text.ElideRight
                         Layout.fillWidth: true
@@ -146,18 +147,21 @@ Item {
                     }
                 }
                 Rectangle {
-                    Layout.preferredWidth: 32
-                    Layout.preferredHeight: 32
+                    Layout.preferredWidth: 36
+                    Layout.preferredHeight: 36
                     Layout.alignment: Qt.AlignTop
                     radius: 8
-                    color: closeMa.containsMouse ? "#1d2a44" : "#141c2c"
+                    color: closeMa.containsMouse ? "#1c2340" : "#141c2c"
                     border.width: 1
-                    border.color: closeMa.containsMouse ? "#33415e" : "#26314a"
+                    border.color: closeMa.containsMouse ? "#8b5cf6" : "#26314a"
                     Behavior on color { ColorAnimation { duration: 120 } }
+                    Behavior on border.color { ColorAnimation { duration: 120 } }
+                    scale: closeMa.pressed ? 0.96 : 1.0
+                    Behavior on scale { NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
                     Image {
                         anchors.centerIn: parent
-                        width: 14
-                        height: 14
+                        width: 15
+                        height: 15
                         source: Qt.resolvedUrl("../../assets/icons/x.svg")
                     }
                     MouseArea {

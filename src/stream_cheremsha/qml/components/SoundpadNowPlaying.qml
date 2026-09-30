@@ -55,7 +55,8 @@ Rectangle {
                 Layout.fillWidth: true
                 spacing: 2
                 Text {
-                    text: root.active ? "● NOW PLAYING" : "SOUNDPAD IDLE"
+                    text: root.active ? (spApi.strings.np_playing || "● NOW PLAYING")
+                                      : (spApi.strings.np_idle || "SOUNDPAD IDLE")
                     color: root.active ? "#22d3ee" : "#5b6472"
                     font.pixelSize: 10
                     font.weight: Font.DemiBold

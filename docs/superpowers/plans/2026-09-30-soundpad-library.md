@@ -960,8 +960,8 @@ In `src/stream_cheremsha/l10n.py`, insert immediately after the line `"soundpad.
     "soundpad.library.button": {"uk": "Бібліотека", "en": "Library"},
     "soundpad.library.title": {"uk": "Бібліотека звуків", "en": "Sound Library"},
     "soundpad.library.subtitle": {
-        "uk": "Оберіть звук з MyInstants — прослухайте та додайте до саундпаду",
-        "en": "Pick a sound from MyInstants — preview it, then add to your soundpad",
+        "uk": "Оберіть звук з онлайн бібліотеки — прослухайте та додайте до саундпаду",
+        "en": "Pick a sound from the online library — preview it, then add to your soundpad",
     },
     "soundpad.library.add": {"uk": "Додати", "en": "Add"},
     "soundpad.library.added": {"uk": "Додано", "en": "Added"},

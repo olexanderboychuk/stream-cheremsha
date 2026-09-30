@@ -55,6 +55,34 @@ def test_set_locale_same_value_no_emit(tmp_path):
     assert events == []
 
 
+def test_view_strings_localization(tmp_path):
+    api, _ = _api(tmp_path)
+    s = api.strings
+    assert s["title"] == "Soundpad"
+    assert s["add_button"] == "+ Додати звук"
+    assert s["category_all"] == "Усі"
+    assert s["count"] == "{n} звуків"
+
+    events: list[int] = []
+    api.stringsChanged.connect(lambda: events.append(1))
+    api.set_locale("en")
+    assert events, "stringsChanged must fire on locale change"
+    s = api.strings
+    assert s["add_button"] == "+ Add sound"
+    assert s["category_all"] == "All"
+    assert s["count"] == "{n} sounds"
+
+
+def test_view_strings_cover_qml_keys(tmp_path):
+    """Every short key the QML view reads must exist in both locales."""
+    from stream_cheremsha import l10n
+    from stream_cheremsha.ui.soundpad_qml_api import _VIEW_L10N_KEYS
+
+    for short in _VIEW_L10N_KEYS:
+        for locale in ("uk", "en"):
+            assert l10n.tr(locale, f"soundpad.{short}"), (locale, short)
+
+
 class FakeResponse:
     def __init__(self, text="", content=b"", status=200):
         self.text = text
@@ -105,7 +133,7 @@ def _client_with(tmp_path, session):
 
 def test_load_library_page_populates_rows(tmp_path):
     api, _ = _api(tmp_path)
-    fake = FakeSession({"index/ua": FakeResponse(text=_index_html())})
+    fake = FakeSession({"trending": FakeResponse(text=_index_html())})
     api._library = _client_with(tmp_path, fake)
 
     api.loadLibraryPage(1)
@@ -143,6 +171,93 @@ def test_preview_sound_plays_cached_mp3(tmp_path):
     api.previewSound("/en/instant/slava-ukraini-12345/")
     assert calls == [b"MP3DATA"]
     assert api.previewPlayingId == "/en/instant/slava-ukraini-12345/"
+
+
+def test_preview_loading_state_during_download(tmp_path):
+    fake = FakeSession(
+        {"instant/": FakeResponse(text=_INSTANT_HTML), ".mp3": FakeResponse(content=b"MP3DATA")}
+    )
+    api, _ = _api(tmp_path)
+    api._library = _client_with(tmp_path, fake)
+
+    seen: list[str] = []
+    orig = api._library.resolve_mp3_url
+
+    def spy(path):
+        seen.append(api.previewLoadingId)
+        return orig(path)
+
+    api._library.resolve_mp3_url = spy  # type: ignore[method-assign]
+
+    events: list[str] = []
+    api.previewLoadingChanged.connect(lambda v: events.append(v))
+
+    api.previewSound("/en/instant/slava-ukraini-12345/")
+    assert seen == ["/en/instant/slava-ukraini-12345/"]  # loading while downloading
+    assert api.previewLoadingId == ""  # cleared once playback starts
+    assert api.previewPlayingId == "/en/instant/slava-ukraini-12345/"
+    assert events[-1] == ""
+
+
+def test_preview_failure_clears_loading(tmp_path):
+    class BoomMp3(FakeSession):
+        def get(self, url, headers=None):
+            if "instant/" in url:
+                return FakeResponse(text=_INSTANT_HTML)
+            raise RuntimeError("download failed")
+
+    api, _ = _api(tmp_path)
+    api._library = _client_with(tmp_path, BoomMp3())
+
+    seen: list[str] = []
+    orig = api._library.resolve_mp3_url
+
+    def spy(path):
+        seen.append(api.previewLoadingId)
+        return orig(path)
+
+    api._library.resolve_mp3_url = spy  # type: ignore[method-assign]
+
+    api.previewSound("/en/instant/x/")
+    assert seen == ["/en/instant/x/"]
+    assert api.previewLoadingId == ""
+    assert api.previewPlayingId == ""
+
+
+def test_preview_finished_clears_playing_state(tmp_path):
+    fake = FakeSession(
+        {"instant/": FakeResponse(text=_INSTANT_HTML), ".mp3": FakeResponse(content=b"MP3DATA")}
+    )
+    api, _ = _api(tmp_path)
+    api._library = _client_with(tmp_path, fake)
+
+    events: list[str] = []
+    api.previewPlayingChanged.connect(lambda v: events.append(v))
+
+    api.previewSound("/en/instant/slava-ukraini-12345/")
+    assert api.previewPlayingId == "/en/instant/slava-ukraini-12345/"
+
+    # Audio ends naturally — engine notifies, API must clear the playing state.
+    api._engine.previewFinished.emit()
+    assert api.previewPlayingId == ""
+    assert events[-1] == ""
+
+
+def test_stop_preview_clears_loading_and_playing(tmp_path):
+    fake = FakeSession(
+        {"instant/": FakeResponse(text=_INSTANT_HTML), ".mp3": FakeResponse(content=b"MP3DATA")}
+    )
+    api, _ = _api(tmp_path)
+    api._library = _client_with(tmp_path, fake)
+
+    api.previewSound("/en/instant/slava-ukraini-12345/")
+    assert api.previewPlayingId == "/en/instant/slava-ukraini-12345/"
+
+    # Simulate an in-flight request for another sound, then stop.
+    api._set_preview_loading("/en/instant/other/")
+    api.stopPreview()
+    assert api.previewLoadingId == ""
+    assert api.previewPlayingId == ""
 
 
 def test_add_library_sound_copies_into_store(tmp_path):

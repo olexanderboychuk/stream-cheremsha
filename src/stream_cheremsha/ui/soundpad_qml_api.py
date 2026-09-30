@@ -46,6 +46,56 @@ _LIBRARY_L10N_KEYS = (
     "next",
 )
 
+# Main view + components (SoundpadView.qml, add/edit/hotkey modals, card menu).
+_VIEW_L10N_KEYS = (
+    "title",
+    "subtitle",
+    "search_ph",
+    "add_button",
+    "category_all",
+    "count",
+    "no_results",
+    "add_title",
+    "add_subtitle",
+    "add_error_file",
+    "edit_title",
+    "name_label",
+    "category_label",
+    "volume_label",
+    "mode_label",
+    "cooldown_label",
+    "edit_hint",
+    "enabled",
+    "cancel",
+    "save",
+    "hotkey_title",
+    "hotkey_prompt",
+    "hotkey_conflict",
+    "hotkey_assigned",
+    "hotkey_replace",
+    "hotkey_clear",
+    "hotkey_label",
+    "hotkey_listening",
+    "hotkey_assign",
+    "optional",
+    "hotkey_in_use",
+    "empty_title",
+    "empty_hint",
+    "empty_drag",
+    "np_playing",
+    "np_idle",
+    "card_playing",
+    "file_missing",
+    "menu_play",
+    "menu_stop",
+    "menu_retry",
+    "menu_relink",
+    "menu_hotkey",
+    "menu_edit",
+    "menu_duplicate",
+    "menu_remove",
+)
+
 
 def file_url_to_path(file_url: str) -> Path | None:
     s = str(file_url or "").strip()
@@ -78,6 +128,7 @@ class SoundpadQmlApi(QObject):
     libraryStatusChanged = Signal(str)
     libraryPageChanged = Signal(int)
     previewPlayingChanged = Signal(str)
+    previewLoadingChanged = Signal(str)  # path of a preview being resolved/downloaded
     libraryAdded = Signal(str)  # sound id successfully added from the library
     libraryAddFailed = Signal(str)  # sound path that failed to add
 
@@ -103,6 +154,9 @@ class SoundpadQmlApi(QObject):
         self._lib_inflight = False
         self._lib_add_inflight = False
         self._preview_playing_id = ""
+        self._preview_loading_id = ""
+        self._preview_seq = 0  # invalidates superseded/cancelled preview jobs
+        self._preview_job: asyncio.Task | None = None
         self._lib_tasks: set[asyncio.Task] = set()
         try:
             self._hotkeys.hotkeyPressed.connect(self._on_hotkey_pressed)
@@ -119,6 +173,7 @@ class SoundpadQmlApi(QObject):
             self._np_timer.timeout.connect(self._tick_now_playing)
             self._engine.playbackStarted.connect(self._on_playback_started)
             self._engine.playbackFinished.connect(self._on_playback_finished)
+            self._engine.previewFinished.connect(self._on_preview_finished)
         except RuntimeError:
             pass
         self._locale = l10n.normalize_locale(l10n.DEFAULT_LOCALE)
@@ -259,6 +314,17 @@ class SoundpadQmlApi(QObject):
         for short in _LIBRARY_L10N_KEYS:
             try:
                 out[short] = l10n.tr(self._locale, f"soundpad.library.{short}")
+            except KeyError:
+                out[short] = ""
+        return out
+
+    @Property("QVariantMap", notify=stringsChanged)
+    def strings(self) -> dict[str, str]:  # noqa: ANN201 - PySide pattern
+        """Main view + component strings (``soundpad.*``), re-read on locale change."""
+        out = {}
+        for short in _VIEW_L10N_KEYS:
+            try:
+                out[short] = l10n.tr(self._locale, f"soundpad.{short}")
             except KeyError:
                 out[short] = ""
         return out
@@ -444,6 +510,7 @@ class SoundpadQmlApi(QObject):
 
     @Slot()
     def stopAll(self) -> None:
+        self.stopPreview()  # clear preview UI state; engine.stop_all re-stops (no-op)
         self._engine.stop_all()
         self._emit_sounds_changed_soon()
 
@@ -518,11 +585,16 @@ class SoundpadQmlApi(QObject):
         parent = self.parent()
         if not isinstance(parent, QWidget):
             parent = None
+        try:
+            title = l10n.tr(self._locale, "soundpad.pick_title")
+            audio_label = l10n.tr(self._locale, "soundpad.pick_filter_audio")
+        except KeyError:
+            title, audio_label = "Оберіть аудіофайл", "Аудіо"
         path, _ = QFileDialog.getOpenFileName(
             parent,
-            "Оберіть аудіофайл",
+            title,
             "",
-            "Аудіо (*.mp3 *.wav *.ogg);;MP3 (*.mp3);;WAV (*.wav);;OGG (*.ogg)",
+            f"{audio_label} (*.mp3 *.wav *.ogg);;MP3 (*.mp3);;WAV (*.wav);;OGG (*.ogg)",
         )
         if not path:
             return ""
@@ -567,6 +639,10 @@ class SoundpadQmlApi(QObject):
     def previewPlayingId(self) -> str:
         return self._preview_playing_id
 
+    @Property(str, notify=previewLoadingChanged)
+    def previewLoadingId(self) -> str:
+        return self._preview_loading_id
+
     def _set_library_status(self, status: str) -> None:
         if status == self._lib_status:
             return
@@ -581,21 +657,10 @@ class SoundpadQmlApi(QObject):
         self.libraryPageChanged.emit(p)
 
     def _load_page_worker(self, page: int) -> list[dict]:
-        from stream_cheremsha.soundpad.myinstants import candidate_langs
-
         client = self._library_client()
-        last_err: Exception | None = None
-        for lang in candidate_langs(self._locale):
-            try:
-                entries = client.fetch_index_entries(lang, page)
-            except Exception as e:  # noqa: BLE001 - network/HTTP failure: next language
-                last_err = e
-                continue
-            if entries:
-                return [{"path": s.path, "title": s.title} for s in entries]
-        if last_err is not None:
-            raise RuntimeError(f"myinstants fetch failed: {last_err}") from last_err
-        return []
+        # Country-free base URL; the site geo-redirects to the visitor's index.
+        entries = client.fetch_trending(page)
+        return [{"path": s.path, "title": s.title} for s in entries]
 
     def _finish_library_load(self, rows: list[dict] | None, err: Exception | None) -> None:
         self._lib_inflight = False
@@ -644,12 +709,19 @@ class SoundpadQmlApi(QObject):
     def openLibrary(self) -> None:
         self.loadLibraryPage(1)
 
+    def _set_preview_loading(self, path: str) -> None:
+        if self._preview_loading_id != path:
+            self._preview_loading_id = path
+            self.previewLoadingChanged.emit(path)
+
     @Slot(str)
     def previewSound(self, sound_path: str) -> None:
         p = (sound_path or "").strip()
         if not p.startswith("/"):
             return
         client = self._library_client()
+        seq = self._preview_seq + 1
+        self._preview_seq = seq
 
         async def _job() -> None:
             try:
@@ -658,15 +730,23 @@ class SoundpadQmlApi(QObject):
                 data = await asyncio.to_thread(Path(local).read_bytes)
             except Exception as e:  # noqa: BLE001
                 logger.warning("soundpad preview failed for %s: %s", p, e)
+                if seq == self._preview_seq:
+                    self._set_preview_loading("")
                 return
+            if seq != self._preview_seq:
+                return  # superseded by a newer request or stopped — don't play
             if self._engine.play_preview(data) == "PLAYING":
+                self._set_preview_loading("")
                 self._preview_playing_id = p
                 self.previewPlayingChanged.emit(p)
+
+        self._set_preview_loading(p)
 
         if _loop_running():
             t = asyncio.get_running_loop().create_task(_job())
             self._lib_tasks.add(t)
             t.add_done_callback(self._lib_tasks.discard)
+            self._preview_job = t
         else:  # no running loop (unit tests): run inline
             try:
                 mp3_url = client.resolve_mp3_url(p)
@@ -674,14 +754,31 @@ class SoundpadQmlApi(QObject):
                 data = Path(local).read_bytes()
             except Exception as e:  # noqa: BLE001
                 logger.warning("soundpad preview failed for %s: %s", p, e)
+                self._set_preview_loading("")
             else:
                 if self._engine.play_preview(data) == "PLAYING":
+                    self._set_preview_loading("")
                     self._preview_playing_id = p
                     self.previewPlayingChanged.emit(p)
 
     @Slot()
     def stopPreview(self) -> None:
+        self._preview_seq += 1  # invalidate any in-flight preview job
+        if self._preview_job is not None and not self._preview_job.done():
+            try:
+                self._preview_job.cancel()
+            except RuntimeError:
+                pass
+        self._preview_job = None
         self._engine.stop_preview()
+        self._set_preview_loading("")
+        if self._preview_playing_id:
+            self._preview_playing_id = ""
+            self.previewPlayingChanged.emit("")
+
+    def _on_preview_finished(self) -> None:
+        """Engine signal: a preview ended naturally — clear the playing state."""
+        self._set_preview_loading("")
         if self._preview_playing_id:
             self._preview_playing_id = ""
             self.previewPlayingChanged.emit("")

@@ -23,26 +23,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
-# App locale (l10n: uk/en) -> MyInstants sound-language code. "ua" is accepted
-# as an alias so a raw MyInstants language code also resolves correctly.
-_LOCALE_TO_LANG = {"uk": "ua", "ua": "ua", "en": "en"}
-_FALLBACK_LANGS = ("en",)
-
 
 @dataclass(frozen=True, slots=True)
 class LibrarySound:
     path: str  # site path, e.g. "/en/instant/some-sound-123/"
     title: str
-
-
-def candidate_langs(locale: str) -> list[str]:
-    """Ordered MyInstants sound-language candidates for an app locale."""
-    code = _LOCALE_TO_LANG.get(str(locale or "").strip().lower(), "en")
-    out = [code]
-    for fb in _FALLBACK_LANGS:
-        if fb not in out:
-            out.append(fb)
-    return out
 
 
 _INSTANT_ANCHOR_RE = re.compile(
@@ -230,8 +215,8 @@ class MyInstantsClient:
         self._index_ttl_sec = float(index_ttl_sec)
         self._max_cached_pages = int(max_cached_pages)
         self._last_request_mono = 0.0
-        # (lang, page) -> (stored_at_mono, entries); insertion-ordered eviction.
-        self._index_cache: dict[tuple[str, int], tuple[float, list[LibrarySound]]] = {}
+        # page -> (stored_at_mono, entries); insertion-ordered eviction.
+        self._index_cache: dict[int, tuple[float, list[LibrarySound]]] = {}
 
     # -- rate limit ---------------------------------------------------------
     def _throttle(self) -> None:
@@ -240,16 +225,21 @@ class MyInstantsClient:
             time.sleep(wait)
         self._last_request_mono = time.monotonic()
 
-    # -- index pages --------------------------------------------------------
-    def fetch_index_entries(self, lang: str, page: int) -> list[LibrarySound]:
-        """Entries for one index page (in-memory cached; TTL + bounded)."""
-        key = (str(lang or "").strip().lower(), max(1, int(page)))
+    # -- trending pages -----------------------------------------------------
+    def fetch_trending(self, page: int) -> list[LibrarySound]:
+        """Entries for one trending page (in-memory cached; TTL + bounded).
+
+        The base URL is country-free on purpose: the site geo-redirects it to
+        the visitor's country index (/en/trending/ → 302 → /en/index/{cc}/),
+        so each user gets their own country's sounds without locale mapping.
+        """
+        key = max(1, int(page))
         now = time.monotonic()
         hit = self._index_cache.get(key)
         if hit is not None and now - hit[0] <= self._index_ttl_sec:
             return list(hit[1])
 
-        url = f"{ORIGIN}/en/index/{key[0]}/" + ("" if key[1] == 1 else f"?page={key[1]}")
+        url = f"{ORIGIN}/en/trending/" + ("" if key == 1 else f"?page={key}")
         self._throttle()
         with self._session_factory() as session:
             resp = session.get(url)

@@ -187,7 +187,7 @@ Rectangle {
                                 NumberAnimation { to: 0.35; duration: 550 }
                                 NumberAnimation { to: 1.0; duration: 550 } }
                         }
-                        Text { text: "PLAYING"; color: "#22d3ee"; font.pixelSize: 9; font.weight: Font.DemiBold }
+                        Text { text: spApi.strings.card_playing || "PLAYING"; color: "#22d3ee"; font.pixelSize: 9; font.weight: Font.DemiBold }
                     }
                     Text {
                         visible: root.cooldownLeft > 0.05 && !root.playing
@@ -258,7 +258,7 @@ Rectangle {
             Text {
                 visible: root.broken
                 anchors.verticalCenter: parent.verticalCenter
-                text: "Файл не знайдено"
+                text: spApi.strings.file_missing || "Файл не знайдено"
                 color: "#f87171"
                 font.pixelSize: 11
             }
@@ -365,24 +365,24 @@ Rectangle {
             anchors.margins: 6
             spacing: 2
             MenuRow {
-                label: root.playing ? "Стоп" : "Відтворити"
+                label: root.playing ? (spApi.strings.menu_stop || "Стоп") : (spApi.strings.menu_play || "Відтворити")
                 rowEnabled: !root.broken
                 onClicked: root.playing ? root.stopRequested() : root.playRequested()
             }
             // Error-state actions: re-check, relink to a new file, or remove.
             MenuRow {
-                label: "Спробувати знову"
+                label: spApi.strings.menu_retry || "Спробувати знову"
                 visible: root.broken
                 onClicked: root.retryRequested()
             }
             MenuRow {
-                label: "Змінити файл…"
+                label: spApi.strings.menu_relink || "Змінити файл…"
                 visible: root.broken
                 onClicked: root.relinkRequested()
             }
-            MenuRow { label: "Хоткей…"; onClicked: root.hotkeyClicked() }
-            MenuRow { label: "Редагувати…"; onClicked: root.editRequested() }
-            MenuRow { label: "Дублювати"; onClicked: root.duplicateRequested() }
+            MenuRow { label: spApi.strings.menu_hotkey || "Хоткей…"; onClicked: root.hotkeyClicked() }
+            MenuRow { label: spApi.strings.menu_edit || "Редагувати…"; onClicked: root.editRequested() }
+            MenuRow { label: spApi.strings.menu_duplicate || "Дублювати"; onClicked: root.duplicateRequested() }
             Rectangle {
                 width: 198
                 height: 9
@@ -394,7 +394,7 @@ Rectangle {
                     color: "#1e2942"
                 }
             }
-            MenuRow { label: "Видалити"; danger: true; onClicked: root.removeRequested() }
+            MenuRow { label: spApi.strings.menu_remove || "Видалити"; danger: true; onClicked: root.removeRequested() }
         }
     }
 
