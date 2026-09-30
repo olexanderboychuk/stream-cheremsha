@@ -27,6 +27,45 @@ class SoundpadAudioEngine(QObject):
         self._queues: dict[str, list[tuple[SoundEntry, bytes]]] = {}
         self._last_start: dict[str, float] = {}
         self._tasks: set[asyncio.Task] = set()
+        # In-flight _run tasks per sound, so stop() can cancel the actual
+        # audible playback instead of only clearing bookkeeping.
+        self._play_tasks: dict[str, set[asyncio.Task]] = {}
+        # Physically-held hotkeys per sound id (hold-to-play mode).
+        self._held: set[str] = set()
+
+    def set_hold(self, sound_id: str, held: bool) -> None:
+        """Track whether a hold-mode hotkey is physically down."""
+        if held:
+            self._held.add(sound_id)
+        else:
+            self._held.discard(sound_id)
+
+    def warmup(self) -> None:
+        """Create the audio backend now, off the hotkey-press path.
+
+        First-ever backend creation (FFmpeg plugin + players) costs 100ms+
+        and must not happen between key-press and audible output. Idempotent
+        and safe to call when audio is unavailable (logs and no-ops).
+        """
+        try:
+            self._ensure_sink()
+        except (RuntimeError, OSError) as e:
+            logger.debug("soundpad sink warmup skipped: %s", e)
+
+    def _spawn_run(self, entry: SoundEntry, data: bytes, vol: float) -> None:
+        t = asyncio.get_running_loop().create_task(self._run(entry, bytes(data), vol))
+        self._tasks.add(t)
+        self._play_tasks.setdefault(entry.id, set()).add(t)
+
+        def _drop(tt: asyncio.Task, _sid: str = entry.id) -> None:
+            self._tasks.discard(tt)
+            pending = self._play_tasks.get(_sid)
+            if pending is not None:
+                pending.discard(tt)
+                if not pending:
+                    self._play_tasks.pop(_sid, None)
+
+        t.add_done_callback(_drop)
 
     def _ensure_sink(self):
         if self._sink is None:
@@ -119,9 +158,7 @@ class SoundpadAudioEngine(QObject):
         self.duckingChanged.emit(True)
         vol = max(0.0, min(1.0, float(entry.volume) * float(self._global_volume)))
         if _loop_running():
-            t = asyncio.get_running_loop().create_task(self._run(entry, bytes(audio_bytes), vol))
-            self._tasks.add(t)
-            t.add_done_callback(lambda tt: self._tasks.discard(tt))
+            self._spawn_run(entry, bytes(audio_bytes), vol)
         else:
             # No running loop (unit tests): record intent, finish immediately.
             self._finish(entry.id)
@@ -129,13 +166,35 @@ class SoundpadAudioEngine(QObject):
 
     def stop(self, sound_id: str) -> None:
         self._queues.pop(sound_id, None)
+        # An explicit stop always wins over a held key: no resume until the
+        # key is physically pressed again.
+        self._held.discard(sound_id)
+        # Cancel in-flight playback tasks (sinks without a per-voice stop API
+        # halt via CancelledError unwinding through their cleanup).
+        for t in list(self._play_tasks.pop(sound_id, set())):
+            if not t.done():
+                try:
+                    t.cancel()
+                except RuntimeError:
+                    pass
+        # Halt the audible voice on the sink. player.stop() drives the sink's
+        # StoppedState handler, so the awaiting coroutine tears down cleanly
+        # (disconnects, source reset, temp cleanup, player + dedupe release).
+        # Other sounds' overlapping voices are untouched.
+        stop_voice = getattr(self._sink, "stop_sfx_by_key_prefix", None)
+        if callable(stop_voice):
+            try:
+                stop_voice(f"soundpad:{sound_id}:")
+            except RuntimeError:
+                pass
         if sound_id in self._playing:
             self._finish(sound_id)
 
     def stop_all(self) -> None:
         self._queues.clear()
-        for sid in sorted(self._playing):
-            self._finish(sid)
+        for sid in sorted(set(self._playing) | set(self._play_tasks)):
+            self.stop(sid)
+        self._held.clear()
 
     async def _run(self, entry: SoundEntry, data: bytes, vol: float) -> None:
         try:
@@ -156,6 +215,19 @@ class SoundpadAudioEngine(QObject):
                 t = asyncio.get_running_loop().create_task(self._run(nxt_entry, nxt_data, v2))
                 self._tasks.add(t)
                 t.add_done_callback(lambda tt: self._tasks.discard(tt))
+            elif (
+                entry.playback_mode
+                if isinstance(entry.playback_mode, PlaybackMode)
+                else PlaybackMode.RESTART
+            ) == PlaybackMode.HOLD and entry.id in self._held:
+                # Hold-to-play: key still down → repeat immediately (bypasses
+                # cooldown so the loop is continuous; the initial press still
+                # respects it). Volume is re-read for live slider changes.
+                # stop()/release discards _held first, so this never fires
+                # after an explicit stop.
+                self._last_start[entry.id] = time.monotonic()
+                v3 = max(0.0, min(1.0, float(entry.volume) * float(self._global_volume)))
+                self._spawn_run(entry, data, v3)
             else:
                 self._finish(entry.id)
 

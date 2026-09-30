@@ -10,6 +10,15 @@ from stream_cheremsha.soundpad.models import normalize_hotkey
 
 logger = logging.getLogger(__name__)
 
+# X11 key auto-repeat emits synthetic release+press pairs for a physically
+# held key, and pynput forwards them unfiltered. Without debouncing, every
+# synthetic release would stop a hold-to-play loop mid-start (the pipeline
+# then restarts from zero each cycle = seconds of perceived latency).
+# A release is therefore emitted only if the combo is STILL unsatisfied
+# after this window. 50ms dwarfs the repeat pair gap (µs–ms) yet a real
+# key-up still stops the loop imperceptibly fast.
+_RELEASE_DEBOUNCE_SEC = 0.05
+
 
 class HotkeyBackend(Protocol):
     def start(self) -> None: ...
@@ -47,6 +56,7 @@ class PynputHotkeyBackend(QObject):
     key events are matched by token and the Qt signal is emitted cross-thread."""
 
     _fired = Signal(str)
+    _released = Signal(str)
 
     def __init__(self, on_fire, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -54,6 +64,7 @@ class PynputHotkeyBackend(QObject):
         self._combos: dict[str, frozenset[str]] = {}
         self._pressed: set[str] = set()
         self._fired_combos: set[str] = set()
+        self._pending_release: dict[str, threading.Timer] = {}
         self._listener = None
         self._lock = threading.Lock()
         self._fired.connect(self._on_fire)
@@ -64,6 +75,13 @@ class PynputHotkeyBackend(QObject):
     def stop(self) -> None:
         with self._lock:
             lis, self._listener = self._listener, None
+            pending = list(self._pending_release.values())
+            self._pending_release.clear()
+        for timer in pending:
+            try:
+                timer.cancel()
+            except RuntimeError:
+                pass
         if lis is not None:
             try:
                 lis.stop()
@@ -111,9 +129,49 @@ class PynputHotkeyBackend(QObject):
             return True
 
     def release(self, combo: str) -> None:
+        was_fired = False
         with self._lock:
+            was_fired = combo in self._fired_combos
             self._combos.pop(combo, None)
             self._fired_combos.discard(combo)
+            timer = self._pending_release.pop(combo, None)
+            if timer is not None:
+                timer.cancel()
+        # Ungrabbing a physically-held combo must stop hold-to-play loops.
+        if was_fired:
+            try:
+                self._released.emit(combo)
+            except RuntimeError:
+                pass
+
+    def _fire_release_later(self, combo: str) -> None:
+        timer: threading.Timer | None = None
+
+        def _fire() -> None:
+            self._fire_release_if_idle(combo, timer)
+
+        timer = threading.Timer(_RELEASE_DEBOUNCE_SEC, _fire)
+        timer.daemon = True
+        with self._lock:
+            old = self._pending_release.get(combo)
+            if old is not None:
+                old.cancel()
+            self._pending_release[combo] = timer
+        timer.start()
+
+    def _fire_release_if_idle(self, combo: str, timer: threading.Timer | None) -> None:
+        with self._lock:
+            if self._pending_release.get(combo) is not timer:
+                return  # superseded by a newer arm; that one decides
+            self._pending_release.pop(combo, None)
+            tokens = self._combos.get(combo)
+            if tokens is not None and tokens <= self._pressed:
+                return  # re-pressed inside the window: still held, no release
+            self._fired_combos.discard(combo)
+        try:
+            self._released.emit(combo)
+        except RuntimeError:
+            pass
 
     def _ensure_listener_locked(self) -> None:
         if self._listener is not None:
@@ -153,10 +211,23 @@ class PynputHotkeyBackend(QObject):
         token = self._token(key)
         if token is None:
             return
+        to_arm: list[str] = []
         with self._lock:
             self._pressed.discard(token)
+            # A combo becomes *eligible* for release as soon as ANY of its
+            # keys lifts, even if other keys are still held (matters for
+            # Ctrl+/Shift+ combos). Discarding from _fired_combos here keeps
+            # re-presses responsive; the actual release emission is debounced
+            # (X11 auto-repeat storms) by _fire_release_later.
+            for combo in list(self._fired_combos):
+                tokens = self._combos.get(combo)
+                if tokens is None or not (tokens <= self._pressed):
+                    self._fired_combos.discard(combo)
+                    to_arm.append(combo)
             if not self._pressed:
                 self._fired_combos.clear()
+        for c in to_arm:
+            self._fire_release_later(c)
 
     @staticmethod
     def _token(key) -> str | None:
@@ -174,6 +245,7 @@ class PynputHotkeyBackend(QObject):
 
 class GlobalHotkeyManager(QObject):
     hotkeyPressed = Signal(str)
+    hotkeyReleased = Signal(str)
     hotkeyConflict = Signal(str, str)
     registrationFailed = Signal(str, str)
 
@@ -194,11 +266,22 @@ class GlobalHotkeyManager(QObject):
                 fired.connect(self._on_backend_fire)
             except RuntimeError:
                 pass
+        released = getattr(self._backend, "_released", None)
+        if released is not None:
+            try:
+                released.connect(self._on_backend_release)
+            except RuntimeError:
+                pass
 
     def _on_backend_fire(self, combo: str) -> None:
         owner = self._combo_owner.get(str(combo))
         if owner:
             self.hotkeyPressed.emit(owner)
+
+    def _on_backend_release(self, combo: str) -> None:
+        owner = self._combo_owner.get(str(combo))
+        if owner:
+            self.hotkeyReleased.emit(owner)
 
     def register_hotkey(self, sound_id: str, combo: str) -> bool:
         norm = normalize_hotkey(combo)
@@ -225,6 +308,8 @@ class GlobalHotkeyManager(QObject):
                 except (RuntimeError, OSError):
                     pass
             self._combo_owner.pop(old, None)
+            # Stop a hold-to-play loop bound to the previous combo.
+            self.hotkeyReleased.emit(sound_id)
         self._ids[sound_id] = norm
         self._combo_owner[norm] = sound_id
         return True
@@ -242,6 +327,8 @@ class GlobalHotkeyManager(QObject):
                     rel(old)
                 except (RuntimeError, OSError):
                     pass
+            # Stop a hold-to-play loop bound to the cleared combo.
+            self.hotkeyReleased.emit(sound_id)
 
     def list_hotkeys(self) -> dict[str, str]:
         return dict(self._ids)
@@ -249,6 +336,10 @@ class GlobalHotkeyManager(QObject):
     def simulate_press(self, sound_id: str) -> None:
         if sound_id in self._ids:
             self.hotkeyPressed.emit(sound_id)
+
+    def simulate_release(self, sound_id: str) -> None:
+        if sound_id in self._ids:
+            self.hotkeyReleased.emit(sound_id)
 
     def shutdown(self) -> None:
         stop = getattr(self._backend, "stop", None)

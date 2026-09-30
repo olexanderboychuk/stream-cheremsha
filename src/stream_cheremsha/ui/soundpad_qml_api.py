@@ -9,7 +9,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from PySide6.QtCore import QObject, QTimer, Signal, Slot
+from PySide6.QtCore import QCoreApplication, QObject, QTimer, QUrl, Signal, Slot
+from PySide6.QtWidgets import QFileDialog, QWidget
 
 from stream_cheremsha.soundpad.models import (
     ALLOWED_AUDIO_SUFFIXES,
@@ -59,6 +60,10 @@ class SoundpadQmlApi(QObject):
             self._hotkeys.hotkeyPressed.connect(self._on_hotkey_pressed)
         except RuntimeError:
             pass
+        try:
+            self._hotkeys.hotkeyReleased.connect(self._on_hotkey_released)
+        except RuntimeError:
+            pass
         # Now-playing position ticker: 250 ms, only runs while a sound is active.
         self._np_timer = QTimer(self)
         self._np_timer.setInterval(250)
@@ -71,9 +76,36 @@ class SoundpadQmlApi(QObject):
 
     def _on_hotkey_pressed(self, sound_id: str) -> None:
         try:
+            e = self._store.get(sound_id)
+            if e is not None and e.playback_mode == PlaybackMode.HOLD:
+                # Arm BEFORE playing: a short clip may finish (and must
+                # replay) before any other event runs. UI clicks don't arm:
+                # a card click on a hold sound is a single shot.
+                try:
+                    self._engine.set_hold(sound_id, True)
+                except (AttributeError, RuntimeError):
+                    pass
             self.playSound(sound_id)
         except (RuntimeError, ValueError, OSError) as e:
             logger.debug("hotkey play failed: %s", e)
+
+    def _on_hotkey_released(self, sound_id: str) -> None:
+        """Hotkey physically released: end a hold-to-play loop, if any.
+
+        Other modes intentionally ignore releases: a tapped hotkey must play
+        the full clip (stopping it on key-up would cut every quick tap).
+        """
+        try:
+            e = self._store.get(sound_id)
+            if e is None or e.playback_mode != PlaybackMode.HOLD:
+                return
+            self._engine.set_hold(sound_id, False)
+        except (AttributeError, RuntimeError):
+            return
+        try:
+            self.stopSound(sound_id)
+        except (RuntimeError, ValueError, OSError) as e:
+            logger.debug("hotkey release stop failed: %s", e)
 
     def _on_playback_started(self, _sound_id: str) -> None:
         if self._engine.active_ids():
@@ -172,14 +204,20 @@ class SoundpadQmlApi(QObject):
             # No running loop (unit tests): compute inline.
             self._apply_metadata(sound_id, path)
 
-    @Slot(str, str, str, str, float, result=str)
-    def addSound(self, fileUrl: str, name: str, category: str, hotkey: str, volume: float) -> str:
+    @Slot(str, str, str, str, float, str, result=str)
+    def addSound(
+        self, fileUrl: str, name: str, category: str, hotkey: str, volume: float, mode: str
+    ) -> str:
         p = file_url_to_path(fileUrl)
         err = self._validate_file(p)
         if err:
             logger.warning("soundpad import rejected: %s", err)
             return ""
         assert p is not None
+        try:
+            kind = PlaybackMode(str(mode or "restart"))
+        except ValueError:
+            kind = PlaybackMode.RESTART
         sid = f"sp-{uuid.uuid4().hex[:8]}"
         entry = SoundEntry(
             id=sid,
@@ -188,7 +226,7 @@ class SoundpadQmlApi(QObject):
             category=(category or "Custom").strip() or "Custom",
             hotkey=normalize_hotkey(hotkey or ""),
             volume=max(0.0, min(1.0, float(volume if volume else 1.0))),
-            playback_mode=PlaybackMode.RESTART,
+            playback_mode=kind,
             cooldown_sec=0.0,
             triggers=(),
             waveform_peaks=(),
@@ -206,6 +244,36 @@ class SoundpadQmlApi(QObject):
         self.soundsChanged.emit()
         self._schedule_metadata(sid, p)
         return sid
+
+    @Slot(str, result=str)
+    def hotkeyOwnerName(self, combo: str) -> str:
+        """Display name of the sound owning ``combo`` (live conflict check).
+
+        Returns "" when the combo is free/invalid — used by the add dialog
+        to warn before saving instead of silently dropping the hotkey.
+        """
+        norm = normalize_hotkey(combo or "")
+        if not norm:
+            return ""
+        owner = self._owner_of(norm)
+        if owner is None:
+            return ""
+        e = self._store.get(owner)
+        return str(e.name or owner) if e is not None else owner
+
+    def _emit_sounds_changed_soon(self) -> None:
+        """Refresh the grid UI without delaying audible output.
+
+        Full rebuilds cost tens of ms and latency-critical emits run
+        synchronously on the GUI thread BEFORE the playback task gets its
+        first step — every ms delays the sound 1:1. A zero-delay singleShot
+        lets the audio task run first (the QML debouncer coalesces bursts
+        anyway). Falls back to synchronous emit with no event loop.
+        """
+        if QCoreApplication.instance() is None:
+            self.soundsChanged.emit()
+        else:
+            QTimer.singleShot(0, self.soundsChanged.emit)
 
     @Slot(str, str, result=bool)
     def updateSoundJson(self, sound_id: str, patch_json: str) -> bool:
@@ -291,17 +359,17 @@ class SoundpadQmlApi(QObject):
             e.play_count += 1
             e.last_played_at = datetime.now(UTC).isoformat(timespec="seconds")
             self._store.upsert(e)
-        self.soundsChanged.emit()
+        self._emit_sounds_changed_soon()
 
     @Slot(str)
     def stopSound(self, sound_id: str) -> None:
         self._engine.stop(sound_id)
-        self.soundsChanged.emit()
+        self._emit_sounds_changed_soon()
 
     @Slot()
     def stopAll(self) -> None:
         self._engine.stop_all()
-        self.soundsChanged.emit()
+        self._emit_sounds_changed_soon()
 
     @Slot(str, str, result=str)
     def assignHotkey(self, sound_id: str, combo: str) -> str:
@@ -362,6 +430,27 @@ class SoundpadQmlApi(QObject):
             "stream_out": bool(self._store.stream_out()),
         }
         return json.dumps(state, ensure_ascii=False)
+
+    @Slot(result=str)
+    def pickAudioFile(self) -> str:
+        """Native system picker for an audio clip; file:// URL or "".
+
+        Same convention as the actions API pickers: Python QFileDialog with
+        the main window as parent, so the OS-native dialog appears instead
+        of the QML fallback.
+        """
+        parent = self.parent()
+        if not isinstance(parent, QWidget):
+            parent = None
+        path, _ = QFileDialog.getOpenFileName(
+            parent,
+            "Оберіть аудіофайл",
+            "",
+            "Аудіо (*.mp3 *.wav *.ogg);;MP3 (*.mp3);;WAV (*.wav);;OGG (*.ogg)",
+        )
+        if not path:
+            return ""
+        return QUrl.fromLocalFile(path).toString()
 
     @Slot(str, result=str)
     def importDroppedUrls(self, urls_json: str) -> str:

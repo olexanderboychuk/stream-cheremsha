@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import pytest
 from PySide6.QtCore import QSettings
+from PySide6.QtWidgets import QApplication
 
 _PROD_ORG = "stream-cheremsha"
 _PROD_APP = "cheremsha"
@@ -57,3 +58,18 @@ def _guard_production_qsettings(monkeypatch):
     monkeypatch.setattr(QSettings, "clear", clear)
     monkeypatch.setattr(QSettings, "remove", remove)
     monkeypatch.setattr(QSettings, "setValue", setValue)
+
+
+@pytest.fixture(scope="session")
+def qapp() -> QApplication:
+    """Single QApplication for the whole pytest process.
+
+    Several suites (actions widgets, soundpad engine/hotkeys) need a Qt
+    event loop for queued cross-thread signal delivery. Module-scoped
+    instances get garbage-collected mid-session, leaving dangling
+    QApplication.instance() wrappers behind — hence exactly one here.
+    """
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+    return app

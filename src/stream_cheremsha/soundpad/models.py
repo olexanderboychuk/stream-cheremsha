@@ -11,6 +11,9 @@ class PlaybackMode(StrEnum):
     OVERLAP = "overlap"
     REPLACE = "replace"
     QUEUE = "queue"
+    # Hold-to-play: while the hotkey is physically held the sound repeats;
+    # releasing the key stops it (see engine hold tracking).
+    HOLD = "hold"
 
 
 class TriggerKind(StrEnum):

@@ -22,3 +22,10 @@ CheremshaModal 1.0 CheremshaModal.qml
 CheremshaColorPicker 1.0 CheremshaColorPicker.qml
 CheremshaKeycap 1.0 CheremshaKeycap.qml
 CheremshaSoundCard 1.0 CheremshaSoundCard.qml
+CheremshaPlayButton 1.0 CheremshaPlayButton.qml
+CheremshaCategoryChip 1.0 CheremshaCategoryChip.qml
+CheremshaToggle 1.0 CheremshaToggle.qml
+CheremshaSlider 1.0 CheremshaSlider.qml
+SoundpadEmptyState 1.0 SoundpadEmptyState.qml
+SoundpadNowPlaying 1.0 SoundpadNowPlaying.qml
+SoundpadAddDialog 1.0 SoundpadAddDialog.qml

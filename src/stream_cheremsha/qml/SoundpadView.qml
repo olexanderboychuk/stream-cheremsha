@@ -1,50 +1,55 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import QtQuick.Dialogs
 
 import components
 
+// SOUNDPAD — premium streamer performance console.
+// Composition: PageHeader / Toolbar / SoundGrid / NowPlayingBar.
+// Backend contract unchanged (spApi slots/signals + refresh() logic).
 Item {
     id: root
     implicitWidth: 800
     implicitHeight: 900
 
-    // Micro entrance transition, retriggered by MainWindow (enterPulse toggle)
-    // on every cached navigation. GPU-cheap root opacity only, 120ms.
     property bool enterPulse: false
     onEnterPulseChanged: enterFade.restart()
     NumberAnimation {
         id: enterFade
         target: root
         property: "opacity"
-        from: 0.97
-        to: 1.0
-        duration: 120
+        from: 0.97; to: 1.0; duration: 120
         easing.type: Easing.OutCubic
     }
 
-    readonly property color base: "#0a0b0e"
-    readonly property color cardBase: "#121620"
-    readonly property color cardEdge: "#2a3142"
-    readonly property color ink: "#e8eaed"
-    readonly property color muted: "#8b95a5"
+    readonly property color base: "#080d18"
+    readonly property color cardBase: "#101827"
+    readonly property color cardEdge: "#26314a"
+    readonly property color ink: "#e8ecf5"
+    readonly property color muted: "#7f8aa3"
     readonly property color fieldBg: "#0c0f16"
-    readonly property color primaryPurple: "#8b5cf6"
-    readonly property color secondaryCyan: "#06b6d4"
+    readonly property color primaryPurple: "#9b5cff"
+    readonly property color secondaryCyan: "#20d7f5"
 
     // ---- State (stable contract names) ----
     property string selectedCategory: "Усі"
     property string query: ""
     property var categoryList: []
     property var _allItems: []
+    property var _wasPlaying: ({})
 
     property string pendingFileUrl: ""
     property string addHotkeyDraft: ""
     property bool showAddModal: false
     property string suggestedName: ""
+    property string addDraftName: ""
+    property string addDraftCategory: "Меми"
+    property double addDraftVolume: 1.0
+    property string addDraftMode: "restart"
+    property bool addListening: false
+    property string addConflictOwner: ""
+    property string addErrorMsg: ""
 
-    // Relink flow for broken cards (spec §45-46): pick a replacement file.
     property string relinkTargetId: ""
 
     property string editingSoundId: ""
@@ -61,10 +66,13 @@ Item {
     property string capturedCombo: ""
     property string conflictOwnerId: ""
 
-    // Now-playing state (position/duration fed by spApi.nowPlayingChanged).
     property string nowPlayingId: ""
     property double npPosition: 0.0
     property double npDuration: 0.0
+    property double globalVol: 0.78
+    property var outputModel: []
+    property int outputIndex: -1
+    property bool dragHover: false
 
     ListModel { id: soundModel }
 
@@ -106,7 +114,22 @@ Item {
         return ["Усі"].concat(out);
     }
 
+    // Full grid rebuilds are expensive (JSON + model + delegates) and a
+    // single press fires several (started/finished/API emits) synchronously
+    // on the GUI thread BEFORE the audio task runs — each one delays audible
+    // output 1:1. Coalesce bursts into one rebuild per 50ms window.
+    property bool _refreshDirty: false
     function refresh() {
+        if (refreshCoalescer.running) { root._refreshDirty = true; return; }
+        root._refreshDirty = false;
+        refreshCoalescer.start();
+        root.refreshNow();
+    }
+
+    function refreshNow() {
+        var prevPlaying = {};
+        for (var p = 0; p < root._allItems.length; ++p)
+            if (root._allItems[p].playing) prevPlaying[root._allItems[p].id] = true;
         root._allItems = [];
         try { root._allItems = JSON.parse(spApi.soundsJson()); } catch (err) { root._allItems = []; }
         soundModel.clear();
@@ -124,7 +147,6 @@ Item {
         }
         root.nowPlayingId = npId;
         root.categoryList = root._categories();
-        // One-shot expiry timers per cooling-down sound (no polling loops).
         cooldownTimers.clear();
         for (var j = 0; j < root._allItems.length; ++j) {
             var it2 = root._allItems[j];
@@ -132,6 +154,28 @@ Item {
                 var waitMs = root._cooldownLeftFor(it2) * 1000;
                 if (waitMs > 50) cooldownTimers.append({ delayMs: Math.ceil(waitMs), tag: it2.id });
             }
+        }
+        // Global-hotkey feedback: newly playing cards flash even if window unfocused.
+        for (var f = 0; f < root._allItems.length; ++f) {
+            var it3 = root._allItems[f];
+            if (it3.playing && !prevPlaying[it3.id]) {
+                root._flashCard(it3.id);
+                break;
+            }
+        }
+    }
+
+    function _flashCard(sid) {
+        for (var i = 0; i < gridRepeater.count; ++i) {
+            var item = gridRepeater.itemAt(i);
+            if (item && item.soundId === sid) { item.flashHotkey(); break; }
+        }
+    }
+
+    function closeOtherMenus(exceptId) {
+        for (var i = 0; i < gridRepeater.count; ++i) {
+            var item = gridRepeater.itemAt(i);
+            if (item && item.soundId !== exceptId) item.menuOpen = false;
         }
     }
 
@@ -145,6 +189,11 @@ Item {
     function _npName() {
         for (var i = 0; i < root._allItems.length; ++i)
             if (root._allItems[i].id === root.nowPlayingId) return root._allItems[i].name || "";
+        return "";
+    }
+    function _npCategory() {
+        for (var i = 0; i < root._allItems.length; ++i)
+            if (root._allItems[i].id === root.nowPlayingId) return root._allItems[i].category || "";
         return "";
     }
 
@@ -165,12 +214,16 @@ Item {
         root.pendingFileUrl = String(fileUrl || "");
         root.addHotkeyDraft = "";
         root.suggestedName = root._stemFromUrl(root.pendingFileUrl);
+        root.addDraftName = root.suggestedName;
+        root.addDraftCategory = "Меми";
+        root.addDraftVolume = 1.0;
+        root.addDraftMode = "restart";
+        root.addListening = false;
+        root.addConflictOwner = "";
+        root.addErrorMsg = "";
         root.showAddModal = true;
     }
 
-    // Relink a broken sound: import the replacement first (old entry stays
-    // intact if the new file is rejected), then drop the old one and reclaim
-    // its hotkey combo, which addSound could not register while it was owned.
     function _relinkSound(fileUrl) {
         var sid = String(root.relinkTargetId || "");
         root.relinkTargetId = "";
@@ -182,8 +235,9 @@ Item {
         if (!it) return;
         var hk = it.hotkey || "";
         var newSid = spApi.addSound(String(fileUrl), it.name || "", it.category || "Custom",
-                                    hk, Number(it.volume) || 1.0);
-        if (newSid === "") return; // invalid file: old sound untouched
+                                    hk, Number(it.volume) || 1.0,
+                                    it.playback_mode || "restart");
+        if (newSid === "") return;
         spApi.removeSound(sid);
         if (hk !== "") spApi.assignHotkey(newSid, hk);
     }
@@ -226,50 +280,71 @@ Item {
         }
     }
 
+    // Live conflict check for the add-dialog draft (warn, don't block:
+    // saving keeps the sound and drops the hotkey, like the backend).
+    function _refreshAddConflict() {
+        if (root.addHotkeyDraft === "") root.addConflictOwner = "";
+        else root.addConflictOwner = String(spApi.hotkeyOwnerName(root.addHotkeyDraft) || "");
+    }
+
     function _saveAddSound() {
         if (root.pendingFileUrl === "") {
             root.showAddModal = false;
+            root.addListening = false;
             return;
         }
-        var sid = spApi.addSound(root.pendingFileUrl, addNameField.text.trim(),
-                                 addCatBox.currentText, root.addHotkeyDraft, addVolSlider.value);
+        var sid = spApi.addSound(root.pendingFileUrl, String(root.addDraftName).trim(),
+                                 root.addDraftCategory, root.addHotkeyDraft,
+                                 Number(root.addDraftVolume), root.addDraftMode);
         if (sid !== "") {
             root.showAddModal = false;
+            root.addListening = false;
             root.pendingFileUrl = "";
             root.addHotkeyDraft = "";
-            addErrText.visible = false;
+            root.addConflictOwner = "";
+            root.addErrorMsg = "";
         } else {
-            addErrText.visible = true;
+            root.addErrorMsg = "Файл відхилено (формат або розмір)";
         }
     }
 
     function _saveEditSound() {
         var patch = {
-            name: editNameField.text.trim(),
-            category: editCatBox.currentText,
-            volume: Number(editVolSlider.value),
-            cooldown_sec: Number(editCooldownSpin.value),
-            playback_mode: editModeBox.currentText,
-            enabled: !!editEnabledCheck.checked
+            name: String(root.editName).trim(),
+            category: root.editCategory,
+            volume: Number(root.editVolume),
+            cooldown_sec: Number(root.editCooldown),
+            playback_mode: root.editMode,
+            enabled: !!root.editEnabled
         };
         spApi.updateSoundJson(root.editingSoundId, JSON.stringify(patch));
         root.showEditModal = false;
     }
 
-    // ---- Background (same gradient as DocksView) ----
+    function gridColumns() {
+        if (root.width >= 1700) return 6;
+        if (root.width >= 1400) return 5;
+        if (root.width >= 1100) return 4;
+        if (root.width >= 800) return 3;
+        return 2;
+    }
+
+    // ---- Background ----
     Rectangle {
         anchors.fill: parent
         gradient: Gradient {
-            GradientStop { position: 0.0; color: "#0f172a" }
-            GradientStop { position: 0.55; color: "#0b1220" }
-            GradientStop { position: 1.0; color: "#070910" }
+            GradientStop { position: 0.0; color: "#0b1120" }
+            GradientStop { position: 0.55; color: "#080d18" }
+            GradientStop { position: 1.0; color: "#060910" }
         }
     }
 
-    // ---- Drag & drop import (spec §11) ----
     DropArea {
         anchors.fill: parent
+        onEntered: root.dragHover = true
+        onExited: root.dragHover = false
         onDropped: function (drop) {
+            root.dragHover = false;
             var urls = [];
             if (drop.hasUrls) {
                 for (var i = 0; i < drop.urls.length; ++i) urls.push(drop.urls[i].toString());
@@ -278,440 +353,272 @@ Item {
         }
     }
 
-    FileDialog {
-        id: fileDialog
-        title: "Оберіть аудіофайл"
-        nameFilters: ["Аудіо (*.mp3 *.wav *.ogg)", "MP3 (*.mp3)", "WAV (*.wav)", "OGG (*.ogg)"]
-        onAccepted: root.openAddModal(selectedFile.toString())
+    // Native system picker via backend (same convention as actions API).
+    function pickAndAdd() {
+        var url = String(spApi.pickAudioFile() || "");
+        if (url !== "") root.openAddModal(url);
     }
 
-    // Replacement picker for broken cards (spec §45-46).
-    FileDialog {
-        id: relinkDialog
-        title: "Оберіть заміну аудіофайлу"
-        nameFilters: ["Аудіо (*.mp3 *.wav *.ogg)", "MP3 (*.mp3)", "WAV (*.wav)", "OGG (*.ogg)"]
-        onAccepted: root._relinkSound(selectedFile.toString())
+    function pickAndRelink() {
+        var url = String(spApi.pickAudioFile() || "");
+        if (url !== "") root._relinkSound(url);
     }
 
-    // ---- Page content (scrollable; now-playing bar stays fixed below) ----
-    ScrollView {
-        id: pageScroll
+    // ============ PAGE COMPOSITION ============
+    ColumnLayout {
         anchors.fill: parent
-        anchors.bottomMargin: 76
-        clip: true
-        contentWidth: availableWidth
-        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+        anchors.leftMargin: 22
+        anchors.rightMargin: 22
+        anchors.topMargin: 20
+        anchors.bottomMargin: 0
+        spacing: 0
 
-        ColumnLayout {
-            id: pageCol
-            width: pageScroll.availableWidth
-            spacing: 14
-
-            // Header — single title, no duplicate
-            RowLayout {
+        // ---- PageHeader ----
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 52
+            spacing: 12
+            Rectangle {
+                Layout.preferredWidth: 40
+                Layout.preferredHeight: 40
+                radius: 10
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: "#8b5cf6" }
+                    GradientStop { position: 1.0; color: "#6d28d9" }
+                }
+                border.width: 1
+                border.color: "#a78bfa"
+                Image {
+                    anchors.centerIn: parent
+                    source: Qt.resolvedUrl("../assets/icons/web_music.svg")
+                    width: 20; height: 20
+                }
+            }
+            ColumnLayout {
                 Layout.fillWidth: true
-                spacing: 12
-                Item {
-                    Layout.preferredWidth: 36
-                    Layout.preferredHeight: 36
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: 8
-                        color: root.primaryPurple
-                        opacity: 0.15
-                    }
-                    Image {
-                        anchors.centerIn: parent
-                        source: Qt.resolvedUrl("../assets/icons/web_music.svg")
-                        width: 20
-                        height: 20
-                    }
+                spacing: 2
+                Text { text: "Soundpad"; color: root.ink; font.pixelSize: 29; font.weight: Font.Bold }
+                Text {
+                    text: "Миттєві звуки, хоткеї та аудіо-реакції для стріму"
+                    color: root.muted; font.pixelSize: 13
                 }
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 2
-                    Text { text: "Soundpad"; color: root.ink; font.pixelSize: 24; font.bold: true }
-                    Text {
-                        text: "Миттєві звуки, хоткеї та аудіо-реакції для стріму"
-                        color: root.muted
+            }
+            // compact search with icon + focus ring
+            Rectangle {
+                Layout.preferredWidth: 250
+                Layout.preferredHeight: 38
+                radius: 9
+                color: root.fieldBg
+                border.width: 1
+                border.color: headerSearchField.activeFocus ? root.primaryPurple : root.cardEdge
+                Behavior on border.color { ColorAnimation { duration: 130 } }
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 10
+                    spacing: 8
+                    Image { source: Qt.resolvedUrl("../assets/icons/web_search.svg"); width: 15; height: 15; opacity: 0.7 }
+                    TextField {
+                        id: headerSearchField
+                        Layout.fillWidth: true
+                        placeholderText: "Пошук звуків…"
+                        placeholderTextColor: "#4b5568"
+                        color: root.ink
+                        selectionColor: "#7c4fee"
                         font.pixelSize: 13
-                    }
-                }
-                // Compact search (not full width)
-                TextField {
-                    id: headerSearchField
-                    Layout.preferredWidth: 260
-                    placeholderText: "Пошук звуків..."
-                    color: root.ink
-                    selectionColor: "#7c4fee"
-                    onTextChanged: { root.query = text; root.refresh(); }
-                    background: Rectangle {
-                        radius: 8
-                        color: root.fieldBg
-                        border.width: 1
-                        border.color: headerSearchField.activeFocus ? root.primaryPurple : root.cardEdge
-                    }
-                }
-                Button {
-                    id: addBtn
-                    text: "+ Додати звук"
-                    hoverEnabled: true
-                    focusPolicy: Qt.NoFocus
-                    onClicked: fileDialog.open()
-                    background: Rectangle {
-                        radius: 8
-                        color: addBtn.hovered ? "#7c4fee" : root.primaryPurple
+                        onTextChanged: { root.query = text; root.refresh(); }
+                        background: null
                     }
                 }
             }
+            // primary add
+            Button {
+                id: addBtn
+                text: "+ Додати звук"
+                hoverEnabled: true
+                focusPolicy: Qt.TabFocus
+                font.pixelSize: 13
+                font.bold: true
+                implicitWidth: 150
+                implicitHeight: 38
+                contentItem: Text {
+                    text: addBtn.text; color: "white"; font: addBtn.font
+                    horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                }
+                background: Rectangle {
+                    radius: 9
+                    gradient: Gradient {
+                        GradientStop { position: 0.0; color: addBtn.pressed ? "#7c3aed" : (addBtn.hovered ? "#9d71f7" : root.primaryPurple) }
+                        GradientStop { position: 1.0; color: addBtn.pressed ? "#6d28d9" : (addBtn.hovered ? "#8b5cf6" : "#7c3aed") }
+                    }
+                    border.width: 1
+                    border.color: addBtn.hovered ? "#a78bfa" : "#8b54f5"
+                }
+                scale: addBtn.pressed ? 0.97 : 1.0
+                Behavior on scale { NumberAnimation { duration: 100 } }
+                onClicked: root.pickAndAdd()
+            }
+        }
 
-            // Category chips (filtered to categories present in the library)
+        Item { Layout.preferredHeight: 18 }
+
+        // ---- Toolbar: category chips + count ----
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 32
+            spacing: 10
             Flickable {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 30
-                contentWidth: chipsRow.width + 20
-                contentHeight: height
+                Layout.preferredHeight: 32
+                contentWidth: chipsRow.width
+                contentHeight: 32
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
-
                 Row {
                     id: chipsRow
                     spacing: 8
                     Repeater {
                         model: root.categoryList
-                        delegate: Rectangle {
-                            width: chipLabel.implicitWidth + 20
-                            height: 26
-                            radius: 13
-                            color: root.selectedCategory === modelData ? "#241b3a" : root.cardBase
-                            border.width: 1
-                            border.color: root.selectedCategory === modelData ? root.primaryPurple : root.cardEdge
-                            Text {
-                                id: chipLabel
-                                anchors.centerIn: parent
-                                text: modelData
-                                color: root.selectedCategory === modelData ? "#c4b5fd" : root.muted
-                                font.pixelSize: 12
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: { root.selectedCategory = modelData; root.refresh(); }
-                            }
+                        delegate: CheremshaCategoryChip {
+                            text: modelData
+                            active: root.selectedCategory === modelData
+                            onClicked: { root.selectedCategory = modelData; root.refresh(); }
                         }
                     }
                 }
             }
-
-            // Grid / empty states
-            CheremshaResponsiveCardGrid {
-                Layout.fillWidth: true
+            Text {
                 visible: soundModel.count > 0
-                columns: root.width >= 1500 ? 5 : (root.width >= 1200 ? 4 : (root.width >= 900 ? 3 : 2))
-                columnSpacing: 14
-                rowSpacing: 14
-
-                Repeater {
-                    model: soundModel
-                    delegate: CheremshaSoundCard {
-                        id: sndCard
-                        Layout.fillWidth: true
-                        implicitHeight: 170
-                        soundId: model.id
-                        soundName: model.name
-                        peaks: model.peaks
-                        durationSec: model.durationSec
-                        hotkey: model.hotkey
-                        playing: model.playing
-                        broken: model.broken
-                        cooldownLeft: model.cooldownLeft
-                        progress: (model.id === root.nowPlayingId && root.npDuration > 0)
-                                   ? Math.min(1.0, root.npPosition / root.npDuration) : 0.0
-                        onPlayRequested: spApi.playSound(sndCard.soundId)
-                        onStopRequested: spApi.stopSound(sndCard.soundId)
-                        onHotkeyClicked: {
-                            root.hotkeyTargetId = sndCard.soundId;
-                            root.capturedCombo = "";
-                            root.conflictOwnerId = "";
-                            root.showHotkeyModal = true;
-                        }
-                        onEditRequested: root.openEditModal(sndCard.soundId)
-                        onDuplicateRequested: spApi.duplicateSound(sndCard.soundId)
-                        onRemoveRequested: spApi.removeSound(sndCard.soundId)
-                        // Error-state actions (spec §45-46): retry re-checks the
-                        // file on disk; relink imports a replacement.
-                        onRetryRequested: root.refresh()
-                        onRelinkRequested: {
-                            root.relinkTargetId = sndCard.soundId;
-                            relinkDialog.open();
-                        }
-                    }
-                }
-            }
-
-            // Beautiful empty state card (not just text in middle of page)
-            Item {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 300
-                visible: root._allItems.length === 0
-
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: 460
-                    height: 280
-                    radius: 12
-                    color: "#121620"
-                    border.width: 1
-                    border.color: root.cardEdge
-
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 30
-                        spacing: 14
-
-                        Item {
-                            Layout.alignment: Qt.AlignHCenter
-                            Layout.preferredWidth: 56
-                            Layout.preferredHeight: 56
-                            Rectangle {
-                                anchors.fill: parent
-                                radius: 12
-                                color: root.primaryPurple
-                                opacity: 0.15
-                            }
-                            Image {
-                                anchors.centerIn: parent
-                                source: Qt.resolvedUrl("../assets/icons/web_music.svg")
-                                width: 28
-                                height: 28
-                            }
-                        }
-
-                        Text {
-                            Layout.alignment: Qt.AlignHCenter
-                            text: "Soundpad порожній"
-                            color: root.ink
-                            font.pixelSize: 18
-                            font.bold: true
-                        }
-
-                        Text {
-                            Layout.alignment: Qt.AlignHCenter
-                            text: "Додайте перший звук і прив'яжіть його до хоткею."
-                            color: root.muted
-                            font.pixelSize: 14
-                            wrapMode: Text.Wrap
-                            horizontalAlignment: Text.AlignHCenter
-                        }
-
-                        Button {
-                            id: emptyAddBtn
-                            Layout.alignment: Qt.AlignHCenter
-                            text: "+ Додати звук"
-                            hoverEnabled: true
-                            focusPolicy: Qt.NoFocus
-                            onClicked: fileDialog.open()
-                            background: Rectangle { radius: 8; color: root.primaryPurple }
-                        }
-
-                        Text {
-                            Layout.alignment: Qt.AlignHCenter
-                            text: "Перетягніть аудіофайл сюди"
-                            color: "#5b6472"
-                            font.pixelSize: 12
-                        }
-                    }
-                }
-            }
-
-            Text {
-                Layout.fillWidth: true
-                visible: root._allItems.length > 0 && soundModel.count === 0
-                text: "Нічого не знайдено"
-                color: root.muted
-                font.pixelSize: 14
-                horizontalAlignment: Text.AlignHCenter
+                text: soundModel.count + " звуків"
+                color: "#5b6472"
+                font.pixelSize: 12
             }
         }
-    }
 
-    // ---- Now-playing bar (fixed bottom, premium compact dock) ----
-    Rectangle {
-        id: npBar
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        anchors.margins: 12
-        height: 64
-        radius: 12
-        color: "#0e1420"
-        border.width: 1
-        border.color: root.cardEdge
+        Item { Layout.preferredHeight: 16 }
 
-        RowLayout {
-            anchors.fill: parent
-            anchors.margins: 12
-            spacing: 12
+        // ---- SoundGrid (primary visual, 70-80% attention) ----
+        ScrollView {
+            id: pageScroll
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            clip: true
+            contentWidth: availableWidth
+            ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
-            // Now playing indicator + name
-            Item {
-                Layout.preferredWidth: 300
-                Layout.fillHeight: true
-                RowLayout {
-                    anchors.fill: parent
-                    spacing: 8
-                    Rectangle {
-                        width: 6
-                        height: 6
-                        radius: 3
-                        color: root.nowPlayingId !== "" ? root.secondaryCyan : "#3b4458"
-                        Layout.alignment: Qt.AlignVCenter
-                    }
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 2
-                        Text {
-                            text: root.nowPlayingId !== "" ? "NOW PLAYING" : "No sound playing"
-                            color: root.nowPlayingId !== "" ? root.secondaryCyan : root.muted
-                            font.pixelSize: 10
-                            font.bold: true
+            ColumnLayout {
+                width: pageScroll.availableWidth
+                spacing: 0
+
+                CheremshaResponsiveCardGrid {
+                    Layout.fillWidth: true
+                    visible: soundModel.count > 0
+                    columns: root.gridColumns()
+                    columnSpacing: 16
+                    rowSpacing: 16
+
+                    Repeater {
+                        id: gridRepeater
+                        model: soundModel
+                        delegate: CheremshaSoundCard {
+                            id: sndCard
+                            Layout.fillWidth: true
+                            implicitHeight: 178
+                            soundId: model.id
+                            soundName: model.name
+                            category: model.category
+                            peaks: model.peaks
+                            durationSec: model.durationSec
+                            hotkey: model.hotkey
+                            playing: model.playing
+                            broken: model.broken
+                            cooldownLeft: model.cooldownLeft
+                            progress: (model.id === root.nowPlayingId && root.npDuration > 0)
+                                       ? Math.min(1.0, root.npPosition / root.npDuration) : 0.0
+                            onPlayRequested: spApi.playSound(sndCard.soundId)
+                            onStopRequested: spApi.stopSound(sndCard.soundId)
+                            onHotkeyClicked: {
+                                root.hotkeyTargetId = sndCard.soundId;
+                                root.capturedCombo = "";
+                                root.conflictOwnerId = "";
+                                root.showHotkeyModal = true;
+                            }
+                            onEditRequested: root.openEditModal(sndCard.soundId)
+                            onDuplicateRequested: spApi.duplicateSound(sndCard.soundId)
+                            onRemoveRequested: spApi.removeSound(sndCard.soundId)
+                            onMenuOpened: root.closeOtherMenus(sndCard.soundId)
+                            onRetryRequested: root.refresh()
+                            onRelinkRequested: {
+                                root.relinkTargetId = sndCard.soundId;
+                                root.pickAndRelink();
+                            }
                         }
-                        Text {
-                            visible: root.nowPlayingId !== ""
-                            text: root._npName()
-                            color: root.ink
-                            font.pixelSize: 13
-                            elide: Text.ElideRight
-                        }
                     }
                 }
-            }
 
-            // Progress bar (bound to nowPlayingChanged, no polling)
-            Rectangle {
-                visible: root.nowPlayingId !== ""
-                Layout.fillWidth: true
-                Layout.preferredHeight: 4
-                radius: 2
-                color: "#1c2434"
-                Layout.alignment: Qt.AlignVCenter
-                Rectangle {
-                    anchors.left: parent.left
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: parent.width * (root.npDuration > 0 ? Math.min(1.0, root.npPosition / root.npDuration) : 0)
-                    height: parent.height
-                    radius: 2
-                    color: root.secondaryCyan
+                // content-area empty state (between toolbar and player, not app-centered)
+                Item {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 320
+                    visible: root._allItems.length === 0
+                    SoundpadEmptyState {
+                        anchors.centerIn: parent
+                        width: 500
+                        height: 260
+                        dragHover: root.dragHover
+                        onAddRequested: root.pickAndAdd()
+                    }
                 }
-            }
 
-            // Time display
-            Text {
-                visible: root.nowPlayingId !== ""
-                text: root._fmtTime(root.npPosition) + "/" + root._fmtTime(root.npDuration)
-                color: root.muted
-                font.pixelSize: 11
-                Layout.alignment: Qt.AlignVCenter
-            }
-
-            // Output device selector (styled as proper select field)
-            ComboBox {
-                id: outBox
-                Layout.preferredWidth: 190
-                model: JSON.parse(spApi.outputDevices())
-                onActivated: spApi.setOutputDevice(currentText)
-            }
-
-            // Volume slider with Cheremsha styling
-            RowLayout {
-                spacing: 6
-                Image {
-                    source: Qt.resolvedUrl("../assets/icons/web_volume.svg")
-                    width: 14
-                    height: 14
-                    Layout.alignment: Qt.AlignVCenter
-                }
-                Slider {
-                    id: volSlider
-                    Layout.preferredWidth: 100
-                    from: 0.0
-                    to: 1.0
-                    value: 0.78
-                    onMoved: spApi.setGlobalVolume(value)
-                    onPressedChanged: if (pressed) spApi.setGlobalVolume(value)
-                }
                 Text {
-                    text: Math.round(volSlider.value * 100) + "%"
+                    Layout.fillWidth: true
+                    Layout.topMargin: 40
+                    visible: root._allItems.length > 0 && soundModel.count === 0
+                    text: "Нічого не знайдено"
                     color: root.muted
-                    font.pixelSize: 12
-                    Layout.alignment: Qt.AlignVCenter
+                    font.pixelSize: 14
+                    horizontalAlignment: Text.AlignHCenter
                 }
-            }
 
-            // Monitor toggle (styled as Cheremsha toggle button)
-            CheckBox {
-                id: monitorCheck
-                text: "Monitor"
-                checked: true
-                onToggled: spApi.setMonitor(checked)
-                indicator: Rectangle {
-                    width: 28
-                    height: 16
-                    radius: 8
-                    color: monitorCheck.checked ? root.primaryPurple : "#3b4458"
-                    border.width: 0
-                    Rectangle {
-                        id: monitorKnob
-                        y: 2
-                        x: monitorCheck.checked ? 14 : 4
-                        width: 12
-                        height: 12
-                        radius: 6
-                        color: "white"
-                        Behavior on x { NumberAnimation { duration: 100 } }
-                    }
-                }
+                Item { Layout.preferredHeight: 12 }
             }
+        }
 
-            // Stream Output toggle (styled as Cheremsha toggle button)
-            CheckBox {
-                id: streamOutCheck
-                text: "Stream"
-                checked: true
-                onToggled: spApi.setStreamOut(checked)
-                indicator: Rectangle {
-                    width: 28
-                    height: 16
-                    radius: 8
-                    color: streamOutCheck.checked ? root.primaryPurple : "#3b4458"
-                    border.width: 0
-                    Rectangle {
-                        id: streamKnob
-                        y: 2
-                        x: streamOutCheck.checked ? 14 : 4
-                        width: 12
-                        height: 12
-                        radius: 6
-                        color: "white"
-                        Behavior on x { NumberAnimation { duration: 100 } }
-                    }
-                }
-            }
+        Item { Layout.preferredHeight: 12 }
 
-            // Stop button (only when playing)
-            Button {
-                id: npStopBtn
-                visible: root.nowPlayingId !== ""
-                text: "STOP"
-                hoverEnabled: true
-                focusPolicy: Qt.NoFocus
-                onClicked: spApi.stopSound(root.nowPlayingId)
-                background: Rectangle { radius: 6; color: "#1c2434"; border.width: 1; border.color: root.cardEdge }
+        // ---- NowPlayingBar ----
+        SoundpadNowPlaying {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 68
+            Layout.bottomMargin: 14
+            trackName: root._npName()
+            trackCategory: root._npCategory()
+            active: root.nowPlayingId !== ""
+            position: root.npPosition
+            duration: root.npDuration
+            volume: root.globalVol
+            outputModel: root.outputModel
+            outputIndex: root.outputIndex
+            onVolumeRequested: function (v) { root.globalVol = v; spApi.setGlobalVolume(v); }
+            onOutputPicked: function (idx) {
+                root.outputIndex = idx;
+                if (idx >= 0 && idx < root.outputModel.length) spApi.setOutputDevice(root.outputModel[idx]);
             }
+            onStopRequested: spApi.stopSound(root.nowPlayingId)
         }
     }
 
-    // ---- One-shot cooldown expiry timers (rebuilt on each refresh) ----
+    // ---- Refresh coalescer (see refresh()) ----
+    Timer {
+        id: refreshCoalescer
+        interval: 50
+        repeat: false
+        onTriggered: {
+            if (root._refreshDirty) { root._refreshDirty = false; root.refreshNow(); }
+        }
+    }
+
+    // ---- One-shot cooldown expiry timers ----
     ListModel { id: cooldownTimers }
     Repeater {
         model: cooldownTimers
@@ -723,86 +630,37 @@ Item {
         }
     }
 
-    // ---- Add-sound modal (spec §9/§10) ----
+    // ---- Add-sound modal ----
     CheremshaModal {
         id: addModal
         anchors.fill: parent
         title: "Додати звук"
-        subtitle: root._stemFromUrl(root.pendingFileUrl) || ""
+        subtitle: "Додайте звук до Soundpad · " + (root._stemFromUrl(root.pendingFileUrl) || "")
         opened: root.showAddModal
-        onCloseRequested: { root.showAddModal = false; }
+        onCloseRequested: { root.showAddModal = false; root.addListening = false; }
 
         body: Component {
-            ColumnLayout {
-                spacing: 8
-                Text { text: "Назва"; color: root.muted; font.pixelSize: 12; Layout.fillWidth: true }
-                TextField {
-                    id: addNameField
-                    Layout.fillWidth: true
-                    placeholderText: "Airhorn"
-                    color: root.ink
-                    background: Rectangle { radius: 8; color: root.fieldBg; border.width: 1; border.color: root.cardEdge }
+            SoundpadAddDialog {
+                draftName: root.addDraftName
+                draftCategory: root.addDraftCategory
+                draftVolume: root.addDraftVolume
+                draftMode: root.addDraftMode
+                hotkeyDraft: root.addHotkeyDraft
+                listening: root.addListening
+                conflictText: root.addConflictOwner
+                errorMsg: root.addErrorMsg
+                onNameChanged2: function (v) { root.addDraftName = v; }
+                onCategoryChanged2: function (v) { root.addDraftCategory = v; }
+                onVolumeChanged2: function (v) { root.addDraftVolume = v; }
+                onModeChanged2: function (v) { root.addDraftMode = v; }
+                onStartListening: {
+                    root.addListening = true;
+                    addCaptureZone.forceActiveFocus();
                 }
-                Text { text: "Категорія"; color: root.muted; font.pixelSize: 12; Layout.fillWidth: true }
-                ComboBox {
-                    id: addCatBox
-                    Layout.fillWidth: true
-                    model: ["Меми", "Реакції", "Голоси", "Музика", "Атмосфера", "Ігри", "Alerts", "Custom"]
-                }
-                RowLayout {
-                    spacing: 10
-                    Text { text: "Об'єм"; color: root.muted; font.pixelSize: 12 }
-                    Slider {
-                        id: addVolSlider
-                        Layout.fillWidth: true
-                        from: 0.0
-                        to: 1.0
-                        value: 1.0
-                    }
-                    Text { text: Math.round(addVolSlider.value * 100) + "%"; color: root.muted; font.pixelSize: 12 }
-                }
-                RowLayout {
-                    spacing: 10
-                    Text { text: "Хоткей (необов'язково)"; color: root.muted; font.pixelSize: 12 }
-                    CheremshaKeycap {
-                        keyText: root.addHotkeyDraft
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                if (root.addHotkeyDraft !== "") root.addHotkeyDraft = "";
-                                else addCaptureZone.forceActiveFocus();
-                            }
-                        }
-                    }
-                    Item { Layout.fillWidth: true }
-                }
-
-                // Invisible focus target that captures the next key press.
-                Item {
-                    id: addCaptureZone
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 8
-                    Keys.onPressed: function (event) {
-                        if (event.key === Qt.Key_Escape) {
-                            event.accepted = true; // keep the modal open, just drop capture focus
-                            addCaptureZone.activeFocus = false;
-                            return;
-                        }
-                        var combo = root._comboFromEvent(event);
-                        if (combo !== "") {
-                            event.accepted = true;
-                            root.addHotkeyDraft = combo;
-                        }
-                    }
-                }
-                Text {
-                    id: addErrText
-                    visible: false
-                    text: "Файл відхилено (формат або розмір)"
-                    color: "#f87171"
-                    font.pixelSize: 12
-                    Layout.fillWidth: true
+                onClearHotkey: {
+                    root.addHotkeyDraft = "";
+                    root.addConflictOwner = "";
+                    root.addListening = false;
                 }
             }
         }
@@ -813,76 +671,291 @@ Item {
                 Item { Layout.fillWidth: true }
                 Button {
                     text: "Скасувати"
+                    hoverEnabled: true
+                    focusPolicy: Qt.TabFocus
+                    font.pixelSize: 13
+                    implicitWidth: 120
+                    implicitHeight: 38
+                    contentItem: Text {
+                        text: parent.text; color: "#b8c1cf"; font: parent.font
+                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                    }
+                    background: Rectangle {
+                        radius: 9; color: parent.hovered ? "#141c2c" : "#0a0f19"
+                        border.width: 1; border.color: parent.hovered ? "#4b5876" : "#232d42"
+                    }
                     onClicked: addModal.closeRequested()
-                    background: Rectangle { radius: 8; color: "#1c2434"; border.width: 1; border.color: root.cardEdge }
                 }
                 Button {
-                    id: addSaveBtn
-                    text: "Додати"
+                    text: "Додати звук"
+                    hoverEnabled: true
+                    focusPolicy: Qt.TabFocus
+                    font.pixelSize: 13
+                    font.bold: true
+                    implicitWidth: 150
+                    implicitHeight: 38
+                    contentItem: Text {
+                        text: parent.text; color: "white"; font: parent.font
+                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                    }
+                    background: Rectangle {
+                        radius: 9; color: parent.hovered ? "#a37bff" : root.primaryPurple
+                        border.width: 1; border.color: "#8b54f5"
+                    }
                     onClicked: root._saveAddSound()
-                    background: Rectangle { radius: 8; color: root.primaryPurple }
-                }
-            }
-        }
-
-        Connections {
-            target: addModal
-            function onOpenedChanged() {
-                if (addModal.opened) {
-                    addNameField.text = root.suggestedName;
                 }
             }
         }
     }
 
-    // ---- Edit-sound modal (spec §42 menu → Редагувати) ----
+    // Hotkey capture for the add dialog: active ONLY while the user
+    // explicitly armed it (listening). Otherwise key presses are ignored.
+    Item {
+        id: addCaptureZone
+        objectName: "addCaptureZone"
+        width: 1; height: 1
+        focus: root.addListening && root.showAddModal
+        Keys.onPressed: function (event) {
+            if (!root.addListening || !root.showAddModal) return;
+            if (event.key === Qt.Key_Escape) {
+                event.accepted = true;
+                root.addListening = false;
+                return;
+            }
+            var combo = root._comboFromEvent(event);
+            if (combo !== "") {
+                event.accepted = true;
+                root.addHotkeyDraft = combo;
+                root.addListening = false;
+                root._refreshAddConflict();
+            }
+        }
+    }
+
+    // ---- Edit-sound modal (compact grouped, same language) ----
     CheremshaModal {
         id: editModal
         anchors.fill: parent
         title: "Редагувати звук"
+        subtitle: root.editName || ""
         opened: root.showEditModal
         onCloseRequested: { root.showEditModal = false; }
 
         body: Component {
             ColumnLayout {
-                spacing: 8
-                Text { text: "Назва"; color: root.muted; font.pixelSize: 12; Layout.fillWidth: true }
-                TextField {
-                    id: editNameField
-                    Layout.fillWidth: true
-                    color: root.ink
-                    background: Rectangle { radius: 8; color: root.fieldBg; border.width: 1; border.color: root.cardEdge }
+                spacing: 10
+                Rectangle {
+                    Layout.fillWidth: true; Layout.preferredHeight: 40
+                    radius: 9; color: "#0c0f16"
+                    border.width: 1
+                    border.color: editNameField.activeFocus ? "#8b5cf6" : "#26314a"
+                    TextField {
+                        id: editNameField
+                        anchors.fill: parent
+                        anchors.leftMargin: 12; anchors.rightMargin: 12
+                        text: root.editName
+                        onTextChanged: root.editName = text
+                        color: root.ink; font.pixelSize: 13
+                        background: null
+                    }
                 }
-                Text { text: "Категорія"; color: root.muted; font.pixelSize: 12; Layout.fillWidth: true }
                 ComboBox {
                     id: editCatBox
                     Layout.fillWidth: true
+                    Layout.preferredHeight: 40
                     model: ["Меми", "Реакції", "Голоси", "Музика", "Атмосфера", "Ігри", "Alerts", "Custom"]
-                }
-                RowLayout {
-                    spacing: 10
-                    Text { text: "Об'єм"; color: root.muted; font.pixelSize: 12 }
-                    Slider { id: editVolSlider; Layout.fillWidth: true; from: 0.0; to: 1.0 }
-                    Text { text: Math.round(editVolSlider.value * 100) + "%"; color: root.muted; font.pixelSize: 12 }
-                }
-                RowLayout {
-                    spacing: 10
-                    Text { text: "Кулдаун, с"; color: root.muted; font.pixelSize: 12 }
-                    SpinBox { id: editCooldownSpin; Layout.preferredWidth: 90; from: 0; to: 300; stepSize: 1 }
-                    Item { Layout.fillWidth: true }
-                }
-                RowLayout {
-                    spacing: 10
-                    Text { text: "Режим відтворення"; color: root.muted; font.pixelSize: 12 }
-                    ComboBox {
-                        id: editModeBox
-                        Layout.preferredWidth: 160
-                        model: ["restart", "overlap", "replace", "queue"]
+                    currentIndex: Math.max(0, editCatBox.model.indexOf(root.editCategory))
+                    onActivated: root.editCategory = currentText
+                    font.pixelSize: 13
+                    delegate: ItemDelegate {
+                        width: ListView.view ? ListView.view.width : implicitWidth
+                        contentItem: Text {
+                            text: modelData
+                            color: parent.highlighted ? "#ffffff" : "#c9d1e0"
+                            font.pixelSize: 13
+                            elide: Text.ElideRight
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle {
+                            radius: 6
+                            color: parent.highlighted ? "#8b5cf6" : (parent.hovered ? "#1c2434" : "transparent")
+                        }
+                        highlighted: editCatBox.highlightedIndex === index
                     }
-                    CheckBox {
-                        id: editEnabledCheck
-                        text: "Увімкнено"
+                    contentItem: Text {
+                        leftPadding: 12; rightPadding: 30
+                        text: editCatBox.displayText; color: "#e8ecf5"; font: editCatBox.font
+                        verticalAlignment: Text.AlignVCenter
                     }
+                    background: Rectangle {
+                        radius: 9; color: "#0c0f16"
+                        border.width: 1; border.color: editCatBox.hovered ? "#4b5876" : "#26314a"
+                    }
+                    indicator: Image {
+                        x: editCatBox.width - width - 12; y: (editCatBox.height - height) / 2
+                        source: Qt.resolvedUrl("../assets/icons/chevron-down.svg")
+                        width: 14; height: 14
+                    }
+                }
+                Rectangle {
+                    Layout.fillWidth: true; Layout.preferredHeight: 52
+                    radius: 9; color: "#101827"
+                    border.width: 1; border.color: "#1e2942"
+                    RowLayout {
+                        anchors.fill: parent; anchors.margins: 12; spacing: 10
+                        Text { text: "Гучність"; color: "#9aa4b8"; font.pixelSize: 12 }
+                        CheremshaSlider {
+                            id: editVolSlider
+                            Layout.fillWidth: true
+                            from: 0; to: 1; value: root.editVolume
+                            onValueChanged: root.editVolume = value
+                        }
+                        Text { text: Math.round(editVolSlider.value * 100) + "%"; color: "#7f8aa3"; font.pixelSize: 12 }
+                    }
+                }
+                RowLayout {
+                    spacing: 10
+                    Text { text: "Кулдаун, с"; color: "#9aa4b8"; font.pixelSize: 12 }
+                    SpinBox {
+                        id: cdSpin
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 38
+                        from: 0
+                        to: 300
+                        stepSize: 1
+                        editable: true
+                        value: root.editCooldown
+                        onValueChanged: root.editCooldown = Number(value)
+                        font.pixelSize: 13
+                        contentItem: TextInput {
+                            z: 2
+                            text: cdSpin.displayText
+                            font: cdSpin.font
+                            color: "#e8ecf5"
+                            selectionColor: "#8b5cf6"
+                            selectByMouse: true
+                            horizontalAlignment: Qt.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            readOnly: !cdSpin.editable
+                            validator: cdSpin.validator
+                            inputMethodHints: Qt.ImhDigitsOnly
+                        }
+                        background: Rectangle {
+                            radius: 9
+                            color: "#0c0f16"
+                            border.width: 1
+                            border.color: cdSpin.activeFocus ? "#8b5cf6" : "#26314a"
+                            Behavior on border.color { ColorAnimation { duration: 130 } }
+                        }
+                        up.indicator: Rectangle {
+                            x: cdSpin.width - width - 4
+                            y: 4
+                            width: 30
+                            height: cdSpin.height - 8
+                            radius: 6
+                            color: upHover.containsMouse ? "#232e45" : "transparent"
+                            border.width: 1
+                            border.color: upHover.containsMouse ? "#4b5876" : "transparent"
+                            Behavior on color { ColorAnimation { duration: 120 } }
+                            Text { anchors.centerIn: parent; text: "+"; color: "#c9d1e0"; font.pixelSize: 16 }
+                            MouseArea {
+                                id: upHover
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                acceptedButtons: Qt.NoButton
+                                cursorShape: Qt.PointingHandCursor
+                            }
+                        }
+                        down.indicator: Rectangle {
+                            x: 4
+                            y: 4
+                            width: 30
+                            height: cdSpin.height - 8
+                            radius: 6
+                            color: downHover.containsMouse ? "#232e45" : "transparent"
+                            border.width: 1
+                            border.color: downHover.containsMouse ? "#4b5876" : "transparent"
+                            Behavior on color { ColorAnimation { duration: 120 } }
+                            Text { anchors.centerIn: parent; text: "−"; color: "#c9d1e0"; font.pixelSize: 16 }
+                            MouseArea {
+                                id: downHover
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                acceptedButtons: Qt.NoButton
+                                cursorShape: Qt.PointingHandCursor
+                            }
+                        }
+                    }
+                }
+                Text { text: "Режим відтворення"; color: "#9aa4b8"; font.pixelSize: 12; Layout.fillWidth: true }
+                ComboBox {
+                    id: editModeBox
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 40
+                    model: ["restart", "overlap", "replace", "queue", "hold"]
+                    currentIndex: Math.max(0, editModeBox.model.indexOf(root.editMode))
+                    onActivated: root.editMode = currentText
+                    font.pixelSize: 13
+                    contentItem: Text {
+                        leftPadding: 12
+                        rightPadding: 30
+                        text: editModeBox.displayText
+                        color: "#e8ecf5"
+                        font: editModeBox.font
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    background: Rectangle {
+                        radius: 9
+                        color: "#0c0f16"
+                        border.width: 1
+                        border.color: editModeBox.hovered ? "#4b5876" : "#26314a"
+                        Behavior on border.color { ColorAnimation { duration: 130 } }
+                    }
+                    indicator: Image {
+                        x: editModeBox.width - width - 12
+                        y: (editModeBox.height - height) / 2
+                        source: Qt.resolvedUrl("../assets/icons/chevron-down.svg")
+                        width: 14
+                        height: 14
+                    }
+                    popup: Popup {
+                        y: editModeBox.height + 4
+                        width: editModeBox.width
+                        background: Rectangle { radius: 9; color: "#0e1420"; border.width: 1; border.color: "#26314a" }
+                        contentItem: ListView {
+                            clip: true
+                            implicitHeight: Math.min(220, contentHeight)
+                            model: editModeBox.popup.visible ? editModeBox.delegateModel : null
+                        }
+                    }
+                    delegate: ItemDelegate {
+                        width: ListView.view ? ListView.view.width : implicitWidth
+                        contentItem: Text {
+                            text: modelData
+                            color: parent.highlighted ? "#ffffff" : "#c9d1e0"
+                            font.pixelSize: 13
+                            elide: Text.ElideRight
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle {
+                            radius: 6
+                            color: parent.highlighted ? "#8b5cf6" : (parent.hovered ? "#1c2434" : "transparent")
+                        }
+                        highlighted: editModeBox.highlightedIndex === index
+                    }
+                }
+                Text {
+                    text: "Кулдаун — пауза між запусками. Режим — що робити, якщо звук уже грає: restart / replace — почати спочатку, overlap — грати поверх, queue — стати в чергу, hold — повторювати, поки тримаєш хоткей."
+                    color: "#5b6472"
+                    font.pixelSize: 11
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+                CheremshaToggle {
+                    label: "Увімкнено"
+                    checked: root.editEnabled
+                    onToggled: root.editEnabled = on
                 }
             }
         }
@@ -893,34 +966,35 @@ Item {
                 Item { Layout.fillWidth: true }
                 Button {
                     text: "Скасувати"
+                    hoverEnabled: true
+                    implicitWidth: 120; implicitHeight: 38
+                    contentItem: Text {
+                        text: parent.text; color: "#b8c1cf"; font.pixelSize: 13
+                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                    }
+                    background: Rectangle {
+                        radius: 9; color: parent.hovered ? "#141c2c" : "#0a0f19"
+                        border.width: 1; border.color: "#232d42"
+                    }
                     onClicked: editModal.closeRequested()
-                    background: Rectangle { radius: 8; color: "#1c2434"; border.width: 1; border.color: root.cardEdge }
                 }
                 Button {
-                    id: editSaveBtn
                     text: "Зберегти"
+                    hoverEnabled: true
+                    font.bold: true
+                    implicitWidth: 130; implicitHeight: 38
+                    contentItem: Text {
+                        text: parent.text; color: "white"; font.pixelSize: 13; font.bold: true
+                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                    }
+                    background: Rectangle { radius: 9; color: parent.hovered ? "#a37bff" : root.primaryPurple }
                     onClicked: root._saveEditSound()
-                    background: Rectangle { radius: 8; color: root.primaryPurple }
-                }
-            }
-        }
-
-        Connections {
-            target: editModal
-            function onOpenedChanged() {
-                if (editModal.opened) {
-                    editNameField.text = root.editName;
-                    editCatBox.currentIndex = Math.max(0, editCatBox.model.indexOf(root.editCategory));
-                    editVolSlider.value = root.editVolume;
-                    editCooldownSpin.value = root.editCooldown;
-                    editModeBox.currentIndex = Math.max(0, editModeBox.model.indexOf(root.editMode));
-                    editEnabledCheck.checked = root.editEnabled;
                 }
             }
         }
     }
 
-    // ---- Hotkey capture modal (spec §7) ----
+    // ---- Hotkey capture modal ----
     CheremshaModal {
         id: hotkeyModal
         anchors.fill: parent
@@ -932,20 +1006,24 @@ Item {
         body: Component {
             ColumnLayout {
                 spacing: 12
+                Connections {
+                    target: hotkeyModal
+                    function onOpenedChanged() {
+                        if (hotkeyModal.opened) captureZone.forceActiveFocus();
+                    }
+                }
                 RowLayout {
-                    spacing: 10
+                    spacing: 12
                     Text { text: "Натисніть комбінацію клавіш:"; color: root.muted; font.pixelSize: 13 }
                     CheremshaKeycap { keyText: root.capturedCombo }
                 }
-
-                // Invisible focus target that captures the next key press.
                 Item {
                     id: captureZone
                     Layout.fillWidth: true
                     Layout.preferredHeight: 8
                     focus: hotkeyModal.opened && root.conflictOwnerId === ""
                     Keys.onPressed: function (event) {
-                        if (event.key === Qt.Key_Escape) return; // modal handles Esc
+                        if (event.key === Qt.Key_Escape) return;
                         var combo = root._comboFromEvent(event);
                         if (combo !== "") {
                             event.accepted = true;
@@ -955,61 +1033,66 @@ Item {
                         }
                     }
                 }
-
-                RowLayout {
+                Text {
                     visible: root.conflictOwnerId !== ""
-                    spacing: 10
-                    Text {
-                        text: root.capturedCombo + " вже призначено: " + root._soundNameById(root.conflictOwnerId)
-                        color: "#fbbf24"
-                        font.pixelSize: 13
-                        Layout.fillWidth: true
-                    }
+                    text: root.capturedCombo + " вже призначено: " + root._soundNameById(root.conflictOwnerId)
+                    color: "#fbbf24"; font.pixelSize: 13
+                    Layout.fillWidth: true; wrapMode: Text.Wrap
                 }
-
-                RowLayout {
+                Text {
                     visible: root.capturedCombo !== "" && root.conflictOwnerId === ""
-                    spacing: 8
-                    Text { text: "Призначено: " + root.capturedCombo; color: "#22c55e"; font.pixelSize: 13 }
+                    text: "Призначено: " + root.capturedCombo
+                    color: "#22c55e"; font.pixelSize: 13
                 }
-
                 RowLayout {
                     visible: root.conflictOwnerId !== ""
                     spacing: 10
                     Button {
-                        id: replaceBtn
                         text: "Замінити"
+                        hoverEnabled: true
+                        implicitWidth: 120; implicitHeight: 36
+                        contentItem: Text {
+                            text: parent.text; color: "white"; font.pixelSize: 13; font.bold: true
+                            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle { radius: 8; color: parent.hovered ? "#a37bff" : root.primaryPurple }
                         onClicked: {
                             spApi.clearHotkey(root.conflictOwnerId);
                             var res = spApi.assignHotkey(root.hotkeyTargetId, root.capturedCombo);
                             if (res === "ok") root.showHotkeyModal = false;
                         }
-                        background: Rectangle { radius: 8; color: root.primaryPurple }
                     }
                     Button {
                         text: "Скасувати"
+                        hoverEnabled: true
+                        implicitWidth: 120; implicitHeight: 36
+                        contentItem: Text {
+                            text: parent.text; color: "#b8c1cf"; font.pixelSize: 13
+                            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle {
+                            radius: 8; color: "#1c2434"; border.width: 1; border.color: root.cardEdge
+                        }
                         onClicked: hotkeyModal.closeRequested()
-                        background: Rectangle { radius: 8; color: "#1c2434"; border.width: 1; border.color: root.cardEdge }
                     }
                 }
-
                 RowLayout {
                     spacing: 10
                     Item { Layout.fillWidth: true }
                     Button {
-                        id: clearHkBtn
                         text: "Очистити"
+                        hoverEnabled: true
+                        implicitWidth: 110; implicitHeight: 36
+                        contentItem: Text {
+                            text: parent.text; color: "#b8c1cf"; font.pixelSize: 13
+                            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle {
+                            radius: 8; color: "#1c2434"; border.width: 1; border.color: root.cardEdge
+                        }
                         onClicked: spApi.clearHotkey(root.hotkeyTargetId)
-                        background: Rectangle { radius: 8; color: "#1c2434"; border.width: 1; border.color: root.cardEdge }
                     }
                 }
-            }
-        }
-
-        Connections {
-            target: hotkeyModal
-            function onOpenedChanged() {
-                if (hotkeyModal.opened) captureZone.forceActiveFocus();
             }
         }
     }
@@ -1031,13 +1114,12 @@ Item {
         root.refresh();
         var st = null;
         try { st = JSON.parse(spApi.globalStateJson()); } catch (err) { st = null; }
+        try { root.outputModel = JSON.parse(spApi.outputDevices()); } catch (err2) { root.outputModel = []; }
         if (!st) return;
-        if (typeof st.volume === "number") volSlider.value = st.volume;
-        if (typeof st.monitor === "boolean") monitorCheck.checked = st.monitor;
-        if (typeof st.stream_out === "boolean") streamOutCheck.checked = st.stream_out;
+        if (typeof st.volume === "number") root.globalVol = st.volume;
         if (typeof st.output_device === "string" && st.output_device !== "") {
-            var idx = outBox.model.indexOf(st.output_device);
-            if (idx >= 0) outBox.currentIndex = idx;
+            var idx = root.outputModel.indexOf(st.output_device);
+            if (idx >= 0) root.outputIndex = idx;
         }
     }
 }

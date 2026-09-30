@@ -25,7 +25,7 @@ def test_missing_file_never_crashes(tmp_path):
     api = _api("e1", tmp_path)
     f = tmp_path / "a.mp3"
     f.write_bytes(b"x")
-    sid = api.addSound(f.as_uri(), "A", "Меми", "", 1.0)
+    sid = api.addSound(f.as_uri(), "A", "Меми", "", 1.0, "restart")
     f.unlink()
     api.playSound(sid)  # must not raise
 
@@ -34,7 +34,7 @@ def test_rapid_triggers_bounded_by_cooldown(tmp_path):
     api = _api("e2", tmp_path)
     f = tmp_path / "a.mp3"
     f.write_bytes(b"x")
-    sid = api.addSound(f.as_uri(), "A", "Меми", "", 1.0)
+    sid = api.addSound(f.as_uri(), "A", "Меми", "", 1.0, "restart")
     api.updateSoundJson(sid, '{"cooldown_sec": 5.0, "playback_mode": "restart"}')
     e = api._store.get(sid)
     assert e is not None and e.cooldown_sec == 5.0
@@ -46,4 +46,4 @@ def test_invalid_audio_rejected(tmp_path):
     api = _api("e3", tmp_path)
     f = tmp_path / "bad.txt"
     f.write_bytes(b"hello")
-    assert api.addSound(f.as_uri(), "Bad", "Меми", "", 1.0) == ""
+    assert api.addSound(f.as_uri(), "Bad", "Меми", "", 1.0, "restart") == ""

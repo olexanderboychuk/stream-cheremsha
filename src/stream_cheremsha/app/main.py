@@ -13,6 +13,14 @@ if sys.platform.startswith("linux"):
     os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
         "--use-gl=angle --enable-features=Vulkan --use-vulkan=native"
     )
+    # Native system file pickers: without a platform theme Qt falls back to
+    # its built-in QFileDialog (dark, alien on every DE). Prefer the
+    # freedesktop portal so the OS-native chooser appears (KDE/GNOME/GTK
+    # handled by the installed portal backends). Respected user override via
+    # setdefault; Qt falls back gracefully when portals are unavailable.
+    # Must be set before QApplication is constructed (any launch path: this
+    # module top runs first since __main__ imports it).
+    os.environ.setdefault("QT_QPA_PLATFORMTHEME", "xdgdesktopportal")
 
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QIcon

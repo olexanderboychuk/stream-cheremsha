@@ -2362,12 +2362,22 @@ class MainWindow(FramelessWindow):
         self._soundpad_hotkeys = hotkeys
         try:
             engine.duckingChanged.connect(lambda active: self._on_soundpad_ducking(active))
+            # Deferred past the audio start: these emits run synchronously
+            # inside engine.play()/stop(), before the playback task's first
+            # step — a full grid rebuild here would delay audible output.
             engine.playbackStarted.connect(
-                lambda _sid: self._soundpad_api.soundsChanged.emit()
+                lambda _sid: QTimer.singleShot(0, self._soundpad_api.soundsChanged.emit)
             )
             engine.playbackFinished.connect(
-                lambda _sid: self._soundpad_api.soundsChanged.emit()
+                lambda _sid: QTimer.singleShot(0, self._soundpad_api.soundsChanged.emit)
             )
+        except RuntimeError:
+            pass
+        # Warm the audio backend after first paint: first-ever backend
+        # creation costs 100ms+ and must not sit between hotkey-press
+        # and audible output. Deferred so tab navigation stays instant.
+        try:
+            QTimer.singleShot(0, engine.warmup)
         except RuntimeError:
             pass
         return api
