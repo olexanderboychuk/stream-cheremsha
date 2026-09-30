@@ -21,6 +21,7 @@ mprofile_*.dat
 Thumbs.db
 Desktop.ini
 .worktrees/
+.qwen/tmp/
 artifacts/
 dist/
 build/
