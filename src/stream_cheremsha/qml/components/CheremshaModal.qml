@@ -16,6 +16,7 @@ Item {
     property string title: ""
     property string subtitle: ""
     property bool opened: false
+    property real preferredWidth: 560
     // Backdrop target: rgba(0,0,0,0.45-0.55). Pure black at 0.5 keeps the
     // page recognizable instead of hiding it.
     property real dimOpacity: 0.5
@@ -70,7 +71,7 @@ Item {
     Rectangle {
         id: dialog
         anchors.centerIn: parent
-        width: Math.min(560, parent.width - 64)
+        width: Math.min(modal.preferredWidth, parent.width - 64)
         // Content-driven height: never a tiny strip, never overflowing.
         height: Math.max(380, Math.min(parent.height - 48, bodyCol.implicitHeight + 44))
         opacity: 0.0
