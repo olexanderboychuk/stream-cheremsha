@@ -108,17 +108,28 @@ Item {
             delegate: Rectangle {
                 id: rowItem
                 width: listView.width
-                height: 56
-                radius: 10
-                color: rowMa.containsMouse ? "#141d30" : "#0e1524"
+                height: 64
+                radius: 11
+                color: rowMa.containsMouse ? "#151b2a" : "#101827"
                 border.width: 1
-                border.color: spApi.previewPlayingId === modelData.path ? "#7c3aed" : "#1e2942"
-                Behavior on color { ColorAnimation { duration: 120 } }
-                Behavior on border.color { ColorAnimation { duration: 120 } }
+                border.color: spApi.previewPlayingId === modelData.path ? "#8b5cf6"
+                               : (rowMa.containsMouse ? "#4b5876" : "#26314a")
+                Behavior on color { ColorAnimation { duration: 150 } }
+                Behavior on border.color { ColorAnimation { duration: 150 } }
+
+                // Row hover layer FIRST (below content): the play/add controls
+                // declared after it sit on top and receive their own clicks;
+                // declaring this last would steal every click from them.
+                MouseArea {
+                    id: rowMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    acceptedButtons: Qt.NoButton
+                }
 
                 RowLayout {
                     anchors.fill: parent
-                    anchors.leftMargin: 12
+                    anchors.leftMargin: 14
                     anchors.rightMargin: 12
                     spacing: 10
 
@@ -126,60 +137,36 @@ Item {
                         Layout.fillWidth: true
                         text: modelData.title || modelData.path
                         color: "#e8ecf5"
-                        font.pixelSize: 13
+                        font.pixelSize: 14
+                        font.weight: Font.DemiBold
                         elide: Text.ElideRight
                         verticalAlignment: Text.AlignVCenter
                     }
 
-                    // Play / stop preview
-                    Rectangle {
+                    // Play / stop preview — shared component, card-consistent states
+                    CheremshaPlayButton {
                         id: playBtn
-                        Layout.preferredWidth: 34
-                        Layout.preferredHeight: 34
-                        radius: 17
-                        readonly property bool playing: spApi.previewPlayingId === modelData.path
-                        color: playing ? "#2a1e4d" : (playMa.containsMouse ? "#18233c" : "#101a2e")
-                        border.width: 1
-                        border.color: playing ? "#9b5cff" : (playMa.containsMouse ? "#3a4a6e" : "#26314a")
-                        Behavior on color { ColorAnimation { duration: 120 } }
-
-                        Image {
-                            anchors.centerIn: parent
-                            width: 14; height: 14
-                            source: playBtn.playing ? Qt.resolvedUrl("../../assets/icons/stop.svg")
-                                                    : Qt.resolvedUrl("../../assets/icons/play.svg")
-                            opacity: 0.95
-                        }
-
-                        MouseArea {
-                            id: playMa
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                if (playBtn.playing) spApi.stopPreview();
-                                else spApi.previewSound(modelData.path);
-                            }
+                        diameter: 38
+                        playing: spApi.previewPlayingId === modelData.path
+                        onClicked: {
+                            if (playBtn.playing) spApi.stopPreview();
+                            else spApi.previewSound(modelData.path);
                         }
                     }
 
-                    // Add to soundpad
-                    Rectangle {
+                    // Add to soundpad — primary CTA, app-wide gradient style
+                    Button {
                         id: addBtn
-                        Layout.preferredWidth: 92
-                        Layout.preferredHeight: 34
-                        radius: 9
+                        Layout.preferredWidth: 104
+                        Layout.preferredHeight: 38
                         readonly property bool justAdded: panel.addedPath === modelData.path
-                        color: justAdded ? "#1d3a2a" : (addMa.containsMouse ? "#18233c" : "#101a2e")
-                        border.width: 1
-                        border.color: justAdded ? "#34d399" : (addMa.containsMouse ? "#3a4a6e" : "#26314a")
-                        Behavior on color { ColorAnimation { duration: 120 } }
-
-                        RowLayout {
-                            anchors.centerIn: parent
+                        hoverEnabled: true
+                        focusPolicy: Qt.NoFocus
+                        font.pixelSize: 13
+                        contentItem: RowLayout {
                             spacing: 6
                             Image {
-                                width: 13; height: 13
+                                width: 14; height: 14
                                 source: addBtn.justAdded ? Qt.resolvedUrl("../../assets/icons/check.svg")
                                                          : Qt.resolvedUrl("../../assets/icons/web_plus.svg")
                                 opacity: 0.95
@@ -187,29 +174,33 @@ Item {
                             Text {
                                 text: addBtn.justAdded ? (spApi.libraryStrings.added || "Додано")
                                                        : (spApi.libraryStrings.add || "Додати")
-                                color: addBtn.justAdded ? "#34d399" : "#c7d2e5"
-                                font.pixelSize: 12
+                                color: addBtn.justAdded ? "#34d399" : "white"
+                                font.pixelSize: 13
+                                font.weight: Font.Medium
                             }
                         }
-
-                        MouseArea {
-                            id: addMa
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                panel.addedPath = modelData.path;
-                                addedTimer.restart();
-                                spApi.addLibrarySound(modelData.path);
+                        background: Rectangle {
+                            radius: 9
+                            color: addBtn.justAdded ? "#1d3a2a" : "transparent"
+                            border.width: addBtn.justAdded ? 1 : 0
+                            border.color: "#34d399"
+                            Behavior on color { ColorAnimation { duration: 150 } }
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: parent.radius
+                                visible: !addBtn.justAdded
+                                gradient: Gradient {
+                                    GradientStop { position: 0.0; color: addBtn.pressed ? "#7c3aed" : (addBtn.hovered ? "#9d71f7" : "#9b5cff") }
+                                    GradientStop { position: 1.0; color: addBtn.pressed ? "#6d28d9" : (addBtn.hovered ? "#8b5cf6" : "#7c3aed") }
+                                }
                             }
+                        }
+                        onClicked: {
+                            panel.addedPath = modelData.path;
+                            addedTimer.restart();
+                            spApi.addLibrarySound(modelData.path);
                         }
                     }
-                }
-
-                MouseArea {
-                    id: rowMa
-                    anchors.fill: parent
-                    hoverEnabled: true
                 }
             }
         }
