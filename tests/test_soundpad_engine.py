@@ -336,3 +336,70 @@ def test_hold_survives_autorepeat_storm_full_stack(qapp, tmp_path):
         be.stop()  # cancel any pending release timer: nothing may outlive the test
 
     asyncio.run(main())
+
+
+def test_play_preview_uses_sink():
+    import asyncio
+
+    sink = FakeSink()
+    eng = SoundpadAudioEngine(sink=sink)
+
+    async def main():
+        assert eng.play_preview(b"abc") == "PLAYING"
+        await asyncio.sleep(0.01)
+
+    asyncio.run(main())
+    assert len(sink.calls) == 1
+    data, vol = sink.calls[0]
+    assert data == b"abc" and 0.0 <= vol <= 1.0
+
+
+def test_play_preview_rejects_empty():
+    eng = SoundpadAudioEngine(sink=FakeSink())
+    assert eng.play_preview(b"") == "BLOCKED"
+
+
+def test_preview_finished_emits_once_on_natural_end():
+    import asyncio
+
+    sink = FakeSink()
+    eng = SoundpadAudioEngine(sink=sink)
+    finished: list[int] = []
+    eng.previewFinished.connect(lambda: finished.append(1))
+
+    async def main():
+        assert eng.play_preview(b"abc") == "PLAYING"
+        await asyncio.sleep(0.02)
+
+    asyncio.run(main())
+    assert finished == [1]
+
+
+def test_stop_preview_cancels_without_emit():
+    import asyncio
+
+    class SlowSink(FakeSink):
+        async def play_mp3_parallel_with_volume_deduped(self, data, volume, *, dedupe_key=""):
+            self.calls.append((bytes(data), float(volume)))
+            await asyncio.sleep(5)  # long playback
+            return True
+
+    sink = SlowSink()
+    eng = SoundpadAudioEngine(sink=sink)
+    finished: list[int] = []
+    eng.previewFinished.connect(lambda: finished.append(1))
+
+    async def main():
+        assert eng.play_preview(b"abc") == "PLAYING"
+        await asyncio.sleep(0.01)  # let it start
+        eng.stop_preview()
+        await asyncio.sleep(0.02)  # let cancellation unwind
+
+    asyncio.run(main())
+    assert len(sink.calls) == 1
+    assert finished == []  # cancelled playback must not report "finished"
+
+
+def test_stop_all_stops_preview_without_error():
+    eng = SoundpadAudioEngine(sink=FakeSink())
+    eng.stop_all()  # must not raise even with no preview running

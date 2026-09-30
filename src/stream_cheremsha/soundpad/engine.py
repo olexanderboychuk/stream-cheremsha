@@ -10,11 +10,14 @@ from stream_cheremsha.soundpad.models import PlaybackMode, SoundEntry
 
 logger = logging.getLogger(__name__)
 
+_PREVIEW_PREFIX = "soundpad-preview:"
+
 
 class SoundpadAudioEngine(QObject):
     playbackStarted = Signal(str)
     playbackFinished = Signal(str)
     duckingChanged = Signal(bool)
+    previewFinished = Signal()  # a library preview ended naturally (not stopped)
 
     def __init__(self, sink=None, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -32,6 +35,7 @@ class SoundpadAudioEngine(QObject):
         self._play_tasks: dict[str, set[asyncio.Task]] = {}
         # Physically-held hotkeys per sound id (hold-to-play mode).
         self._held: set[str] = set()
+        self._preview_tasks: set[asyncio.Task] = set()
 
     def set_hold(self, sound_id: str, held: bool) -> None:
         """Track whether a hold-mode hotkey is physically down."""
@@ -190,7 +194,57 @@ class SoundpadAudioEngine(QObject):
         if sound_id in self._playing:
             self._finish(sound_id)
 
+    def play_preview(self, data: bytes) -> str:
+        """Play raw audio as a one-shot library preview (restart semantics)."""
+        if not bytes(data or b""):
+            return "BLOCKED"
+        self.stop_preview()
+        vol = max(0.0, min(1.0, float(self._global_volume)))
+
+        async def _run() -> None:
+            cancelled = False
+            try:
+                sink = self._ensure_sink()
+                fn = getattr(sink, "play_mp3_parallel_with_volume_deduped", None)
+                if callable(fn):
+                    await fn(data, vol, dedupe_key=_PREVIEW_PREFIX + "active")
+                else:
+                    await sink.play_mp3_with_volume(data, vol)
+            except asyncio.CancelledError:
+                cancelled = True
+                raise
+            except (RuntimeError, OSError) as e:
+                logger.warning("soundpad preview failed: %s", e)
+            finally:
+                if not cancelled:
+                    self.previewFinished.emit()
+
+        if _loop_running():
+            t = asyncio.get_running_loop().create_task(_run())
+            self._preview_tasks.add(t)
+            t.add_done_callback(self._preview_tasks.discard)
+        # No running loop (unit tests): nothing audible; state stays consistent.
+        return "PLAYING"
+
+    def stop_preview(self) -> None:
+        had = bool(self._preview_tasks)  # guard: don't touch the sink when idle
+        for t in list(self._preview_tasks):
+            if not t.done():
+                try:
+                    t.cancel()
+                except RuntimeError:
+                    pass
+        self._preview_tasks.clear()
+        if had:
+            stop_voice = getattr(self._sink, "stop_sfx_by_key_prefix", None)
+            if callable(stop_voice):
+                try:
+                    stop_voice(_PREVIEW_PREFIX)
+                except RuntimeError:
+                    pass
+
     def stop_all(self) -> None:
+        self.stop_preview()
         self._queues.clear()
         for sid in sorted(set(self._playing) | set(self._play_tasks)):
             self.stop(sid)
