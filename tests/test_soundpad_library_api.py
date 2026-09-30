@@ -92,9 +92,7 @@ def _index_html() -> str:
     return p.read_text(encoding="utf-8")
 
 
-_INSTANT_HTML = (
-    '<html><body>var mp3_url="https://www.myinstants.com/music/x.mp3";</body></html>'
-)
+_INSTANT_HTML = '<html><body>var mp3_url="https://www.myinstants.com/music/x.mp3";</body></html>'
 
 
 def _client_with(tmp_path, session):

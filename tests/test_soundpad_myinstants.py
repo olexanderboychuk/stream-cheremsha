@@ -214,9 +214,7 @@ def test_index_cache_hit_avoids_network(tmp_path):
 
 def test_index_cache_ttl_expiry(tmp_path):
     index_html = _fixture("myinstants_ua_index.html")
-    c, fake = _client(
-        tmp_path, {"/en/index/ua/": FakeResponse(text=index_html)}, index_ttl_sec=0.0
-    )
+    c, fake = _client(tmp_path, {"/en/index/ua/": FakeResponse(text=index_html)}, index_ttl_sec=0.0)
     c.fetch_index_entries("ua", 1)
     c.fetch_index_entries("ua", 1)
     assert len(fake.requests) == 2

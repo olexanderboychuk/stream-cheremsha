@@ -8,11 +8,24 @@ from stream_cheremsha.soundpad.store import SoundpadStore
 
 def _entry(i="a", name="Airhorn", hotkey="F2", cat="Меми", order=0):
     return SoundEntry(
-        id=i, name=name, file_path=f"/tmp/{i}.mp3", category=cat,
-        hotkey=hotkey, volume=1.0, playback_mode=PlaybackMode.RESTART,
-        cooldown_sec=0.0, triggers=(), waveform_peaks=(0.1, 0.9),
-        duration_sec=1.2, play_count=0, last_played_at="",
-        order=order, enabled=True, monitor=True, stream_out=True)
+        id=i,
+        name=name,
+        file_path=f"/tmp/{i}.mp3",
+        category=cat,
+        hotkey=hotkey,
+        volume=1.0,
+        playback_mode=PlaybackMode.RESTART,
+        cooldown_sec=0.0,
+        triggers=(),
+        waveform_peaks=(0.1, 0.9),
+        duration_sec=1.2,
+        play_count=0,
+        last_played_at="",
+        order=order,
+        enabled=True,
+        monitor=True,
+        stream_out=True,
+    )
 
 
 def test_upsert_list_persist_roundtrip(tmp_path):

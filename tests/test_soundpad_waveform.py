@@ -22,9 +22,20 @@ def test_buckets_count_and_range(tmp_path):
         return
     p = tmp_path / "tone.wav"
     subprocess.run(
-        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-         "-f", "lavfi", "-i", "sine=frequency=440:duration=1", str(p)],
-        check=True)
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=1",
+            str(p),
+        ],
+        check=True,
+    )
     peaks = extract_waveform_peaks(str(p), 48)
     assert len(peaks) == 48
     assert all(0.0 <= v <= 1.0 for v in peaks)

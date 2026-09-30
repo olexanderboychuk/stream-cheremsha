@@ -319,16 +319,17 @@ def test_hold_survives_autorepeat_storm_full_stack(qapp, tmp_path):
         assert eng.is_playing(sid)
         # Real lift: debounced release stops the loop exactly once.
         import threading as _th
+
         got = []
         hk.hotkeyReleased.connect(got.append)
         be._on_key_up(Key.f9)
         await asyncio.sleep(0.15)
-        print('DIAG storm delivered:', got)
-        print('DIAG storm pending:', {k: v.is_alive() for k, v in be._pending_release.items()})
-        print('DIAG storm threads:', sorted(t.name for t in _th.enumerate()))
+        print("DIAG storm delivered:", got)
+        print("DIAG storm pending:", {k: v.is_alive() for k, v in be._pending_release.items()})
+        print("DIAG storm threads:", sorted(t.name for t in _th.enumerate()))
         qapp.processEvents()
         qapp.processEvents()
-        print('DIAG storm delivered2:', got)
+        print("DIAG storm delivered2:", got)
         assert not eng.is_playing(sid)
         frozen = eng._sink.calls
         await asyncio.sleep(0.05)
