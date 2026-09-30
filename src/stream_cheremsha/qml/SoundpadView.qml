@@ -49,6 +49,7 @@ Item {
     property bool addListening: false
     property string addConflictOwner: ""
     property string addErrorMsg: ""
+    property bool showLibraryModal: false
 
     property string relinkTargetId: ""
 
@@ -431,6 +432,31 @@ Item {
                     }
                 }
             }
+            // library (MyInstants) — secondary action, outline style
+            Button {
+                id: libraryBtn
+                text: spApi.libraryStrings.button || "Бібліотека"
+                hoverEnabled: true
+                focusPolicy: Qt.TabFocus
+                font.pixelSize: 13
+                implicitWidth: 140
+                implicitHeight: 38
+                contentItem: RowLayout {
+                    spacing: 7
+                    Image { source: Qt.resolvedUrl("../assets/icons/book.svg"); width: 15; height: 15 }
+                    Text { text: libraryBtn.text; color: "#c7d2e5"; font: libraryBtn.font }
+                }
+                background: Rectangle {
+                    radius: 9
+                    color: libraryBtn.hovered ? "#141d30" : "transparent"
+                    border.width: 1
+                    border.color: libraryBtn.hovered ? "#7c3aed" : "#26314a"
+                    Behavior on border.color { ColorAnimation { duration: 130 } }
+                }
+                scale: libraryBtn.pressed ? 0.97 : 1.0
+                Behavior on scale { NumberAnimation { duration: 100 } }
+                onClicked: { spApi.openLibrary(); root.showLibraryModal = true; }
+            }
             // primary add
             Button {
                 id: addBtn
@@ -705,6 +731,21 @@ Item {
                     onClicked: root._saveAddSound()
                 }
             }
+        }
+    }
+
+    // ---- Library modal (MyInstants) ----
+    CheremshaModal {
+        id: libraryModal
+        anchors.fill: parent
+        preferredWidth: 720
+        title: spApi.libraryStrings.title || "Бібліотека звуків"
+        subtitle: spApi.libraryStrings.subtitle || ""
+        opened: root.showLibraryModal
+        onCloseRequested: { root.showLibraryModal = false; spApi.stopPreview(); }
+
+        body: Component {
+            SoundpadLibraryPanel {}
         }
     }
 

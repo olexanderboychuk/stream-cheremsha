@@ -29,3 +29,4 @@ CheremshaSlider 1.0 CheremshaSlider.qml
 SoundpadEmptyState 1.0 SoundpadEmptyState.qml
 SoundpadNowPlaying 1.0 SoundpadNowPlaying.qml
 SoundpadAddDialog 1.0 SoundpadAddDialog.qml
+SoundpadLibraryPanel 1.0 SoundpadLibraryPanel.qml
