@@ -236,6 +236,27 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "Instant sounds and hotkeys",
     },
     "soundpad.title": {"uk": "Soundpad", "en": "Soundpad"},
+    "soundpad.library.button": {"uk": "Бібліотека", "en": "Library"},
+    "soundpad.library.title": {"uk": "Бібліотека звуків", "en": "Sound Library"},
+    "soundpad.library.subtitle": {
+        "uk": "Оберіть звук з MyInstants — прослухайте та додайте до саундпаду",
+        "en": "Pick a sound from MyInstants — preview it, then add to your soundpad",
+    },
+    "soundpad.library.add": {"uk": "Додати", "en": "Add"},
+    "soundpad.library.added": {"uk": "Додано", "en": "Added"},
+    "soundpad.library.loading": {"uk": "Завантаження звуків…", "en": "Loading sounds…"},
+    "soundpad.library.error_title": {
+        "uk": "Не вдалося завантажити звуки",
+        "en": "Couldn't load sounds",
+    },
+    "soundpad.library.retry": {"uk": "Спробувати ще раз", "en": "Try again"},
+    "soundpad.library.empty_title": {
+        "uk": "На цій сторінці немає звуків",
+        "en": "No sounds on this page",
+    },
+    "soundpad.library.page": {"uk": "Сторінка {n}", "en": "Page {n}"},
+    "soundpad.library.prev": {"uk": "Назад", "en": "Previous"},
+    "soundpad.library.next": {"uk": "Далі", "en": "Next"},
     # App chrome (QML + shell)
     "ui.app_header_title": {"uk": "Stream Cheremsha", "en": "Stream Cheremsha"},
     "ui.twitch_head": {"uk": "Twitch", "en": "Twitch"},

@@ -9,9 +9,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from PySide6.QtCore import QCoreApplication, QObject, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import (
+    Property,
+    QCoreApplication,
+    QObject,
+    QTimer,
+    QUrl,
+    Signal,
+    Slot,
+)
 from PySide6.QtWidgets import QFileDialog, QWidget
 
+from stream_cheremsha import l10n
 from stream_cheremsha.soundpad.models import (
     ALLOWED_AUDIO_SUFFIXES,
     PlaybackMode,
@@ -21,6 +30,21 @@ from stream_cheremsha.soundpad.models import (
 
 logger = logging.getLogger(__name__)
 _MAX_BYTES = 200 * 1024 * 1024
+
+_LIBRARY_L10N_KEYS = (
+    "button",
+    "title",
+    "subtitle",
+    "add",
+    "added",
+    "loading",
+    "error_title",
+    "retry",
+    "empty_title",
+    "page",
+    "prev",
+    "next",
+)
 
 
 def file_url_to_path(file_url: str) -> Path | None:
@@ -49,6 +73,7 @@ class SoundpadQmlApi(QObject):
     nowPlayingChanged = Signal(str, float, float)
     hotkeyConflict = Signal(str, str)
     importNeeded = Signal(str)
+    stringsChanged = Signal()  # locale changed; QML re-reads libraryStrings
 
     def __init__(self, *, store, engine, hotkeys, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -73,6 +98,7 @@ class SoundpadQmlApi(QObject):
             self._engine.playbackFinished.connect(self._on_playback_finished)
         except RuntimeError:
             pass
+        self._locale = l10n.normalize_locale(l10n.DEFAULT_LOCALE)
 
     def _on_hotkey_pressed(self, sound_id: str) -> None:
         try:
@@ -203,6 +229,33 @@ class SoundpadQmlApi(QObject):
         else:
             # No running loop (unit tests): compute inline.
             self._apply_metadata(sound_id, path)
+
+    @Property("QVariantMap", notify=stringsChanged)
+    def libraryStrings(self) -> dict[str, str]:  # noqa: ANN201 - PySide pattern
+        out = {}
+        for short in _LIBRARY_L10N_KEYS:
+            try:
+                out[short] = l10n.tr(self._locale, f"soundpad.library.{short}")
+            except KeyError:
+                out[short] = ""
+        return out
+
+    @Slot(str, result=str)
+    def tr(self, key: str) -> str:
+        k = (key or "").strip()
+        if not k:
+            return ""
+        try:
+            return l10n.tr(self._locale, k)
+        except KeyError:
+            return k
+
+    def set_locale(self, locale: str) -> None:
+        nl = l10n.normalize_locale(locale)
+        if nl == self._locale:
+            return
+        self._locale = nl
+        self.stringsChanged.emit()
 
     @Slot(str, str, str, str, float, str, result=str)
     def addSound(
