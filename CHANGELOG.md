@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.24.1] - 2026-10-01
+
+### Fixed
+
+- Soundpad HOLD hotkeys stalled ~2s: pynput's XRecord full-stream monitor delivered key events late. Hotkeys now prefer per-combo XGrabKey passive grabs (server-side delivery) with pynput as a per-combo fallback.
+- Soundpad HOLD behaves like RESTART-with-repeat: a fresh press stops strays and starts instantly (no cooldown gate), the loop repeats while held, release cuts promptly.
+- Soundpad press path does no blocking I/O (in-memory audio cache, deferred stats persist, silent SFX warmup).
+- Log spam: disabled aiohttp access logging (OBS poll flood), silenced httpx update-checker lines, ffmpeg stderr now decodes as text instead of byte-repr.
+
 ## [0.24.0] - 2026-09-29
 
 ### Added
