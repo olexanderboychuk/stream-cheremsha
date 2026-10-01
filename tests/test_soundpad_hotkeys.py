@@ -7,7 +7,11 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
 
-from stream_cheremsha.soundpad.hotkeys import FakeHotkeyBackend, GlobalHotkeyManager
+from stream_cheremsha.soundpad.hotkeys import (
+    FakeHotkeyBackend,
+    GlobalHotkeyManager,
+    XKeyGrabBackend,
+)
 
 _COOKIE = b"\x66\x53\xef\x48"
 
@@ -222,6 +226,31 @@ def test_pynput_autorepeat_storm_emits_single_release(qapp: QApplication):
     be.stop()
 
 
+def test_stale_fired_combo_refires():
+    """A press suppressed as 'already fired' must re-fire once the flag is
+    stale (lost key-release): otherwise one lost release eats the next real
+    press silently on that combo only, while other hotkeys keep working."""
+    import time
+
+    from pynput.keyboard import Key
+
+    from stream_cheremsha.soundpad.hotkeys import PynputHotkeyBackend
+
+    fired: list[str] = []
+    be = PynputHotkeyBackend(on_fire=fired.append)
+    be._combos["F9"] = frozenset({"f9"})
+    be._on_key_down(Key.f9)
+    assert fired == ["F9"]
+    # Immediate re-press (auto-repeat echo): still suppressed.
+    be._on_key_down(Key.f9)
+    assert fired == ["F9"]
+    # Flag gone stale (release lost long ago): next real press fires.
+    be._fired_at["F9"] = time.monotonic() - 10.0
+    be._on_key_down(Key.f9)
+    assert fired == ["F9", "F9"]
+    be.stop()
+
+
 def test_pynput_ungrab_while_held_releases():
     from stream_cheremsha.soundpad.hotkeys import PynputHotkeyBackend
 
@@ -248,3 +277,139 @@ def test_manager_release_mapping_and_clear():
     # Unknown id: silent no-op.
     m.simulate_release("nope")
     assert released == ["a"]
+
+
+def _xev_factory():
+    import types
+
+    import pytest
+
+    pytest.importorskip("Xlib")
+    from Xlib import X
+
+    def ev(etype: int, keycode: int, state: int):
+        return types.SimpleNamespace(type=etype, detail=keycode, state=state)
+
+    return X, ev
+
+
+def test_xgrab_split_tokens():
+    X, _ev = _xev_factory()
+    assert XKeyGrabBackend.split_tokens(frozenset({"ctrl", "3"})) == (X.ControlMask, "3")
+    assert XKeyGrabBackend.split_tokens(frozenset({"f9"})) == (0, "F9")
+    mods, name = XKeyGrabBackend.split_tokens(frozenset({"ctrl", "shift", "f12"}))
+    assert mods == (X.ControlMask | X.ShiftMask) and name == "F12"
+    # Modifiers alone or several main keys cannot be grabbed.
+    assert XKeyGrabBackend.split_tokens(frozenset({"ctrl"})) is None
+    assert XKeyGrabBackend.split_tokens(frozenset({"a", "b"})) is None
+
+
+def test_xgrab_grab_without_xlib_degrades(monkeypatch):
+    monkeypatch.setattr(
+        "stream_cheremsha.soundpad.hotkeys._xlib_modules",
+        lambda: (None, None, None),
+    )
+    be = XKeyGrabBackend()
+    assert be.grab("F9") is False
+    be.stop()  # never-started backend stops cleanly
+
+
+def test_xgrab_press_release_cycle(qapp: QApplication):
+    X, ev = _xev_factory()
+    kc, mods = 0x14, X.ControlMask
+    fired: list[str] = []
+    released: list[str] = []
+    be = XKeyGrabBackend()
+    be._fired.connect(fired.append)
+    be._released.connect(released.append)
+    be._combos["Ctrl+3"] = (kc, mods)
+    be._handle_press(kc, mods)
+    assert fired == ["Ctrl+3"]
+    # Auto-repeat echo while held: suppressed.
+    be._handle_press(kc, mods)
+    assert fired == ["Ctrl+3"]
+    # Wrong modifiers: no match.
+    be._handle_press(kc, 0)
+    assert fired == ["Ctrl+3"]
+    # Release of the main key: debounced release fires once.
+    be._handle_release(kc)
+    _pump()
+    assert released == []
+    time.sleep(0.15)
+    _pump()
+    assert released == ["Ctrl+3"]
+    be.stop()
+
+
+def test_xgrab_modifier_lift_releases_but_unrelated_tap_does_not(qapp: QApplication):
+    X, ev = _xev_factory()
+    main_kc, mod_kc, mods = 0x14, 0x25, X.ControlMask
+    released: list[str] = []
+    be = XKeyGrabBackend()
+    be._released.connect(released.append)
+    be._combos["Ctrl+3"] = (main_kc, mods)
+    be._mod_keycodes[mod_kc] = mods
+    # Combo live: Ctrl physically held, main key down.
+    be._mod_down[mod_kc] = mods
+    be._fired_combos.add("Ctrl+3")
+    # Unrelated Shift tap while the combo is held: no release.
+    be._mod_keycodes[0x32] = X.ShiftMask
+    be._handle_press(0x32, mods | X.ShiftMask)
+    be._handle_release(0x32)
+    time.sleep(0.15)
+    _pump()
+    assert released == []
+    assert "Ctrl+3" in be._fired_combos
+    # Lifting Ctrl while 3 is held: releases.
+    be._handle_release(mod_kc)
+    time.sleep(0.15)
+    _pump()
+    assert released == ["Ctrl+3"]
+    be.stop()
+
+
+def test_xgrab_stale_fired_refires():
+    _X, _ev = _xev_factory()
+    fired: list[str] = []
+    be = XKeyGrabBackend()
+    be._fired.connect(fired.append)
+    be._combos["F9"] = (0x44, 0)
+    be._handle_press(0x44, 0)
+    assert fired == ["F9"]
+    be._handle_press(0x44, 0)
+    assert fired == ["F9"]  # fresh echo suppressed
+    be._fired_at["F9"] = time.monotonic() - 10.0
+    be._handle_press(0x44, 0)
+    assert fired == ["F9", "F9"]  # stale flag re-fires
+    be.stop()
+
+
+def test_xgrab_dispatch_routes_and_ignores_unknown():
+    X, ev = _xev_factory()
+    fired: list[str] = []
+    released: list[str] = []
+    be = XKeyGrabBackend()
+    be._fired.connect(fired.append)
+    be._released.connect(released.append)
+    be._combos["F9"] = (0x44, 0)
+    be._dispatch(ev(X.KeyPress, 0x44, 0))
+    assert fired == ["F9"]
+    be._dispatch(ev(9999, 0x44, 0))  # unknown event type: ignored
+    assert fired == ["F9"] and released == []
+    be.stop()
+
+
+def test_manager_fallback_grab_routing():
+    primary = FakeHotkeyBackend()
+    primary.fail.add("F9")
+    fallback = FakeHotkeyBackend()
+    m = GlobalHotkeyManager(backend=primary, fallback_backend=fallback)
+    assert m.register_hotkey("a", "F9") is True
+    assert "F9" not in primary.grabbed
+    assert "F9" in fallback.grabbed
+    assert m.list_hotkeys() == {"a": "F9"}
+    # Primary success never touches the fallback.
+    assert m.register_hotkey("b", "F10") is True
+    assert "F10" in primary.grabbed
+    assert "F10" not in fallback.grabbed
+    m.shutdown()

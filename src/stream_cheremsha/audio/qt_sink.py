@@ -79,10 +79,10 @@ def _ffmpeg_run(
         return None
     if proc.returncode != 0 or not proc.stdout:
         logger.debug(
-            "ffmpeg rc=%s enc=%s stderr=%r",
+            "ffmpeg rc=%s enc=%s stderr=%s",
             proc.returncode,
             encoding,
-            (proc.stderr or b"")[:300],
+            (proc.stderr or b"")[:300].decode("utf-8", errors="replace"),
         )
         return None
     return proc.stdout
@@ -430,6 +430,7 @@ class QtAudioSink(QObject):
         k = os.path.normcase(k)
         async with self._sound_dedupe_lock:
             if k in self._sound_dedupe_keys:
+                logger.info("sfx dedupe skip: key=%r already playing/queued", dedupe_key)
                 return False
             self._sound_dedupe_keys.add(k)
         try:
@@ -473,13 +474,20 @@ class QtAudioSink(QObject):
         Poll-waits if the pool is exhausted (all players busy), so a burst
         clip is never dropped — it simply starts as soon as a peer finishes.
         """
+        polls = 0
         while True:
             async with self._sfx_player_lock:
                 for i in range(len(self._sfx_players)):
                     if i not in self._sfx_busy:
+                        if polls:
+                            logger.info(
+                                "sfx pool waited %.2fs for a free player",
+                                polls * 0.02,
+                            )
                         self._sfx_busy.add(i)
                         return i
             await asyncio.sleep(0.02)
+            polls += 1
 
     async def _release_sfx_player(self, idx: int) -> None:
         async with self._sfx_player_lock:
@@ -487,6 +495,7 @@ class QtAudioSink(QObject):
 
     async def _play_mp3_parallel(self, data: bytes, linear: float, *, sfx_key: str = "") -> None:
         """Play one clip on a free pool player (so burst clips can overlap)."""
+        logger.info("sfx play: key=%r bytes=%d", sfx_key or "-", len(data))
         self.ensure_ready()
         if not self._sfx_players:
             return
@@ -517,6 +526,8 @@ class QtAudioSink(QObject):
         def _on_sfx_state(st: QMediaPlayer.PlaybackState) -> None:
             if st == QMediaPlayer.PlaybackState.StoppedState and play_started:
                 self._safe_resolve_fut(fut)
+            elif st == QMediaPlayer.PlaybackState.PlayingState:
+                logger.info("sfx playing: key=%r", sfx_key or "-")
 
         # Acquire a pool player; the lock is NOT held across playback, so other
         # clips can use other players concurrently (overlap).
@@ -598,6 +609,7 @@ class QtAudioSink(QObject):
         k = os.path.normcase(k)
         async with self._sound_dedupe_lock:
             if k in self._sound_dedupe_keys:
+                logger.info("sfx dedupe skip: key=%r already playing/queued", dedupe_key)
                 return False
             self._sound_dedupe_keys.add(k)
         try:

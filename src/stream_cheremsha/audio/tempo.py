@@ -72,8 +72,8 @@ def apply_speed_to_audio(data: bytes, factor: float) -> bytes:
         if proc.returncode == 0 and proc.stdout:
             return proc.stdout
         logger.debug(
-            "ffmpeg atempo rc=%s stderr=%r",
+            "ffmpeg atempo rc=%s stderr=%s",
             proc.returncode,
-            (proc.stderr or b"")[:200],
+            (proc.stderr or b"")[:200].decode("utf-8", errors="replace"),
         )
     return data

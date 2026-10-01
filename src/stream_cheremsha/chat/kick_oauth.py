@@ -57,7 +57,8 @@ class KickOAuthFlow:
             return web.Response(text="<h1>OK</h1>You can close this tab.", content_type="text/html")
 
         app.router.add_get("/callback", _callback)
-        self._runner = web.AppRunner(app)
+        # No access log: single-use localhost callback, nothing to diagnose.
+        self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
         self._site = web.TCPSite(self._runner, CALLBACK_HOST, CALLBACK_PORT)
         await self._site.start()

@@ -158,6 +158,11 @@ class SoundpadQmlApi(QObject):
         self._preview_seq = 0  # invalidates superseded/cancelled preview jobs
         self._preview_job: asyncio.Task | None = None
         self._lib_tasks: set[asyncio.Task] = set()
+        # Hotkey-press audio cache: sound_id -> (bytes, mtime_ns, size).
+        # Presses run on the GUI thread and must never do disk I/O twice for
+        # the same file — first press reads, later presses (tap-tap, hold
+        # re-press after release) hit memory. Stale on mtime/size change.
+        self._audio_cache: dict[str, tuple[bytes, int, int]] = {}
         try:
             self._hotkeys.hotkeyPressed.connect(self._on_hotkey_pressed)
         except RuntimeError:
@@ -179,26 +184,45 @@ class SoundpadQmlApi(QObject):
         self._locale = l10n.normalize_locale(l10n.DEFAULT_LOCALE)
 
     def _on_hotkey_pressed(self, sound_id: str) -> None:
+        logger.info("hotkey pressed handler: %s", sound_id)
         try:
             e = self._store.get(sound_id)
-            if e is not None and e.playback_mode == PlaybackMode.HOLD:
-                # Arm BEFORE playing: a short clip may finish (and must
-                # replay) before any other event runs. UI clicks don't arm:
-                # a card click on a hold sound is a single shot.
-                try:
-                    self._engine.set_hold(sound_id, True)
-                except (AttributeError, RuntimeError):
-                    pass
+            if e is None or e.playback_mode != PlaybackMode.HOLD:
+                self.playSound(sound_id)
+                return
+            # Hold-to-play: X11 auto-repeat re-fires the hotkey ~30x/sec
+            # while the key is physically held. A re-fire of the HELD key
+            # during an active loop is a no-op (the engine repeats itself).
+            # But a press with the key NOT held is a genuine physical tap —
+            # even mid-tail: stop, arm, start immediately (RESTART-like), so
+            # every tap reliably (re)starts playback.
+            if self._engine.is_playing(sound_id) and self._engine.is_held(sound_id):
+                return
+            # Fresh press (first, or re-press after release): kill anything
+            # stray for this id first, then arm the hold and start — so the
+            # new voice never waits behind leftovers. stop() clears the hold
+            # flag, hence arm strictly after it; the path is synchronous,
+            # so a short clip cannot finish in between.
+            try:
+                self._engine.stop(sound_id)
+            except (AttributeError, RuntimeError):
+                pass
+            try:
+                self._engine.set_hold(sound_id, True)
+            except (AttributeError, RuntimeError):
+                pass
             self.playSound(sound_id)
         except (RuntimeError, ValueError, OSError) as e:
             logger.debug("hotkey play failed: %s", e)
 
     def _on_hotkey_released(self, sound_id: str) -> None:
-        """Hotkey physically released: end a hold-to-play loop, if any.
+        """Hotkey physically released: end the hold loop immediately.
 
-        Other modes intentionally ignore releases: a tapped hotkey must play
+        HOLD is RESTART-with-repeat: release cuts the voice right away
+        (no tails). Other modes ignore releases: a tapped hotkey must play
         the full clip (stopping it on key-up would cut every quick tap).
         """
+        logger.info("hotkey released handler: %s", sound_id)
         try:
             e = self._store.get(sound_id)
             if e is None or e.playback_mode != PlaybackMode.HOLD:
@@ -469,6 +493,7 @@ class SoundpadQmlApi(QObject):
     @Slot(str, result=bool)
     def removeSound(self, sound_id: str) -> bool:
         self._hotkeys.clear_hotkey(sound_id)
+        self._audio_cache.pop(sound_id, None)
         ok = self._store.remove(sound_id)
         if ok:
             self.soundsChanged.emit()
@@ -482,15 +507,90 @@ class SoundpadQmlApi(QObject):
         self.soundsChanged.emit()
         return dup.id
 
+    def _read_audio_cached(self, sound_id: str, file_path: str) -> bytes | None:
+        """Return file bytes, preferring the in-memory hotkey cache.
+
+        The press path runs on the GUI thread: a stat (µs) validates the
+        cache, disk is touched only on first press or after the file
+        changed. Returns None when the file is missing/unreadable.
+        """
+        p = Path(str(file_path or ""))
+        try:
+            st = p.stat()
+        except OSError as ex:
+            self._audio_cache.pop(sound_id, None)
+            logger.warning("soundpad missing file %s: %s", sound_id, ex)
+            return None
+        hit = self._audio_cache.get(sound_id)
+        if hit is not None:
+            data, mtime_ns, size = hit
+            if mtime_ns == st.st_mtime_ns and size == st.st_size:
+                return data
+        try:
+            data = p.read_bytes()
+        except OSError as ex:
+            self._audio_cache.pop(sound_id, None)
+            logger.warning("soundpad missing file %s: %s", sound_id, ex)
+            return None
+        if data:
+            # Bound the cache: hotkey sounds only, small clips.
+            if len(self._audio_cache) > 64:
+                self._audio_cache.clear()
+            self._audio_cache[sound_id] = (data, st.st_mtime_ns, st.st_size)
+        return data
+
+    def preloadHotkeyAudio(self) -> None:
+        """Warm the press-path cache off the critical path (thread pool).
+
+        Called after tab open / hotkey registration so the first physical
+        press never pays file-I/O. Best-effort; failures stay uncached and
+        fall back to synchronous read on press.
+        """
+        try:
+            ids = list(self._hotkeys.list_hotkeys().keys())
+        except (AttributeError, RuntimeError):
+            return
+
+        async def _job() -> None:
+            def _load() -> None:
+                for sid in ids:
+                    try:
+                        e = self._store.get(sid)
+                    except (AttributeError, RuntimeError):
+                        continue
+                    if e is None or not e.enabled or not e.file_path:
+                        continue
+                    if sid in self._audio_cache:
+                        continue
+                    try:
+                        p = Path(e.file_path)
+                        st = p.stat()
+                        data = p.read_bytes()
+                    except OSError:
+                        continue
+                    if data:
+                        self._audio_cache[sid] = (data, st.st_mtime_ns, st.st_size)
+
+            try:
+                await asyncio.to_thread(_load)
+            except RuntimeError:
+                pass
+
+        if _loop_running():
+            try:
+                t = asyncio.get_running_loop().create_task(_job())
+                self._lib_tasks.add(t)
+                t.add_done_callback(self._lib_tasks.discard)
+            except RuntimeError:
+                pass
+
     @Slot(str)
     def playSound(self, sound_id: str) -> None:
         e = self._store.get(sound_id)
         if e is None or not e.enabled:
             return
-        try:
-            data = Path(e.file_path).read_bytes()
-        except OSError as ex:
-            logger.warning("soundpad missing file %s: %s", sound_id, ex)
+        data = self._read_audio_cached(sound_id, e.file_path)
+        if not data:
             return
         try:
             result = self._engine.play(e, data)
@@ -498,9 +598,19 @@ class SoundpadQmlApi(QObject):
             logger.warning("soundpad play failed %s: %s", sound_id, ex)
             return
         if result in ("PLAYING", "QUEUED"):
-            e.play_count += 1
-            e.last_played_at = datetime.now(UTC).isoformat(timespec="seconds")
-            self._store.upsert(e)
+            # Stats must never block audible output: mutate in-memory now
+            # (µs) and flush QSettings after the audio task got its first
+            # step (same deferred pattern as soundsChanged).
+            try:
+                e.play_count = int(e.play_count or 0) + 1
+                e.last_played_at = datetime.now(UTC).isoformat(timespec="seconds")
+                snapshot = copy.deepcopy(e)
+                if QCoreApplication.instance() is None:
+                    self._store.upsert(snapshot)
+                else:
+                    QTimer.singleShot(0, lambda _s=snapshot: self._store.upsert(_s))
+            except (RuntimeError, ValueError, OSError) as ex:
+                logger.debug("soundpad stats persist failed: %s", ex)
         self._emit_sounds_changed_soon()
 
     @Slot(str)

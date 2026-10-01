@@ -5,6 +5,7 @@ import logging
 import multiprocessing
 import os
 import sys
+import time
 from pathlib import Path
 
 # Linux/NVIDIA needs the documented ANGLE/native-Vulkan path to avoid the
@@ -39,12 +40,39 @@ logger = logging.getLogger(__name__)
 # splash screen can appear before ~1.5s of Python imports block the main thread.
 
 
+def _install_gui_gap_watchdog(app: QApplication) -> None:
+    """Warn when the GUI event loop is starved for >0.5s.
+
+    Hotkey presses reach the GUI as queued cross-thread signals; if the main
+    thread is blocked, the press -> audio path stalls invisibly. The timer is
+    coarse and only logs when a real gap occurs, so it is silent in normal
+    operation.
+    """
+    last = [0.0]
+
+    def tick() -> None:
+        t = time.monotonic()
+        if last[0] and t - last[0] > 0.5:
+            logger.warning("GUI event loop gap %.2fs", t - last[0])
+        last[0] = t
+
+    timer = QTimer(app)
+    timer.setTimerType(Qt.TimerType.CoarseTimer)
+    timer.timeout.connect(tick)
+    timer.start(200)
+
+
 def _configure_logging() -> None:
     """
     In standalone Windows builds we usually disable the console window, so stdout logs
     vanish. Always log to a file as well to make debugging user-reported issues possible.
     """
     log_level = logging.INFO
+    # Diagnostic override: CHEREMSHA_LOG_LEVEL=DEBUG captures hotkey
+    # suppression lines for input-latency investigations.
+    _env_level = (os.getenv("CHEREMSHA_LOG_LEVEL") or "").strip().upper()
+    if _env_level in ("DEBUG", "INFO", "WARNING", "ERROR"):
+        log_level = getattr(logging, _env_level)
     handlers: list[logging.Handler] = []
 
     # Always keep console handler for dev (or when console is enabled).
@@ -71,6 +99,9 @@ def _configure_logging() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         handlers=handlers,
     )
+    # Third-party chatter that buries diagnostics: per-request lines from
+    # the update checker (httpx INFO) on every run.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 def main() -> None:
@@ -146,6 +177,7 @@ def main() -> None:
     install_runtime_diagnostics(app, loop)
     # Ensure qasync loop stops when Qt is quitting, otherwise the Python process can linger.
     app.aboutToQuit.connect(loop.stop)
+    _install_gui_gap_watchdog(app)
 
     def _start_main_window() -> None:
         # Heavy import happens here, while the splash is already visible.

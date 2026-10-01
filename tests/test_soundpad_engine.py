@@ -4,7 +4,11 @@ from pynput.keyboard import Key
 from PySide6.QtCore import QSettings
 
 from stream_cheremsha.soundpad.engine import SoundpadAudioEngine
-from stream_cheremsha.soundpad.hotkeys import GlobalHotkeyManager, PynputHotkeyBackend
+from stream_cheremsha.soundpad.hotkeys import (
+    FakeHotkeyBackend,
+    GlobalHotkeyManager,
+    PynputHotkeyBackend,
+)
 from stream_cheremsha.soundpad.models import PlaybackMode, SoundEntry
 from stream_cheremsha.soundpad.store import SoundpadStore
 from stream_cheremsha.ui.soundpad_qml_api import SoundpadQmlApi
@@ -255,11 +259,213 @@ def test_stop_while_held_does_not_resume():
     asyncio.run(main())
 
 
-def test_hold_initial_press_respects_cooldown():
+def test_hold_ignores_cooldown_for_instant_start():
+    """HOLD is push-to-talk: the press must start instantly, never wait out
+    a configured cooldown (that wait was the seconds-long hold latency)."""
     eng = SoundpadAudioEngine(sink=FakeSink())
     e = _e(i="h", mode=PlaybackMode.HOLD, cd=5.0)
     assert eng.play(e, b"123") in ("PLAYING", "QUEUED")
-    assert eng.play(e, b"123") == "COOLDOWN"
+    # No running loop in unit tests: finishes immediately, so a second press
+    # is a fresh start — still not gated by the 5 s cooldown.
+    assert eng.play(e, b"123") in ("PLAYING", "QUEUED")
+
+
+def test_hold_fresh_press_restarts_after_release(tmp_path):
+    """HOLD is RESTART-with-repeat: press restarts instantly, release cuts
+    promptly, repress replays without delay."""
+    import asyncio
+
+    store = SoundpadStore(settings=QSettings("sp-hold-restart", "full"), root_dir=tmp_path)
+    f = tmp_path / "h.mp3"
+    f.write_bytes(b"x")
+
+    async def main():
+        class HoldSink:
+            def __init__(self):
+                self.calls = 0
+                self.finish = asyncio.Event()
+
+            async def play_mp3_parallel_with_volume_deduped(self, data, volume, *, dedupe_key=""):
+                self.calls += 1
+                await self.finish.wait()
+                return True
+
+        eng = SoundpadAudioEngine(sink=HoldSink())
+        hk = GlobalHotkeyManager(backend=FakeHotkeyBackend())
+        api = SoundpadQmlApi(store=store, engine=eng, hotkeys=hk)
+        sid = api.addSound(f.as_uri(), "H", "Custom", "F9", 1.0, "hold")
+
+        api._on_hotkey_pressed(sid)
+        assert await _pump_until(lambda: eng.is_playing(sid))
+        assert await _pump_until(lambda: eng._sink.calls >= 1)
+        # Release cuts promptly (no tails).
+        api._on_hotkey_released(sid)
+        assert await _pump_until(lambda: not eng.is_playing(sid))
+        # Fresh tap replays immediately.
+        api._on_hotkey_pressed(sid)
+        assert await _pump_until(lambda: eng.is_playing(sid))
+        assert await _pump_until(lambda: eng._sink.calls >= 2)
+        api._on_hotkey_released(sid)
+        assert await _pump_until(lambda: not eng.is_playing(sid))
+        eng.stop(sid)
+
+    asyncio.run(main())
+
+
+def test_hold_storm_never_stops_active_loop(tmp_path):
+    """Auto-repeat re-fires during an active HOLD loop must not stop/restart
+    it: the stop-first cleanup is for fresh presses only."""
+    import asyncio
+
+    store = SoundpadStore(settings=QSettings("sp-hold-storm", "full"), root_dir=tmp_path)
+    f = tmp_path / "h.mp3"
+    f.write_bytes(b"x")
+
+    async def main():
+        class HoldSink:
+            def __init__(self):
+                self.calls = 0
+                self.finish = asyncio.Event()
+
+            async def play_mp3_parallel_with_volume_deduped(self, data, volume, *, dedupe_key=""):
+                self.calls += 1
+                await self.finish.wait()
+                return True
+
+        eng = SoundpadAudioEngine(sink=HoldSink())
+        stops: list[str] = []
+        orig_stop = eng.stop
+
+        def _spy_stop(sound_id: str) -> None:
+            stops.append(sound_id)
+            orig_stop(sound_id)
+
+        eng.stop = _spy_stop  # type: ignore[method-assign]
+        hk = GlobalHotkeyManager(backend=FakeHotkeyBackend())
+        api = SoundpadQmlApi(store=store, engine=eng, hotkeys=hk)
+        sid = api.addSound(f.as_uri(), "H", "Custom", "F9", 1.0, "hold")
+
+        api._on_hotkey_pressed(sid)
+        assert await _pump_until(lambda: eng.is_playing(sid))
+        stops.clear()
+        for _ in range(20):
+            api._on_hotkey_pressed(sid)
+        await asyncio.sleep(0.05)
+        assert eng._sink.calls == 1
+        assert stops == []  # storm re-fires never stop the live loop
+        assert eng.is_playing(sid)
+        eng._sink.finish.set()
+        eng.stop(sid)
+
+    asyncio.run(main())
+
+
+def test_hold_retrigger_while_playing_is_noop():
+    """Re-triggering a hold sound whose loop is active (X11 auto-repeat
+    re-fires a held key ~30x/sec) must not start another sink playback
+    or re-emit started/ducking signals."""
+    import asyncio
+
+    async def main():
+        class HoldSink:
+            def __init__(self):
+                self.calls = 0
+                self.finish = asyncio.Event()
+
+            async def play_mp3_parallel_with_volume_deduped(self, data, volume, *, dedupe_key=""):
+                self.calls += 1
+                await self.finish.wait()
+                return True
+
+        eng = SoundpadAudioEngine(sink=HoldSink())
+        e = _e(i="h", mode=PlaybackMode.HOLD)
+        started: list[str] = []
+        ducking: list[bool] = []
+        eng.playbackStarted.connect(started.append)
+        eng.duckingChanged.connect(ducking.append)
+        eng.set_hold("h", True)
+        assert eng.play(e, b"123") == "PLAYING"
+        assert await _pump_until(lambda: eng.is_playing("h"))
+        # Re-triggers while the loop is active: no-ops.
+        for _ in range(5):
+            assert eng.play(e, b"123") == "PLAYING"
+        await asyncio.sleep(0.02)
+        assert eng._sink.calls == 1
+        assert started == ["h"]
+        assert ducking == [True]
+        eng.stop("h")
+        assert not eng.is_playing("h")
+
+    asyncio.run(main())
+
+
+def test_ducking_emits_only_on_state_change():
+    """Overlapping sounds must not re-emit duckingChanged per play.
+    (Each emit re-applies the music dip via an mpv IPC task.)"""
+    import asyncio
+
+    class SlowSink:
+        async def play_mp3_parallel_with_volume_deduped(self, data, volume, *, dedupe_key=""):
+            await asyncio.sleep(0.05)
+            return True
+
+    async def main():
+        eng = SoundpadAudioEngine(sink=SlowSink())
+        ducking: list[bool] = []
+        eng.duckingChanged.connect(ducking.append)
+        assert eng.play(_e(i="a"), b"1") == "PLAYING"
+        await asyncio.sleep(0.01)
+        # Second overlapping sound while the first is still audible.
+        assert eng.play(_e(i="b"), b"2") == "PLAYING"
+        await asyncio.sleep(0.1)  # both finished
+        assert ducking == [True, False]
+
+    asyncio.run(main())
+
+
+def test_hold_refires_skip_work_while_playing(tmp_path):
+    """Full-stack: auto-repeat re-fires during a hold must not re-run the
+    play path (file re-read, stats QSettings flush) — that storm was the
+    GUI-thread stall behind the hold-to-play latency."""
+    import asyncio
+
+    store = SoundpadStore(settings=QSettings("sp-storm2", "full"), root_dir=tmp_path)
+    f = tmp_path / "a.mp3"
+    f.write_bytes(b"x")
+
+    async def main():
+        class HoldSink:
+            def __init__(self):
+                self.calls = 0
+                self.finish = asyncio.Event()
+
+            async def play_mp3_parallel_with_volume_deduped(self, data, volume, *, dedupe_key=""):
+                self.calls += 1
+                await self.finish.wait()
+                return True
+
+        eng = SoundpadAudioEngine(sink=HoldSink())
+        hk = GlobalHotkeyManager(backend=FakeHotkeyBackend())
+        api = SoundpadQmlApi(store=store, engine=eng, hotkeys=hk)
+        sid = api.addSound(f.as_uri(), "H", "Custom", "F9", 1.0, "hold")
+
+        # Physical press, then a storm of auto-repeat re-fires.
+        api._on_hotkey_pressed(sid)
+        assert await _pump_until(lambda: eng.is_playing(sid))
+        for _ in range(50):
+            api._on_hotkey_pressed(sid)
+        await asyncio.sleep(0.02)
+        # One playback, one stats persist — re-fires were no-ops.
+        assert eng._sink.calls == 1
+        assert store.get(sid).play_count == 1
+        # Loop intact: finishing the clip replays (key still held).
+        eng._sink.finish.set()
+        assert await _pump_until(lambda: eng._sink.calls >= 2)
+        assert eng.is_playing(sid)
+        eng._sink.finish.set()
+        eng.stop(sid)
+
+    asyncio.run(main())
 
 
 def test_warmup_is_idempotent_and_safe_without_audio():
@@ -330,6 +536,7 @@ def test_hold_survives_autorepeat_storm_full_stack(qapp, tmp_path):
         qapp.processEvents()
         qapp.processEvents()
         print("DIAG storm delivered2:", got)
+        assert got == [sid]
         assert not eng.is_playing(sid)
         frozen = eng._sink.calls
         await asyncio.sleep(0.05)

@@ -141,7 +141,9 @@ class OverlayServer:
             ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             ssl_context.load_cert_chain(certfile=cert_path, keyfile=key_path)
 
-        runner = web.AppRunner(app)
+        # No aiohttp access log: OBS browser sources poll constantly and the
+        # per-request lines bury real diagnostics (and leak no value here).
+        runner = web.AppRunner(app, access_log=None)
         await runner.setup()
         site = web.TCPSite(runner, host=self._host, port=self._port, ssl_context=ssl_context)
         try:

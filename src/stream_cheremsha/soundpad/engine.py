@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import struct
 import time
 
 from PySide6.QtCore import QObject, Signal
@@ -11,6 +12,25 @@ from stream_cheremsha.soundpad.models import PlaybackMode, SoundEntry
 logger = logging.getLogger(__name__)
 
 _PREVIEW_PREFIX = "soundpad-preview:"
+
+
+def _silent_wav(seconds: float, rate: int = 44100) -> bytes:
+    frames = b"\x00\x00" * int(rate * seconds)
+    return (
+        b"RIFF"
+        + struct.pack("<I", 36 + len(frames))
+        + b"WAVEfmt "
+        + struct.pack("<IHHIIHH", 16, 1, 1, rate, rate * 2, 2, 16)
+        + b"data"
+        + struct.pack("<I", len(frames))
+        + frames
+    )
+
+
+# ~200 ms of digital silence: inaudible, but exercises the full SFX path
+# (temp file, first setSource, output stream start) so a hotkey press never
+# pays that one-time media-pipeline cost.
+_WARMUP_SILENCE_WAV = _silent_wav(0.2)
 
 
 class SoundpadAudioEngine(QObject):
@@ -36,6 +56,9 @@ class SoundpadAudioEngine(QObject):
         # Physically-held hotkeys per sound id (hold-to-play mode).
         self._held: set[str] = set()
         self._preview_tasks: set[asyncio.Task] = set()
+        self._warmup_tasks: set[asyncio.Task] = set()
+        self._warmed = False
+        self._ducking = False
 
     def set_hold(self, sound_id: str, held: bool) -> None:
         """Track whether a hold-mode hotkey is physically down."""
@@ -44,17 +67,47 @@ class SoundpadAudioEngine(QObject):
         else:
             self._held.discard(sound_id)
 
+    def is_held(self, sound_id: str) -> bool:
+        """True while the hold hotkey for ``sound_id`` is physically down."""
+        return sound_id in self._held
+
     def warmup(self) -> None:
         """Create the audio backend now, off the hotkey-press path.
 
         First-ever backend creation (FFmpeg plugin + players) costs 100ms+
-        and must not happen between key-press and audible output. Idempotent
-        and safe to call when audio is unavailable (logs and no-ops).
+        and must not happen between key-press and audible output. Also
+        primes the media pipeline (first setSource + output stream start)
+        with a short inaudible clip, so the first hotkey press never pays
+        that cost either. Idempotent and safe to call when audio is
+        unavailable (logs and no-ops).
         """
         try:
-            self._ensure_sink()
+            sink = self._ensure_sink()
         except (RuntimeError, OSError) as e:
             logger.debug("soundpad sink warmup skipped: %s", e)
+            return
+        if self._warmed:
+            return
+        self._warmed = True
+        play = getattr(sink, "play_mp3_parallel_with_volume", None)
+        if not callable(play) or not _loop_running():
+            return
+        try:
+            t = asyncio.get_running_loop().create_task(
+                self._warmup_play(sink, play), name="soundpad-warmup"
+            )
+        except RuntimeError:
+            return
+        self._warmup_tasks.add(t)
+        t.add_done_callback(self._warmup_tasks.discard)
+
+    async def _warmup_play(self, sink, play) -> None:
+        try:
+            await play(_WARMUP_SILENCE_WAV, 1.0, sfx_key="soundpad:__:warmup")
+        except asyncio.CancelledError:
+            raise
+        except (RuntimeError, OSError, ValueError) as e:
+            logger.debug("soundpad warmup play skipped: %s", e)
 
     def _spawn_run(self, entry: SoundEntry, data: bytes, vol: float) -> None:
         t = asyncio.get_running_loop().create_task(self._run(entry, bytes(data), vol))
@@ -141,16 +194,38 @@ class SoundpadAudioEngine(QObject):
         return True, 0.0
 
     def play(self, entry: SoundEntry, audio_bytes: bytes) -> str:
+        result = self._play_impl(entry, audio_bytes)
+        logger.info(
+            "soundpad play: id=%s mode=%s -> %s",
+            entry.id,
+            entry.playback_mode,
+            result,
+        )
+        return result
+
+    def _play_impl(self, entry: SoundEntry, audio_bytes: bytes) -> str:
         if not entry.enabled or not bytes(audio_bytes or b""):
             return "BLOCKED"
-        ok, _wait = self.can_play(entry)
-        if not ok:
-            return "COOLDOWN"
         mode = (
             entry.playback_mode
             if isinstance(entry.playback_mode, PlaybackMode)
             else PlaybackMode.RESTART
         )
+        if mode == PlaybackMode.HOLD:
+            if entry.id in self._playing:
+                # Hold loop already active: the engine repeats itself while the
+                # key is held (see _run). Re-triggering must not re-emit
+                # started/ducking or spawn a redundant task — X11 auto-repeat
+                # re-fires a held hotkey ~30x/sec.
+                return "PLAYING"
+            # Push-to-talk must start instantly: never gate the initial press
+            # on cooldown (a configured 1-2 s cooldown otherwise delays
+            # audible output by seconds while the key is held; the repeat
+            # loop already bypasses cooldown for continuity).
+        else:
+            ok, _wait = self.can_play(entry)
+            if not ok:
+                return "COOLDOWN"
         if mode == PlaybackMode.QUEUE and entry.id in self._playing:
             self._queues.setdefault(entry.id, []).append((entry, bytes(audio_bytes)))
             return "QUEUED"
@@ -159,7 +234,7 @@ class SoundpadAudioEngine(QObject):
         self._last_start[entry.id] = time.monotonic()
         self._playing.add(entry.id)
         self.playbackStarted.emit(entry.id)
-        self.duckingChanged.emit(True)
+        self._set_ducking(True)
         vol = max(0.0, min(1.0, float(entry.volume) * float(self._global_volume)))
         if _loop_running():
             self._spawn_run(entry, bytes(audio_bytes), vol)
@@ -245,10 +320,14 @@ class SoundpadAudioEngine(QObject):
 
     def stop_all(self) -> None:
         self.stop_preview()
+        for t in list(self._warmup_tasks):
+            if not t.done():
+                t.cancel()
         self._queues.clear()
         for sid in sorted(set(self._playing) | set(self._play_tasks)):
             self.stop(sid)
         self._held.clear()
+        self._set_ducking(False)
 
     async def _run(self, entry: SoundEntry, data: bytes, vol: float) -> None:
         try:
@@ -285,11 +364,19 @@ class SoundpadAudioEngine(QObject):
             else:
                 self._finish(entry.id)
 
+    def _set_ducking(self, active: bool) -> None:
+        """Emit duckingChanged only on actual state changes: overlapping
+        sounds (or re-triggers) must not re-apply the music dip per play."""
+        if active == self._ducking:
+            return
+        self._ducking = active
+        self.duckingChanged.emit(active)
+
     def _finish(self, sound_id: str) -> None:
         self._playing.discard(sound_id)
         self.playbackFinished.emit(sound_id)
         if not self._playing:
-            self.duckingChanged.emit(False)
+            self._set_ducking(False)
 
 
 def _loop_running() -> bool:

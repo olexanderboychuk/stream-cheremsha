@@ -2367,7 +2367,12 @@ class MainWindow(FramelessWindow):
         if api is not None:
             return api
         from stream_cheremsha.soundpad.engine import SoundpadAudioEngine
-        from stream_cheremsha.soundpad.hotkeys import GlobalHotkeyManager, PynputHotkeyBackend
+        from stream_cheremsha.soundpad.hotkeys import (
+            FakeHotkeyBackend,
+            GlobalHotkeyManager,
+            PynputHotkeyBackend,
+            XKeyGrabBackend,
+        )
         from stream_cheremsha.soundpad.store import SoundpadStore
         from stream_cheremsha.ui.soundpad_qml_api import SoundpadQmlApi
 
@@ -2376,13 +2381,43 @@ class MainWindow(FramelessWindow):
         engine.set_global_volume(store.global_volume())
         engine.set_monitor(store.monitor())
         engine.set_stream_out(store.stream_out())
-        try:
-            backend = PynputHotkeyBackend(on_fire=lambda _c: None, parent=self)
-        except RuntimeError:
-            from stream_cheremsha.soundpad.hotkeys import FakeHotkeyBackend
-
-            backend = FakeHotkeyBackend()
-        hotkeys = GlobalHotkeyManager(backend=backend, parent=self)
+        # Hotkeys: XGrabKey passive grabs first (server-side delivery, immune
+        # to XRecord stream stalls), pynput RECORD per-combo fallback, fake
+        # last. F24 probe: valid token, virtually never a real sound hotkey;
+        # grab validates X availability (ensure_x_authority + import).
+        primary = None
+        fallback = None
+        names: list[str] = []
+        xgrab = XKeyGrabBackend(parent=self)
+        if xgrab.grab("F24"):
+            xgrab.release("F24")
+            primary = xgrab
+            names.append("xgrab (X11)")
+        else:
+            try:
+                xgrab.stop()
+            except (RuntimeError, OSError):
+                pass
+        pynput_be = PynputHotkeyBackend(on_fire=lambda _c: None, parent=self)
+        if pynput_be.grab("F24"):
+            pynput_be.release("F24")
+            if primary is None:
+                primary = pynput_be
+            else:
+                fallback = pynput_be
+            # Transport differs by OS (X11 RECORD on Linux, Win32/Quartz
+            # hooks elsewhere); label it truthfully.
+            names.append("pynput (X11)" if sys.platform.startswith("linux") else "pynput")
+        else:
+            try:
+                pynput_be.stop()
+            except (RuntimeError, OSError):
+                pass
+        if primary is None:
+            primary = FakeHotkeyBackend()
+            names.append("fake")
+        logger.info("soundpad hotkey backend: %s", "+".join(names))
+        hotkeys = GlobalHotkeyManager(backend=primary, fallback_backend=fallback, parent=self)
         for e in store.list_all():
             if e.hotkey:
                 hotkeys.register_hotkey(e.id, e.hotkey)
@@ -2408,10 +2443,18 @@ class MainWindow(FramelessWindow):
         # Warm the audio backend after first paint: first-ever backend
         # creation costs 100ms+ and must not sit between hotkey-press
         # and audible output. Deferred so tab navigation stays instant.
+        # Preload hotkey audio bytes too, so the first physical press never
+        # pays file-I/O on the GUI thread.
         try:
             QTimer.singleShot(0, engine.warmup)
+            QTimer.singleShot(0, api.preloadHotkeyAudio)
         except RuntimeError:
             pass
+        # Build marker: proves which hold semantics the running app has.
+        logger.info(
+            "soundpad ready: hold=press-restart+loop/release-cut, hotkeys=%d",
+            len(hotkeys.list_hotkeys()),
+        )
         return api
 
     def _on_soundpad_ducking(self, active: bool) -> None:
