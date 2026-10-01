@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.24.2] - 2026-10-02
+
+### Changed
+
+- Widget gallery: removed placeholder cards for widget types with no instances. The gallery now lists only user-created widget instances; an empty gallery shows a localized "No widgets yet" hint with a pointer to the create tile.
+- Gallery stats now count only stored instances (no more phantom "active" placeholders for unused types).
+
 ## [0.24.1] - 2026-10-01
 
 ### Fixed

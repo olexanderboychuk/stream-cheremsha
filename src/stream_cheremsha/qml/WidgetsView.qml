@@ -236,11 +236,11 @@ Item {
         return {type_id: typeId, name: typeId, description: "", icon: "📦", platforms: ["all"]};
     }
     function galleryCards() {
-        // One card per widget INSTANCE (user-created included) +
-        // one "needs setup" card per type that has zero instances.
+        // One card per widget INSTANCE only. A type with no instances renders
+        // NO placeholder card: the list starts empty and users add widgets via
+        // the "Create new widget" tile (openCreateModal).
         var q = (root.gallerySearch || "").toLowerCase().trim();
         var out = [];
-        var seen = {};
         var insts = root.widgetInstanceList || [];
         for (var i = 0; i < insts.length; ++i) {
             var inst = insts[i];
@@ -251,23 +251,10 @@ Item {
                     + " " + String(t.description || "") + " " + String(inst.type_id || "")).toLowerCase();
                 if (hay.indexOf(q) < 0) continue;
             }
-            seen[inst.type_id] = true;
             out.push({instance: inst, wtype: t});
         }
-        var types = root.widgetTypeList || [];
-        for (var j = 0; j < types.length; ++j) {
-            var t2 = types[j];
-            if (seen[t2.type_id]) continue;
-            if (!root.galleryMatchesCategory(t2, root.galleryCategory)) continue;
-            if (q !== "") {
-                var hay2 = (String(t2.name || "") + " " + String(t2.description || "") + " " + String(t2.type_id || "")).toLowerCase();
-                if (hay2.indexOf(q) < 0) continue;
-            }
-            out.push({instance: null, wtype: t2});
-        }
         var rank = function(c) {
-            if (!c.instance) return 2;
-            return c.instance.enabled ? 0 : 1;
+            return c.instance && c.instance.enabled ? 0 : 1;
         };
         out.sort(function(a, b) {
             if (root.gallerySort === 1) {
@@ -471,27 +458,18 @@ Item {
             Text { text: "64%"; color: root.muted; font.pixelSize: 9; Layout.fillWidth: true; Layout.alignment: Qt.AlignVCenter; horizontalAlignment: Text.AlignRight }
         }
     }
-    // Counts follow galleryCards(): every stored instance is a card, plus one active
-    // fallback card for each type that has no stored instances.
+    // Counts follow galleryCards(): only stored instances count. A type with no
+    // instances renders no card and adds nothing to the stats.
     function galleryStats(cat) {
         var out = {total: 0, active: 0, disabled: 0};
         var instances = root.widgetInstanceList || [];
-        var seen = {};
         for (var i = 0; i < instances.length; ++i) {
             var inst = instances[i];
             var instType = root.galleryTypeById(inst.type_id);
             if (!root.galleryMatchesCategory(instType, cat)) continue;
             ++out.total;
-            seen[inst.type_id] = true;
             if (inst.enabled) ++out.active;
             else ++out.disabled;
-        }
-        var types = root.widgetTypeList || [];
-        for (var j = 0; j < types.length; ++j) {
-            var type = types[j];
-            if (seen[type.type_id] || !root.galleryMatchesCategory(type, cat)) continue;
-            ++out.total;
-            ++out.active;
         }
         return out;
     }
@@ -3256,7 +3234,9 @@ Item {
                     Text {
                         Layout.fillWidth: true
                         visible: root.galleryFilteredTypes().length === 0
-                        text: root.loc("widgets.gallery.empty")
+                        text: (root.widgetInstanceList || []).length === 0
+                            ? root.loc("widgets.gallery.no_widgets_yet")
+                            : root.loc("widgets.gallery.empty")
                         color: muted; font.pixelSize: 12
                         horizontalAlignment: Text.AlignHCenter
                     }

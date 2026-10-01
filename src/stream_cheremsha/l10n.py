@@ -3325,6 +3325,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "en": "Extend your stream capabilities",
     },
     "widgets.gallery.empty": {"uk": "Нічого не знайдено", "en": "Nothing found"},
+    "widgets.gallery.no_widgets_yet": {
+        "uk": "Ще немає віджетів. Натисніть «Створити новий віджет», щоб додати перший.",
+        "en": "No widgets yet. Click “Create new widget” to add your first.",
+    },
     "widgets.gallery.cat_tiktok": {"uk": "TikTok", "en": "TikTok"},
     "widgets.gallery.cat_twitch": {"uk": "Twitch", "en": "Twitch"},
     "widgets.gallery.cat_youtube": {"uk": "YouTube", "en": "YouTube"},
