@@ -198,6 +198,17 @@ Item {
     property string gallerySearch: ""
     property string galleryCategory: "all"
     property int gallerySort: 0
+    // "grid" | "list" — gallery density. Default "list"; persisted via
+    // api.galleryViewMode / api.setGalleryViewMode.
+    property string galleryViewMode: "list"
+    // Guards the initial restore: onGalleryViewModeChanged must not
+    // overwrite the saved value before it has been read.
+    property bool _galleryViewReady: false
+    onGalleryViewModeChanged: {
+        if (!root._galleryViewReady) return;
+        if ((root.galleryViewMode === "grid" || root.galleryViewMode === "list")
+                && typeof api !== "undefined" && api) api.setGalleryViewMode(root.galleryViewMode);
+    }
     // Platform categories allowed: all | tiktok | twitch | youtube | kick.
     // A widget may list several platforms; "all" = platform-agnostic (shown under every filter).
     function galleryPlatforms(t) {
@@ -2853,6 +2864,76 @@ Item {
                             onUserActivated: function(idx) { root.gallerySort = idx; }
                             onActivated: function(idx) { root.gallerySort = idx; }
                         }
+                        // ---- Gallery density toggle: grid | list ----
+                        Rectangle {
+                            Layout.preferredWidth: 76
+                            Layout.preferredHeight: 38
+                            radius: 9
+                            color: "#0d1320"
+                            border.width: 1
+                            border.color: cardEdge
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.margins: 3
+                                spacing: 2
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    radius: 6
+                                    color: root.galleryViewMode === "grid" ? "#1e1b4b" : "transparent"
+                                    border.width: 1
+                                    border.color: root.galleryViewMode === "grid" ? "#7c3aed" : "transparent"
+                                    Behavior on color { ColorAnimation { duration: 130 } }
+                                    Image {
+                                        anchors.centerIn: parent
+                                        width: 15; height: 15
+                                        source: Qt.resolvedUrl("../assets/icons/editor_grid.svg")
+                                        opacity: root.galleryViewMode === "grid" ? 1.0 : 0.55
+                                    }
+                                    ToolTip.visible: gridBtnMa.containsMouse
+                                    ToolTip.text: root.loc("widgets.gallery.view_grid")
+                                    ToolTip.delay: 600
+                                    MouseArea {
+                                        id: gridBtnMa
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.galleryViewMode = "grid"
+                                    }
+                                }
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    radius: 6
+                                    color: root.galleryViewMode === "list" ? "#1e1b4b" : "transparent"
+                                    border.width: 1
+                                    border.color: root.galleryViewMode === "list" ? "#7c3aed" : "transparent"
+                                    Behavior on color { ColorAnimation { duration: 130 } }
+                                    Column {
+                                        anchors.centerIn: parent
+                                        spacing: 3
+                                        Repeater {
+                                            model: 3
+                                            delegate: Rectangle {
+                                                width: 14; height: 2; radius: 1
+                                                color: root.galleryViewMode === "list" ? "#e8eaed" : "#8b95a5"
+                                                Behavior on color { ColorAnimation { duration: 130 } }
+                                            }
+                                        }
+                                    }
+                                    ToolTip.visible: listBtnMa.containsMouse
+                                    ToolTip.text: root.loc("widgets.gallery.view_list")
+                                    ToolTip.delay: 600
+                                    MouseArea {
+                                        id: listBtnMa
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.galleryViewMode = "list"
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     // ---- Widget instances data (no legacy list UI; gallery below is the only list) ----
@@ -2873,6 +2954,7 @@ Item {
                         Layout.fillHeight: true
                         Layout.preferredHeight: 420
                         Layout.minimumHeight: 200
+                        visible: root.galleryViewMode === "grid"
                         clip: true
                         contentWidth: availableWidth
                         ScrollBar.vertical.policy: ScrollBar.AsNeeded
@@ -3229,6 +3311,240 @@ Item {
                              MouseArea { id: createNewMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.openCreateModal() }
                          }
                     }
+                    }
+
+                    // ---- Gallery list: same model, row surface, same design language ----
+                    ScrollView {
+                        id: galleryListScroll
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        Layout.preferredHeight: 420
+                        Layout.minimumHeight: 200
+                        visible: root.galleryViewMode === "list"
+                        clip: true
+                        contentWidth: availableWidth
+                        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                        ColumnLayout {
+                            width: galleryListScroll.availableWidth
+                            spacing: 10
+
+                            Repeater {
+                                id: galleryListRepeater
+                                model: root.galleryFilteredTypes()
+                                delegate: CheremshaWidgetRow {
+                                    id: grow
+                                    required property var modelData
+                                    property var wtype: modelData.wtype
+                                    property var instance: modelData.instance
+                                    property var pageRoot: root
+                                    property string wstatus: modelData.instance
+                                        ? (modelData.instance.enabled ? "active" : "disabled")
+                                        : "active"
+                                    property bool _copied: false
+                                    property string dupText: root.loc("widgets.common.duplicate")
+                                    property string delText: root.loc("widgets.common.delete")
+                                    // Raise above neighbour rows while the dropdown is open.
+                                    z: rowMenu.visible ? 100 : 0
+                                    // Fallback widgets (no instance yet) render with defaults = active.
+                                    property bool cardOn: wstatus === "active"
+
+                                    Layout.fillWidth: true
+                                    implicitHeight: 72
+
+                                    title: ((instance && instance.name) || (wtype && (wtype.name || wtype.type_id))) || ""
+                                    description: (wtype && wtype.description) || ""
+                                    iconSource: Qt.resolvedUrl("../assets/" + ((wtype && wtype.icon_svg) || "icons/web_multichat.svg"))
+                                    accentColor: (wtype && wtype.accent) || "#8b5cf6"
+                                    statusText: cardOn ? root.loc("widgets.gallery.enabled") : root.loc("widgets.gallery.disabled")
+                                    statusColor: cardOn ? "#22c55e" : muted
+                                    statusDotColor: cardOn ? "#22c55e" : "#6b7280"
+                                    platformBadgeText: (root.galleryPlatforms(wtype).join(" · ") || "all")
+                                    platformBadgeColor: platBadgeColor()
+                                    copyButtonText: _copied ? root.loc("widgets.gallery.copied") : root.loc("widgets.gallery.copy_url")
+                                    openButtonText: root.loc("widgets.gallery.open")
+                                    showToggle: true
+                                    toggleOn: cardOn
+                                    toggleTipText: root.loc("widgets.gallery.toggle")
+                                    clickEnabled: true
+                                    onCopyClicked: {
+                                        var iid = grow.ensureInstId();
+                                        if (iid && typeof api !== "undefined" && api) api.copyWidgetInstanceUrl(iid);
+                                        grow._copied = true;
+                                        copiedTimer.restart();
+                                    }
+                                    onOpenClicked: {
+                                        var pid = grow.ensureInstId();
+                                        if (pid && typeof api !== "undefined" && api) api.openWidgetInstanceUrl(pid);
+                                    }
+                                    onToggleClicked: {
+                                        var tid = grow.ensureInstId();
+                                        if (tid && typeof api !== "undefined" && api) {
+                                            api.setWidgetInstanceEnabled(tid, !grow.cardOn);
+                                            grow.pageRoot.refreshWidgetInstances();
+                                        }
+                                    }
+                                    onMenuClicked: rowMenu.visible ? rowMenu.close() : rowMenu.open()
+                                    onCardClicked: {
+                                        if (rowMenu.visible) { rowMenu.close(); return; }
+                                        grow.openEditor();
+                                    }
+
+                                    function platBadgeColor() {
+                                        var plats = root.galleryPlatforms(wtype);
+                                        var first = (plats && plats.length) ? plats[0] : "all";
+                                        var m = {tiktok: "#67e8f9", twitch: "#a970ff", youtube: "#f87171", kick: "#6ee7a0"};
+                                        return m[first] || "#8b95a5";
+                                    }
+                                    function instId() {
+                                        if (instance && instance.id) return instance.id;
+                                        return firstInstId();
+                                    }
+                                    function firstInstId() {
+                                        var tid = (wtype && wtype.type_id) || "";
+                                        var lst = pageRoot.widgetInstanceList || [];
+                                        for (var i = 0; i < lst.length; ++i)
+                                            if (lst[i].type_id === tid) return lst[i].id;
+                                        return "";
+                                    }
+                                    function ensureInstId() {
+                                        if (instance && instance.id) return instance.id;
+                                        var existing = firstInstId();
+                                        if (existing) return existing;
+                                        if (typeof api === "undefined" || !api) return "";
+                                        var nid = api.createWidgetInstance(
+                                            (wtype && wtype.type_id) || "",
+                                            (wtype && wtype.name) || ((wtype && wtype.type_id) || ""));
+                                        pageRoot.refreshWidgetInstances();
+                                        return nid || "";
+                                    }
+                                    function openEditor() {
+                                        var eid = ensureInstId();
+                                        if (!eid) return;
+                                        var lst = pageRoot.widgetInstanceList || [];
+                                        for (var i = 0; i < lst.length; ++i) {
+                                            if (lst[i].id === eid) { pageRoot.editWidgetInstance(lst[i]); return; }
+                                        }
+                                    }
+                                    Timer {
+                                        id: copiedTimer
+                                        interval: 1500; repeat: false
+                                        onTriggered: grow._copied = false
+                                    }
+                                    // Inline dropdown (stays in delegate scope, unlike Popup
+                                    // which reparents to Overlay and loses the file scope).
+                                    // Anchors can't target the kebab (not a sibling), so
+                                    // place under it when opening.
+                                    Rectangle {
+                                        id: rowMenu
+                                        visible: false
+                                        width: 202
+                                        height: rowMenuCol.implicitHeight + 12
+                                        radius: 10; color: "#0d1320"
+                                        border.width: 1; border.color: "#2b3b55"
+                                        z: 50
+                                        function open() {
+                                            var p = grow.menuButton.mapToItem(grow, 0, 0);
+                                            x = p.x + grow.menuButton.width - width;
+                                            y = p.y + grow.menuButton.height + 4;
+                                            visible = true;
+                                        }
+                                        function close() { visible = false; }
+                                        function toggle() { visible = !visible; }
+                                        ColumnLayout {
+                                            id: rowMenuCol
+                                            anchors.fill: parent
+                                            anchors.margins: 6
+                                            spacing: 2
+                                            Rectangle {
+                                                Layout.fillWidth: true; implicitHeight: 34; radius: 8
+                                                color: dupMa.pressed ? "#253d62" : (dupMa.containsMouse ? "#1d2f4d" : "transparent")
+                                                Behavior on color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                                                RowLayout {
+                                                    anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10
+                                                    spacing: 8
+                                                    Image { source: Qt.resolvedUrl("../assets/icons/web_copy.svg"); Layout.preferredWidth: 14; Layout.preferredHeight: 14; Layout.alignment: Qt.AlignVCenter }
+                                                    Text { text: grow.dupText; color: ink; font.pixelSize: 12; Layout.fillWidth: true }
+                                                }
+                                                MouseArea {
+                                                    id: dupMa
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        var diid = grow.ensureInstId();
+                                                        if (diid && typeof api !== "undefined" && api) api.duplicateWidgetInstance(diid);
+                                                        grow.pageRoot.refreshWidgetInstances();
+                                                        rowMenu.close();
+                                                    }
+                                                }
+                                            }
+                                            Rectangle {
+                                                // Fallback widgets have nothing stored to delete yet.
+                                                visible: grow.instance && grow.instance.id
+                                                Layout.fillWidth: true; implicitHeight: 34; radius: 8
+                                                color: delMa.pressed ? "#541515" : (delMa.containsMouse ? "#3b1111" : "transparent")
+                                                Behavior on color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                                                RowLayout {
+                                                    anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10
+                                                    spacing: 8
+                                                    Image { source: Qt.resolvedUrl("../assets/icons/web_trash.svg"); Layout.preferredWidth: 14; Layout.preferredHeight: 14; Layout.alignment: Qt.AlignVCenter }
+                                                    Text { text: grow.delText; color: "#ef4444"; font.pixelSize: 12; Layout.fillWidth: true }
+                                                }
+                                                MouseArea {
+                                                    id: delMa
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        var did = grow.instId();
+                                                        if (did && typeof api !== "undefined" && api) {
+                                                            api.deleteWidgetInstance(did);
+                                                            if (grow.pageRoot.editingInstanceId === did) grow.pageRoot.clearEditingInstance();
+                                                            grow.pageRoot.refreshWidgetInstances();
+                                                        }
+                                                        rowMenu.close();
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Compact create entry for list density (same tile language).
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 64
+                                radius: 14
+                                property bool hovered: createNewRowMa.containsMouse
+                                color: hovered ? "#101827" : "transparent"
+                                border.width: 1
+                                border.color: hovered ? "#7c3aed" : "#334155"
+                                Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                                Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 16
+                                    anchors.rightMargin: 16
+                                    spacing: 12
+                                    Image {
+                                        source: Qt.resolvedUrl("../assets/icons/web_plus.svg")
+                                        Layout.preferredWidth: 20
+                                        Layout.preferredHeight: 20
+                                        Layout.alignment: Qt.AlignVCenter
+                                    }
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        Layout.alignment: Qt.AlignVCenter
+                                        spacing: 2
+                                        Text { text: root.loc("widgets.gallery.create_new"); color: ink; font.pixelSize: 13; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true }
+                                        Text { text: root.loc("widgets.gallery.create_new_sub"); color: muted; font.pixelSize: 11; elide: Text.ElideRight; Layout.fillWidth: true }
+                                    }
+                                }
+                                MouseArea { id: createNewRowMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.openCreateModal() }
+                            }
+                        }
                     }
 
                     Text {
@@ -5573,5 +5889,16 @@ Item {
                 }
             }
         }
+    }
+
+    // ---- Gallery density restore (persisted across restarts) ----
+    Component.onCompleted: {
+        try {
+            if (typeof api !== "undefined" && api && api.galleryViewMode) {
+                var m = api.galleryViewMode();
+                if (m === "grid" || m === "list") root.galleryViewMode = m;
+            }
+        } catch (e) { console.warn("WidgetsView: gallery view-mode restore failed:", e); }
+        root._galleryViewReady = true;
     }
 }

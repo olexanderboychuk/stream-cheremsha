@@ -6,7 +6,7 @@ import time
 from typing import Any, cast
 from urllib.parse import quote
 
-from PySide6.QtCore import Property, QObject, QUrl, Signal, Slot
+from PySide6.QtCore import Property, QObject, QSettings, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices, QFontDatabase, QGuiApplication
 from PySide6.QtQml import QJSValue
 
@@ -142,6 +142,13 @@ _FONT_FALLBACK_NO_GUI_APP = sorted(
     {"Segoe UI", "Arial", "Tahoma", "Consolas", "Verdana"},
     key=str.casefold,
 )
+
+_GALLERY_VIEW_MODE_KEY = "widgets/gallery_view_mode"
+
+
+def _gallery_view_mode_settings() -> QSettings:
+    return QSettings("stream-cheremsha", "cheremsha")
+
 
 _LOG = logging.getLogger(__name__)
 
@@ -2833,6 +2840,26 @@ class WidgetsQmlApi(QObject):
             for x in list_instances()
         ]
         return json.dumps(items, ensure_ascii=False)
+
+    @Slot(result=str)
+    def galleryViewMode(self) -> str:
+        """Gallery density persisted across restarts ("grid" | "list", default "list")."""
+        try:
+            raw = _gallery_view_mode_settings().value(_GALLERY_VIEW_MODE_KEY, "list", str)
+            v = str(raw or "list")
+        except (TypeError, ValueError):
+            return "list"
+        v = v.strip().lower()
+        return v if v in ("grid", "list") else "list"
+
+    @Slot(str)
+    def setGalleryViewMode(self, mode: str) -> None:
+        v = str(mode or "").strip().lower()
+        if v not in ("grid", "list"):
+            return
+        s = _gallery_view_mode_settings()
+        s.setValue(_GALLERY_VIEW_MODE_KEY, v)
+        s.sync()
 
     @Slot(str, str, result=str)
     def createWidgetInstance(self, type_id: str, name: str) -> str:

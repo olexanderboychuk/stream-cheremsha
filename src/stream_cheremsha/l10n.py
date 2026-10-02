@@ -3057,9 +3057,15 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     },
     "widgets.battle.countdown": {"uk": "Зворотний відлік", "en": "Countdown"},
     "widgets.battle.auto_start": {"uk": "Автостарт", "en": "Auto start"},
-    "widgets.battle.auto_threshold": {"uk": "Діамантів для автостарту", "en": "Diamonds to auto-start"},
+    "widgets.battle.auto_threshold": {
+        "uk": "Діамантів для автостарту",
+        "en": "Diamonds to auto-start",
+    },
     "widgets.battle.auto_window": {"uk": "Вікно автостарту (с)", "en": "Auto-start window (sec)"},
-    "widgets.battle.auto_reset": {"uk": "Автоскидання після фіналу", "en": "Auto-reset after finish"},
+    "widgets.battle.auto_reset": {
+        "uk": "Автоскидання після фіналу",
+        "en": "Auto-reset after finish",
+    },
     "widgets.battle.section_appearance": {"uk": "Вигляд", "en": "Appearance"},
     "widgets.battle.desc_appearance": {
         "uk": "Оформлення та масштаб.",
@@ -3077,7 +3083,10 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     },
     "widgets.battle.gift_multiplier": {"uk": "Множник балів", "en": "Score multiplier"},
     "widgets.battle.combo_enabled": {"uk": "Комбо-серія", "en": "Combo streak"},
-    "widgets.battle.combo_threshold": {"uk": "Подарунків для комбо", "en": "Gifts to trigger combo"},
+    "widgets.battle.combo_threshold": {
+        "uk": "Подарунків для комбо",
+        "en": "Gifts to trigger combo",
+    },
     "widgets.battle.comeback_enabled": {"uk": "Підсвітка камбеку", "en": "Comeback highlight"},
     "widgets.battle.final_push": {"uk": "Фінальний ривок (с)", "en": "Final push (sec)"},
     "widgets.battle.event_animations": {"uk": "Анімації подій", "en": "Event animations"},
@@ -3313,6 +3322,8 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "widgets.gallery.sort_name": {"uk": "За назвою", "en": "By name"},
     "widgets.gallery.sort_status": {"uk": "За статусом", "en": "By status"},
     "widgets.gallery.sort_platform": {"uk": "За платформою", "en": "By platform"},
+    "widgets.gallery.view_grid": {"uk": "Сітка", "en": "Grid"},
+    "widgets.gallery.view_list": {"uk": "Список", "en": "List"},
     "widgets.gallery.open": {"uk": "Відкрити", "en": "Open"},
     "widgets.gallery.copy_link": {"uk": "Скопіювати посилання", "en": "Copy link"},
     "widgets.gallery.copy_url": {"uk": "Копіювати URL", "en": "Copy URL"},

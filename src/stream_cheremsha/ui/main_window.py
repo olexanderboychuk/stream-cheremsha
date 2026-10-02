@@ -4010,9 +4010,7 @@ class MainWindow(FramelessWindow):
         from stream_cheremsha.updates.signature import verify_windows_signature
 
         try:
-            return verify_windows_signature(
-                exe_path, _UPDATES_EXPECTED_PUBLISHER_SUBJECT_CONTAINS
-            )
+            return verify_windows_signature(exe_path, _UPDATES_EXPECTED_PUBLISHER_SUBJECT_CONTAINS)
         except Exception:
             return False
 
