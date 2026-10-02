@@ -22,6 +22,7 @@ CheremshaModal 1.0 CheremshaModal.qml
 CheremshaColorPicker 1.0 CheremshaColorPicker.qml
 CheremshaKeycap 1.0 CheremshaKeycap.qml
 CheremshaSoundCard 1.0 CheremshaSoundCard.qml
+CheremshaSoundRow 1.0 CheremshaSoundRow.qml
 CheremshaPlayButton 1.0 CheremshaPlayButton.qml
 CheremshaCategoryChip 1.0 CheremshaCategoryChip.qml
 CheremshaToggle 1.0 CheremshaToggle.qml

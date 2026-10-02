@@ -332,6 +332,8 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
     "soundpad.menu_remove": {"uk": "Видалити", "en": "Delete"},
     "soundpad.pick_title": {"uk": "Оберіть аудіофайл", "en": "Select an audio file"},
     "soundpad.pick_filter_audio": {"uk": "Аудіо", "en": "Audio"},
+    "soundpad.view_grid": {"uk": "Сітка", "en": "Grid"},
+    "soundpad.view_list": {"uk": "Список", "en": "List"},
     # App chrome (QML + shell)
     "ui.app_header_title": {"uk": "Stream Cheremsha", "en": "Stream Cheremsha"},
     "ui.twitch_head": {"uk": "Twitch", "en": "Twitch"},

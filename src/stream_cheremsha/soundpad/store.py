@@ -23,6 +23,7 @@ _K_VOL = _GROUP + "global_volume"
 _K_MON = _GROUP + "monitor"
 _K_STREAM = _GROUP + "stream_out"
 _K_DEV = _GROUP + "output_device"
+_K_VIEW = _GROUP + "view_mode"
 
 
 def _entry_to_dict(e: SoundEntry) -> dict:
@@ -252,4 +253,18 @@ class SoundpadStore:
 
     def set_stream_out(self, b: bool) -> None:
         self._settings.setValue(_K_STREAM, bool(b))
+        self._settings.sync()
+
+    def view_mode(self) -> str:
+        try:
+            v = str(self._settings.value(_K_VIEW, "list", str) or "list").strip().lower()
+        except (TypeError, ValueError):
+            return "list"
+        return v if v in ("grid", "list") else "list"
+
+    def set_view_mode(self, v: str) -> None:
+        mode = str(v or "").strip().lower()
+        if mode not in ("grid", "list"):
+            return
+        self._settings.setValue(_K_VIEW, mode)
         self._settings.sync()

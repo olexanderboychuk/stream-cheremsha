@@ -2422,6 +2422,7 @@ class MainWindow(FramelessWindow):
                 hotkeys.register_hotkey(e.id, e.hotkey)
         api = SoundpadQmlApi(store=store, engine=engine, hotkeys=hotkeys, parent=self)
         api.set_locale(self._locale)
+        api.backfill_waveforms()
         self._soundpad_api = api
         self._soundpad_store = store
         self._soundpad_engine = engine

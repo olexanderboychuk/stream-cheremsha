@@ -164,6 +164,8 @@ _VIEW_STRING_KEYS = (
     "menu_edit",
     "menu_duplicate",
     "menu_remove",
+    "view_grid",
+    "view_list",
 )
 
 
@@ -194,7 +196,10 @@ def _make_fake_sp_api():
 
         @Slot()
         def globalStateJson(self):
-            return '{"volume": 0.78, "output_device": "", "monitor": false, "stream_out": false}'
+            return (
+                '{"volume": 0.78, "output_device": "", "monitor": false, '
+                '"stream_out": false, "view_mode": "list"}'
+            )
 
         @Slot()
         def outputDevices(self):

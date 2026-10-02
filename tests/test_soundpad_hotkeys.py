@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import os
 import struct
+import sys
 import time
 from pathlib import Path
+
+import pytest
 
 from PySide6.QtWidgets import QApplication
 
@@ -38,6 +41,8 @@ def _read_xauth(path: Path):
 
 
 def test_ensure_x_authority_repairs_stale_host_entry(tmp_path, monkeypatch):
+    if not sys.platform.startswith("linux"):
+        pytest.skip("X11 xauth self-heal is Linux-only")
     import socket
 
     from stream_cheremsha import x11_auth
@@ -189,6 +194,50 @@ def test_pynput_release_on_any_modifier_lift(qapp: QApplication):
     time.sleep(0.15)
     _pump()
     assert released == ["Ctrl+F9"]  # no duplicate
+    be.stop()
+
+
+def test_pynput_token_normalizes_win_left_right_modifiers(qapp: QApplication):
+    """Windows reports Ctrl/Alt/Shift as ctrl_l/ctrl_r etc.; combos are
+    stored canonical, so the token mapper must strip the side suffix."""
+    from pynput.keyboard import Key
+
+    from stream_cheremsha.soundpad.hotkeys import PynputHotkeyBackend
+
+    assert PynputHotkeyBackend._token(Key.ctrl_l) == "ctrl"
+    assert PynputHotkeyBackend._token(Key.ctrl_r) == "ctrl"
+    assert PynputHotkeyBackend._token(Key.alt_l) == "alt"
+    assert PynputHotkeyBackend._token(Key.shift_r) == "shift"
+
+    fired: list[str] = []
+    be = PynputHotkeyBackend(on_fire=fired.append)
+    be._combos["Ctrl+F9"] = frozenset({"ctrl", "f9"})
+    be._on_key_down(Key.ctrl_l)
+    be._on_key_down(Key.f9)
+    assert fired == ["Ctrl+F9"]
+    be.stop()
+
+
+def test_pynput_token_ctrl_held_digits_and_letters(qapp: QApplication):
+    """Windows cooks chars while Ctrl is held: digits arrive char=None,
+    letters as C0 controls (Ctrl+C -> '\\x03'). The vk fallback must still
+    yield the combo token (regression: Ctrl+1 / Ctrl+C never fired)."""
+    from pynput.keyboard import Key, KeyCode
+
+    from stream_cheremsha.soundpad.hotkeys import PynputHotkeyBackend
+
+    assert PynputHotkeyBackend._token(KeyCode(vk=49)) == "1"  # digit row, char=None
+    assert PynputHotkeyBackend._token(KeyCode(vk=67, char="\x03")) == "c"
+    assert PynputHotkeyBackend._token(KeyCode(vk=65, char="\x01")) == "a"
+    assert PynputHotkeyBackend._token(KeyCode.from_char("1")) == "1"
+    assert PynputHotkeyBackend._token(KeyCode.from_char("z")) == "z"
+
+    fired: list[str] = []
+    be = PynputHotkeyBackend(on_fire=fired.append)
+    be._combos["Ctrl+1"] = frozenset({"ctrl", "1"})
+    be._on_key_down(Key.ctrl_l)
+    be._on_key_down(KeyCode(vk=49))  # physical '1' with Ctrl held
+    assert fired == ["Ctrl+1"]
     be.stop()
 
 

@@ -31,6 +31,50 @@ _RELEASE_DEBOUNCE_SEC = 0.05
 _PRESS_STALE_SEC = 2.0
 
 
+# pynput reports left/right modifier variants per-OS (Key.ctrl_l/ctrl_r on
+# Windows, plain Key.ctrl elsewhere). Combos are stored with canonical names
+# ("ctrl"/"alt"/"shift"), so normalize here — otherwise modifier combos never
+# match on platforms that emit the suffixed variants (Windows hotkeys dead).
+def _normalize_key_name(name: str) -> str:
+    n = (name or "").lower()
+    for suffix in ("_l", "_r"):
+        if n.endswith(suffix):
+            n = n[: -len(suffix)]
+            break
+    if n in ("ctrl", "control"):
+        return "ctrl"
+    if n in ("alt", "alt_gr"):
+        return "alt"
+    if n == "shift":
+        return "shift"
+    return n
+
+
+def _token_from_vk(vk: int | None) -> str | None:
+    """Layout-independent token from a virtual key code.
+
+    While Ctrl/Alt is held, Windows cooks KeyCode chars: digits arrive with
+    ``char=None``, letters as C0 control chars (Ctrl+C -> ``'\\x03'``). The
+    vk still identifies the physical key, so map the layout-independent
+    ranges (digits, US letters, numpad, F-keys) back to combo tokens.
+    """
+    if vk is None:
+        return None
+    try:
+        vk = int(vk)
+    except (TypeError, ValueError):
+        return None
+    if 48 <= vk <= 57:  # '0'-'9' row
+        return chr(vk)
+    if 65 <= vk <= 90:  # A-Z (physical position, layout-independent)
+        return chr(vk).lower()
+    if 96 <= vk <= 105:  # numpad 0-9
+        return chr(vk - 48)
+    if 112 <= vk <= 135:  # F1-F24
+        return f"f{vk - 111}"
+    return None
+
+
 class HotkeyBackend(Protocol):
     def start(self) -> None: ...
 
@@ -264,10 +308,17 @@ class PynputHotkeyBackend(QObject):
         except ImportError:
             return None
         if isinstance(key, Key):
-            return key.name.lower()
+            return _normalize_key_name(key.name.lower())
         if isinstance(key, KeyCode):
-            c = (key.char or "").lower()
-            return c if len(c) == 1 else None
+            c = key.char or ""
+            if len(c) == 1 and c.isprintable():
+                return c.lower()
+            # Ctrl/Alt held: char is None (digits) or a C0 control char
+            # (letters, e.g. Ctrl+C -> '\x03' == 'c'). Fall back to the vk,
+            # which still identifies the physical key (see _token_from_vk).
+            if len(c) == 1 and 1 <= ord(c) <= 26:
+                return chr(ord(c) + 96)
+            return _token_from_vk(getattr(key, "vk", None))
         return None
 
 

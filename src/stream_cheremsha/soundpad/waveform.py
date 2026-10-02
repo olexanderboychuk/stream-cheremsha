@@ -5,9 +5,19 @@ import asyncio
 import logging
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def _windows_no_window_kwargs() -> dict:
+    """Windows: ffmpeg/ffprobe are console-subsystem; avoid console flash."""
+    if sys.platform.startswith("win"):
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        if flags:
+            return {"creationflags": flags}
+    return {}
 
 
 def probe_duration_sec(path: str | Path) -> float:
@@ -31,6 +41,7 @@ def probe_duration_sec(path: str | Path) -> float:
             capture_output=True,
             timeout=10,
             check=False,
+            **_windows_no_window_kwargs(),
         )
     except (OSError, subprocess.SubprocessError):
         return 0.0
@@ -77,6 +88,7 @@ def extract_waveform_peaks(path: str | Path, buckets: int = 64) -> list[float]:
             capture_output=True,
             timeout=20,
             check=False,
+            **_windows_no_window_kwargs(),
         )
     except (OSError, subprocess.SubprocessError) as e:
         logger.debug("waveform ffmpeg failed: %s", e)
@@ -100,12 +112,18 @@ def extract_waveform_peaks(path: str | Path, buckets: int = 64) -> list[float]:
         s0 = (total * i) // n
         s1 = max(s0 + 1, (total * (i + 1)) // n)
         chunk = samples[s0:s1]
-        m = 0
-        for v in chunk[:: max(1, len(chunk) // 200)]:
-            a = abs(int(v))
-            if a > m:
-                m = a
-        peaks.append(round(min(1.0, m / peak_max), 3))
+        # RMS (not max-peak): max-peak saturates at ~1.0 in every bucket for
+        # loud normalized clips, making all waveforms look identical.
+        # RMS reflects actual energy per bucket; sqrt compresses dynamics
+        # so quiet sections stay visible.
+        step = max(1, len(chunk) // 400)
+        acc = 0
+        cnt = 0
+        for v in chunk[::step]:
+            acc += int(v) * int(v)
+            cnt += 1
+        rms = (acc / cnt) ** 0.5 if cnt else 0.0
+        peaks.append(round(min(1.0, (rms / peak_max) ** 0.5), 3))
     return peaks
 
 

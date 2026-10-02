@@ -94,6 +94,8 @@ _VIEW_L10N_KEYS = (
     "menu_edit",
     "menu_duplicate",
     "menu_remove",
+    "view_grid",
+    "view_list",
 )
 
 
@@ -331,6 +333,49 @@ class SoundpadQmlApi(QObject):
         else:
             # No running loop (unit tests): compute inline.
             self._apply_metadata(sound_id, path)
+
+    def backfill_waveforms(self) -> None:
+        """Recompute peaks for entries stored with the old flat max-peak data.
+
+        The old extractor saturated every bucket at ~1.0 for loud clips, so
+        all cards looked identical. RMS peaks have real variance — entries
+        whose peaks are missing or near-flat are recomputed in the
+        background; a single emit refreshes the grid at the end.
+        """
+        stale: list[tuple[str, Path]] = []
+        for e in self._store.list_all():
+            pk = tuple(e.waveform_peaks or ())
+            flat = not pk or (max(pk) - min(pk)) < 0.02 if pk else True
+            if flat and Path(e.file_path).is_file():
+                stale.append((e.id, Path(e.file_path)))
+        if not stale:
+            return
+
+        async def _job() -> None:
+            changed = False
+            for sid, path in stale:
+                try:
+                    peaks, dur = await asyncio.to_thread(self._compute_metadata, path)
+                except (RuntimeError, OSError, ValueError):
+                    continue
+                cur = self._store.get(sid)
+                if cur is None or not peaks:
+                    continue
+                nxt = copy.deepcopy(cur)
+                nxt.waveform_peaks = tuple(peaks)
+                nxt.duration_sec = dur
+                if not self._store.upsert(nxt):
+                    changed = True
+            if changed:
+                self.soundsChanged.emit()
+
+        if _loop_running():
+            t = asyncio.get_running_loop().create_task(_job())
+            self._meta_tasks.add(t)
+            t.add_done_callback(lambda tt: self._meta_tasks.discard(tt))
+        else:
+            for sid, path in stale:
+                self._apply_metadata(sid, path)
 
     @Property("QVariantMap", notify=stringsChanged)
     def libraryStrings(self) -> dict[str, str]:  # noqa: ANN201 - PySide pattern
@@ -681,8 +726,13 @@ class SoundpadQmlApi(QObject):
             "output_device": str(self._engine.output_device() or ""),
             "monitor": bool(self._store.monitor()),
             "stream_out": bool(self._store.stream_out()),
+            "view_mode": str(self._store.view_mode()),
         }
         return json.dumps(state, ensure_ascii=False)
+
+    @Slot(str)
+    def setViewMode(self, mode: str) -> None:
+        self._store.set_view_mode(str(mode or ""))
 
     @Slot(result=str)
     def pickAudioFile(self) -> str:

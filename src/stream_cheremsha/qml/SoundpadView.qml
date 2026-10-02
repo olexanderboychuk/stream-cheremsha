@@ -5,7 +5,7 @@ import QtQuick.Layouts
 import components
 
 // SOUNDPAD — premium streamer performance console.
-// Composition: PageHeader / Toolbar / SoundGrid / NowPlayingBar.
+// Composition: PageHeader / Toolbar / SoundGrid+SoundList / NowPlayingBar.
 // Backend contract unchanged (spApi slots/signals + refresh() logic).
 Item {
     id: root
@@ -40,6 +40,11 @@ Item {
     property var categoryList: []
     property var _allItems: []
     property var _wasPlaying: ({})
+    // Waveform peaks bypass soundModel: ListModel converts JS arrays
+    // appended as role values into nested list-models (no .length), so
+    // every card fell back to the same placeholder. Plain JS lookup
+    // keeps real arrays.
+    property var _peaksById: ({})
 
     property string pendingFileUrl: ""
     property string addHotkeyDraft: ""
@@ -53,6 +58,17 @@ Item {
     property string addConflictOwner: ""
     property string addErrorMsg: ""
     property bool showLibraryModal: false
+    // "grid" | "list" — layout mode for the sound collection.
+    // Default "list"; persisted via spApi.setViewMode / globalStateJson.
+    property string viewMode: "list"
+    // Guards the initial restore: onViewModeChanged must not overwrite
+    // the saved value before Component.onCompleted has read it.
+    property bool _viewReady: false
+    onViewModeChanged: {
+        if (!root._viewReady) return;
+        if (root.viewMode === "grid" || root.viewMode === "list")
+            spApi.setViewMode(root.viewMode);
+    }
 
     property string relinkTargetId: ""
 
@@ -137,6 +153,12 @@ Item {
         root._allItems = [];
         try { root._allItems = JSON.parse(spApi.soundsJson()); } catch (err) { root._allItems = []; }
         soundModel.clear();
+        var peaksById = {};
+        for (var k = 0; k < root._allItems.length; ++k) {
+            var pk = root._allItems[k].waveform_peaks;
+            if (pk && pk.length > 0) peaksById[root._allItems[k].id] = pk;
+        }
+        root._peaksById = peaksById;
         var npId = "";
         for (var i = 0; i < root._allItems.length; ++i) {
             var it = root._allItems[i];
@@ -172,7 +194,11 @@ Item {
     function _flashCard(sid) {
         for (var i = 0; i < gridRepeater.count; ++i) {
             var item = gridRepeater.itemAt(i);
-            if (item && item.soundId === sid) { item.flashHotkey(); break; }
+            if (item && item.soundId === sid) { item.flashHotkey(); return; }
+        }
+        for (var j = 0; j < listRepeater.count; ++j) {
+            var row = listRepeater.itemAt(j);
+            if (row && row.soundId === sid) { row.flashHotkey(); return; }
         }
     }
 
@@ -180,6 +206,10 @@ Item {
         for (var i = 0; i < gridRepeater.count; ++i) {
             var item = gridRepeater.itemAt(i);
             if (item && item.soundId !== exceptId) item.menuOpen = false;
+        }
+        for (var j = 0; j < listRepeater.count; ++j) {
+            var row = listRepeater.itemAt(j);
+            if (row && row.soundId !== exceptId) row.menuOpen = false;
         }
     }
 
@@ -522,6 +552,78 @@ Item {
                 color: "#5b6472"
                 font.pixelSize: 12
             }
+            // ---- View mode toggle: grid | list (segmented, same chrome) ----
+            Rectangle {
+                Layout.preferredWidth: 72
+                Layout.preferredHeight: 32
+                radius: 9
+                color: root.fieldBg
+                border.width: 1
+                border.color: root.cardEdge
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 3
+                    spacing: 2
+                    // grid button
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        radius: 6
+                        color: root.viewMode === "grid" ? "#2a1f4d" : "transparent"
+                        border.width: 1
+                        border.color: root.viewMode === "grid" ? root.primaryPurple : "transparent"
+                        Behavior on color { ColorAnimation { duration: 130 } }
+                        Image {
+                            anchors.centerIn: parent
+                            width: 15; height: 15
+                            source: Qt.resolvedUrl("../assets/icons/editor_grid.svg")
+                            opacity: root.viewMode === "grid" ? 1.0 : 0.55
+                        }
+                        ToolTip.visible: gridBtnMa.containsMouse
+                        ToolTip.text: spApi.strings.view_grid || "Сітка"
+                        ToolTip.delay: 600
+                        MouseArea {
+                            id: gridBtnMa
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.viewMode = "grid"
+                        }
+                    }
+                    // list button (pure-QML glyph: 3 rows, same stroke language)
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        radius: 6
+                        color: root.viewMode === "list" ? "#2a1f4d" : "transparent"
+                        border.width: 1
+                        border.color: root.viewMode === "list" ? root.primaryPurple : "transparent"
+                        Behavior on color { ColorAnimation { duration: 130 } }
+                        Column {
+                            anchors.centerIn: parent
+                            spacing: 3
+                            Repeater {
+                                model: 3
+                                delegate: Rectangle {
+                                    width: 14; height: 2; radius: 1
+                                    color: root.viewMode === "list" ? "#e8ecf5" : "#7f8aa3"
+                                    Behavior on color { ColorAnimation { duration: 130 } }
+                                }
+                            }
+                        }
+                        ToolTip.visible: listBtnMa.containsMouse
+                        ToolTip.text: spApi.strings.view_list || "Список"
+                        ToolTip.delay: 600
+                        MouseArea {
+                            id: listBtnMa
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.viewMode = "list"
+                        }
+                    }
+                }
+            }
         }
 
         Item { Layout.preferredHeight: 16 }
@@ -541,7 +643,7 @@ Item {
 
                 CheremshaResponsiveCardGrid {
                     Layout.fillWidth: true
-                    visible: soundModel.count > 0
+                    visible: soundModel.count > 0 && root.viewMode === "grid"
                     columns: root.gridColumns()
                     columnSpacing: 16
                     rowSpacing: 16
@@ -556,7 +658,7 @@ Item {
                             soundId: model.id
                             soundName: model.name
                             category: model.category
-                            peaks: model.peaks
+                            peaks: (root._peaksById && root._peaksById[model.id]) || []
                             durationSec: model.durationSec
                             hotkey: model.hotkey
                             playing: model.playing
@@ -579,6 +681,51 @@ Item {
                             onRetryRequested: root.refresh()
                             onRelinkRequested: {
                                 root.relinkTargetId = sndCard.soundId;
+                                root.pickAndRelink();
+                            }
+                        }
+                    }
+                }
+
+                // ---- SoundList: same model, row surface, same design language ----
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    visible: soundModel.count > 0 && root.viewMode === "list"
+                    spacing: 10
+
+                    Repeater {
+                        id: listRepeater
+                        model: soundModel
+                        delegate: CheremshaSoundRow {
+                            id: sndRow
+                            Layout.fillWidth: true
+                            implicitHeight: 72
+                            soundId: model.id
+                            soundName: model.name
+                            category: model.category
+                            peaks: (root._peaksById && root._peaksById[model.id]) || []
+                            durationSec: model.durationSec
+                            hotkey: model.hotkey
+                            playing: model.playing
+                            broken: model.broken
+                            cooldownLeft: model.cooldownLeft
+                            progress: (model.id === root.nowPlayingId && root.npDuration > 0)
+                                       ? Math.min(1.0, root.npPosition / root.npDuration) : 0.0
+                            onPlayRequested: spApi.playSound(sndRow.soundId)
+                            onStopRequested: spApi.stopSound(sndRow.soundId)
+                            onHotkeyClicked: {
+                                root.hotkeyTargetId = sndRow.soundId;
+                                root.capturedCombo = "";
+                                root.conflictOwnerId = "";
+                                root.showHotkeyModal = true;
+                            }
+                            onEditRequested: root.openEditModal(sndRow.soundId)
+                            onDuplicateRequested: spApi.duplicateSound(sndRow.soundId)
+                            onRemoveRequested: spApi.removeSound(sndRow.soundId)
+                            onMenuOpened: root.closeOtherMenus(sndRow.soundId)
+                            onRetryRequested: root.refresh()
+                            onRelinkRequested: {
+                                root.relinkTargetId = sndRow.soundId;
                                 root.pickAndRelink();
                             }
                         }
@@ -1163,11 +1310,14 @@ Item {
         var st = null;
         try { st = JSON.parse(spApi.globalStateJson()); } catch (err) { st = null; }
         try { root.outputModel = JSON.parse(spApi.outputDevices()); } catch (err2) { root.outputModel = []; }
-        if (!st) return;
-        if (typeof st.volume === "number") root.globalVol = st.volume;
-        if (typeof st.output_device === "string" && st.output_device !== "") {
-            var idx = root.outputModel.indexOf(st.output_device);
-            if (idx >= 0) root.outputIndex = idx;
+        if (st) {
+            if (typeof st.volume === "number") root.globalVol = st.volume;
+            if (typeof st.output_device === "string" && st.output_device !== "") {
+                var idx = root.outputModel.indexOf(st.output_device);
+                if (idx >= 0) root.outputIndex = idx;
+            }
+            if (st.view_mode === "grid" || st.view_mode === "list") root.viewMode = st.view_mode;
         }
+        root._viewReady = true;
     }
 }
