@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.24.3] - 2026-10-02
+
+### Fixed
+
+- Windows Defender flagged `CheremshaUpdater.exe` as `Trojan:Win32/Wacatac.H!ml` (ML heuristic false positive). Three hardening changes to lower the score:
+  - Both shipped `.exe` files now embed a full Windows version resource (company, product, file/product version, description, copyright).
+  - Authenticode verification no longer spawns `powershell Get-AuthenticodeSignature`; signature + publisher checks run in-process via `WinVerifyTrust`/crypt32 (`updates/signature.py`).
+  - The updater builds as a Nuitka `--standalone` folder (`CheremshaUpdater.dist/`) instead of a `--onefile` self-extractor; the launcher stages and runs it from a temp copy outside the install dir.
+- Fixed a release version mismatch: `__init__.py` lagged `pyproject.toml` (`0.24.1` vs `0.24.2`); both are now `0.24.3` as CI requires.
+
 ## [0.24.2] - 2026-10-02
 
 ### Changed

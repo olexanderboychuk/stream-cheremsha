@@ -8,7 +8,6 @@ import os
 import secrets
 import shutil
 import sqlite3
-import subprocess
 import sys
 import threading
 import time
@@ -4005,31 +4004,16 @@ class MainWindow(FramelessWindow):
         self.close()
 
     def _verify_windows_installer_signature(self, exe_path: str) -> bool:
-        if not sys.platform.startswith("win"):
-            return True
-        escaped = exe_path.replace("'", "''")
-        ps = (
-            "$sig = Get-AuthenticodeSignature -FilePath "
-            + f"'{escaped}'"
-            + ";"
-            + "$ok = ($sig.Status -eq 'Valid');"
-            + "$sub = '';"
-            + "if ($sig.SignerCertificate -ne $null) { $sub = $sig.SignerCertificate.Subject }"
-            + ";"
-            + f"$pubOk = ($sub -like '*{_UPDATES_EXPECTED_PUBLISHER_SUBJECT_CONTAINS}*');"
-            + "if ($ok -and $pubOk) { exit 0 } else { exit 1 }"
-        )
+        # In-process WinVerifyTrust check (no powershell child process, which
+        # trips Defender ML heuristics for downloader-style apps).
+        from stream_cheremsha.updates.signature import verify_windows_signature
+
         try:
-            r = subprocess.run(
-                ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
-                capture_output=True,
-                text=True,
-                timeout=8,
-                check=False,
+            return verify_windows_signature(
+                exe_path, _UPDATES_EXPECTED_PUBLISHER_SUBJECT_CONTAINS
             )
-        except (OSError, subprocess.SubprocessError, ValueError):
+        except Exception:
             return False
-        return r.returncode == 0
 
     def _persist_telegram_token(self) -> None:
         vv = self._tg_token.text() or ""

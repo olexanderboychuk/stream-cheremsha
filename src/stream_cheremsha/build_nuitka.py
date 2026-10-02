@@ -18,6 +18,56 @@ _ENV_OVERLAY_CERTIFICATE = "STREAM_CHEREMSHA_OVERLAY_CERTIFICATE"
 _ENV_OVERLAY_PRIVATE_KEY = "STREAM_CHEREMSHA_OVERLAY_PRIVATE_KEY"
 _ENV_OVERLAY_PUBLIC_HOSTNAME = "STREAM_CHEREMSHA_OVERLAY_PUBLIC_HOSTNAME"
 
+# Windows version-resource metadata. Unsigned binaries with no company/product
+# strings score badly with Defender's ML heuristics (Wacatac.H!ml), so every
+# shipped .exe gets a complete version resource.
+_WINDOWS_COMPANY_NAME = "stream-cheremsha"
+_WINDOWS_COPYRIGHT = "stream-cheremsha"
+_WINDOWS_TRADEMARKS = "Cheremsha"
+
+
+def _app_version() -> str:
+    """Best-effort package version for stamping Windows binaries."""
+    try:
+        from importlib.metadata import version
+
+        return version("stream-cheremsha")
+    except Exception:
+        pass
+    try:
+        from stream_cheremsha import __version__ as pkg_version
+
+        return str(pkg_version)
+    except Exception:
+        return "0.0.0"
+
+
+def _normalize_windows_version(raw: str) -> str:
+    """Normalize an arbitrary version string to Nuitka's X.X.X.X form."""
+    parts: list[str] = []
+    for chunk in str(raw).strip().split("."):
+        digits = "".join(c for c in chunk if c.isdigit())
+        parts.append(digits or "0")
+    while len(parts) < 4:
+        parts.append("0")
+    return ".".join(parts[:4])
+
+
+def _windows_version_args(*, product_name: str, file_description: str) -> list[str]:
+    """Nuitka flags embedding a Windows version resource (no-op elsewhere)."""
+    if not sys.platform.startswith("win"):
+        return []
+    ver = _normalize_windows_version(_app_version())
+    return [
+        f"--company-name={_WINDOWS_COMPANY_NAME}",
+        f"--product-name={product_name}",
+        f"--file-version={ver}",
+        f"--product-version={ver}",
+        f"--file-description={file_description}",
+        f"--copyright={_WINDOWS_COPYRIGHT}",
+        f"--trademarks={_WINDOWS_TRADEMARKS}",
+    ]
+
 
 def _write_embedded_local(*, overlay_cert_path: str = "", overlay_key_path: str = "") -> bool:
     """Materialize build-time secrets for Nuitka to compile into the binary."""
@@ -242,6 +292,12 @@ def _nuitka_cmd(
             cmd.append("--windows-console-mode=disable")
         # Name the resulting executable after the app, not the entrypoint filename.
         cmd.append("--output-filename=cheremsha.exe")
+        cmd.extend(
+            _windows_version_args(
+                product_name="Cheremsha",
+                file_description="Cheremsha — live chat to Ukrainian TTS",
+            )
+        )
         ico = _resolve_windows_icon_ico()
         if ico is not None and ico.is_file():
             cmd.append(f"--windows-icon-from-ico={ico}")
@@ -255,7 +311,13 @@ def _nuitka_cmd(
 
 
 def _updater_nuitka_cmd(*, out_dir: Path, jobs: str) -> tuple[list[str], Path]:
-    """Build the small updater as an independent GUI one-file executable."""
+    """Build the small updater as a standalone folder (not one-file).
+
+    A Nuitka ``--onefile`` binary is a self-extracting bootstrapper, which is a
+    classic Defender ML-heuristic (Wacatac.H!ml) trigger. A ``--standalone``
+    folder has no extractor stub, so it scores lower. The dist folder is merged
+    next to the main app by :func:`main` and shipped recursively by NSIS.
+    """
     updater_out = out_dir / "updater"
     updater_out.mkdir(parents=True, exist_ok=True)
     assets_dir = _ROOT / "assets"
@@ -268,7 +330,7 @@ def _updater_nuitka_cmd(*, out_dir: Path, jobs: str) -> tuple[list[str], Path]:
         sys.executable,
         "-m",
         "nuitka",
-        "--onefile",
+        "--standalone",
         "--follow-imports",
         "--python-flag=isolated",
         "--python-flag=safe_path",
@@ -279,6 +341,12 @@ def _updater_nuitka_cmd(*, out_dir: Path, jobs: str) -> tuple[list[str], Path]:
         "--windows-console-mode=disable",
         "--assume-yes-for-downloads",
     ]
+    cmd.extend(
+        _windows_version_args(
+            product_name="Cheremsha Updater",
+            file_description="Cheremsha Updater",
+        )
+    )
     if jobs:
         cmd.append(f"--jobs={jobs}")
     if icon_ico.is_file():
@@ -298,7 +366,43 @@ def _updater_nuitka_cmd(*, out_dir: Path, jobs: str) -> tuple[list[str], Path]:
             ]
         )
     cmd.append(str((_ROOT / "updates" / "updater.py").resolve()))
-    return cmd, updater_out / "CheremshaUpdater.exe"
+    return cmd, updater_out
+
+
+def _find_updater_dist_exe(updater_out: Path) -> Path | None:
+    """Locate the built updater exe (standalone ``*.dist`` or legacy one-file)."""
+    direct = updater_out / "CheremshaUpdater.exe"
+    if direct.is_file():
+        return direct
+    candidates = sorted(
+        p
+        for p in updater_out.rglob("CheremshaUpdater.exe")
+        if p.is_file() and ".build" not in p.parts
+    )
+    if not candidates:
+        return None
+    for cand in candidates:
+        if cand.parent.suffix == ".dist":
+            return cand
+    return candidates[0]
+
+
+def _stage_updater_into_package(*, updater_out: Path, package_dir: Path) -> Path:
+    """Ship the updater next to the main app; return the staged exe path."""
+    updater_exe = _find_updater_dist_exe(updater_out)
+    if updater_exe is None:
+        raise SystemExit(f"Updater output not found under: {updater_out}")
+    dist_root = updater_exe.parent
+    if dist_root == updater_out:
+        # Legacy one-file layout: single self-contained binary.
+        shutil.copy2(updater_exe, package_dir / updater_exe.name)
+        return package_dir / updater_exe.name
+    # Standalone layout: ship the whole folder so Qt/DLL deps travel with the
+    # exe (NSIS copies INPUT_DIR recursively). Kept as a subfolder to avoid
+    # colliding with the main app's own dependency files.
+    target_dir = package_dir / "CheremshaUpdater.dist"
+    shutil.copytree(dist_root, target_dir, dirs_exist_ok=True)
+    return target_dir / updater_exe.name
 
 
 def _main_dist_dir(out_dir: Path) -> Path:
@@ -422,12 +526,10 @@ def main(argv: list[str] | None = None) -> None:
     try:
         _run(cmd)
         if sys.platform.startswith("win") and not ns.skip_updater:
-            updater_cmd, updater_exe = _updater_nuitka_cmd(out_dir=out, jobs=str(ns.jobs))
+            updater_cmd, updater_stage = _updater_nuitka_cmd(out_dir=out, jobs=str(ns.jobs))
             _run(updater_cmd)
-            if not updater_exe.is_file():
-                raise SystemExit(f"Updater output not found: {updater_exe}")
             package_dir = out if ns.onefile else _main_dist_dir(out)
-            shutil.copy2(updater_exe, package_dir / updater_exe.name)
+            _stage_updater_into_package(updater_out=updater_stage, package_dir=package_dir)
     finally:
         _remove_embedded_local(embedded_written)
 

@@ -13,6 +13,10 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 UPDATER_FILENAME = "CheremshaUpdater.exe"
+# Standalone Nuitka layout ships the updater as a folder (no self-extracting
+# one-file stub, which trips Defender ML heuristics). Legacy installs may still
+# carry the single-file build next to the main exe.
+UPDATER_DIST_DIRNAMES = ("CheremshaUpdater.dist", "updater.dist")
 _TEMP_ROOT_NAME = "CheremshaUpdater"
 _STALE_SECONDS = 7 * 24 * 60 * 60
 
@@ -27,6 +31,22 @@ def _cleanup_stale_updaters(root: Path, *, now: float | None = None) -> None:
                 shutil.rmtree(child)
         except OSError:
             logger.debug("Unable to remove stale updater directory: %s", child)
+
+
+def resolve_packaged_updater(app_dir: Path) -> tuple[Path, str] | None:
+    """Locate the packaged updater next to the installed app.
+
+    Returns ``(exe_path, kind)`` where kind is ``"file"`` (legacy one-file
+    binary) or ``"dist"`` (standalone folder). ``None`` when not packaged.
+    """
+    single = app_dir / UPDATER_FILENAME
+    if single.is_file():
+        return single, "file"
+    for dirname in UPDATER_DIST_DIRNAMES:
+        candidate = app_dir / dirname / UPDATER_FILENAME
+        if candidate.is_file():
+            return candidate, "dist"
+    return None
 
 
 def build_updater_args(
@@ -80,7 +100,6 @@ def start_updater(
     expected_publisher: str = "",
 ) -> subprocess.Popen[bytes]:
     """Start an independent updater, copying the production binary outside the install dir."""
-    source = app.parent / UPDATER_FILENAME
     temp_root = Path(tempfile.gettempdir()) / _TEMP_ROOT_NAME
     temp_root.mkdir(parents=True, exist_ok=True)
     _cleanup_stale_updaters(temp_root)
@@ -102,16 +121,24 @@ def start_updater(
         ready_file=ready_file,
     )
 
-    if source.is_file():
-        executable = run_dir / UPDATER_FILENAME
-        shutil.copy2(source, executable)
+    packaged = resolve_packaged_updater(app.parent)
+    staged_from_install_dir = packaged is not None
+    if packaged is not None:
+        source, kind = packaged
+        if kind == "dist":
+            staged_dist = run_dir / source.parent.name
+            shutil.copytree(source.parent, staged_dist)
+            executable = staged_dist / UPDATER_FILENAME
+        else:
+            executable = run_dir / UPDATER_FILENAME
+            shutil.copy2(source, executable)
         command = [str(executable), *args]
         cwd = run_dir
     elif app.name.lower() == "cheremsha.exe":
         shutil.rmtree(run_dir, ignore_errors=True)
-        raise FileNotFoundError(f"Packaged updater not found: {source}")
+        raise FileNotFoundError(f"Packaged updater not found under: {app.parent}")
     else:
-        # Development-only path; production builds always package the one-file updater.
+        # Development-only path; production builds always package the updater.
         command = [sys.executable, "-m", "stream_cheremsha.updates.updater", *args]
         cwd = run_dir
 
@@ -137,7 +164,7 @@ def start_updater(
         else:
             process = subprocess.Popen(command, cwd=str(cwd), close_fds=True)
     except (OSError, ValueError):
-        if source.is_file():
+        if staged_from_install_dir:
             shutil.rmtree(cwd, ignore_errors=True)
         raise
     deadline = time.monotonic() + 15.0

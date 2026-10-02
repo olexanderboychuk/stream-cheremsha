@@ -37,6 +37,7 @@ from stream_cheremsha.updates.downloader import (
     download_file,
     sha256_file,
 )
+from stream_cheremsha.updates.signature import verify_windows_signature as _verify_windows_signature
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +64,7 @@ _TEXT = {
             "Перевірте з’єднання з інтернетом і повторіть спробу."
         ),
         "verify_error": (
-            "Не вдалося перевірити оновлення.\n\n"
-            "Завантажений файл пошкоджений або недійсний."
+            "Не вдалося перевірити оновлення.\n\nЗавантажений файл пошкоджений або недійсний."
         ),
         "install_error": "Не вдалося встановити оновлення.\n\nПоточну версію не було видалено.",
         "duplicate": "Оновлення Cheremsha вже запущено.",
@@ -82,8 +82,7 @@ _TEXT = {
         "retry": "Retry",
         "close": "Close",
         "download_error": (
-            "Unable to download the update.\n\n"
-            "Please check your internet connection and try again."
+            "Unable to download the update.\n\nPlease check your internet connection and try again."
         ),
         "verify_error": (
             "Update verification failed.\n\n"
@@ -148,30 +147,6 @@ def _format_bytes(value: int) -> str:
             return f"{size:.0f} {unit}" if unit in {"B", "KB"} else f"{size:.1f} {unit}"
         size /= 1024
     return f"{size:.1f} GB"
-
-
-def _verify_windows_signature(path: Path, expected_publisher: str) -> bool:
-    if not sys.platform.startswith("win"):
-        return True
-    escaped_path = str(path).replace("'", "''")
-    escaped_publisher = expected_publisher.replace("'", "''")
-    script = (
-        f"$sig = Get-AuthenticodeSignature -FilePath '{escaped_path}';"
-        "$subject = '';"
-        "if ($sig.SignerCertificate -ne $null) { $subject = $sig.SignerCertificate.Subject };"
-        f"if ($sig.Status -eq 'Valid' -and $subject -like '*{escaped_publisher}*') "
-        "{ exit 0 } else { exit 1 }"
-    )
-    try:
-        result = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-            capture_output=True,
-            timeout=8,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError, ValueError):
-        return False
-    return result.returncode == 0
 
 
 def _windows_kernel32():  # noqa: ANN202
