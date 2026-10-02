@@ -143,6 +143,8 @@ def main() -> None:
     splash.setColor(Qt.GlobalColor.transparent)
     splash_qml = pkg_root / "qml" / "SplashScreen.qml"
     splash.setSource(QUrl.fromLocalFile(str(splash_qml)))
+    # Ensure QML has loaded before accessing rootObject.
+    app.processEvents()
     # Localize the initial loader text (QSettings persists ui/locale; default uk).
     try:
         from PySide6.QtCore import QSettings
@@ -184,12 +186,10 @@ def main() -> None:
         from stream_cheremsha.ui.main_window import MainWindow
 
         window = MainWindow()
+        # Keep the main window hidden until all secondary pages are warmed.
         # The first page (Connections QML) is loaded synchronously inside
-        # MainWindow.__init__, so by this point the window is coherent:
-        # sidebar rendered, first page ready. Show it behind the splash so it
-        # can paint/composite while secondary pages warm up.
-        window.show()
-        app.processEvents()
+        # MainWindow.__init__, but we do not show the window until the splash
+        # warm-up finishes to avoid displaying a half-constructed UI.
         asyncio.ensure_future(_warm_and_reveal(window))
 
     async def _warm_and_reveal(window) -> None:  # noqa: ANN001
@@ -197,16 +197,17 @@ def main() -> None:
 
         Uses already-hidden splash time to compile heavy QML pages once into
         the navigation cache (kept alive, never unloaded). Yields between
-        pages so the splash keeps rendering. The splash closes only after the
-        MainWindow is fully ready; all remaining startup work (overlay server,
-        music player, TTS backend, workers, telegram, autostart, updates) runs
-        deferred in run_startup() afterwards.
+        pages so the splash keeps rendering. The main window is shown only
+        after all secondary pages are fully lazy-loaded and the splash phase
+        completes; all remaining startup work runs deferred in run_startup()
+        afterwards.
         """
 
         def _set_splash_status(text: str, progress: float = -1.0) -> None:
             try:
                 root = splash.rootObject()
                 if root is not None:
+                    # status_cb receives already-translated text from MainWindow.tr
                     root.setProperty("statusText", text)
                     if progress >= 0:
                         root.setProperty("progress", float(progress))
@@ -221,10 +222,9 @@ def main() -> None:
             await window.warm_secondary_pages(status_cb=_set_splash_status)
         except Exception:
             logger.exception("QML warm-up failed; continuing with lazy loading")
-        # Show the fully-ready window underneath BEFORE closing the splash so
-        # the user never sees a half-constructed UI or a desktop flash. The
-        # yield lets the shown window paint through the normal event loop
-        # (never app.processEvents() here — this runs inside a task).
+
+        # Main window remains hidden until warm-up completes.
+        # Show the fully-ready window only after splash warm-up finishes.
         try:
             window.show()
         except RuntimeError:

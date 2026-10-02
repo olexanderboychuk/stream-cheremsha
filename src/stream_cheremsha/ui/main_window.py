@@ -1919,7 +1919,7 @@ class MainWindow(FramelessWindow):
         # Lightweight first-open placeholder for heavy QML pages: a static
         # centered label (no spinner, no animation, no CPU use). Shown only
         # while a never-loaded page compiles on the next loop iteration.
-        self._qml_loading_veil = QLabel(self.tr("splash.loading"), self._stack)
+        self._qml_loading_veil = QLabel(self._tr("splash.loading"), self._stack)
         self._qml_loading_veil.setObjectName("qmlLoadingVeil")
         self._qml_loading_veil.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._qml_loading_veil.setStyleSheet(
@@ -2645,7 +2645,7 @@ class MainWindow(FramelessWindow):
             return
         if status_cb is not None:
             try:
-                status_cb(self.tr("splash.overlay"), -1.0)
+                status_cb(self._tr("splash.overlay"), -1.0)
             except RuntimeError:
                 pass
         await asyncio.sleep(0)
@@ -2718,7 +2718,7 @@ class MainWindow(FramelessWindow):
                 continue
             if status_cb is not None:
                 try:
-                    status_cb(self.tr(key), pos / total)
+                    status_cb(self._tr(key), pos / total)
                 except RuntimeError:
                     pass
             # Let the splash paint the status (and settle the previous page)
@@ -2739,7 +2739,7 @@ class MainWindow(FramelessWindow):
             await asyncio.sleep(0)
             if status_cb is not None:
                 try:
-                    status_cb(self.tr(key), (pos + 1) / total)
+                    status_cb(self._tr(key), (pos + 1) / total)
                 except RuntimeError:
                     pass
 
