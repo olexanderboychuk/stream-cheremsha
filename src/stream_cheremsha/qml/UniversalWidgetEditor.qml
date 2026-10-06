@@ -26,6 +26,10 @@ Rectangle {
     signal copyRequested()
     signal settingChanged(string field, var value)
 
+    // Adaptive breakpoints driven by the editor root width.
+    readonly property bool narrowMode: root.width < 1100
+    readonly property bool twoColumnSections: root.width >= 1500
+
     component EditorButton: Button {
         id: buttonRoot
         property bool primary: false
@@ -147,11 +151,6 @@ Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
-            // Adaptive breakpoints driven by the editor root width (reliable at
-            // binding time, unlike nested ScrollView/Grid widths which start at 0
-            // and pin the layout to a single column forever).
-            readonly property bool narrowMode: root.width < 1100
-            readonly property bool twoColumnSections: root.width >= 1500
             GridLayout {
                 id: contentGrid
                 anchors.fill: parent

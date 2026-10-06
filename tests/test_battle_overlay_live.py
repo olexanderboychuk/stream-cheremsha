@@ -125,13 +125,12 @@ def test_round_dots_neutral_in_idle() -> None:
 
 
 def test_round_dots_clamp_current_round_to_last_slot() -> None:
-    """Decider rounds (state.round beyond needed wins, e.g. BO3 round 3 after
-    draws or 1-1) must still highlight a current dot — clamp to the last slot
+    """Decider rounds (state.round beyond total rounds, e.g. BO3 round 3 after
+    draws) must still highlight a current dot — clamp to the last slot
     instead of going out of range and leaving all dots neutral."""
     _, script = _render()
-    assert "const cur = Math.min(state.round || 1, need) - 1;" in script
-    assert "if (i === cur) a.className = 'active';" in script
-    assert "i === state.round - 1" not in script
+    assert "const cur = Math.min(state.round || 1, totalRounds) - 1;" in script
+    assert "if (inBattle && i === cur) {" in script
 
 
 def test_finished_without_winner_shows_draw_line() -> None:

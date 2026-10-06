@@ -117,6 +117,7 @@ Item {
         {type: "battle_royale", label: "Battle Royale", iconName: "web_swords.svg"},
         {type: "battle", label: "Battle", iconName: "web_swords.svg"},
         {type: "gift_rush", label: "Gift Rush", iconName: "gift.svg"},
+        {type: "balloon_hunter", label: "Balloon Hunter", iconName: "gift.svg"},
         {type: "stream_pet", label: "Stream Pet", iconName: "web_paw.svg"},
         {type: "community_world", label: "Community World", iconName: "web_globe.svg"},
         {type: "stream_goal", label: "Stream Goal", iconName: "web_target.svg"},
@@ -141,6 +142,7 @@ Item {
             case "battle_royale": return {w: 420, h: 280};
             case "battle": return {w: 640, h: 220};
             case "gift_rush": return {w: 1920, h: 1080};
+            case "balloon_hunter": return {w: 1920, h: 1080};
             case "stream_pet": return {w: 240, h: 240};
             case "community_world": return {w: 480, h: 320};
             case "stream_goal": return {w: 400, h: 160};
@@ -619,8 +621,10 @@ Item {
     function _systemFontOptions(current) {
         var fams = [];
         try {
-            if (typeof api !== "undefined" && api && typeof api.systemFontFamilies === "function")
-                fams = api.systemFontFamilies() || [];
+            if (typeof api !== "undefined" && api && typeof api.systemFontFamiliesJoined === "function") {
+                var joined = api.systemFontFamiliesJoined();
+                if (joined) fams = joined.split("\n");
+            }
         } catch (e) {}
         if (!fams.length) fams = ["system-ui", "Segoe UI", "Arial", "Verdana", "Tahoma"];
         var cur = String(current || "").trim();
@@ -651,12 +655,13 @@ Item {
 
         if (typeId === "chat") {
             general = [
+                c("Theme", "theme", "select", "classic", {options: ["classic", "inferno", "abyss", "imperial", "cyber", "frost", "bloodmoon"]}),
                 c("Twitch", "platform_twitch_enabled", "toggle", true),
                 c("YouTube", "platform_youtube_enabled", "toggle", true),
                 c("TikTok", "platform_tiktok_enabled", "toggle", true),
                 c("Kick", "platform_kick_enabled", "toggle", true),
                 c("Maximum messages", "max_items", "number", 12, {minimum: 1, maximum: 200}),
-                c("Font family", "font_family", "text", "Segoe UI"),
+                c("Font family", "font_family", "font", "Segoe UI"),
                 c("Font size", "font_size_px", "number", 18, {minimum: 8, maximum: 96}),
                 c("Show platform icons", "show_platform_icon", "toggle", true),
                 c("Fade after (seconds)", "fade_seconds", "number", 0, {minimum: 0, maximum: 600})
@@ -682,7 +687,7 @@ Item {
             ];
         } else if (typeId === "actions") {
             general = [
-                c("Font family", "font_family", "text", "Segoe UI"),
+                c("Font family", "font_family", "font", "Segoe UI"),
                 c("Font size", "font_size_px", "number", 40, {minimum: 8, maximum: 200}),
                 c("Line spacing", "font_line_spacing_px", "number", 0, {minimum: 0, maximum: 200}),
                 c("Letter spacing", "font_letter_spacing_px", "number", 0, {minimum: -200, maximum: 200}),
@@ -722,7 +727,7 @@ Item {
                 c("Layout mode", "layout_mode", "select", "combined", {options: ["combined", "per_platform"]}),
                 c("Twitch", "platform_twitch_enabled", "toggle", true), c("TikTok", "platform_tiktok_enabled", "toggle", true),
                 c("YouTube", "platform_youtube_enabled", "toggle", true), c("Kick", "platform_kick_enabled", "toggle", true),
-                c("Font family", "font_family", "text", "Segoe UI"), c("Font size", "font_size_px", "number", 36, {minimum: 8, maximum: 200}),
+                c("Font family", "font_family", "font", "Segoe UI"), c("Font size", "font_size_px", "number", 36, {minimum: 8, maximum: 200}),
                 c("Line spacing", "font_line_spacing_px", "number", 0, {minimum: 0, maximum: 200}), c("Letter spacing", "font_letter_spacing_px", "number", 0, {minimum: -200, maximum: 200}),
                 c("Icon size", "platform_icon_size_px", "number", 28, {minimum: 16, maximum: 128}), c("Icon/number gap", "icon_number_gap_px", "number", 12, {minimum: 0, maximum: 80})
             ];
@@ -736,7 +741,7 @@ Item {
         } else if (typeId === "top_likers" || typeId === "top_gifters") {
             var gifters = typeId === "top_gifters";
             general = [
-                c("Font family", "font_family", "text", "Segoe UI"), c("Font size", "font_size_px", "number", 22, {minimum: 8, maximum: 120}),
+                c("Font family", "font_family", "font", "Segoe UI"), c("Font size", "font_size_px", "number", 22, {minimum: 8, maximum: 120}),
                 c("Line spacing", "font_line_spacing_px", "number", 4, {minimum: 0, maximum: 80}), c("Letter spacing", "font_letter_spacing_px", "number", 0, {minimum: -20, maximum: 40}),
                 c("Show rank", "show_rank", "toggle", true), c(gifters ? "Show coins" : "Show likes", "show_likes", "toggle", true),
                 c("Right-to-left", "rtl", "toggle", false), c("Top 1 crown", "show_top1_crown", "toggle", true), c("Top 3 medal", "show_top3_medal", "toggle", true)
@@ -758,7 +763,7 @@ Item {
                 c("List scroll interval", "list_scroll_interval_sec", "number", 0, {minimum: 0, maximum: 600})
             ];
         } else if (typeId === "king_of_live") {
-            general = [c("Preset", "preset", "select", "imperial_gold", {options: ["imperial_gold", "cyber_king", "dark_overlord", "minimalist"]}), c("Title", "title_text", "text", "KING OF THE LIVE"), c("Danger threshold", "danger_threshold_pct", "number", 90, {minimum: 50, maximum: 99}), c("Show gap strip", "show_gap_strip", "toggle", true), c("Avatar size", "avatar_size_px", "number", 120, {minimum: 64, maximum: 220}), c("Font family", "font_family", "text", "Segoe UI")];
+            general = [c("Preset", "preset", "select", "imperial_gold", {options: ["imperial_gold", "cyber_king", "dark_overlord", "minimalist"]}), c("Title", "title_text", "text", "KING OF THE LIVE"), c("Danger threshold", "danger_threshold_pct", "number", 90, {minimum: 50, maximum: 99}), c("Show gap strip", "show_gap_strip", "toggle", true), c("Avatar size", "avatar_size_px", "number", 120, {minimum: 64, maximum: 220}), c("Font family", "font_family", "font", "Segoe UI")];
             appearance = [c("Backdrop blur", "backdrop_blur_px", "number", 0, {minimum: 0, maximum: 48}), c("Bubble blur", "backdrop_bubble_blur_px", "number", 0, {minimum: 0, maximum: 48}), c("Rays intensity", "rays_intensity_pct", "number", 130, {minimum: 40, maximum: 200}), c("Text scale", "text_scale_pct", "number", 100, {minimum: 70, maximum: 160})];
             animation = [c("Animation intensity", "anim_intensity_pct", "number", 100, {minimum: 25, maximum: 200}), c("Avatar motion", "anim_avatar_motion", "toggle", true), c("Crown float", "anim_crown_float", "toggle", true), c("Rays spin", "anim_rays_spin", "toggle", true), c("Coins fall", "anim_coins_fall", "toggle", true), c("Gem pulse", "anim_gem_pulse", "toggle", true), c("Title shimmer", "anim_title_shimmer", "toggle", true), c("Presence fireworks", "anim_fireworks_on_presence", "toggle", true)];
         } else if (typeId === "battle_royale") {
@@ -770,19 +775,23 @@ Item {
             appearance = [c(bt("theme"), "theme", "select", "cheremsha_neon", {options: ["cheremsha_neon", "cyber", "arcade", "minimal", "halloween", "anime", "glitch", "fantasy", "newyear"]}), c(bt("layout_mode"), "layout_mode", "select", "normal", {options: ["normal", "compact"]}), c(bt("show_avatars"), "show_avatars", "toggle", true), c(bt("scale"), "scale_percent", "number", 100, {minimum: 40, maximum: 250}), c(bt("font_size"), "base_font_size_px", "number", 14, {minimum: 10, maximum: 32})];
             behavior = [c(bt("gift_multiplier"), "gift_multiplier", "number", 1.0, {minimum: 0.1, maximum: 10}), c(bt("combo_enabled"), "combo_enabled", "toggle", true), c(bt("combo_threshold"), "combo_threshold", "number", 5, {minimum: 2, maximum: 20}), c(bt("comeback_enabled"), "comeback_enabled", "toggle", true), c(bt("final_push"), "final_push_seconds", "number", 10, {minimum: 3, maximum: 30})];
             animation = [c(bt("event_animations"), "event_animations", "toggle", true), c(bt("animation_intensity"), "animation_intensity_pct", "number", 100, {minimum: 25, maximum: 200}), c(bt("show_badges"), "show_event_badges", "toggle", true), c(bt("show_winner"), "show_winner_screen", "toggle", true)];
-            advanced = [c(bt("victory_display"), "victory_display_s", "number", 8, {minimum: 3, maximum: 15}), c(bt("hide_when_idle"), "hide_when_idle", "toggle", false), c(bt("font_family"), "font_family", "text", "Segoe UI"), c(bt("decision_layer"), "decision_layer_enabled", "toggle", false)];
+            advanced = [c(bt("victory_display"), "victory_display_s", "number", 8, {minimum: 3, maximum: 15}), c(bt("hide_when_idle"), "hide_when_idle", "toggle", false), c(bt("font_family"), "font_family", "font", "Segoe UI"), c(bt("decision_layer"), "decision_layer_enabled", "toggle", false)];
         } else if (typeId === "gift_rush") {
             general = [c("Theme", "theme", "select", "cheremsha", {options: ["cheremsha", "celebration", "arcade"]}), c("Target mode", "target_mode", "select", "center", {options: ["center", "left", "right", "random"]}), c("Scale", "scale_percent", "number", 100, {minimum: 40, maximum: 250}), c("Intensity", "intensity_percent", "number", 100, {minimum: 25, maximum: 200})];
             appearance = [c("Gift image", "show_gift_image", "toggle", true), c("Value popup", "show_value", "toggle", true), c("Sender line", "show_sender", "toggle", true), c("Combo counter", "show_combo", "toggle", true), c("Intensity badge", "show_intensity_badge", "toggle", true)];
             behavior = [c("Sound", "sound_enabled", "toggle", false), c("Event animations", "event_animations", "toggle", true), c("Coins", "effects_coins", "toggle", true), c("Sparks", "effects_sparks", "toggle", true), c("Impact ring", "effects_impact_ring", "toggle", true), c("Camera impact", "camera_impact", "toggle", true), c("Combo enabled", "combo_enabled", "toggle", true), c("Combo window (seconds)", "combo_window_s", "number", 10, {minimum: 3, maximum: 30}), c("Combo escalation", "combo_escalation", "toggle", true), c("Max simultaneous events", "max_simultaneous_events", "number", 10, {minimum: 4, maximum: 12}), c("Reduced effects", "reduced_effects", "toggle", false)];
+        } else if (typeId === "balloon_hunter") {
+            general = [c("Balloons on screen", "balloon_count", "number", 8, {minimum: 3, maximum: 20}), c("Spawn interval (ms)", "spawn_interval_ms", "number", 1500, {minimum: 500, maximum: 5000}), c("Float speed (%)", "float_speed_percent", "number", 100, {minimum: 40, maximum: 250}), c("Gold min coins", "gold_min_coins", "number", 50, {minimum: 1, maximum: 100000}), c("Epic min coins", "epic_min_coins", "number", 200, {minimum: 1, maximum: 100000})];
+            appearance = [c("Gift icon", "show_gift_icon", "toggle", true), c("Sender line", "show_sender", "toggle", true)];
+            behavior = [c("Sound", "sound_enabled", "toggle", false), c("Event animations", "event_animations", "toggle", true), c("Combo enabled", "combo_enabled", "toggle", true), c("Combo window (seconds)", "combo_window_s", "number", 10, {minimum: 3, maximum: 30}), c("Effect duration (ms)", "effect_duration_ms", "number", 800, {minimum: 300, maximum: 2000}), c("Max particles", "max_particles", "number", 200, {minimum: 50, maximum: 500}), c("Max simultaneous events", "max_simultaneous_events", "number", 10, {minimum: 4, maximum: 12}), c("Reduced effects", "reduced_effects", "toggle", false)];
         } else if (typeId === "stream_pet") {
             general = [c("Preset", "preset", "select", "classic_gold", {options: ["classic_gold", "cyber_purple", "cotton_candy", "forest_fox", "midnight_shadow", "sunset_shiba", "custom"]}), c("Enabled", "enabled", "toggle", true), c("Show energy bar", "show_energy_bar", "toggle", true), c("Evolution enabled", "evolution_enabled", "toggle", true), c("Pet scale", "pet_scale_pct", "number", 100, {minimum: 50, maximum: 200})];
             appearance = [c("Collar enabled", "collar_enabled", "toggle", true), c("Blush enabled", "blush_enabled", "toggle", true), c("Body color", "pet_body_color", "color", "#fbbf24"), c("Ear color", "pet_ear_color", "color", "#f59e0b"), c("Collar color", "collar_color", "color", "#ef4444"), c("Bubble color", "bubble_bg_color", "color", "#ffffff")];
             behavior = [c("Bubble max characters", "bubble_max_chars", "number", 110, {minimum: 40, maximum: 200}), c("VIP level 3 interval", "level3_vip_interval_sec", "number", 180, {minimum: 30, maximum: 3600}), c("Post-evolution energy", "post_evolution_energy", "number", 50, {minimum: 31, maximum: 100}), c("Disco duration", "disco_duration_ms", "number", 5000, {minimum: 1000, maximum: 30000}), c("Initial energy", "initial_energy", "number", 70, {minimum: 0, maximum: 100}), c("Decay per 2 minutes", "decay_per_2min", "number", 1, {minimum: 0, maximum: 10}), c("Sleep idle seconds", "sleep_idle_sec", "number", 900, {minimum: 60, maximum: 3600})];
-            advanced = [c("Bubble font", "bubble_font_family", "text", "Press Start 2P"), c("Bubble font size", "bubble_font_size_px", "number", 20, {minimum: 12, maximum: 48}), c("Pet sprite URL", "pet_sprite_url", "url", "")];
+            advanced = [c("Bubble font", "bubble_font_family", "font", "Press Start 2P"), c("Bubble font size", "bubble_font_size_px", "number", 20, {minimum: 12, maximum: 48}), c("Pet sprite URL", "pet_sprite_url", "url", "")];
         } else if (typeId === "community_world") {
             general = [c("Enabled", "enabled", "toggle", true), c("Quiet mode", "quiet_mode", "toggle", false), c("Theme", "theme", "select", "ukrainian", {options: ["pixel", "fantasy", "cyber", "ukrainian"]}), c("Layout", "layout_mode", "select", "full", {options: ["full", "compact"]})];
-            appearance = [c("Scale", "scale_pct", "number", 100, {minimum: 40, maximum: 200}), c("Font size", "font_size_px", "number", 16, {minimum: 8, maximum: 120}), c("Font family", "font_family", "text", "Segoe UI"), c("Show level", "show_level", "toggle", true), c("Show quests", "show_quests", "toggle", true), c("Show recognition", "show_recognition", "toggle", true), c("Show passports", "show_passports", "toggle", true), c("Show buildings", "show_buildings", "toggle", true), c("Show elders", "show_elders", "toggle", true)];
+            appearance = [c("Scale", "scale_pct", "number", 100, {minimum: 40, maximum: 200}), c("Font size", "font_size_px", "number", 16, {minimum: 8, maximum: 120}), c("Font family", "font_family", "font", "Segoe UI"), c("Show level", "show_level", "toggle", true), c("Show quests", "show_quests", "toggle", true), c("Show recognition", "show_recognition", "toggle", true), c("Show passports", "show_passports", "toggle", true), c("Show buildings", "show_buildings", "toggle", true), c("Show elders", "show_elders", "toggle", true)];
             behavior = [c("Quest 1 type", "quest1_type", "select", "likes", {options: ["likes", "shares", "gifts", "follows", "none"]}), c("Quest 2 type", "quest2_type", "select", "shares", {options: ["likes", "shares", "gifts", "follows", "none"]}), c("Quest 3 type", "quest3_type", "select", "gifts", {options: ["likes", "shares", "gifts", "follows", "none"]}), c("Quest 4 type", "quest4_type", "select", "follows", {options: ["likes", "shares", "gifts", "follows", "none"]}), c("Likes target", "quest_likes_target", "number", 5000, {minimum: 100, maximum: 100000000}), c("Shares target", "quest_shares_target", "number", 50, {minimum: 100, maximum: 100000}), c("Gifts target", "quest_gifts_target", "number", 1000, {minimum: 50, maximum: 100000000}), c("Follows target", "quest_follows_target", "number", 100, {minimum: 5, maximum: 100000})];
             advanced = [c("XP follow", "xp_follow", "number", 40, {minimum: 0, maximum: 1000}), c("XP join", "xp_join", "number", 5, {minimum: 0, maximum: 1000}), c("XP chat", "xp_chat", "number", 2, {minimum: 0, maximum: 1000}), c("XP like per 10", "xp_like_per_10", "number", 2, {minimum: 0, maximum: 1000}), c("XP share", "xp_share", "number", 25, {minimum: 0, maximum: 1000}), c("XP gift coins per 10", "xp_gift_coin_per_10", "number", 1, {minimum: 0, maximum: 1000}), c("XP battle win", "xp_battle_win", "number", 150, {minimum: 0, maximum: 10000})];
         } else if (typeId === "stream_goal") {
@@ -796,7 +805,7 @@ Item {
             animation = [c("Transition", "transition", "select", "glitch_morph", {options: ["glitch_morph", "digital_dissolve", "scan", "energy_burst", "slide", "fade"]}), c("Animation intensity", "animation_intensity", "select", "medium", {options: ["low", "medium", "high"]}), c("Rank change animation", "enable_rank_change_anim", "toggle", true), c("Particles", "enable_particles", "toggle", true), c("CRT effects", "enable_crt", "toggle", true)];
         } else if (typeId === "live_leaderboard_simple") {
             general = [c("Enabled", "enabled", "toggle", true), c("Top entries", "top_n", "number", 10, {minimum: 1, maximum: 10}), c("Show header", "show_header", "toggle", true), c("Show avatars", "show_avatars", "toggle", true), c("Rotation sequence", "sequence", "leaderboard_sequence", "")];
-            appearance = [c("Theme", "theme", "select", "dark", {options: ["dark", "transparent", "light", "neon"]}), c("Background color", "background_color", "color", "#0b0e14"), c("Background opacity", "background_opacity", "slider", 0.72, {minimum: 0, maximum: 1}), c("Font", "font_family", "font", "system-ui", {options: root._systemFontOptions("system-ui")}), c("Font size", "font_size_px", "number", 15, {minimum: 8, maximum: 48}), c("Value format", "value_format", "select", "compact", {options: ["compact", "full", "short"]}), c("Rank style", "rank_style", "select", "medal", {options: ["medal", "number", "badge"]}), c("Accent color", "accent_color", "color", "#14b8a6"), c("Scale", "scale_percent", "number", 100, {minimum: 40, maximum: 250})];
+            appearance = [c("Theme", "theme", "select", "dark", {options: ["dark", "transparent", "light", "neon"]}), c("Background color", "background_color", "color", "#0b0e14"), c("Background opacity", "background_opacity", "slider", 0.72, {minimum: 0, maximum: 1}), c("Font", "font_family", "font", "system-ui"), c("Font size", "font_size_px", "number", 15, {minimum: 8, maximum: 48}), c("Value format", "value_format", "select", "compact", {options: ["compact", "full", "short"]}), c("Rank style", "rank_style", "select", "medal", {options: ["medal", "number", "badge"]}), c("Accent color", "accent_color", "color", "#14b8a6"), c("Scale", "scale_percent", "number", 100, {minimum: 40, maximum: 250})];
             behavior = [c("Likers", "enable_likers", "toggle", true), c("Gifters", "enable_gifters", "toggle", true), c("Sharers", "enable_sharers", "toggle", true), c("Commenters", "enable_commenters", "toggle", true), c("Contributors", "enable_contributors", "toggle", true), c("Leaders scene", "enable_hall_of_fame", "toggle", true), c("Top 3 scene", "enable_arena", "toggle", true), c("Overview scene", "enable_energy_network", "toggle", true)];
             animation = [c("Transition", "transition", "select", "fade", {options: ["fade", "slide", "digital_dissolve", "scan"]}), c("Animation intensity", "animation_intensity", "select", "low", {options: ["low", "medium", "high"]}), c("Rank change animation", "enable_rank_change_anim", "toggle", true), c("Username text effect", "text_effect_username", "select", "none", {options: ["none", "rainbow", "aurora", "fire", "ice", "cold", "freeze", "strong"]}), c("Wave animation", "wave_enabled", "toggle", false), c("Wave speed", "wave_speed", "select", "normal", {options: ["slow", "normal", "fast"]})];
         } else if (typeId === "social_rotator") {
@@ -824,7 +833,7 @@ Item {
             c(bl("preset"), "preset", "select", "arcade_royale", {options: ["arcade_royale", "cyber_arena", "dark_fight", "minimal_brawl"], optionLabels: [bl("preset_arcade_royale"), bl("preset_cyber_arena"), bl("preset_dark_fight"), bl("preset_minimal_brawl")]}), c(bl("title"), "title_text", "text", "BATTLE ROYALE"), c(bl("countdown"), "countdown_s", "number", 5, {minimum: 1, maximum: 30}),
             c(bl("critical_multiplier"), "crit_multiplier", "number", 1.5, {minimum: 1, maximum: 5}),
             c(bl("max_fighters"), "max_fighters", "number", 4, {minimum: 2, maximum: 4}), c(bl("vip_chat_hours"), "vip_chat_hours", "number", 1, {minimum: 1, maximum: 24}),
-            c(bl("avatar_size"), "avatar_size_px", "number", 110, {minimum: 64, maximum: 200}), c(bl("font_family"), "font_family", "text", "Segoe UI"),
+            c(bl("avatar_size"), "avatar_size_px", "number", 110, {minimum: 64, maximum: 200}), c(bl("font_family"), "font_family", "font", "Segoe UI"),
             c(bl("animation_intensity"), "anim_intensity_pct", "number", 100, {minimum: 25, maximum: 200}), c(bl("sfx_volume"), "sfx_volume_pct", "number", 80, {minimum: 0, maximum: 100}),
             c(bl("projectile_animation"), "anim_projectile", "toggle", true), c(bl("shake_animation"), "anim_shake", "toggle", true), c(bl("critical_flash"), "anim_crit_flash", "toggle", true), c(bl("fatality_animation"), "anim_fatality", "toggle", true)
         ]);
@@ -845,7 +854,7 @@ Item {
         if (typeId === "social_rotator") advanced = advanced.concat([c("Accent color", "accent_color", "color", "#14b8a6")]);
         if (typeId === "stream_info") advanced = advanced.concat([c("Accent color", "accent_color", "color", "#14b8a6")]);
         if (typeId === "signal_system") advanced = advanced.concat([
-            c("Font family", "font_family", "text", "Segoe UI"), c("Intensity multiplier", "intensity_multiplier", "number", 1, {minimum: 0, maximum: 10}), c("Primary accent", "primary_accent", "color", "#14b8a6"), c("Secondary accent", "secondary_accent", "color", "#a78bfa"),
+            c("Font family", "font_family", "font", "Segoe UI"), c("Intensity multiplier", "intensity_multiplier", "number", 1, {minimum: 0, maximum: 10}), c("Primary accent", "primary_accent", "color", "#14b8a6"), c("Secondary accent", "secondary_accent", "color", "#a78bfa"),
             c("Frame detail level", "frame_detail_level", "number", 1, {minimum: 0, maximum: 10}), c("Particle density", "particle_density", "number", 1, {minimum: 0, maximum: 10}), c("Gift icon", "gift_icon_enabled", "toggle", true), c("Gift quantity", "show_gift_quantity", "toggle", true), c("Coin value", "show_coin_value", "toggle", true), c("Gift name", "show_gift_name", "toggle", true), c("Reduced motion", "reduced_motion", "toggle", false),
             c("Global cooldown", "global_cooldown_ms", "number", 3000, {minimum: 0, maximum: 60000}), c("AI cooldown", "ai_observation_cooldown_ms", "number", 3000, {minimum: 0, maximum: 60000}), c("AI max per hour", "ai_observation_max_per_hour", "number", 10, {minimum: 0, maximum: 1000}), c("Unknown signal cooldown", "unknown_signal_cooldown_ms", "number", 3000, {minimum: 0, maximum: 60000})
         ]);
@@ -869,6 +878,7 @@ Item {
         if (root.widgetMode === "battle_royale") return root.battleCfg;
         if (root.widgetMode === "battle") return root.battleCfg2;
         if (root.widgetMode === "gift_rush") return root.giftRushCfg;
+        if (root.widgetMode === "balloon_hunter") return root.balloonHunterCfg;
         if (root.widgetMode === "stream_pet") return root.streamPetCfg;
         if (root.widgetMode === "community_world") return root.communityWorldCfg;
         if (root.widgetMode === "stream_goal") return root.streamGoalCfg;
@@ -1967,6 +1977,9 @@ Item {
     property var giftRushCfg: null
     property bool _loadingGiftRushCfg: false
     property int giftRushCfgEpoch: 0
+    property var balloonHunterCfg: null
+    property bool _loadingBalloonHunterCfg: false
+    property int balloonHunterCfgEpoch: 0
     property var streamPetCfg: null
     property bool _loadingStreamPetCfg: false
     property int streamPetCfgEpoch: 0
@@ -2001,6 +2014,7 @@ Item {
         if (!obj) obj = {};
         if (obj.schema_version === undefined) obj.schema_version = 1;
         if (obj.max_items === undefined) obj.max_items = 12;
+        if (!obj.theme) obj.theme = "classic";
         if (obj.font_size_px === undefined) obj.font_size_px = 18;
         // Platform text labels are deprecated in UI (icons cover it).
         if (obj.show_platform === undefined) obj.show_platform = false;
@@ -2191,6 +2205,7 @@ Item {
             (root.widgetMode === "battle_royale" && root.battleCfg !== null) ||
             (root.widgetMode === "battle" && root.battleCfg2 !== null) ||
             (root.widgetMode === "gift_rush" && root.giftRushCfg !== null) ||
+            (root.widgetMode === "balloon_hunter" && root.balloonHunterCfg !== null) ||
             (root.widgetMode === "stream_pet" && root.streamPetCfg !== null) ||
             (root.widgetMode === "community_world" && root.communityWorldCfg !== null) ||
             (root.widgetMode === "stream_goal" && root.streamGoalCfg !== null) ||
@@ -2221,6 +2236,8 @@ Item {
             root._saveBattle2();
         } else if (root.widgetMode === "gift_rush") {
             root._saveGiftRush();
+        } else if (root.widgetMode === "balloon_hunter") {
+            root._saveBalloonHunter();
         } else if (root.widgetMode === "stream_pet") {
             root._saveStreamPet();
         } else if (root.widgetMode === "community_world") {
@@ -2391,6 +2408,15 @@ Item {
         if (!txt || txt === "{}")
             return;
         api.saveGiftRushOverlayConfigJson(txt);
+    }
+
+    function _saveBalloonHunter() {
+        if (!api || root.balloonHunterCfg === null) return;
+        root.balloonHunterCfgEpoch += 1;
+        var txt = JSON.stringify(root.balloonHunterCfg);
+        if (!txt || txt === "{}")
+            return;
+        api.saveBalloonHunterOverlayConfigJson(txt);
     }
 
     function _saveStreamPet() {
@@ -5690,6 +5716,11 @@ Item {
                     grobj = {};
                 root.giftRushCfg = JSON.parse(JSON.stringify(grobj));
                 root.giftRushCfgEpoch += 1;
+                var bhobj = api.loadBalloonHunterOverlayConfigMap();
+                if (!bhobj || typeof bhobj !== "object")
+                    bhobj = {};
+                root.balloonHunterCfg = JSON.parse(JSON.stringify(bhobj));
+                root.balloonHunterCfgEpoch += 1;
                 var spobj = api.loadStreamPetOverlayConfigMap();
                 if (!spobj || typeof spobj !== "object")
                     spobj = {};

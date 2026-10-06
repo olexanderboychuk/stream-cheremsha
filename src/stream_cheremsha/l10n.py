@@ -3264,6 +3264,11 @@ _TABLE: dict[str, dict[AppLocale, str]] = {
         "uk": "Живі реакції на подарунки: монети та іскри.",
         "en": "Live reactions to gifts: coins and sparks.",
     },
+    "widgets.type.balloon_hunter.name": {"uk": "Мисливець за кульками", "en": "Balloon Hunter"},
+    "widgets.type.balloon_hunter.desc": {
+        "uk": "Кульки з подарунками: лопай за подарунки, комбо-ефекти.",
+        "en": "Gift balloons: pop on gifts, combo effects.",
+    },
     "widgets.type.stream_pet.name": {"uk": "Stream Pet", "en": "Stream Pet"},
     "widgets.type.stream_pet.desc": {"uk": "Пет стріму.", "en": "Stream pet."},
     "widgets.type.community_world.name": {"uk": "Community World", "en": "Community World"},

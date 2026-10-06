@@ -16,6 +16,12 @@ from stream_cheremsha.overlays.actions_config import (
     load_actions_config,
     save_actions_config,
 )
+from stream_cheremsha.overlays.balloon_hunter_config import (
+    balloon_hunter_overlay_config_from_json_text,
+    balloon_hunter_overlay_config_to_json_text,
+    load_balloon_hunter_overlay_config,
+    save_balloon_hunter_overlay_config,
+)
 from stream_cheremsha.overlays.battle_overlay_config import (
     battle_overlay_config_from_json_text,
     battle_overlay_config_to_json_text,
@@ -244,6 +250,7 @@ class WidgetsQmlApi(QObject):
         self._stream_pet_instance = str(online_instance or "main").strip() or "main"
         self._stream_goal_instance = str(online_instance or "main").strip() or "main"
         self._gift_rush_instance = str(online_instance or "main").strip() or "main"
+        self._balloon_hunter_instance = str(online_instance or "main").strip() or "main"
         self._live_leaderboard_instance = str(online_instance or "main").strip() or "main"
         self._social_rotator_instance = str(online_instance or "main").strip() or "main"
         self._stream_info_instance = str(online_instance or "main").strip() or "main"
@@ -255,6 +262,7 @@ class WidgetsQmlApi(QObject):
         self._battle_controller: Any | None = None
         self._battle_royale_group: Any | None = None
         self._gift_rush_group: Any | None = None
+        self._balloon_hunter_group: Any | None = None
         self._stream_goal_controller: Any | None = None
         self._live_leaderboard_controller: Any | None = None
         self._live_leaderboard_simple_controller: Any | None = None
@@ -287,6 +295,9 @@ class WidgetsQmlApi(QObject):
     def set_gift_rush_group(self, controller: Any) -> None:
         self._gift_rush_group = controller
 
+    def set_balloon_hunter_group(self, controller: Any) -> None:
+        self._balloon_hunter_group = controller
+
     def set_social_rotator_controller(self, controller: Any) -> None:
         self._social_rotator_controller = controller
 
@@ -308,8 +319,8 @@ class WidgetsQmlApi(QObject):
             return ""
         return str(getter() or "").strip().lstrip("@").strip()
 
-    @Slot(result="QStringList")
-    def systemFontFamilies(self) -> list[str]:
+    @Slot(result="QVariantList")
+    def systemFontFamilies(self) -> list:
         """Font families Qt reads from the OS (picker for overlay widgets).
 
         Requires a running ``QGuiApplication``; headless/unit-test callers get a tiny fallback list.
@@ -322,6 +333,11 @@ class WidgetsQmlApi(QObject):
             # Keep the picker usable (and tests stable) by falling back in that case too.
             self._system_font_families = families if families else list(_FONT_FALLBACK_NO_GUI_APP)
         return list(self._system_font_families)
+
+    @Slot(result=str)
+    def systemFontFamiliesJoined(self) -> str:
+        """Newline-joined font families (avoids PySide6 per-element wrapping in QML)."""
+        return "\n".join(self.systemFontFamilies())
 
     chatOverlayUrlChanged = Signal()
     layoutsChanged = Signal()
@@ -561,6 +577,8 @@ class WidgetsQmlApi(QObject):
             self.previewBattleOverlay(inst)
         elif typ == "gift_rush":
             self.previewGiftRushOverlay(inst)
+        elif typ == "balloon_hunter":
+            self.previewBalloonHunterOverlay(inst)
         elif typ == "top_likers":
             self.previewTopLikersOverlay(inst)
         elif typ == "top_gifters":
@@ -2170,6 +2188,97 @@ class WidgetsQmlApi(QObject):
         }
         self._publish_patch(topic=topic, patch=patch)
 
+    @Slot(result="QVariantMap")
+    def loadBalloonHunterOverlayConfigMap(self) -> dict[str, Any]:
+        routed = self._load_cfg_or_instance("balloon_hunter")
+        if routed is not None:
+            return routed
+        cfg = load_balloon_hunter_overlay_config()
+        return json.loads(balloon_hunter_overlay_config_to_json_text(cfg))
+
+    @Slot(result=str)
+    def loadBalloonHunterOverlayConfigJson(self) -> str:
+        cfg = load_balloon_hunter_overlay_config()
+        return balloon_hunter_overlay_config_to_json_text(cfg)
+
+    @Slot(str)
+    def saveBalloonHunterOverlayConfigJson(self, cfg_json: str) -> None:
+        txt = str(cfg_json or "").strip()
+        if not txt:
+            return
+        try:
+            cfg = balloon_hunter_overlay_config_from_json_text(txt)
+        except (ValueError, TypeError, json.JSONDecodeError):
+            return
+        if self._save_cfg_to_instance(
+            "balloon_hunter", json.loads(balloon_hunter_overlay_config_to_json_text(cfg))
+        ):
+            return
+        save_balloon_hunter_overlay_config(cfg)
+        _LOG.info("widgets overlay persisted: balloon_hunter")
+        if self._pubsub is not None:
+            topic = f"overlay:balloon_hunter:{self._balloon_hunter_instance}"
+            patch = {
+                "config": json.loads(balloon_hunter_overlay_config_to_json_text(cfg)),
+                "timestamp": time.time(),
+            }
+            self._publish_patch(topic=topic, patch=patch)
+
+    @Slot(QJSValue)
+    def saveBalloonHunterOverlayConfigMap(self, cfg_js: QJSValue) -> None:
+        try:
+            plain = cfg_js.toVariant()
+        except Exception:
+            _LOG.warning("widgets ConfigMap save: balloon_hunter rejected (null/undefined)")
+            return
+        try:
+            txt = json.dumps(plain, ensure_ascii=False)
+        except (TypeError, ValueError):
+            _LOG.warning(
+                "widgets ConfigMap save: balloon_hunter rejected empty_or_non_serializable"
+            )
+            return
+        _LOG.info("widgets ConfigMap save: balloon_hunter ok json_len=%d", len(txt))
+        self.saveBalloonHunterOverlayConfigJson(txt)
+
+    @Slot(str)
+    @Slot()
+    def previewBalloonHunterOverlay(self, instance: str | None = None) -> None:
+        token = str(instance or "").strip()
+        if not token:
+            return
+        topic = f"overlay:balloon_hunter:{token}"
+        cfg = self._preview_config(
+            "balloon_hunter",
+            token,
+            load_balloon_hunter_overlay_config,
+            balloon_hunter_overlay_config_from_json_text,
+        )
+        patch: dict[str, Any] = {
+            "config": json.loads(balloon_hunter_overlay_config_to_json_text(cfg)),
+            "locale": _ui_locale(),
+            "events": [
+                {
+                    "type": "pop",
+                    "at": time.time(),
+                    "payload": {
+                        "sender": "Preview Viewer",
+                        "gift_name": "Rose",
+                        "gift_id": "gift-preview",
+                        "count": 1,
+                        "value": 120,
+                        "icon_url": "",
+                        "sender_avatar_url": "",
+                        "platform": "tiktok",
+                        "combo": 3,
+                        "intensity": "GOLD",
+                        "target_balloon_kind": "GOLD",
+                    },
+                }
+            ],
+        }
+        self._publish_patch(topic=topic, patch=patch)
+
     @Slot(str, result="QVariantMap")
     def streamPetPresetDefaultsMap(self, preset: str) -> dict[str, Any]:
         cfg = apply_stream_pet_preset(stream_pet_overlay_config_defaults(), preset)
@@ -2773,6 +2882,7 @@ class WidgetsQmlApi(QObject):
             "_battle_controller",
             "_battle_royale_group",
             "_gift_rush_group",
+            "_balloon_hunter_group",
             "_stream_goal_controller",
             "_social_rotator_controller",
             "_stream_info_controller",

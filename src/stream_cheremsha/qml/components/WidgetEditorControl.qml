@@ -152,10 +152,10 @@ ColumnLayout {
         }
         ComboBox {
             id: comboBox
-            visible: root.type === "select" || root.type === "dropdown" || root.type === "font"
-            Layout.preferredWidth: root.type === "font" ? 220 : 140
-            Layout.minimumWidth: root.type === "font" ? 220 : 140
-            Layout.maximumWidth: root.type === "font" ? 220 : 140
+            visible: root.type === "select" || root.type === "dropdown"
+            Layout.preferredWidth: 140
+            Layout.minimumWidth: 140
+            Layout.maximumWidth: 140
             model: root.optionLabels.length ? root.optionLabels : root.options
             currentIndex: Math.max(0, root.options.indexOf(root.value))
             hoverEnabled: true
@@ -194,6 +194,11 @@ ColumnLayout {
                 }
             }
             onActivated: root.changed(root.field, root.options[currentIndex])
+        }
+        CheremshaFontPicker {
+            visible: root.type === "font"
+            fontFamily: String(root.value === undefined || root.value === null ? "" : root.value)
+            onFontPicked: function(family) { root.changed(root.field, family) }
         }
         CheremshaColorPicker {
             visible: root.type === "color"

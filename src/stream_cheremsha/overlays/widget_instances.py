@@ -110,6 +110,14 @@ WIDGET_TYPES: dict[str, dict[str, Any]] = {
         "accent": "#f472b6",
         "platforms": ["tiktok"],
     },
+    "balloon_hunter": {
+        "name": "Balloon Hunter",
+        "description": "Кульки з подарунками: лопай за подарунки, комбо-ефекти.",
+        "icon": "🎈",
+        "icon_svg": "icons/gift.svg",
+        "accent": "#38bdf8",
+        "platforms": ["tiktok"],
+    },
     "stream_pet": {
         "name": "Stream Pet",
         "description": "Пет стріму.",
@@ -202,6 +210,11 @@ _DEFAULTS_LOADERS: dict[str, str] = {
     "battle_royale": "stream_cheremsha.overlays.battle_royale_overlay_config:battle_royale_overlay_config_defaults:battle_royale_overlay_config_to_json_text",
     "battle": "stream_cheremsha.overlays.battle_overlay_config:battle_overlay_config_defaults:battle_overlay_config_to_json_text",
     "gift_rush": "stream_cheremsha.overlays.gift_rush_config:gift_rush_overlay_config_defaults:gift_rush_overlay_config_to_json_text",
+    "balloon_hunter": (
+        "stream_cheremsha.overlays.balloon_hunter_config:"
+        "balloon_hunter_overlay_config_defaults:"
+        "balloon_hunter_overlay_config_to_json_text"
+    ),
     "stream_pet": "stream_cheremsha.overlays.stream_pet_overlay_config:stream_pet_overlay_config_defaults:stream_pet_overlay_config_to_json_text",
     "community_world": "stream_cheremsha.overlays.community_world_config:community_world_overlay_config_defaults:community_world_overlay_config_to_json_text",
     "stream_goal": "stream_cheremsha.overlays.stream_goal_overlay_config:stream_goal_overlay_config_defaults:stream_goal_overlay_config_to_json_text",

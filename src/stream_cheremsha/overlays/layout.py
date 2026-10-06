@@ -27,6 +27,7 @@ SUPPORTED_LAYOUT_WIDGETS = (
     "battle_royale",
     "battle",
     "gift_rush",
+    "balloon_hunter",
     "stream_pet",
     "community_world",
     "stream_goal",

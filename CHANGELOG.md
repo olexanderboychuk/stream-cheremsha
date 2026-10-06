@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.24.4] - 2026-10-06
+
+### Added
+
+- Balloon Hunter overlay widget (TikTok gifts): balloons float upward continuously, each carrying a real gift from the bundled catalog. Spawn rarity follows five coin-value tiers (cheap gifts often, legendary rarely); a gift event pops the matching balloon via a homing projectile comet (squeeze → flash → confetti → gift/value/sender popup) with combo effects and tiered pop SFX (normal/gold/epic). Full editor settings: balloon count, spawn interval, float speed, gold/epic coin thresholds, combo window, particle caps.
+- Chat widget themes: seven chat bubble themes (`classic`, `inferno`, `abyss`, `imperial`, `cyber`, `frost`, `bloodmoon`) selectable in settings.
+- Universal font picker in the widget editor: a compact trigger showing the current font rendered in itself; clicking opens a modal dialog with search, live preview, and the full system font list. Font family fields are now editable across widget types.
+- Battle Royale overlay: epic animated background — drifting nebula blobs in team colors, twinkling stars, and light streaks.
+
 ## [0.24.3] - 2026-10-02
 
 ### Fixed

@@ -240,6 +240,239 @@ class BattleOverlayType:
         radial-gradient(ellipse at 12% 50%, var(--lt-soft), transparent 58%),
         radial-gradient(ellipse at 88% 50%, var(--rt-soft), transparent 58%);
     }}
+    /* ====== Epic Animated Background ====== */
+    .bt-bg-canvas {{
+      position:absolute; inset:0; z-index:0; pointer-events:none;
+      border-radius:inherit;
+    }}
+    .bt-bg-nebula {{
+      position:absolute; inset:0; z-index:0; pointer-events:none;
+      border-radius:inherit; overflow:hidden;
+    }}
+    .bt-bg-nebula .neb-blob {{
+      position:absolute; border-radius:50%;
+      filter:blur(calc(22 * var(--bt-f)));
+      opacity:0.35;
+      animation:btNebulaDrift 12s ease-in-out infinite alternate;
+    }}
+    .bt-bg-nebula .neb-blob--1 {{
+      width:45%; height:60%; left:-10%; top:-10%;
+      background:radial-gradient(ellipse, var(--lt-primary), transparent 70%);
+      animation-duration:14s;
+    }}
+    .bt-bg-nebula .neb-blob--2 {{
+      width:40%; height:55%; right:-8%; top:5%;
+      background:radial-gradient(ellipse, var(--rt-primary), transparent 70%);
+      animation-duration:16s; animation-delay:-4s;
+    }}
+    .bt-bg-nebula .neb-blob--3 {{
+      width:35%; height:45%; left:30%; bottom:-15%;
+      background:radial-gradient(ellipse, var(--center-primary), transparent 65%);
+      animation-duration:18s; animation-delay:-8s;
+    }}
+    @keyframes btNebulaDrift {{
+      0% {{ transform:translate(0,0) scale(1); }}
+      100% {{ transform:translate(calc(4 * var(--bt-f)), calc(-3 * var(--bt-f))) scale(1.12); }}
+    }}
+    .bt-bg-stars {{
+      position:absolute; inset:0; z-index:0; pointer-events:none;
+      border-radius:inherit; overflow:hidden;
+    }}
+    .bt-bg-stars .star {{
+      position:absolute; border-radius:50%; background:#fff;
+      animation:btStarTwinkle var(--tw-dur, 2s) ease-in-out infinite alternate;
+      animation-delay:var(--tw-delay, 0s);
+      opacity:0.4;
+    }}
+    @keyframes btStarTwinkle {{
+      0% {{ opacity:0.15; transform:scale(0.7); }}
+      100% {{ opacity:0.75; transform:scale(1.15); }}
+    }}
+    .bt-bg-streaks {{
+      position:absolute; inset:0; z-index:0; pointer-events:none;
+      border-radius:inherit; overflow:hidden;
+    }}
+    .bt-bg-streaks .streak {{
+      position:absolute; height:calc(0.4 * var(--bt-f));
+      border-radius:999px;
+      background:linear-gradient(90deg, transparent, var(--streak-color, rgba(255,255,255,0.5)), transparent);
+      animation:btStreak var(--sk-dur, 3s) linear infinite;
+      animation-delay:var(--sk-delay, 0s);
+      opacity:0.5;
+    }}
+    @keyframes btStreak {{
+      0% {{ transform:translateX(-120%) rotate(var(--sk-rot, -15deg)); opacity:0; }}
+      15% {{ opacity:0.7; }}
+      85% {{ opacity:0.7; }}
+      100% {{ transform:translateX(220%) rotate(var(--sk-rot, -15deg)); opacity:0; }}
+    }}
+    /* ====== Floating Gift Particles ====== */
+    .bt-float-particles {{
+      position:absolute; inset:0; z-index:1; pointer-events:none;
+      border-radius:inherit; overflow:hidden;
+    }}
+    .float-particle {{
+      position:absolute; pointer-events:none;
+      font-size:var(--fp-size, 2em);
+      filter:drop-shadow(0 0 calc(2 * var(--bt-f)) var(--fp-glow, transparent));
+      animation:btFloatParticle var(--fp-dur, 12s) linear infinite;
+      animation-delay:var(--fp-delay, 0s);
+      opacity:0;
+      transform:translate3d(0,0,0) rotate(0deg);
+      will-change:transform, opacity;
+    }}
+    .float-particle.is-left {{ --fp-glow: var(--lt-glow); }}
+    .float-particle.is-right {{ --fp-glow: var(--rt-glow); }}
+    @keyframes btFloatParticle {{
+      0% {{ transform:translate3d(0, calc(4 * var(--bt-f)), 0) rotate(0deg) scale(0.5); opacity:0; }}
+      8% {{ opacity:var(--fp-opacity, 0.65); transform:translate3d(var(--fp-x1, 10px), calc(-2 * var(--bt-f)), 0) rotate(45deg) scale(1); }}
+      25% {{ transform:translate3d(var(--fp-x2, -15px), calc(-20 * var(--bt-f)), 0) rotate(120deg) scale(1); }}
+      50% {{ opacity:var(--fp-opacity, 0.65); transform:translate3d(var(--fp-x3, 8px), calc(-45 * var(--bt-f)), 0) rotate(200deg) scale(0.9); }}
+      75% {{ transform:translate3d(var(--fp-x4, -12px), calc(-70 * var(--bt-f)), 0) rotate(280deg) scale(0.7); opacity:0.3; }}
+      100% {{ transform:translate3d(0, calc(-95 * var(--bt-f)), 0) rotate(360deg) scale(0.3); opacity:0; }}
+    }}
+    /* ====== Enhanced Avatar Rings ====== */
+    .bt-avatar-ring {{
+      position:absolute; inset:calc(-2.2 * var(--bt-f));
+      border-radius:50%; pointer-events:none; z-index:2;
+    }}
+    .bt-avatar-ring::before {{
+      content:""; position:absolute; inset:0; border-radius:50%;
+      background:conic-gradient(from var(--ring-angle, 0deg),
+        var(--ring-c1, var(--lt-primary)),
+        var(--ring-c2, transparent 30%),
+        var(--ring-c3, var(--lt-glow) 50%),
+        transparent 70%,
+        var(--ring-c1, var(--lt-primary)));
+      -webkit-mask:radial-gradient(farthest-side, transparent calc(100% - calc(1.8 * var(--bt-f))), #000 calc(100% - calc(1.6 * var(--bt-f))));
+      mask:radial-gradient(farthest-side, transparent calc(100% - calc(1.8 * var(--bt-f))), #000 calc(100% - calc(1.6 * var(--bt-f))));
+      animation:btRingRotate 3s linear infinite;
+    }}
+    .bt-avatar-ring::after {{
+      content:""; position:absolute; inset:calc(-0.6 * var(--bt-f)); border-radius:50%;
+      box-shadow:0 0 calc(6 * var(--bt-f)) var(--ring-glow, var(--lt-glow)),
+                0 0 calc(14 * var(--bt-f)) var(--ring-soft, var(--lt-soft));
+      animation:btRingPulse 2.4s ease-in-out infinite alternate;
+    }}
+    .bt-avatar--left .bt-avatar-ring {{
+      --ring-c1: var(--lt-primary);
+      --ring-c2: transparent;
+      --ring-c3: var(--lt-glow);
+      --ring-glow: var(--lt-glow);
+      --ring-soft: var(--lt-soft);
+    }}
+    .bt-avatar--right .bt-avatar-ring {{
+      --ring-c1: var(--rt-primary);
+      --ring-c2: transparent;
+      --ring-c3: var(--rt-glow);
+      --ring-glow: var(--rt-glow);
+      --ring-soft: var(--rt-soft);
+    }}
+    @property --ring-angle {{
+      syntax: '<angle>'; initial-value: 0deg; inherits: false;
+    }}
+    @keyframes btRingRotate {{
+      from {{ --ring-angle: 0deg; }}
+      to {{ --ring-angle: 360deg; }}
+    }}
+    @keyframes btRingPulse {{
+      0% {{ opacity:0.5; transform:scale(1); }}
+      100% {{ opacity:0.9; transform:scale(1.04); }}
+    }}
+    /* ====== Gift Feed (Side Notifications) ====== */
+    .bt-gift-feed {{
+      position:absolute; top:calc(8 * var(--bt-f)); z-index:5;
+      display:flex; flex-direction:column; gap:calc(0.8 * var(--bt-f));
+      pointer-events:none;
+    }}
+    .bt-gift-feed--left {{ left:calc(2 * var(--bt-f)); align-items:flex-start; }}
+    .bt-gift-feed--right {{ right:calc(2 * var(--bt-f)); align-items:flex-end; }}
+    .gift-feed-item {{
+      display:flex; align-items:center; gap:calc(1 * var(--bt-f));
+      padding:calc(0.7 * var(--bt-f)) calc(1.6 * var(--bt-f));
+      border-radius:calc(1.4 * var(--bt-f));
+      background:rgba(0,0,0,0.65);
+      backdrop-filter:blur(8px);
+      border:1px solid rgba(255,255,255,0.12);
+      font-size:calc(1.6 * var(--bt-f));
+      font-weight:700;
+      white-space:nowrap;
+      animation:btGiftFeedIn 0.4s ease-out, btGiftFeedOut 0.5s ease-in 3.5s forwards;
+      max-width:calc(32 * var(--bt-f));
+    }}
+    .gift-feed-item--left {{ border-color:var(--lt-primary); box-shadow:0 0 calc(6 * var(--bt-f)) var(--lt-soft); }}
+    .gift-feed-item--right {{ border-color:var(--rt-primary); box-shadow:0 0 calc(6 * var(--bt-f)) var(--rt-soft); }}
+    .gift-feed-item .gfi-av {{
+      width:calc(3.2 * var(--bt-f)); height:calc(3.2 * var(--bt-f));
+      border-radius:50%; object-fit:cover; flex:0 0 auto;
+      border:1px solid rgba(255,255,255,0.2);
+    }}
+    .gift-feed-item .gfi-text {{
+      color:var(--text); line-height:1.3;
+    }}
+    .gift-feed-item .gfi-text .gfi-name {{ font-weight:800; }}
+    .gift-feed-item .gfi-text .gfi-gift {{ color:var(--gold); font-weight:900; }}
+    .gift-feed-item .gfi-emoji {{ font-size:calc(2.4 * var(--bt-f)); }}
+    @keyframes btGiftFeedIn {{
+      from {{ opacity:0; transform:translateY(calc(-2 * var(--bt-f))) scale(0.9); }}
+      to {{ opacity:1; transform:translateY(0) scale(1); }}
+    }}
+    @keyframes btGiftFeedOut {{
+      from {{ opacity:1; transform:translateY(0) scale(1); }}
+      to {{ opacity:0; transform:translateY(calc(1.5 * var(--bt-f))) scale(0.92); }}
+    }}
+    /* ====== Epic Score Popup ====== */
+    .bt-score-epic-popup {{
+      position:absolute; z-index:6; pointer-events:none;
+      font-weight:900; font-size:calc(6 * var(--bt-f));
+      font-variant-numeric:tabular-nums;
+      text-shadow:0 0 calc(6 * var(--bt-f)) currentColor, 0 2px 4px rgba(0,0,0,0.8);
+      animation:btEpicScorePop 1.2s ease-out forwards;
+      white-space:nowrap;
+    }}
+    .bt-score-epic-popup--left {{ color:var(--lt-primary); }}
+    .bt-score-epic-popup--right {{ color:var(--rt-primary); }}
+    @keyframes btEpicScorePop {{
+      0% {{ opacity:0; transform:scale(0.3) translateY(0); }}
+      20% {{ opacity:1; transform:scale(1.25) translateY(calc(-2 * var(--bt-f))); }}
+      45% {{ transform:scale(1.1) translateY(calc(-5 * var(--bt-f))); }}
+      100% {{ opacity:0; transform:scale(0.85) translateY(calc(-14 * var(--bt-f))); }}
+    }}
+    /* ====== Enhanced Combo Badge ====== */
+    .bt-combo-epic {{
+      position:absolute; top:calc(4 * var(--bt-f)); z-index:6;
+      pointer-events:none;
+      font-weight:900; font-size:calc(4.5 * var(--bt-f));
+      letter-spacing:0.08em;
+      text-transform:uppercase;
+      animation:btComboEpic 1.4s ease-out forwards;
+    }}
+    .bt-combo-epic--left {{ color:var(--lt-primary); text-shadow:0 0 calc(8 * var(--bt-f)) var(--lt-glow), 0 2px 4px rgba(0,0,0,0.8); }}
+    .bt-combo-epic--right {{ color:var(--rt-primary); text-shadow:0 0 calc(8 * var(--bt-f)) var(--rt-glow), 0 2px 4px rgba(0,0,0,0.8); }}
+    @keyframes btComboEpic {{
+      0% {{ opacity:0; transform:scale(0.3) rotate(-5deg); }}
+      25% {{ opacity:1; transform:scale(1.35) rotate(3deg); }}
+      50% {{ transform:scale(1.1) rotate(-1deg); }}
+      80% {{ opacity:1; transform:scale(1) rotate(0deg); }}
+      100% {{ opacity:0; transform:scale(0.8) translateY(calc(-3 * var(--bt-f))); }}
+    }}
+    /* ====== Enhanced Progress Bar ====== */
+    .bt-bar-track::after {{
+      content:""; position:absolute; inset:0;
+      background:linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.15) 48%, rgba(255,255,255,0.3) 50%, rgba(255,255,255,0.15) 52%, transparent 100%);
+      animation:btBarShimmer 2.5s ease-in-out infinite;
+      pointer-events:none; z-index:2;
+    }}
+    @keyframes btBarShimmer {{
+      0% {{ transform:translateX(-100%); }}
+      100% {{ transform:translateX(100%); }}
+    }}
+    .fill-left {{
+      background:linear-gradient(90deg, var(--lt-primary) 0%, var(--lt-secondary) 40%, var(--center-primary) 100%) !important;
+    }}
+    .fill-right {{
+      background:linear-gradient(270deg, var(--rt-primary) 0%, var(--rt-secondary) 40%, var(--center-primary) 100%) !important;
+    }}
     .bt-main {{
       position:relative; z-index:1;
       flex:1 1 auto; min-height:0;
@@ -255,7 +488,16 @@ class BattleOverlayType:
       font-weight:900; font-size:calc(3.2 * var(--bt-f));
       letter-spacing:0.34em; text-transform:uppercase;
       color:var(--center-primary);
-      text-shadow:0 2px 0 #000, 0 0 calc(8 * var(--bt-f)) var(--center-glow);
+      text-shadow:0 2px 0 #000, 0 0 calc(8 * var(--bt-f)) var(--center-glow), 0 0 calc(20 * var(--bt-f)) var(--center-glow);
+      animation:btTitleGlow 3s ease-in-out infinite alternate;
+    }}
+    @keyframes btTitleGlow {{
+      0% {{ text-shadow:0 2px 0 #000, 0 0 calc(6 * var(--bt-f)) var(--center-glow), 0 0 calc(14 * var(--bt-f)) var(--center-glow); }}
+      100% {{ text-shadow:0 2px 0 #000, 0 0 calc(12 * var(--bt-f)) var(--center-glow), 0 0 calc(28 * var(--bt-f)) var(--center-glow); }}
+    }}
+    @keyframes btVsPulse {{
+      0% {{ transform:scale(1); filter:brightness(1); }}
+      100% {{ transform:scale(1.06); filter:brightness(1.15); }}
     }}
     .bt-stage {{
       position:relative; z-index:1;
@@ -352,9 +594,10 @@ class BattleOverlayType:
       justify-content:center;
     }}
     .bt-vs {{
-      font-weight:900; font-size:calc(4.8 * var(--bt-f));
+      font-weight:900; font-size:calc(5.4 * var(--bt-f));
       letter-spacing:0.12em; color:#F8FAFC;
-      text-shadow:0 2px 0 #000, 0 0 calc(9 * var(--bt-f)) var(--center-glow);
+      text-shadow:0 2px 0 #000, 0 0 calc(10 * var(--bt-f)) var(--center-glow), 0 0 calc(22 * var(--bt-f)) var(--center-glow);
+      animation:btVsPulse 2s ease-in-out infinite alternate;
     }}
     .bt-timer {{
       font-weight:800; font-size:calc(5.8 * var(--bt-f));
@@ -375,6 +618,7 @@ class BattleOverlayType:
     .bt-dots i.active  {{ background:var(--lt-primary); box-shadow:0 0 calc(1.6 * var(--bt-f)) var(--lt-glow); }}
     .bt-dots i.won-left {{ background:rgba(34,211,238,0.55); box-shadow:none; }}
     .bt-dots i.won-right {{ background:rgba(244,114,182,0.55); box-shadow:none; }}
+    .bt-dots i.draw {{ background:rgba(250,204,21,0.6); box-shadow:none; }}
     .bt-final-label {{ font-weight:900; font-size:calc(2.2 * var(--bt-f)); letter-spacing:0.3em; color:#FECACA; opacity:0; }}
     .is-final .bt-final-label {{ animation:btFinalPulse 1s ease-in-out infinite alternate; }}
     @keyframes btFinalPulse {{ 0% {{ opacity:0.3; transform:scale(0.98); }} 100% {{ opacity:0.95; transform:scale(1.02); }} }}
@@ -646,6 +890,13 @@ class BattleOverlayType:
     .bt-root.anim-off .bt-score-float,
     .bt-root.anim-off .fill-left,
     .bt-root.anim-off .fill-right {{ animation: none !important; }}
+    .bt-root.anim-off .bt-bg-nebula,
+    .bt-root.anim-off .bt-bg-stars,
+    .bt-root.anim-off .bt-bg-streaks,
+    .bt-root.anim-off .bt-float-particles,
+    .bt-root.anim-off .bt-avatar-ring,
+    .bt-root.anim-off .bt-gift-feed,
+    .bt-root.anim-off .bt-bar-track::after {{ display: none !important; animation: none !important; }}
     /* Floating +points near the score (one reused node per side) */
     .bt-participant-info {{ position:relative; }}
     .bt-score-float {{
@@ -810,6 +1061,24 @@ class BattleOverlayType:
       0% {{ box-shadow: 0 0 calc(8 * var(--bt-f)) var(--winner-glow, var(--lt-glow)); }}
       100% {{ box-shadow: 0 0 calc(16 * var(--bt-f)) var(--winner-glow, var(--lt-glow)); }}
     }}
+    /* ====== Leader Crown ====== */
+    .bt-crown {{
+      position:absolute; z-index:7; pointer-events:none;
+      width:calc(6.4 * var(--bt-f)); height:calc(4.6 * var(--bt-f));
+      top:calc(-3.6 * var(--bt-f)); left:50%;
+      transform:translateX(-50%);
+      filter:drop-shadow(0 0 calc(3 * var(--bt-f)) rgba(251,191,36,.75));
+      animation:btCrownBob 2.4s ease-in-out infinite alternate;
+    }}
+    .bt-crown svg {{ width:100%; height:100%; display:block; }}
+    .bt-crown svg path {{ fill:var(--gold); stroke:rgba(255,255,255,.3); stroke-width:.5; }}
+    .bt-crown svg circle {{ fill:#fff7c2; }}
+    .bt-crown--left {{ --crown-glow: var(--lt-glow); }}
+    .bt-crown--right {{ --crown-glow: var(--rt-glow); }}
+    @keyframes btCrownBob {{
+      0% {{ transform:translateX(-50%) translateY(0) rotate(-2deg); }}
+      100% {{ transform:translateX(-50%) translateY(calc(-0.7 * var(--bt-f))) rotate(2deg); }}
+    }}
     @media (max-width:700px) {{
       .bt-avatar {{ width:calc(9 * var(--bt-f)); height:calc(9 * var(--bt-f)); }}
       .bt-score {{ font-size:calc(5.2 * var(--bt-f)); }}
@@ -825,13 +1094,23 @@ class BattleOverlayType:
   <div class="bt-root is-idle" id="btRoot" data-theme="cheremsha_neon" style="{root_style}">
     <div class="bt-badge" id="btBadge"></div>
     <div class="bt-card" id="btCard">
+      <div class="bt-bg-nebula" id="btNebula">
+        <div class="neb-blob neb-blob--1"></div>
+        <div class="neb-blob neb-blob--2"></div>
+        <div class="neb-blob neb-blob--3"></div>
+      </div>
+      <div class="bt-bg-stars" id="btStars"></div>
+      <div class="bt-bg-streaks" id="btStreaks"></div>
+      <div class="bt-float-particles" id="btFloatParticles"></div>
+      <div class="bt-gift-feed bt-gift-feed--left" id="btGiftFeedL"></div>
+      <div class="bt-gift-feed bt-gift-feed--right" id="btGiftFeedR"></div>
       <div class="bt-title-row">
         <div class="bt-title" id="btTitle">BATTLE</div>
       </div>
       <div class="bt-main">
         <div class="bt-stage">
           <div class="bt-side bt-side--left" id="btLeft">
-            <div class="bt-avatar bt-avatar--left" id="btAvatarL"><span class="av-fallback" id="btInitL">?</span></div>
+            <div class="bt-avatar bt-avatar--left" id="btAvatarL"><div class="bt-avatar-ring"></div><div class="bt-crown bt-crown--left" id="btCrownL"></div><span class="av-fallback" id="btInitL">?</span></div>
             <div class="bt-participant-info">
               <div class="bt-name bt-name--left" id="btNameL"></div>
               <div class="bt-score-label bt-score-label--left">РАХУНОК</div>
@@ -851,7 +1130,7 @@ class BattleOverlayType:
             <div class="bt-final-label" id="btFinalLabel"></div>
           </div>
           <div class="bt-side bt-side--right" id="btRight">
-            <div class="bt-avatar bt-avatar--right" id="btAvatarR"><span class="av-fallback" id="btInitR">?</span></div>
+            <div class="bt-avatar bt-avatar--right" id="btAvatarR"><div class="bt-avatar-ring"></div><div class="bt-crown bt-crown--right" id="btCrownR"></div><span class="av-fallback" id="btInitR">?</span></div>
             <div class="bt-participant-info">
               <div class="bt-name bt-name--right" id="btNameR"></div>
               <div class="bt-score-label bt-score-label--right">РАХУНОК</div>
@@ -982,6 +1261,98 @@ class BattleOverlayType:
             const intensity = cfg && cfg.animation_intensity_pct ? Number(cfg.animation_intensity_pct) : 100;
             root.style.setProperty('--proj-speed', (100 / intensity * 100).toFixed(1) + '%');
           }}
+          /* Init epic background layers */
+          initEpicBackground();
+        }}
+        /* ====== Epic Background: Stars, Streaks, Floating Particles ====== */
+        const GIFT_EMOJIS = ['\\u{{1F381}}','\\u{{1F339}}','\\u{{1F490}}','\\u{{1F947}}','\\u{{1F48E}}','\\u{{2728}}','\\u{{1F4B0}}','\\u{{1F380}}','\\u{{2764}}\\u{{FE0F}}','\\u{{1F31F}}','\\u{{1F48D}}','\\u{{2B50}}'];
+        function initEpicBackground() {{
+          if (bvcInitialized && state && state.config && state.config.event_animations === false) return;
+          /* Stars */
+          const starsEl = $('btStars');
+          if (starsEl && starsEl.children.length === 0) {{
+            for (let i = 0; i < 40; i++) {{
+              const s = document.createElement('div');
+              s.className = 'star';
+              const size = (1 + Math.random() * 2.5) * 1;
+              s.style.width = size + 'px';
+              s.style.height = size + 'px';
+              s.style.left = (Math.random() * 100) + '%';
+              s.style.top = (Math.random() * 100) + '%';
+              s.style.setProperty('--tw-dur', (1.5 + Math.random() * 3).toFixed(1) + 's');
+              s.style.setProperty('--tw-delay', (Math.random() * 4).toFixed(1) + 's');
+              starsEl.appendChild(s);
+            }}
+          }}
+          /* Light streaks */
+          const streaksEl = $('btStreaks');
+          if (streaksEl && streaksEl.children.length === 0) {{
+            const streakColors = ['var(--lt-primary)', 'var(--rt-primary)', 'var(--center-primary)', 'rgba(255,255,255,0.4)'];
+            for (let i = 0; i < 6; i++) {{
+              const st = document.createElement('div');
+              st.className = 'streak';
+              st.style.top = (10 + Math.random() * 80) + '%';
+              st.style.width = (15 + Math.random() * 30) + '%';
+              st.style.setProperty('--sk-dur', (2.5 + Math.random() * 3).toFixed(1) + 's');
+              st.style.setProperty('--sk-delay', (Math.random() * 5).toFixed(1) + 's');
+              st.style.setProperty('--sk-rot', (-12 + Math.random() * 24).toFixed(0) + 'deg');
+              st.style.setProperty('--streak-color', streakColors[i % streakColors.length]);
+              streaksEl.appendChild(st);
+            }}
+          }}
+          /* Floating gift particles */
+          const fpEl = $('btFloatParticles');
+          if (fpEl && fpEl.children.length === 0) {{
+            const count = 14;
+            for (let i = 0; i < count; i++) {{
+              const p = document.createElement('div');
+              p.className = 'float-particle';
+              const side = i < count / 2 ? 'left' : 'right';
+              p.classList.add('is-' + side);
+              p.textContent = GIFT_EMOJIS[Math.floor(Math.random() * GIFT_EMOJIS.length)];
+              p.style.left = (side === 'left' ? 5 + Math.random() * 35 : 55 + Math.random() * 35) + '%';
+              p.style.top = (30 + Math.random() * 60) + '%';
+              p.style.setProperty('--fp-size', (1.4 + Math.random() * 2.2).toFixed(1) + 'em');
+              p.style.setProperty('--fp-dur', (9 + Math.random() * 10).toFixed(1) + 's');
+              p.style.setProperty('--fp-delay', (Math.random() * 12).toFixed(1) + 's');
+              p.style.setProperty('--fp-opacity', (0.35 + Math.random() * 0.4).toFixed(2));
+              p.style.setProperty('--fp-x1', ((Math.random() - 0.5) * 40).toFixed(0) + 'px');
+              p.style.setProperty('--fp-x2', ((Math.random() - 0.5) * 50).toFixed(0) + 'px');
+              p.style.setProperty('--fp-x3', ((Math.random() - 0.5) * 40).toFixed(0) + 'px');
+              p.style.setProperty('--fp-x4', ((Math.random() - 0.5) * 30).toFixed(0) + 'px');
+              fpEl.appendChild(p);
+            }}
+          }}
+        }}
+        /* ====== Gift Feed System ====== */
+        function spawnGiftFeed(side, payload) {{
+          const feed = side === 'left' ? $('btGiftFeedL') : $('btGiftFeedR');
+          if (!feed) return;
+          /* Cap visible items to avoid overflow */
+          while (feed.children.length >= 4) {{
+            feed.removeChild(feed.firstChild);
+          }}
+          const el = document.createElement('div');
+          el.className = 'gift-feed-item gift-feed-item--' + side;
+          const participant = state && state.participants && state.participants.find(p => p.team_id === side);
+          const giftName = payload && (payload.gift_name || payload.name || 'Gift');
+          const giftEmoji = payload && (payload.gift_emoji || payload.emoji);
+          const userDisplay = payload && payload.display_name ? payload.display_name : (participant ? participant.name : '');
+          let avHtml = '';
+          const avUrl = payload && payload.avatar_url ? payload.avatar_url : (participant && participant.avatar_url ? participant.avatar_url : '');
+          if (avUrl) {{
+            avHtml = '<img class="gfi-av" src="' + esc(avUrl) + '" alt="" onerror="this.style.display=\\'none\\'"/>';
+          }}
+          const emojiHtml = giftEmoji ? '<span class="gfi-emoji">' + esc(giftEmoji) + '</span>' : '';
+          const textHtml = '<span class="gfi-text"><span class="gfi-name">' + esc(userDisplay || '?') + '</span> '
+            + (payload && payload.count ? 'x' + payload.count + ' ' : 'sent ')
+            + '<span class="gfi-gift">' + esc(giftName) + '</span></span>';
+          el.innerHTML = avHtml + emojiHtml + textHtml;
+          feed.appendChild(el);
+          /* Auto-remove after animation completes */
+          setTimeout(() => {{
+            if (el.parentNode) el.parentNode.removeChild(el);
+          }}, 4200);
         }}
         const STR = {{
           uk: {{
@@ -1217,6 +1588,17 @@ class BattleOverlayType:
           fill.classList.add('is-hit');
           setTimeout(() => fill.classList.remove('is-hit'), 450);
         }}
+        /* ====== Leader Crown ====== */
+        function setLeaderCrown(leader) {{
+          const cl = $('btCrownL');
+          const cr = $('btCrownR');
+          if (cl) cl.innerHTML = '';
+          if (cr) cr.innerHTML = '';
+          if (!leader) return;
+          const el = leader === 'left' ? cl : cr;
+          if (!el) return;
+          el.innerHTML = '<svg viewBox="0 0 24 24"><path d="M3 17 L3 12 L6 8 L9 12 L12 7 L15 12 L18 8 L21 12 L21 17 Z"/><circle cx="6" cy="7" r="1.4"/><circle cx="12" cy="6" r="1.4"/><circle cx="18" cy="7" r="1.4"/></svg>';
+        }}
         /* ====== Lead Change ====== */
         function flashLeadChange(newLeader) {{
           if (BVC.leadFlashTimer) return;
@@ -1368,6 +1750,7 @@ class BattleOverlayType:
               const pts = p.points != null ? p.points : (p.diamonds || 0);
               const intensity = BVC.getIntensity(p.diamonds != null ? p.diamonds : (p.points || 0), p.multiplier || 1);
               spawnProjectile(e.team_id, p, intensity);
+              spawnGiftFeed(e.team_id, p);
               const locale = LOCALE();
               const isBig = intensity === 'big' || intensity === 'epic';
               flashGift(isBig ? locale.bigGift : locale.gift, pts ? '+' + pts : '');
@@ -1651,6 +2034,7 @@ class BattleOverlayType:
             flashLeadChange(newLeader);
           }}
           BVC.currentLeader = newLeader;
+          setLeaderCrown(newLeader);
           /* Detect round change */
           const currentRound = state.round || 1;
           if (BVC.lastRound !== null && BVC.lastRound !== currentRound) {{
@@ -1700,30 +2084,29 @@ class BattleOverlayType:
           const dots = $('btDots');
           dots.innerHTML = '';
           const wins = state.round_wins || {{ left: tL.round_wins || 0, right: tR.round_wins || 0 }};
-          const need = Math.floor((state.best_of || 3) / 2) + 1;
-          // Highlight the current round only while a battle is actually
-          // running — in idle all dots stay neutral (nothing won yet).
-          // Rounds beyond `need` (deciders, e.g. BO3 round 3 after draws or
-          // 1-1) clamp to the last slot: both sides contest the final win there.
-          const cur = Math.min(state.round || 1, need) - 1;
+          const totalRounds = state.best_of || 3;
+          const cur = Math.min(state.round || 1, totalRounds) - 1;
           const inBattle = status === 'countdown' || status === 'active';
-          for (let i = 0; i < need; i++) {{
-            const a = document.createElement('i');
-            if (inBattle) {{
-              if (i === cur) a.className = 'active';
-              else if ((wins.left || 0) > i) a.className = 'won-left';
-            }} else if (status === 'finished' && (wins.left || 0) > i) {{
-              a.className = 'won-left';
+          const totalPlayed = cur;
+          const draws = Math.max(0, totalPlayed - (wins.left || 0) - (wins.right || 0));
+          let lAssigned = 0, rAssigned = 0, dAssigned = 0;
+          for (let i = 0; i < totalRounds; i++) {{
+            const dot = document.createElement('i');
+            if (inBattle && i === cur) {{
+              dot.className = 'active';
+            }} else if (i < totalPlayed) {{
+              if (lAssigned < (wins.left || 0)) {{
+                dot.className = 'won-left';
+                lAssigned++;
+              }} else if (rAssigned < (wins.right || 0)) {{
+                dot.className = 'won-right';
+                rAssigned++;
+              }} else if (dAssigned < draws) {{
+                dot.className = 'draw';
+                dAssigned++;
+              }}
             }}
-            dots.appendChild(a);
-            const b = document.createElement('i');
-            if (inBattle) {{
-              if (i === cur) b.className = 'active';
-              else if ((wins.right || 0) > i) b.className = 'won-right';
-            }} else if (status === 'finished' && (wins.right || 0) > i) {{
-              b.className = 'won-right';
-            }}
-            dots.appendChild(b);
+            dots.appendChild(dot);
           }}
           const eventRow = $('btEventRow');
           renderEventRow(eventRow, state, L, R);

@@ -9,6 +9,18 @@ CHAT_CONFIG_SCHEMA_VERSION = 1
 CHAT_CONFIG_QSETTINGS_KEY = "overlays/chat/main/config_json"
 _CHAT_CONFIG_QSETTINGS_BACKUP_KEY = "overlays/chat/main/config_json_backup"
 
+CHAT_THEMES = frozenset(
+    {
+        "classic",
+        "inferno",
+        "abyss",
+        "imperial",
+        "cyber",
+        "frost",
+        "bloodmoon",
+    }
+)
+
 
 @dataclass(frozen=True, slots=True)
 class ChatOverlayConfig:
@@ -38,6 +50,7 @@ class ChatOverlayConfig:
     bubble_bg_rgba: str
     bubble_radius_px: int
     fade_seconds: float
+    theme: str
 
     def replace(self, **kwargs: object) -> ChatOverlayConfig:
         return replace(self, **kwargs)
@@ -71,6 +84,7 @@ def chat_config_defaults() -> ChatOverlayConfig:
         bubble_bg_rgba="rgba(10,12,18,0.55)",
         bubble_radius_px=10,
         fade_seconds=0.0,
+        theme="classic",
     )
 
 
@@ -118,6 +132,7 @@ def chat_config_to_json_text(cfg: ChatOverlayConfig) -> str:
         "bubble_bg_rgba": str(cfg.bubble_bg_rgba),
         "bubble_radius_px": int(cfg.bubble_radius_px),
         "fade_seconds": float(cfg.fade_seconds),
+        "theme": str(cfg.theme),
     }
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
@@ -173,6 +188,9 @@ def chat_config_from_json_text(text: str) -> ChatOverlayConfig:
     bubble_bg_rgba = str(raw.get("bubble_bg_rgba") or d.bubble_bg_rgba)
     bubble_radius_px = max(0, _ensure_int(raw.get("bubble_radius_px"), default=d.bubble_radius_px))
     fade_seconds = max(0.0, _ensure_float(raw.get("fade_seconds"), default=d.fade_seconds))
+    theme = str(raw.get("theme") or d.theme)
+    if theme not in CHAT_THEMES:
+        theme = d.theme
     return ChatOverlayConfig(
         schema_version=CHAT_CONFIG_SCHEMA_VERSION,
         max_items=max_items,
@@ -200,6 +218,7 @@ def chat_config_from_json_text(text: str) -> ChatOverlayConfig:
         bubble_bg_rgba=bubble_bg_rgba,
         bubble_radius_px=bubble_radius_px,
         fade_seconds=fade_seconds,
+        theme=theme,
     )
 
 

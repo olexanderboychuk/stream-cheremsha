@@ -151,6 +151,11 @@ from stream_cheremsha.music.yt_dlp_resolver import fetch_youtube_meta, fetch_you
 from stream_cheremsha.online.models import now_hms as online_now_hms
 from stream_cheremsha.online.models import online_state_patch
 from stream_cheremsha.openai_moderation import openai_moderation_flagged
+from stream_cheremsha.overlays.balloon_hunter_config import (
+    balloon_hunter_overlay_config_defaults,
+    balloon_hunter_overlay_config_from_json_text,
+)
+from stream_cheremsha.overlays.balloon_hunter_controller import BalloonHunterController
 from stream_cheremsha.overlays.battle_controller import BattleController
 from stream_cheremsha.overlays.battle_overlay_config import (
     battle_overlay_config_defaults,
@@ -1298,6 +1303,26 @@ class MainWindow(FramelessWindow):
         self._gift_rush_group = InstanceControllerGroup("gift_rush", _make_gift_rush_controller)
         self._gift_rush_group.sync_instances(start=False)
 
+        def _make_balloon_hunter_controller(instance_id: str) -> BalloonHunterController:
+            return BalloonHunterController(
+                pubsub=self._overlay_server.pubsub(),
+                get_locale=lambda: self._locale,
+                instance=instance_id,
+                parent=self,
+                config_loader=_battle_cfg_loader(
+                    "balloon_hunter",
+                    instance_id,
+                    balloon_hunter_overlay_config_from_json_text,
+                    balloon_hunter_overlay_config_defaults,
+                ),
+                audio_sink=self._sink,
+            )
+
+        self._balloon_hunter_group = InstanceControllerGroup(
+            "balloon_hunter", _make_balloon_hunter_controller
+        )
+        self._balloon_hunter_group.sync_instances(start=False)
+
         self._social_rotator = SocialRotatorController(
             pubsub=self._overlay_server.pubsub(),
             get_locale=lambda: self._locale,
@@ -1662,6 +1687,7 @@ class MainWindow(FramelessWindow):
         self._widgets_qml_api.set_battle_controller(self._battle_group)
         self._widgets_qml_api.set_battle_royale_group(self._battle_royale_group)
         self._widgets_qml_api.set_gift_rush_group(self._gift_rush_group)
+        self._widgets_qml_api.set_balloon_hunter_group(self._balloon_hunter_group)
         self._widgets_qml_api.set_social_rotator_controller(self._social_rotator)
         self._widgets_qml_api.set_stream_info_controller(self._stream_info)
         self._widgets_qml_api.set_webcam_frame_controller(self._webcam_frame)
@@ -2671,6 +2697,7 @@ class MainWindow(FramelessWindow):
             self._battle_group,
             self._battle_royale_group,
             self._gift_rush_group,
+            self._balloon_hunter_group,
             self._social_rotator,
             self._stream_info,
             self._community_world,
@@ -6734,6 +6761,9 @@ class MainWindow(FramelessWindow):
         gift_rush_group = getattr(self, "_gift_rush_group", None)
         if gift_rush_group is not None:
             groups.append(gift_rush_group)
+        balloon_hunter_group = getattr(self, "_balloon_hunter_group", None)
+        if balloon_hunter_group is not None:
+            groups.append(balloon_hunter_group)
         for group in groups:
             try:
                 group.sync_instances()
@@ -7229,6 +7259,10 @@ class MainWindow(FramelessWindow):
             self._gift_rush_group.reset_for_new_stream()
         except Exception:
             pass
+        try:
+            self._balloon_hunter_group.reset_for_new_stream()
+        except Exception:
+            pass
         self._social_rotator.reset_for_new_stream()
         self._stream_info.reset_for_new_stream()
         self._community_world.reset_session()
@@ -7696,6 +7730,20 @@ class MainWindow(FramelessWindow):
                     sender_user_key=sender_user_key,
                     platform=ChatPlatform.TIKTOK.value,
                 )
+                try:
+                    self._balloon_hunter_group.on_gift(
+                        sender=sender,
+                        gift_name=gift_name,
+                        gift_id=gift_id,
+                        count=count,
+                        tiktok_coin_each=tiktok_coin_each,
+                        icon_url=_gr_icon,
+                        sender_avatar_url=str(sender_avatar_url or ""),
+                        sender_user_key=sender_user_key,
+                        platform=ChatPlatform.TIKTOK.value,
+                    )
+                except Exception:
+                    pass
             except Exception:
                 pass
             self._stream_info.on_tiktok_gift(
