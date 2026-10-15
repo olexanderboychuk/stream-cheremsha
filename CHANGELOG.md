@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.24.5] - 2026-10-15
+
+### Fixed
+
+- Edge TTS synthesis failed with HTTP 403 on every request: Microsoft's readaloud endpoint now rejects the Sec-MS-GEC v1 token at the WebSocket handshake. `edge-tts` is raised to `>=7.3.1`, which sends the v2 token and fixes locale-dependent server date parsing. `list_voices` kept working (plain HTTPS GET, no token), which made the failure look like a voice-selection problem.
+
 ## [0.24.4] - 2026-10-06
 
 ### Added
