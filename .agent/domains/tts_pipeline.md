@@ -42,6 +42,13 @@ Processes incoming text into synthesized speech. Responsibilities include text s
 - Audio MUST be normalized before playback to ensure consistent stream volume.
 - Long text MUST be chunked; passing oversized blocks directly to engines will fail.
 - All TTS synthesis operations MUST be asynchronous; never synthesize on the Qt main thread.
+- **Edge TTS requires `edge-tts>=7.3.1`.** Microsoft's readaloud endpoint rejects the
+  `Sec-MS-GEC` **v1** token (`Sec-MS-GEC-Version=1-…`) with HTTP 403 at the WebSocket
+  handshake; 7.3.x sends the **v2** token (`2-…`). Symptom: `list_voices` succeeds (plain
+  HTTPS, no token) but every synthesis call fails with
+  `WSServerHandshakeError: 403`. The pin in `pyproject.toml` is the guard — do not loosen it.
+- Unit tests mock `_import_edge_tts`, so they cannot detect upstream auth changes.
+  Verify Edge with a real network call: `EdgeTts("uk-UA-PolinaNeural").synthesize(...)`.
 
 ## Architectural Decisions
 - See [.agent/decisions/tts_audio_pipeline.md](file:///home/oleksandrboichuk/Dev/Self/stream-cheremsha/.agent/decisions/tts_audio_pipeline.md)

@@ -28,7 +28,9 @@ dependencies = [
     "lyricsgenius>=3.0",
     # Local music playback (YouTube download).
     "yt-dlp>=2025.1.1",
-    "edge-tts>=6.1",
+    # Sec-MS-GEC v2 token is required by Microsoft's readaloud endpoint;
+    # 7.2.x sends the v1 token and gets HTTP 403 on the WebSocket handshake.
+    "edge-tts>=7.3.1",
     "websockets>=12.0",
     "google-api-python-client>=2.0",
     "chat-downloader>=0.2.0",
